@@ -1,2 +1,2 @@
-# avazar
-AVAZAR Project
+# AVAZAR Project
+AVAZAR aims at...
