@@ -1,0 +1,11 @@
+# example program
+x := 4
+y := 2
+if (z) {
+  w := 1
+} else {
+  w := 3
+}
+z := w+5
+x := 2 * w
+x := x + z
