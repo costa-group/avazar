@@ -185,11 +185,6 @@ inside `body` it can be used as `#i`.
 >in such case? Just treat it as a finite field negative (i.e., `-1`
 >goes back to `P-1`)?
 
-
->[!note]
->
->Handling bounded loops was not promised in the project proposal.
-
 #### Function calls
 
 1. `x1,...,xk = fname(s1,...,sn)`: variables `x1,...,xk` receive the returned values, which can be arrays as well.
