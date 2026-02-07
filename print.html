@@ -313,14 +313,13 @@ non-trivial encoding.</p>
 </blockquote>
 <h4 id="bounded-loops"><a class="header" href="#bounded-loops">Bounded loops</a></h4>
 <p>A bounded loop is of the form:</p>
-<pre><code class="language-text">for(i,LB,UB,D) { body }
+<pre><code class="language-text">for(i,START,N,STEP) { body }
 </code></pre>
-<p>where <code>LB</code>, <code>UB</code>, and <code>D</code> are non-negative integer constants. It
-should be interpreted as the C-loop:</p>
-<pre><code class="language-text">for(int i=LB;i&lt;UB,i+=D) { body }
-</code></pre>
+<p>where <code>START</code>, <code>N</code>, and <code>STEP</code> are non-negative integer constants. It
+should be interpreted as follows: start from <code>i=START</code>, and repeat
+<code>body</code> for <code>N</code> times where after each time add <code>STEP</code> to <code>i</code>.</p>
 <p>The loop index <code>i</code> is not a variable, but rather a constant value and
-inside <code>body</code> it can be used as <code>#i</code>. </p>
+inside <code>body</code> it can be used as <code>#i</code>.</p>
 <blockquote>
 <p>[!note]</p>
 <p>The implementation is based on loop unrolling, where in every
@@ -335,8 +334,14 @@ SMT, we must use the corresponding value that is also available at
 symbolic execution time.</p>
 </blockquote>
 <blockquote>
-<p>[!note]
-Handling bounded loops was not promised in the project proposal.</p>
+<p>[!note]</p>
+<p>Should we allow for negative <code>STEP</code>? What to do if <code>i</code> goes negative
+in such case? Just treat it as a finite field negative (i.e., <code>-1</code>
+goes back to <code>P-1</code>)?</p>
+</blockquote>
+<blockquote>
+<p>[!note]</p>
+<p>Handling bounded loops was not promised in the project proposal.</p>
 </blockquote>
 <h4 id="function-calls"><a class="header" href="#function-calls">Function calls</a></h4>
 <ol>
