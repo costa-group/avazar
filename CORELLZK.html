@@ -261,6 +261,12 @@ and all Yi as well.</p>
 <li><code>x := s1 ^ s2</code>: bitwise-xor.</li>
 <li><code>x := ~s1</code>: bitwise negation.</li>
 </ol>
+<blockquote>
+<p>[!NOTE]</p>
+<p>How conversion from bit-vectors to finite field should be done?
+Calculate the corresponding non-negative integer <code>x</code> and then
+compute <code>x mod P</code>?</p>
+</blockquote>
 <h4 id="comparison-operations"><a class="header" href="#comparison-operations">Comparison operations</a></h4>
 <p>Every operation has its semantic to the right. Here <code>&lt;</code>, <code>&gt;</code>, <code>&gt;=</code> and <code>&lt;=</code> are interpreted according to the order <code>mid+1,...,P-1,0,...,mid</code> where <code>mid=(p-1)/1</code></p>
 <blockquote>
