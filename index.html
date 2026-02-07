@@ -174,7 +174,9 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="core-llzk"><a class="header" href="#core-llzk">Core LLZK</a></h1>
-<p>The purpose is to have a language that is simple enough to allow a clean formalization of transforming witness generators to SMT formulas, and rich enough to model LLZK programs.</p>
+<p>The purpose is to have a language that is simple enough to allow a
+clean formalization of transforming witness generators to SMT
+formulas, and rich enough to model LLZK programs.</p>
 <h2 id="restrictions-on-llzk-programs-that-can-be-handled"><a class="header" href="#restrictions-on-llzk-programs-that-can-be-handled">Restrictions on LLZK programs that can be handled</a></h2>
 <p>The LLZK programs that we can handled must have the following features:</p>
 <ul>
@@ -182,49 +184,62 @@
 <p>The size of an array cannot depend on the input value.</p>
 </li>
 <li>
-<p>At a given program point, a variable that is accessed will always have the same type, independently from how the corresponding program point has been reached. This is important in the case of arrays, to guarantee that if we are accessing y[i] then we know what the size of y is.</p>
+<p>At a given program point, a variable that is accessed will always
+have the same type, independently from how the corresponding program
+point has been reached. This is important in the case of arrays, to
+guarantee that if we are accessing y[i] then we know what the size
+of y is.</p>
 </li>
 <li>
-<p>Recursion is forbidden, which can be achieved by forcing a total order on the different functions, e.g., the definition order (a function can call those defined before, excluding itself).</p>
+<p>Recursion is forbidden, which can be achieved by forcing a total
+order on the different functions, e.g., the definition order (a
+function can call those defined before, excluding itself).</p>
 </li>
 <li>
-<p>There are no loops in the language, they are supposed to have been unfolded.</p>
+<p>There are no loops in the language, they are supposed to have been
+unfolded. Though we can handle <a href="#bounded-loops">bounded loops</a>. </p>
 </li>
 </ul>
-<blockquote>
-<p>[!note]
-Towards the end of the project we might be able to allow bounded loops, like <code>for(i=0..N) do body</code>, it should not be complicated. But this was not promised in the project proposal.</p>
-</blockquote>
 <h2 id="definition-of-core-llzk"><a class="header" href="#definition-of-core-llzk">Definition of CORE LLZK</a></h2>
-<p>We assume a prime number <code>P</code> and an architecture with <code>k</code> bits, such that <code>P &lt; 2^k</code>. For a number <code>x</code>, its <code>FF-value</code> is a value between <code>0</code> and <code>P-1</code> calculated as <code>x mod P</code>.</p>
+<p>We assume a prime number <code>P</code> and an architecture with <code>k</code> bits, such
+that <code>P &lt; 2^k</code>. For a number <code>x</code>, its <code>FF-value</code> is a value between
+<code>0</code> and <code>P-1</code> calculated as <code>x mod P</code>.</p>
 <h3 id="types"><a class="header" href="#types">Types</a></h3>
 <p>There are two types:</p>
 <ol>
 <li><code>ff</code>: for a variable over the finite field type.</li>
 <li><code>a&lt;N&gt;</code>: for an array of <code>N</code> finite field elements.</li>
 </ol>
-<p>We only require declaring types for the input and output variables of a function (maybe we do not need it for the output, will become clear later). Local variables can be used without type and their type is determined dynamically when assigned a value, and checked when they are used.</p>
+<p>We only require declaring types for the input and output variables of
+a function (maybe we do not need it for the output, will become clear
+later). Local variables can be used without type and their type is
+determined dynamically when assigned a value, and checked when they
+are used.</p>
 <p>Note that machine integer and boolean can be simulated using the <code>ff</code> type.</p>
 <h3 id="programs"><a class="header" href="#programs">Programs</a></h3>
-<p>A program is a set of functions, and one is assumed to be the main, i.e., the one we use as the entry point to generate the SMT formula.</p>
+<p>A program is a set of functions, and one is assumed to be the main,
+i.e., the one we use as the entry point to generate the SMT formula.</p>
 <h3 id="functions"><a class="header" href="#functions">Functions</a></h3>
 <p>A function definition is of the form</p>
 <pre><code class="language-text">def fname(X1:t,...,Xn:t) -&gt; Y1:t,...,Yk:t {
   body
 }
 </code></pre>
-<p>Formal parameters and return parameters have the form <code>var:t</code>, meaning that <code>var</code> is the name and <code>t</code> is the type. All Xi must be different, and all Yi as well.</p>
-<p>The <code>Body</code> is a sequence of instructions.</p>
+<p>Formal parameters and return parameters have the form <code>var:t</code>, meaning
+that <code>var</code> is the name and <code>t</code> is the type. All Xi must be different,
+and all Yi as well.</p>
+<p>The <code>body</code> is a sequence of instructions.</p>
 <h3 id="instructions"><a class="header" href="#instructions">Instructions</a></h3>
 <p>We group instructions by their kind, and briefly explain the corresponding semantics. We use the following conventions for names</p>
 <ol>
 <li>we use <code>x</code>,<code>y</code>,<code>z</code>,... for a variable</li>
 <li>we use <code>v1</code>,<code>v2</code>,... for concrete values</li>
-<li>we use <code>s1</code>,<code>s2</code>,... for a simple expression that is either a <strong>variable over finite field</strong> or a value</li>
+<li>we use <code>#i</code>,<code>#j</code>,... for refering to the value of a loop index</li>
+<li>we use <code>s1</code>,<code>s2</code>,... for a simple expression that is a <strong>variable over finite field</strong>, a value, or a loop index</li>
 </ol>
 <blockquote>
-<p>[!NOTE]
-Simple expressions do not include array accesses.</p>
+<p>[!NOTE]</p>
+<p>Simple expressions do not include array accesses.</p>
 </blockquote>
 <h4 id="arithmetic"><a class="header" href="#arithmetic">Arithmetic</a></h4>
 <p>The semantics of these operations is simply as the corresponding operations in the finite field.</p>
@@ -249,8 +264,9 @@ Simple expressions do not include array accesses.</p>
 <h4 id="comparison-operations"><a class="header" href="#comparison-operations">Comparison operations</a></h4>
 <p>Every operation has its semantic to the right. Here <code>&lt;</code>, <code>&gt;</code>, <code>&gt;=</code> and <code>&lt;=</code> are interpreted according to the order <code>mid+1,...,P-1,0,...,mid</code> where <code>mid=(p-1)/1</code></p>
 <blockquote>
-<p>[!NOTE]
-The semantics on the right is not an encoding to SMT, it is just to write it a bit formally.</p>
+<p>[!NOTE]</p>
+<p>The semantics on the right is not an encoding to SMT, it is just to
+write it a bit formally.</p>
 </blockquote>
 <ol>
 <li><code>x := s1=s2</code>: (s1=s2 -&gt; x=1) and (~(s1=s2) -&gt; x=0).</li>
@@ -271,8 +287,11 @@ The semantics on the right is not an encoding to SMT, it is just to write it a b
 <li><code>x := y</code>: if <code>y</code> is of array type, copies the array <code>y</code> into <code>x</code> (old value of <code>x</code>, if any, is destroyed).</li>
 </ol>
 <blockquote>
-<p>[!NOTE]
-We should be aware that translating an array access <code>x[s]</code> to formulas can be done in a compact way only when the index <code>s</code> is a value. There is no constant propagation, this should be done independently as a preprocessing step.</p>
+<p>[!NOTE] </p>
+<p>We should be aware that translating an array access <code>x[s]</code> &gt; to
+formulas can be done in a compact way only when the index <code>s</code> is &gt; a
+value. There is no constant propagation, this should be done &gt;
+independently as a preprocessing step.</p>
 </blockquote>
 <h4 id="conditionals"><a class="header" href="#conditionals">Conditionals</a></h4>
 <ol>
@@ -280,15 +299,45 @@ We should be aware that translating an array access <code>x[s]</code> to formula
 <li><code>if s1!=s2 { body } else { body }</code>: ~(s1=s2) -&gt; then branch, s1=s2 -&gt; else branch.</li>
 </ol>
 <blockquote>
-<p>[!NOTE]
-Adding other kinds of comparison, like <code>&gt;</code>, explicitly to the guard does not simplify anything in the translation, since they all have non-trivial encoding.</p>
+<p>[!NOTE]</p>
+<p>Adding other kinds of comparison, like <code>&gt;</code>, explicitly to the guard
+does not simplify anything in the translation, since they all have
+non-trivial encoding.</p>
+</blockquote>
+<h4 id="bounded-loops"><a class="header" href="#bounded-loops">Bounded loops</a></h4>
+<p>A bounded loop is of the form:</p>
+<pre><code class="language-text">for(i,LB,UB,D) { body }
+</code></pre>
+<p>where <code>LB</code>, <code>UB</code>, and <code>D</code> are constants. It should be interpreted as
+the C-loop:</p>
+<pre><code class="language-text">for(i=LB;i&lt;UB,i+=D) { body }
+</code></pre>
+<p>The loop index <code>i</code> is not a variable, but rather a constant value and
+inside <code>body</code> it can be used as <code>#i</code>.</p>
+<blockquote>
+<p>[!note]</p>
+<p>The implementation is based on loop unrolling, where in every
+iteration there is a <strong>constant</strong> that is equivalent to the loop
+index. To refer to this constant value we can use <code>#i</code>.</p>
+</blockquote>
+<blockquote>
+<p>[!important]</p>
+<p>Since <code>#i</code> is not a variable, it cannot appear in the encoding to
+SMT, we must use the corresponding value that is also available at
+symbolic execution time.</p>
+</blockquote>
+<blockquote>
+<p>[!note]
+Handling bounded loops was not promised in the project proposal.</p>
 </blockquote>
 <h4 id="function-calls"><a class="header" href="#function-calls">Function calls</a></h4>
 <ol>
 <li><code>x1,...,xk = fname(s1,...,sn)</code>: variables <code>x1,...,xk</code> receive the returned values, which can be arrays as well.</li>
 </ol>
 <h4 id="support-for-ssa"><a class="header" href="#support-for-ssa">Support for SSA</a></h4>
-<p>There is no direct support for SSA in the language, because it is structured, so we can always add the phi-functions at the end of the branches of an if-statement.</p>
+<p>There is no direct support for SSA in the language, because it is
+structured, so we can always add the phi-functions at the end of the
+branches of an if-statement.</p>
 
                     </main>
 
