@@ -101,6 +101,12 @@ The semantics of these operations converts `si` to bit-vectors of `k` bits, appl
 5. `x := s1 ^ s2`: bitwise-xor.
 6. `x := ~s1`: bitwise negation.
 
+> [!NOTE]
+>
+> How conversion from bit-vectors to finite field should be done?
+> Calculate the corresponding non-negative integer `x` and then
+> compute `x mod P`?
+
 #### Comparison operations
 
 Every operation has its semantic to the right. Here `<`, `>`, `>=` and `<=` are interpreted according to the order `mid+1,...,P-1,0,...,mid` where `mid=(p-1)/1`
