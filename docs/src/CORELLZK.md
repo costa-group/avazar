@@ -129,9 +129,9 @@ Every operation has its semantic to the right. Here `<`, `>`, `>=` and `<=` are 
 
 > [!NOTE] 
 >
-> We should be aware that translating an array access `x[s]` > to
-> formulas can be done in a compact way only when the index `s` is > a
-> value. There is no constant propagation, this should be done >
+> We should be aware that translating an array access `x[s]` to
+> formulas can be done in a compact way only when the index `s` is a
+> value. There is no constant propagation, this should be done
 > independently as a preprocessing step.
 
 #### Conditionals
