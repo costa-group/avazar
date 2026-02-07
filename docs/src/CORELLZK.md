@@ -153,11 +153,11 @@ A bounded loop is of the form:
 for(i,LB,UB,D) { body }
 ```
 
-where `LB`, `UB`, and `D` are constants. It should be interpreted as
-the C-loop:
+where `LB`, `UB`, and `D` are non-negative integer constants. It
+should be interpreted as the C-loop:
 
 ```text
-for(i=LB;i<UB,i+=D) { body }
+for(int i=LB;i<UB,i+=D) { body }
 ```
 
 The loop index `i` is not a variable, but rather a constant value and
