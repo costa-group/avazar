@@ -309,9 +309,9 @@ non-trivial encoding.</p>
 <p>A bounded loop is of the form:</p>
 <pre><code class="language-text">for(i,LB,UB,D) { body }
 </code></pre>
-<p>where <code>LB</code>, <code>UB</code>, and <code>D</code> are constants. It should be interpreted as
-the C-loop:</p>
-<pre><code class="language-text">for(i=LB;i&lt;UB,i+=D) { body }
+<p>where <code>LB</code>, <code>UB</code>, and <code>D</code> are non-negative integer constants. It
+should be interpreted as the C-loop:</p>
+<pre><code class="language-text">for(int i=LB;i&lt;UB,i+=D) { body }
 </code></pre>
 <p>The loop index <code>i</code> is not a variable, but rather a constant value and
 inside <code>body</code> it can be used as <code>#i</code>.</p>
