@@ -314,12 +314,13 @@ should be interpreted as the C-loop:</p>
 <pre><code class="language-text">for(int i=LB;i&lt;UB,i+=D) { body }
 </code></pre>
 <p>The loop index <code>i</code> is not a variable, but rather a constant value and
-inside <code>body</code> it can be used as <code>#i</code>.</p>
+inside <code>body</code> it can be used as <code>#i</code>. </p>
 <blockquote>
 <p>[!note]</p>
 <p>The implementation is based on loop unrolling, where in every
 iteration there is a <strong>constant</strong> that is equivalent to the loop
-index. To refer to this constant value we can use <code>#i</code>.</p>
+index. To refer to this constant value we can use <code>#i</code>. Nested loops
+<strong>must</strong> use different indices.</p>
 </blockquote>
 <blockquote>
 <p>[!important]</p>
