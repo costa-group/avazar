@@ -161,13 +161,14 @@ for(int i=LB;i<UB,i+=D) { body }
 ```
 
 The loop index `i` is not a variable, but rather a constant value and
-inside `body` it can be used as `#i`.
+inside `body` it can be used as `#i`. 
 
 >[!note]
 >
 >The implementation is based on loop unrolling, where in every
 >iteration there is a **constant** that is equivalent to the loop
->index. To refer to this constant value we can use `#i`.
+>index. To refer to this constant value we can use `#i`. Nested loops
+>**must** use different indices.
 
 >[!important]
 >
