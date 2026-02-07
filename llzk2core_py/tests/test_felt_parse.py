@@ -1,5 +1,5 @@
 import pytest
-from src.llzk_dialects.felt import FeltUnary, FeltBinary, SSAVar, Type
+from src.llzk_dialects.felt import FeltUnary, FeltBinary, FeltConst, SSAVar, Type
 
 class TestFelt:
 
@@ -21,6 +21,11 @@ class TestFelt:
         # Exception includes the wrong operand as part of the message
         with pytest.raises(Exception, match=".*felt.op.*"):
             binary_op_wrong_op = FeltUnary.parse("       %0 = felt.op %arg0 : !felt.type, !felt.type ")
+
+    def test_const(self):
+        const = FeltConst.parse("        %felt_const_1 = felt.const  1  ")
+        assert const.result == SSAVar("%felt_const_1")
+        assert const.constant == 1
 
     def test_binary_simplified(self):
         binary_simplified = FeltBinary.parse("   %0 = felt.mul %arg0, %arg1 ")

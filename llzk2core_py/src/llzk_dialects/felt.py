@@ -47,6 +47,33 @@ class FeltUnary(Operation):
         return f"FeltUnary({self.result} = {self.op}({self.operand}){optional_type}"
 
 
+class FeltConst(Operation):
+    """
+    Const Operation.
+
+    Syntax: operation ::= `felt.const` $value attr-dict
+    """
+
+    def __init__(self, variable: SSAVar, constant: int):
+        self.result = variable
+        self.constant = constant
+
+    def dialect(self) -> Dialect:
+        return Dialect.felt_d
+
+    @classmethod
+    def parse(cls, line: str) -> 'FeltConst':
+        pattern = re.compile(r"\s*(?P<res>\S+)\s*=\s*felt.const\s*(?P<operand>\S+)\s*")
+        match = re.fullmatch(pattern, line)
+        if not match:
+            raise ValueError(f"Failed to parse FeltConst: {line}")
+        else:
+            return FeltConst(SSAVar.parse(match["res"]), int(match["operand"]))
+
+    def __repr__(self):
+        return f"FeltConst({self.result} = {self.constant})"
+
+
 
 class FeltBinary(Operation):
     """
