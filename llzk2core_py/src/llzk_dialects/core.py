@@ -2,7 +2,7 @@
 Core functionalities in the parser
 """
 
-from definitions import Dialect
+from src.llzk_dialects.definitions import Dialect
 from abc import ABC, abstractmethod
 
 
@@ -29,6 +29,9 @@ class SSAVar:
     def __repr__(self) -> str:
         return self.name if self.n_components == 1 else f"{self.name}:{self.n_components}"
 
+    def __eq__(self, other):
+        return isinstance(other, SSAVar) and self.name == other.name and self.n_components == other.n_components
+
 class GlobalVariable:
     """
     Variable that is preceded by @ (included in the name).
@@ -46,6 +49,9 @@ class GlobalVariable:
     def __repr__(self):
         return self.name
 
+    def __eq__(self, other):
+        return isinstance(other, GlobalVariable) and self.name == other.name
+
 class Type:
     # TODO: decide what we want to do with the types
     def __init__(self, type_: str):
@@ -57,6 +63,9 @@ class Type:
 
     def __repr__(self):
         return f"Type({self.name})"
+
+    def __eq__(self, other):
+        return isinstance(other, Type) and self.name == other.name
 
 class Operation(ABC):
     """

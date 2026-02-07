@@ -14,8 +14,11 @@ class Dialect(Enum):
     string_d = 11
     struct_d = 12
 
+FELT_CONST = ["felt.const"]
+
 FELT_UNARY = ["felt.bit_not", "felt.const",
               "felt.inv", "felt.neg", ]
+
 FELT_BINARY = ["felt.add", "felt.bit_and",
                "felt.bit_or", "felt.bit_xor",
                "felt.div", "felt.mul", "felt.pow",
@@ -23,4 +26,4 @@ FELT_BINARY = ["felt.add", "felt.bit_and",
                "felt.smod", "felt.sub",
                "felt.uintdiv", "felt.umod"]
 
-FELT_OPS = [*FELT_BINARY]
+FELT_OPS = [*FELT_CONST, *FELT_UNARY, *FELT_BINARY]
