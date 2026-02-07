@@ -156,18 +156,15 @@ Every operation has its semantic to the right. Here `<`, `>`, `>=` and `<=` are 
 A bounded loop is of the form:
 
 ```text
-for(i,LB,UB,D) { body }
+for(i,START,N,STEP) { body }
 ```
 
-where `LB`, `UB`, and `D` are non-negative integer constants. It
-should be interpreted as the C-loop:
-
-```text
-for(int i=LB;i<UB,i+=D) { body }
-```
+where `START`, `N`, and `STEP` are non-negative integer constants. It
+should be interpreted as follows: start from `i=START`, and repeat
+`body` for `N` times where after each time add `STEP` to `i`.
 
 The loop index `i` is not a variable, but rather a constant value and
-inside `body` it can be used as `#i`. 
+inside `body` it can be used as `#i`.
 
 >[!note]
 >
@@ -183,7 +180,15 @@ inside `body` it can be used as `#i`.
 >symbolic execution time.
 
 >[!note]
-> Handling bounded loops was not promised in the project proposal.
+>
+>Should we allow for negative `STEP`? What to do if `i` goes negative
+>in such case? Just treat it as a finite field negative (i.e., `-1`
+>goes back to `P-1`)?
+
+
+>[!note]
+>
+>Handling bounded loops was not promised in the project proposal.
 
 #### Function calls
 
