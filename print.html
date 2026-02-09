@@ -371,6 +371,12 @@ to <code>P-1</code>)?</p>
 is accessed as <code>#i</code>. Re-declaration of <code>i</code> within the body is
 forbidden. This also applies to loop indices sine they are constant
 variables.</p>
+<blockquote>
+<p>[!note] </p>
+<p>This construct is useful for simulating <code>y:=x[#i+1]</code> using
+<code>with_const j=#i+1 { y:=[#j] }</code>, becuase array accesses use only
+simple expressions (so <code>y:=x[#i+1]</code> is not allowed).</p>
+</blockquote>
 <h5 id="function-calls"><a class="header" href="#function-calls">Function Calls</a></h5>
 <pre><code class="language-text">x1, ..., xk = fname(s1, ..., sn)
 </code></pre>
