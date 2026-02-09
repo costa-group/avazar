@@ -227,6 +227,12 @@ is accessed as `#i`. Re-declaration of `i` within the body is
 forbidden. This also applies to loop indices sine they are constant
 variables.
 
+>[!note] 
+>
+>This construct is useful for simulating `y:=x[#i+1]` using
+>`with_const j=#i+1 { y:=[#j] }`, becuase array accesses use only
+>simple expressions (so `y:=x[#i+1]` is not allowed).
+
 ##### Function Calls
 
 ```text
