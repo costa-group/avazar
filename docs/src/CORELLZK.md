@@ -80,11 +80,11 @@ def fname(X1:t, ..., Xn:t) -> Y1:t, ..., Yk:t {
   must be distinct.
 * **Body:** `body` is a sequence of instructions.
 
-### Expressions
+#### Expressions
 
 In what follow we explain the supported expressions by category.
 
-#### Arithmetic
+##### Arithmetic
 
 Semantics correspond to standard operations in the finite field .
 
@@ -95,7 +95,7 @@ Semantics correspond to standard operations in the finite field .
 5. `s1 * s2`
 6. `s1 / s2` (Multiplication by modular inverse)
 
-#### Bitwise Operations
+##### Bitwise Operations
 
 Semantics: The operands `si` are converted to `k`-bit vectors
 (standard unsigned integer representation), the operation is applied,
@@ -115,7 +115,7 @@ and the result is converted back to a finite field element (modulo
 > Calculate the corresponding non-negative integer `x` and then
 > compute `x mod P`?
 
-#### Comparisons
+##### Comparisons
 
 Semantics: Comparisons interpret field elements as signed
 integers. The order is defined as `mid+1, ..., P-1, 0, ..., mid`,
@@ -139,7 +139,7 @@ where `mid = (P-1)/2`. Trueth value
 11. `s1 && s2`: Logical AND. (~(s1=0) and ~(s2=0)) -> result=1) and (((s1=0) or (s2=0)) -> result=0).
 
 
-### Instructions
+#### Instructions
 
 Next we describe the possible instructions supported in the language.
 
@@ -148,7 +148,7 @@ involve variables (it can involve constant variables). We say that an
 expression `exp` is a **constant expression** if all its simple
 expressions are constant.
 
-#### Assignment
+##### Assignment
 
 ```text
 x := exp
@@ -158,7 +158,7 @@ Assigns the result of `exp` to `x`. `exp` cannot be a compound
 expression (nested operations are not supported directly; intermediate
 variables must be used).
 
-#### Arrays
+##### Arrays
 
 1. `x := new_array N`: Allocates an array of `N` elements (type
    `ff`). `N` must be a constant.
@@ -173,7 +173,7 @@ variables must be used).
 > is only possible if the index `s` is a **Constant Simple
 > Expression**. 
 
-#### Conditionals
+##### Conditionals
 
 1. `if s1=s2 { body } else { body }`
 2. `if s1!=s2 { body } else { body }`
@@ -184,7 +184,7 @@ variables must be used).
 > (e.g., `>`) must be computed beforehand or encoded, as they do not
 > simplify the SMT translation.
 
-#### Bounded Loops
+##### Bounded Loops
 
 ```text
 for(i, START, N, STEP) { body }
@@ -209,7 +209,7 @@ accessed via `#i`.
 > iteration, `#i` can be used to refer to the concrete index for that
 > step. Nested loops must use distinct index names.
 
-#### Constant Definition
+##### Constant Definition
 
 ```text
 with_const i = exp { body }
@@ -221,7 +221,7 @@ is accessed as `#i`. Re-declaration of `i` within the body is
 forbidden. This also applies to loop indices sine they are constant
 variables.
 
-#### Function Calls
+##### Function Calls
 
 ```text
 x1, ..., xk = fname(s1, ..., sn)
