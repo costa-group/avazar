@@ -95,7 +95,7 @@ Semantics correspond to standard operations in the finite field .
 5. `s1 * s2`
 6. `s1 / s2` (Multiplication by modular inverse)
 
-##### Bitwise Operations
+##### Bitwise
 
 Semantics: The operands `si` are converted to `k`-bit vectors
 (standard unsigned integer representation), the operation is applied,
@@ -115,7 +115,7 @@ and the result is converted back to a finite field element (modulo
 > Calculate the corresponding non-negative integer `x` and then
 > compute `x mod P`?
 
-##### Comparisons
+##### Boolean
 
 Comparisons interpret field elements as signed integers. The
 order is defined as `mid+1, ..., P-1, 0, ..., mid`, where
