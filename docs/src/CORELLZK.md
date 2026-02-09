@@ -43,7 +43,24 @@ later). Local variables can be used without type and their type is
 determined dynamically when assigned a value, and checked when they
 are used.
 
-Note that machine integer and boolean can be simulated using the `ff` type.
+>[!note>
+>
+> Machine integer and boolean can be simulated using the `ff` type.
+
+In what follows we use the the following conventions:
+
+1. We use `x`,`y`,`z`,... for a variable of a finite field type.
+
+2. We use `v`, `v1`,`v2`,... for concrete values.
+
+3. We use `#i`,`#j`,... for *constant variables* (such as loop
+   indices, etc).
+
+A *simple expression* is an expression that be any of the above, and
+is denoted by `s`, `s1`, `s2`, etc. A **constant** simple expression
+is simple expression that is not a variable (i.e, can be case 2 or
+case 3).
+
 
 ### Programs
 
@@ -69,17 +86,8 @@ The `body` is a sequence of instructions.
 
 ### Expressions
 
-We group expressions by their kind, and briefly explain the corresponding semantics. We use the following conventions for names
-
-1. We use `x`,`y`,`z`,... for a variable
-
-2. We use `v1`,`v2`,... for concrete values
-
-3. We use `#i`,`#j`,... for refering to what we call constant
-   variables. For example loop indices.
-
-4. we use `s1`,`s2`,... for a simple expression that is a **variable
-   over finite field**, a value, or a loop index
+We group expressions by their kind, and briefly explain the
+corresponding semantics.
 
 #### Arithmetic
 
@@ -94,7 +102,9 @@ The semantics of these operations is simply as the corresponding operations in t
 
 #### Bitwise expression
 
-The semantics of these operations converts `si` to bit-vectors of `k` bits, applies the corresponding bitwise operation, and converts back to finite field.
+The semantics of these operations converts `si` to bit-vectors of `k`
+bits, applies the corresponding bitwise operation, and converts back
+to finite field.
 
 1. `s1 << s2`: left shift.
 2. `s1 >> s2`: right shift.
@@ -111,7 +121,9 @@ The semantics of these operations converts `si` to bit-vectors of `k` bits, appl
 
 #### Comparison expressions
 
-Every operation has its semantic to the right. Here `<`, `>`, `>=` and `<=` are interpreted according to the order `mid+1,...,P-1,0,...,mid` where `mid=(p-1)/1`
+Every operation has its semantic to the right. Here `<`, `>`, `>=` and
+`<=` are interpreted according to the order `mid+1,...,P-1,0,...,mid`
+where `mid=(p-1)/1`
 
 > [!NOTE]
 >
@@ -130,10 +142,11 @@ Every operation has its semantic to the right. Here `<`, `>`, `>=` and `<=` are 
 
 ### Instructions
 
-Next we describe the possible instructions supported in the
-language. We say that a simple expression `s` is constant, if it does
-not involve variables (it can involve constant variables). We say that
-an expression `exp` is constant if all its simple expressions are
+Next we describe the possible instructions supported in the language.
+
+Recall that a simple expression `s` is constant, if it does not
+involve variables (it can involve constant variables). We say that an
+expression `exp` is constant if all its simple expressions are
 constant.
 
 #### Assignment
@@ -153,7 +166,8 @@ expressions described above (it cannot be compound).
 1. `x := new_array N`: creates an array of `N` elements of type `ff`, where `N` is a constant.
 2. `x := y[s]`: extracts the value of `y[s]` into variable `x`.
 3. `x[s1] := s2`: sets the value of `x[s1]` to a simple expression `s2`.
-4. `x := cpy_array y`: `y` must of of array type, copies the array `y` into `x` (old value of `x`, if any, is destroyed).
+4. `x := cpy_array y`: `y` must be of array type, copies the array `y`
+   into `x` (old value of `x`, if any, is destroyed).
 
 > [!NOTE] 
 >
@@ -181,7 +195,7 @@ A bounded loop is of the form:
 for(i,START,N,STEP) { body }
 ```
 
-where `START`, `N`, and `STEP` are constant expression.
+where `START`, `N`, and `STEP` are constant expressions.
 
 
 It should be interpreted as follows: 
@@ -193,8 +207,8 @@ It should be interpreted as follows:
 2. Start from `i=START_v`, and repeat `body` for `N_v` times where
    after each time add `STEP_v` to `i`.
 
-The loop index `i` is not a variable, but rather a constant variable and
-inside `body` it can be used as `#i`.
+The loop index `i` is a constant variable, and inside `body` it can be
+used as `#i`.
 
 >[!note]
 >
@@ -205,32 +219,26 @@ inside `body` it can be used as `#i`.
 
 >[!note]
 >
->It is possible to allow `START`, `N`, and `STEP` be expressions that
->depends only concrete values or constant expressions. For example, if
->needed, we can support something like `for(i,1,10,1) { for(j,#i,10,1)
->{...} }`.
-
->[!note]
->
->Should we allow for negative `STEP`? What to do if `i` goes negative
->in such case? Just treat it as a finite field negative (i.e., `-1`
->goes back to `P-1`)?
+>Should we allow `-(STEP)`? What to do if `i` goes negative in such
+>case? Just treat it as a finite field negative (i.e., `-1` goes back
+>to `P-1`)?
 
 #### Constant definition
 
-This is an instruction that allows defining a constant value, and is of the form
+This is an instruction that allows defining a constant variable, and is
+of the form:
 
 ```text
-with_const i=e { body }
+with_const i=exp { body }
 ```
 
-where `e` is a constant expression. Inside body the value of `i` can
-be accessed as `#i` and it is available at symbolic execution time as
-well, since `e` is a constant expressions.
+where `exp` is a constant expression. Inside `body` the value of `i`
+can be accessed as `#i` and is available at symbolic execution time as
+well (since `exp` is a constant expressions).
 
 >[!note] 
 >
->This is useful for simulating `y:=x[#i+1]` as `with_const j=#i+1 {
+>This is useful for simulating `y:=x[#i+1]` using `with_const j=#i+1 {
 >y:=[#j] }`, becuase array accesses use only simple expressions.
 
 #### Function calls
