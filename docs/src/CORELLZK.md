@@ -1,117 +1,113 @@
-# Core LLZK
+# Core LLZK Specification
 
-The purpose is to have a language that is simple enough to allow a
-clean formalization of transforming witness generators to SMT
-formulas, and rich enough to model LLZK programs.
+The purpose of Core LLZK is to provide a language simple enough to
+allow a clean formalization of transforming witness generators to SMT
+formulas, yet rich enough to model LLZK programs.
 
-## Restrictions on LLZK programs that can be handled
+## Scope and Restrictions
 
-The LLZK programs that we can handled must have the following features:
+To ensure feasible formalization, LLZK programs must adhere to the
+following restrictions:
 
-* The size of an array cannot depend on the input value.
+* **Static Array Sizes:** The size of an array cannot depend on input
+  values.
 
-* At a given program point, a variable that is accessed will always
-  have the same type, independently from how the corresponding program
-  point has been reached. This is important in the case of arrays, to
-  guarantee that if we are accessing y[i] then we know what the size
-  of y is.
+* **Type Consistency:** A variable accessed at a specific program
+  point must always have the same type, regardless of the control flow
+  path taken to reach that point. This ensures, for example, that if
+  we access `y[i]`, the dimensions of `y` is known statically.
 
-* Recursion is forbidden, which can be achieved by forcing a total
-  order on the different functions, e.g., the definition order (a
-  function can call those defined before, excluding itself).
+* **No Recursion:** Recursion is forbidden. This is enforced by
+  requiring a total order on function definitions (a function may only
+  call functions defined prior to itself).
 
-* There are no loops in the language, they are supposed to have been
-  unfolded. Though we can handle [bounded loops](#bounded-loops). 
+* **Unrolled Loops:** The language does not support dynamic loops. It
+  supports [bounded loops](#bounded-loops), which are intended to be
+  unrolled during processing.
 
+## Informal Definition
 
-## Informal definition of CORE LLZK
-
-We assume a prime number `P` and an architecture with `k` bits, such
-that `P < 2^k`. For a number `x`, its `FF-value` is a value between
-`0` and `P-1` calculated as `x mod P`.
+We assume a prime number `P` and an architecture width of `k` bits,
+such that `P < 2^k`.  For any number `x`, its **FF-value** (Finite
+Field value) is an integer in the range `[0, P-1]`, calculated as `x
+mod P`.
 
 ### Types
 
-There are two types:
+There are two primary types:
 
-1. `ff`: for a variable over the finite field type.
-2. `a<N>`: for an array of `N` finite field elements.
+1. `ff`: A scalar variable over the finite field.
+2. `a<N>`: An array of `N` finite field elements (`N` is a constant).
 
-We only require declaring types for the input and output variables of
-a function (maybe we do not need it for the output, will become clear
-later). Local variables can be used without type and their type is
-determined dynamically when assigned a value, and checked when they
-are used.
+Types must be declared for function input and output parameters. Local
+variable types are inferred dynamically upon assignment and checked
+upon usage.
 
->[!note>
+> [!NOTE]
 >
-> Machine integer and boolean can be simulated using the `ff` type.
+> Machine integers and booleans are simulated using the `ff` type.
 
-In what follows we use the the following conventions:
+**Conventions:**
 
-1. We use `x`,`y`,`z`,... for a variable of a finite field type.
+* `x`, `y`, `z`: Variables of type `ff`.
+* `v`, `v1`, `v2`: Concrete values.
+* `#i`, `#j`: **Constant variables** (e.g., loop indices).
 
-2. We use `v`, `v1`,`v2`,... for concrete values.
+A **Simple Expression** (`s`, `s1`, `s2`) is an atomic unit that can
+be a variable, a value, or a constant variable. A **Constant Simple
+Expression** is one that does not contain variables (it contains only
+values or constant variables).
 
-3. We use `#i`,`#j`,... for *constant variables* (such as loop
-   indices, etc).
+### Structure
 
-A *simple expression* is an expression that be any of the above, and
-is denoted by `s`, `s1`, `s2`, etc. A **constant** simple expression
-is simple expression that is not a variable (i.e, can be case 2 or
-case 3).
+A program consists of a set of functions. One function is designated
+as `main`, serving as the entry point for generating the SMT formula.
 
+#### Functions
 
-### Programs
-
-A program is a set of functions, and one is assumed to be the main,
-i.e., the one we use as the entry point to generate the SMT formula.
-
-### Functions
-
-A function definition is of the form
+A function definition follows this syntax:
 
 ```text
-def fname(X1:t,...,Xn:t) -> Y1:t,...,Yk:t {
+def fname(X1:t, ..., Xn:t) -> Y1:t, ..., Yk:t {
   body
 }
+
 ```
 
-Formal parameters and return parameters have the form `var:t`, meaning
-that `var` is the name and `t` is the type. All Xi must be different,
-and all Yi as well.
-
-The `body` is a sequence of instructions.
-
+* **Parameters:** Formal parameters (`X`) and return parameters (`Y`)
+  follow the format `name:type`.
+* **Uniqueness:** All parameter names (`Xi`) and return names (`Yi`)
+  must be distinct.
+* **Body:** `body` is a sequence of instructions.
 
 ### Expressions
 
-We group expressions by their kind, and briefly explain the
-corresponding semantics.
+In what follow we explain the supported expressions by category.
 
 #### Arithmetic
 
-The semantics of these operations is simply as the corresponding operations in the finite field.
+Semantics correspond to standard operations in the finite field .
 
-1. `s1`.
-2. `-s1`.
-3. `s1 + s2`.
-4. `s1 - s2`.
-5. `s1 * s2`.
-6. `s1 / s2`.
+1. `s1` (Identity)
+2. `-s1` (Negation)
+3. `s1 + s2`
+4. `s1 - s2`
+5. `s1 * s2`
+6. `s1 / s2` (Multiplication by modular inverse)
 
-#### Bitwise expression
+#### Bitwise Operations
 
-The semantics of these operations converts `si` to bit-vectors of `k`
-bits, applies the corresponding bitwise operation, and converts back
-to finite field.
+Semantics: The operands `si` are converted to `k`-bit vectors
+(standard unsigned integer representation), the operation is applied,
+and the result is converted back to a finite field element (modulo
+`P`).
 
-1. `s1 << s2`: left shift.
-2. `s1 >> s2`: right shift.
-3. `s1 & s2`: bitwise-and.
-4. `s1 | s2`: bitwise-or.
-5. `s1 ^ s2`: bitwise-xor.
-6. `~s1`: bitwise negation.
+1. `s1 << s2` (Left shift)
+2. `s1 >> s2` (Right shift)
+3. `s1 & s2` (Bitwise AND)
+4. `s1 | s2` (Bitwise OR)
+5. `s1 ^ s2` (Bitwise XOR)
+6. `~s1` (Bitwise NOT)
 
 > [!NOTE]
 >
@@ -119,26 +115,29 @@ to finite field.
 > Calculate the corresponding non-negative integer `x` and then
 > compute `x mod P`?
 
-#### Comparison expressions
+#### Comparisons
 
-Every operation has its semantic to the right. Here `<`, `>`, `>=` and
-`<=` are interpreted according to the order `mid+1,...,P-1,0,...,mid`
-where `mid=(p-1)/1`
+Semantics: Comparisons interpret field elements as signed
+integers. The order is defined as `mid+1, ..., P-1, 0, ..., mid`,
+where `mid = (P-1)/2`. Trueth value 
 
 > [!NOTE]
 >
 > The semantics on the right is not an encoding to SMT, it is just to
 > write it a bit formally.
 
-1. `s1=s2`: (s1=s2 -> result=1) and (~(s1=s2) -> result=0).
-2. `s1!=s2`: (s1=s2 -> result=0) and (~(s1=s2) -> result=1).
-3. `s1 > s2`: (s1>s2 -> result=1) and (~(s1>s2) -> result=0).
-4. `s1 < s2`: (s1<s2 -> result=1) and (~(s1<s2) -> result=0).
-5. `s1 >= s2`: (s1>=s2 -> result=1) and (~(s1>=s2) -> result=0).
-6. `s1 <= s2`: (s1<=s2 -> result=1) and (~(s1<=s2) -> result=0).
-7. `!s`: (s=0 -> result=1) and (~(s=0) -> result=0).
-8. `s1 || s2`: ((s1=0 and s2=0) -> result=0) and ((~(s1=0) or ~(s2=0)) -> result=1).
-9. `s1 && s2`: (~(s1=0) and ~(s2=0)) -> result=1) and (((s1=0) or (s2=0)) -> result=0).
+1. `True`: evaluates to `1`.
+2. `False`: evaluates to `0`.
+3. `s1=s2`: Equality. (s1=s2 -> result=1) and (~(s1=s2) -> result=0).
+4. `s1!=s2`: Inequality. (s1=s2 -> result=0) and (~(s1=s2) -> result=1).
+5. `s1 > s2`: Signed greater than. s1>s2 -> result=1) and (~(s1>s2) -> result=0).
+6. `s1 < s2`: Signed less than. (s1<s2 -> result=1) and (~(s1<s2) -> result=0).
+7. `s1 >= s2`: Signed greater or equal. (s1>=s2 -> result=1) and (~(s1>=s2) -> result=0).
+8. `s1 <= s2`: Signed less or equal. (s1<=s2 -> result=1) and (~(s1<=s2) -> result=0).
+9. `!s`: Logical NOT. (s=0 -> result=1) and (~(s=0) -> result=0).
+10. `s1 || s2`: Logical OR. ((s1=0 and s2=0) -> result=0) and ((~(s1=0) or ~(s2=0)) -> result=1).
+11. `s1 && s2`: Logical AND. (~(s1=0) and ~(s2=0)) -> result=1) and (((s1=0) or (s2=0)) -> result=0).
+
 
 ### Instructions
 
@@ -146,112 +145,94 @@ Next we describe the possible instructions supported in the language.
 
 Recall that a simple expression `s` is constant, if it does not
 involve variables (it can involve constant variables). We say that an
-expression `exp` is constant if all its simple expressions are
-constant.
+expression `exp` is a **constant expression** if all its simple
+expressions are constant.
 
 #### Assignment
-
-An assignment is of the following form:
 
 ```text
 x := exp
 ```
 
-It assigns the value of `exp` to `x`. Note that `exp` is any of the
-expressions described above (it cannot be compound).
-
+Assigns the result of `exp` to `x`. `exp` cannot be a compound
+expression (nested operations are not supported directly; intermediate
+variables must be used).
 
 #### Arrays
 
-1. `x := new_array N`: creates an array of `N` elements of type `ff`, where `N` is a constant.
-2. `x := y[s]`: extracts the value of `y[s]` into variable `x`.
-3. `x[s1] := s2`: sets the value of `x[s1]` to a simple expression `s2`.
-4. `x := cpy_array y`: `y` must be of array type, copies the array `y`
-   into `x` (old value of `x`, if any, is destroyed).
+1. `x := new_array N`: Allocates an array of `N` elements (type
+   `ff`). `N` must be a constant.
+2. `x := y[s]`: Reads `y` at index `s` into `x`.
+3. `x[s1] := s2`: Updates `x` at index `s1` with value `s2`.
+4. `x := cpy_array y`: Copies array `y` into `x`. The previous value
+   of `x` is overwritten. `y` must be an array.
 
-> [!NOTE] 
+> [!IMPORTANT]
 >
-> We should be aware that translating an array access/update `x[s]` to
-> formulas can be done in a compact way only when the index `s` is
-> constant simple-expression. There is no constant propagation, this
-> should be done independently as a preprocessing step.
+> Efficient translation of array access/update `x[s]` to SMT formulas
+> is only possible if the index `s` is a **Constant Simple
+> Expression**. 
 
 #### Conditionals
 
-1. `if s1=s2 { body } else { body }`: s1=s2 -> then branch, ~(s1=s2) -> else branch.
-2. `if s1!=s2 { body } else { body }`: ~(s1=s2) -> then branch, s1=s2 -> else branch.
+1. `if s1=s2 { body } else { body }`
+2. `if s1!=s2 { body } else { body }`
 
 > [!NOTE]
 >
-> Adding other kinds of comparison, like `>`, explicitly to the guard
-> does not simplify anything in the translation, since they all have
-> non-trivial encoding.
+> Only equality checks are supported in guards. Other comparisons
+> (e.g., `>`) must be computed beforehand or encoded, as they do not
+> simplify the SMT translation.
 
-#### Bounded loops
-
-A bounded loop is of the form:
+#### Bounded Loops
 
 ```text
-for(i,START,N,STEP) { body }
+for(i, START, N, STEP) { body }
 ```
 
-where `START`, `N`, and `STEP` are constant expressions.
+`START`, `N` (iteration count), and `STEP` must be **Constant
+Expressions**.
 
+**Semantics:**
 
-It should be interpreted as follows: 
+1. Evaluate `START`, `N`, and `STEP` to concrete values.
+2. Initialize loop counter `i = START`.
+3. Execute `body` `N` times. After each iteration, update `i := i +
+   STEP`.
 
-1. We first evaluate `START`, `N`, and `STEP` into their concrete
-   values `START_v`, `N_v`, and `STEP_v`. The evaluation is also done
-   in the symbolic execution, since they are constant expressions.
-   
-2. Start from `i=START_v`, and repeat `body` for `N_v` times where
-   after each time add `STEP_v` to `i`.
+Inside the loop body, the loop index is a **constant variable**
+accessed via `#i`.
 
-The loop index `i` is a constant variable, and inside `body` it can be
-used as `#i`.
-
->[!note]
+> [!NOTE]
 >
->The implementation is based on loop unrolling, where in every
->iteration there is a **constant** that is equivalent to the loop
->index. To refer to this constant value we can use `#i`. Nested loops
->**must** use different indices. We cannot define a constant `i`
->inside `body` (see [Constant definition](#constant-definition).
+> This construct relies on loop unrolling. In every unrolled
+> iteration, `#i` can be used to refer to the concrete index for that
+> step. Nested loops must use distinct index names.
 
-
->[!note]
->
->Should we allow `-(STEP)`? What to do if `i` goes negative in such
->case? Just treat it as a finite field negative (i.e., `-1` goes back
->to `P-1`)?
-
-#### Constant definition
-
-This is an instruction that allows defining a constant variable, and is
-of the form:
+#### Constant Definition
 
 ```text
-with_const i=exp { body }
+with_const i = exp { body }
 ```
 
-where `exp` is a constant expression. Inside `body` the value of `i`
-can be accessed as `#i` and is available at symbolic execution time as
-well (since `exp` is a constant expressions). We cannot redefine the
-constant `i` inside `body`, not have a loop with index called `i`.
+Defines a scope where `i` is a constant variable with the value of
+`exp` (which must be a constant expression). Inside `body`, this value
+is accessed as `#i`. Re-declaration of `i` within the body is
+forbidden. This also applies to loop indices sine they are constant
+variables.
 
->[!note] 
->
->This is useful for simulating `y:=x[#i+1]` using `with_const j=#i+1 {
->y:=[#j] }`, becuase array accesses use only simple expressions.
+#### Function Calls
 
+```text
+x1, ..., xk = fname(s1, ..., sn)
+```
 
-#### Function calls
+Executes `fname`. The return values (which may include arrays) are
+assigned to `x1, ..., xk`.
 
-1. `x1,...,xk = fname(s1,...,sn)`: variables `x1,...,xk` receive the
-   returned values, which can be arrays as well.
+### SSA Support
 
-### Support for SSA
-
-There is no direct support for SSA in the language, because it is
-structured, so we can always add the phi-functions at the end of the
-branches of an if-statement.
+The language does not natively support Static Single Assignment
+(SSA). It is structured code. However, the translator can simulate SSA
+by inserting phi-functions at control flow merge points (e.g., after
+`if/else` blocks).
