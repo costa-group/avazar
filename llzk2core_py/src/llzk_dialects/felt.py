@@ -47,6 +47,33 @@ class FeltUnary(Operation):
         return f"FeltUnary({self.result} = {self.op}({self.operand}){optional_type}"
 
 
+class FeltConst(Operation):
+    """
+    Const Operation.
+
+    Syntax: operation ::= `felt.const` $value attr-dict
+    """
+
+    def __init__(self, variable: SSAVar, constant: int):
+        self.result = variable
+        self.constant = constant
+
+    def dialect(self) -> Dialect:
+        return Dialect.felt_d
+
+    @classmethod
+    def parse(cls, line: str) -> 'FeltConst':
+        pattern = re.compile(r"\s*(?P<res>\S+)\s*=\s*felt.const\s*(?P<operand>\S+)\s*")
+        match = re.fullmatch(pattern, line)
+        if not match:
+            raise ValueError(f"Failed to parse FeltConst: {line}")
+        else:
+            return FeltConst(SSAVar.parse(match["res"]), int(match["operand"]))
+
+    def __repr__(self):
+        return f"FeltConst({self.result} = {self.constant})"
+
+
 
 class FeltBinary(Operation):
     """
@@ -88,15 +115,3 @@ class FeltBinary(Operation):
     def __repr__(self):
         optional_type = '' if len(self.types) == 0 else f' : {", ".join([repr(type_) for type_ in self.types])}'
         return f"FeltBinary({self.result} = {self.op}({self.lhs}, {self.rhs})){optional_type}"
-
-
-
-if __name__ == "__main__":
-    binary_op_simplified = FeltBinary.parse("   %0 = felt.mul %arg0, %arg1 ")
-    print(binary_op_simplified)
-
-    binary_op_complete = FeltBinary.parse("       %0 = felt.mul %arg0, %arg1 : !felt.type, !felt.type ")
-    print(binary_op_complete)
-
-    # wrong_operation = FeltBinary.parse("       %0 = felt.op %arg0, %arg1 : !felt.type, !felt.type ")
-    # print(binary_op_complete)

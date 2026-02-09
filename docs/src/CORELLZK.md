@@ -24,7 +24,7 @@ The LLZK programs that we can handled must have the following features:
   unfolded. Though we can handle [bounded loops](#bounded-loops). 
 
 
-## Definition of CORE LLZK
+## Informal definition of CORE LLZK
 
 We assume a prime number `P` and an architecture with `k` bits, such
 that `P < 2^k`. For a number `x`, its `FF-value` is a value between
@@ -215,7 +215,6 @@ inside `body` it can be used as `#i`.
 >Should we allow for negative `STEP`? What to do if `i` goes negative
 >in such case? Just treat it as a finite field negative (i.e., `-1`
 >goes back to `P-1`)?
-
 
 #### Constant definition
 
