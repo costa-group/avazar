@@ -215,7 +215,9 @@ used as `#i`.
 >The implementation is based on loop unrolling, where in every
 >iteration there is a **constant** that is equivalent to the loop
 >index. To refer to this constant value we can use `#i`. Nested loops
->**must** use different indices.
+>**must** use different indices. We cannot define a constant `i`
+>inside `body` (see [Constant definition](#constant-definition).
+
 
 >[!note]
 >
@@ -234,16 +236,19 @@ with_const i=exp { body }
 
 where `exp` is a constant expression. Inside `body` the value of `i`
 can be accessed as `#i` and is available at symbolic execution time as
-well (since `exp` is a constant expressions).
+well (since `exp` is a constant expressions). We cannot redefine the
+constant `i` inside `body`, not have a loop with index called `i`.
 
 >[!note] 
 >
 >This is useful for simulating `y:=x[#i+1]` using `with_const j=#i+1 {
 >y:=[#j] }`, becuase array accesses use only simple expressions.
 
+
 #### Function calls
 
-1. `x1,...,xk = fname(s1,...,sn)`: variables `x1,...,xk` receive the returned values, which can be arrays as well.
+1. `x1,...,xk = fname(s1,...,sn)`: variables `x1,...,xk` receive the
+   returned values, which can be arrays as well.
 
 ### Support for SSA
 
