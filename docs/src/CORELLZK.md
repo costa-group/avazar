@@ -66,40 +66,42 @@ and all Yi as well.
 
 The `body` is a sequence of instructions.
 
-### Instructions
 
-We group instructions by their kind, and briefly explain the corresponding semantics. We use the following conventions for names
+### Expressions
 
-1. we use `x`,`y`,`z`,... for a variable
-2. we use `v1`,`v2`,... for concrete values
-3. we use `#i`,`#j`,... for refering to the value of a loop index
-3. we use `s1`,`s2`,... for a simple expression that is a **variable over finite field**, a value, or a loop index
+We group expressions by their kind, and briefly explain the corresponding semantics. We use the following conventions for names
 
-> [!NOTE]
->
-> Simple expressions do not include array accesses.  
+1. We use `x`,`y`,`z`,... for a variable
+
+2. We use `v1`,`v2`,... for concrete values
+
+3. We use `#i`,`#j`,... for refering to what we call constant
+   variables. For example loop indices.
+
+4. we use `s1`,`s2`,... for a simple expression that is a **variable
+   over finite field**, a value, or a loop index
 
 #### Arithmetic
 
 The semantics of these operations is simply as the corresponding operations in the finite field.
 
-1. `x := s1`.
-2. `x := -s1`.
-3. `x := s1 + s2`.
-4. `x := s1 - s2`.
-5. `x := s1 * s2`.
-6. `x := s1 / s2`.
+1. `s1`.
+2. `-s1`.
+3. `s1 + s2`.
+4. `s1 - s2`.
+5. `s1 * s2`.
+6. `s1 / s2`.
 
-#### Bitwise operations
+#### Bitwise expression
 
 The semantics of these operations converts `si` to bit-vectors of `k` bits, applies the corresponding bitwise operation, and converts back to finite field.
 
-1. `x := s1 << s2`: left shift.
-2. `x := s1 >> s2`: right shift.
-3. `x := s1 & s2`: bitwise-and.
-4. `x := s1 | s2`: bitwise-or.
-5. `x := s1 ^ s2`: bitwise-xor.
-6. `x := ~s1`: bitwise negation.
+1. `s1 << s2`: left shift.
+2. `s1 >> s2`: right shift.
+3. `s1 & s2`: bitwise-and.
+4. `s1 | s2`: bitwise-or.
+5. `s1 ^ s2`: bitwise-xor.
+6. `~s1`: bitwise negation.
 
 > [!NOTE]
 >
@@ -107,7 +109,7 @@ The semantics of these operations converts `si` to bit-vectors of `k` bits, appl
 > Calculate the corresponding non-negative integer `x` and then
 > compute `x mod P`?
 
-#### Comparison operations
+#### Comparison expressions
 
 Every operation has its semantic to the right. Here `<`, `>`, `>=` and `<=` are interpreted according to the order `mid+1,...,P-1,0,...,mid` where `mid=(p-1)/1`
 
@@ -116,29 +118,49 @@ Every operation has its semantic to the right. Here `<`, `>`, `>=` and `<=` are 
 > The semantics on the right is not an encoding to SMT, it is just to
 > write it a bit formally.
 
-1. `x := s1=s2`: (s1=s2 -> x=1) and (~(s1=s2) -> x=0).
-2. `x := s1!=s2`: (s1=s2 -> x=0) and (~(s1=s2) -> x=1).
-3. `x := s1 > s2`: (s1>s2 -> x=1) and (~(s1>s2) -> x=0).
-4. `x := s1 < s2`: (s1<s2 -> x=1) and (~(s1<s2) -> x=0).
-5. `x := s1 >= s2`: (s1>=s2 -> x=1) and (~(s1>=s2) -> x=0).
-6. `x := s1 <= s2`: (s1<=s2 -> x=1) and (~(s1<=s2) -> x=0).
-7. `x := !s`: (s=0 -> x=1) and (~(s=0) -> x=0).
-8. `x := s1 || s2`: ((s1=0 and s2=0) -> x=0) and ((~(s1=0) or ~(s2=0)) -> x=1).
-9. `x := s1 && s2`: (~(s1=0) and ~(s2=0)) -> x=1) and (((s1=0) or (s2=0)) -> x=0).
+1. `s1=s2`: (s1=s2 -> result=1) and (~(s1=s2) -> result=0).
+2. `s1!=s2`: (s1=s2 -> result=0) and (~(s1=s2) -> result=1).
+3. `s1 > s2`: (s1>s2 -> result=1) and (~(s1>s2) -> result=0).
+4. `s1 < s2`: (s1<s2 -> result=1) and (~(s1<s2) -> result=0).
+5. `s1 >= s2`: (s1>=s2 -> result=1) and (~(s1>=s2) -> result=0).
+6. `s1 <= s2`: (s1<=s2 -> result=1) and (~(s1<=s2) -> result=0).
+7. `!s`: (s=0 -> result=1) and (~(s=0) -> result=0).
+8. `s1 || s2`: ((s1=0 and s2=0) -> result=0) and ((~(s1=0) or ~(s2=0)) -> result=1).
+9. `s1 && s2`: (~(s1=0) and ~(s2=0)) -> result=1) and (((s1=0) or (s2=0)) -> result=0).
+
+### Instructions
+
+Next we describe the possible instructions supported in the
+language. We say that a simple expression `s` is constant, if it does
+not involve variables (it can involve constant variables). We say that
+an expression `exp` is constant if all its simple expressions are
+constant.
+
+#### Assignment
+
+An assignment is of the following form:
+
+```text
+x := exp
+```
+
+It assigns the value of `exp` to `x`. Note that `exp` is any of the
+expressions described above (it cannot be compound).
+
 
 #### Arrays
 
-1. `x := array N`: creates an array of `N` elements of type `ff`, where `N` is a constant.
+1. `x := new_array N`: creates an array of `N` elements of type `ff`, where `N` is a constant.
 2. `x := y[s]`: extracts the value of `y[s]` into variable `x`.
 3. `x[s1] := s2`: sets the value of `x[s1]` to a simple expression `s2`.
-4. `x := y`: if `y` is of array type, copies the array `y` into `x` (old value of `x`, if any, is destroyed).
+4. `x := cpy_array y`: `y` must of of array type, copies the array `y` into `x` (old value of `x`, if any, is destroyed).
 
 > [!NOTE] 
 >
-> We should be aware that translating an array access `x[s]` to
-> formulas can be done in a compact way only when the index `s` is a
-> value. There is no constant propagation, this should be done
-> independently as a preprocessing step.
+> We should be aware that translating an array access/update `x[s]` to
+> formulas can be done in a compact way only when the index `s` is
+> constant simple-expression. There is no constant propagation, this
+> should be done independently as a preprocessing step.
 
 #### Conditionals
 
@@ -159,11 +181,19 @@ A bounded loop is of the form:
 for(i,START,N,STEP) { body }
 ```
 
-where `START`, `N`, and `STEP` are non-negative integer constants. It
-should be interpreted as follows: start from `i=START`, and repeat
-`body` for `N` times where after each time add `STEP` to `i`.
+where `START`, `N`, and `STEP` are constant expression.
 
-The loop index `i` is not a variable, but rather a constant value and
+
+It should be interpreted as follows: 
+
+1. We first evaluate `START`, `N`, and `STEP` into their concrete
+   values `START_v`, `N_v`, and `STEP_v`. The evaluation is also done
+   in the symbolic execution, since they are constant expressions.
+   
+2. Start from `i=START_v`, and repeat `body` for `N_v` times where
+   after each time add `STEP_v` to `i`.
+
+The loop index `i` is not a variable, but rather a constant variable and
 inside `body` it can be used as `#i`.
 
 >[!note]
@@ -173,11 +203,12 @@ inside `body` it can be used as `#i`.
 >index. To refer to this constant value we can use `#i`. Nested loops
 >**must** use different indices.
 
->[!important]
+>[!note]
 >
->Since `#i` is not a variable, it cannot appear in the encoding to
->SMT, we must use the corresponding value that is also available at
->symbolic execution time.
+>It is possible to allow `START`, `N`, and `STEP` be expressions that
+>depends only concrete values or constant expressions. For example, if
+>needed, we can support something like `for(i,1,10,1) { for(j,#i,10,1)
+>{...} }`.
 
 >[!note]
 >
@@ -186,15 +217,28 @@ inside `body` it can be used as `#i`.
 >goes back to `P-1`)?
 
 
->[!note]
+#### Constant definition
+
+This is an instruction that allows defining a constant value, and is of the form
+
+```text
+with_const i=e { body }
+```
+
+where `e` is a constant expression. Inside body the value of `i` can
+be accessed as `#i` and it is available at symbolic execution time as
+well, since `e` is a constant expressions.
+
+>[!note] 
 >
->Handling bounded loops was not promised in the project proposal.
+>This is useful for simulating `y:=x[#i+1]` as `with_const j=#i+1 {
+>y:=[#j] }`, becuase array accesses use only simple expressions.
 
 #### Function calls
 
 1. `x1,...,xk = fname(s1,...,sn)`: variables `x1,...,xk` receive the returned values, which can be arrays as well.
 
-#### Support for SSA
+### Support for SSA
 
 There is no direct support for SSA in the language, because it is
 structured, so we can always add the phi-functions at the end of the
