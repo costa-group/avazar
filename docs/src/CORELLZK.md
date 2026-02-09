@@ -55,8 +55,8 @@ upon usage.
 
 A **Simple Expression** (`s`, `s1`, `s2`) is an atomic unit that can
 be a variable, a value, or a constant variable. A **Constant Simple
-Expression** is one that does not contain variables (it contains only
-values or constant variables).
+Expression** is one that is not a variable (it can be only a value or
+a constant variable).
 
 ### Structure
 
