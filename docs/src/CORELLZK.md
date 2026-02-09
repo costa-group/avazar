@@ -117,9 +117,9 @@ and the result is converted back to a finite field element (modulo
 
 ##### Comparisons
 
-Semantics: Comparisons interpret field elements as signed
-integers. The order is defined as `mid+1, ..., P-1, 0, ..., mid`,
-where `mid = (P-1)/2`. Trueth value 
+Comparisons interpret field elements as signed integers. The
+order is defined as `mid+1, ..., P-1, 0, ..., mid`, where
+`mid = (P-1)/2`.
 
 > [!NOTE]
 >
@@ -128,16 +128,15 @@ where `mid = (P-1)/2`. Trueth value
 
 1. `True`: evaluates to `1`.
 2. `False`: evaluates to `0`.
-3. `s1=s2`: Equality. (s1=s2 -> result=1) and (~(s1=s2) -> result=0).
-4. `s1!=s2`: Inequality. (s1=s2 -> result=0) and (~(s1=s2) -> result=1).
-5. `s1 > s2`: Signed greater than. s1>s2 -> result=1) and (~(s1>s2) -> result=0).
-6. `s1 < s2`: Signed less than. (s1<s2 -> result=1) and (~(s1<s2) -> result=0).
-7. `s1 >= s2`: Signed greater or equal. (s1>=s2 -> result=1) and (~(s1>=s2) -> result=0).
-8. `s1 <= s2`: Signed less or equal. (s1<=s2 -> result=1) and (~(s1<=s2) -> result=0).
-9. `!s`: Logical NOT. (s=0 -> result=1) and (~(s=0) -> result=0).
-10. `s1 || s2`: Logical OR. ((s1=0 and s2=0) -> result=0) and ((~(s1=0) or ~(s2=0)) -> result=1).
-11. `s1 && s2`: Logical AND. (~(s1=0) and ~(s2=0)) -> result=1) and (((s1=0) or (s2=0)) -> result=0).
-
+3. `s1=s2`: Equality. `(s1=s2 -> result=1) and (~(s1=s2) -> result=0)`.
+4. `s1!=s2`: Inequality. `(s1=s2 -> result=0) and (~(s1=s2) -> result=1)`.
+5. `s1 > s2`: Signed greater than. `s1>s2 -> result=1) and (~(s1>s2) -> result=0)`.
+6. `s1 < s2`: Signed less than. `(s1<s2 -> result=1) and (~(s1<s2) -> result=0)`.
+7. `s1 >= s2`: Signed greater or equal. `(s1>=s2 -> result=1) and (~(s1>=s2) -> result=0)`.
+8. `s1 <= s2`: Signed less or equal. `(s1<=s2 -> result=1) and (~(s1<=s2) -> result=0)`.
+9. `!s`: Logical NOT. `(s=0 -> result=1) and (~(s=0) -> result=0)`.
+10. `s1 || s2`: Logical OR. `((s1=0 and s2=0) -> result=0) and ((~(s1=0) or ~(s2=0)) -> result=1)`.
+11. `s1 && s2`: Logical AND. `(~(s1=0) and ~(s2=0)) -> result=1) and (((s1=0) or (s2=0)) -> result=0)`.
 
 #### Instructions
 
@@ -171,7 +170,7 @@ variables must be used).
 >
 > Efficient translation of array access/update `x[s]` to SMT formulas
 > is only possible if the index `s` is a **Constant Simple
-> Expression**. 
+> Expression**.
 
 ##### Conditionals
 
@@ -227,7 +226,7 @@ is accessed as `#i`. Re-declaration of `i` within the body is
 forbidden. This also applies to loop indices sine they are constant
 variables.
 
->[!note] 
+>[!note]
 >
 >This construct is useful for simulating `y:=x[#i+1]` using
 >`with_const j=#i+1 { y:=[#j] }`, becuase array accesses use only
