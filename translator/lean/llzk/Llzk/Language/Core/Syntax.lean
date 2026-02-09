@@ -1,9 +1,9 @@
 import Llzk.Basic
 import Init.Data.BitVec
 
-/- This is a namespace for the core language, to disnguish it from future
+/- This is a namespace for the core language, to distinguish it from future
    extensions such as supporting arrays (in case they incorporated via program
-   transfromations, otherwise ... ) -/
+   transformations, otherwise ... ) -/
 
 namespace Llzk.Language.Core
 
@@ -150,7 +150,7 @@ abbrev ProgVarIDSet := Std.TreeSet ProgVarID
 def emptyProgVarIDSet : ProgVarIDSet := Std.TreeSet.empty
 
 /- The following functions are used to collect the program variables
-   into a set. This is needed becuase for now we do not require variables
+   into a set. This is needed because for now we do not require variables
    to be declared before they are used.
 -/
 def collect_prog_vars_step {c : ZKConfig}
