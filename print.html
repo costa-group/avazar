@@ -279,9 +279,9 @@ Calculate the corresponding non-negative integer <code>x</code> and then
 compute <code>x mod P</code>?</p>
 </blockquote>
 <h5 id="comparisons"><a class="header" href="#comparisons">Comparisons</a></h5>
-<p>Semantics: Comparisons interpret field elements as signed
-integers. The order is defined as <code>mid+1, ..., P-1, 0, ..., mid</code>,
-where <code>mid = (P-1)/2</code>. Trueth value </p>
+<p>Comparisons interpret field elements as signed integers. The
+order is defined as <code>mid+1, ..., P-1, 0, ..., mid</code>, where
+<code>mid = (P-1)/2</code>.</p>
 <blockquote>
 <p>[!NOTE]</p>
 <p>The semantics on the right is not an encoding to SMT, it is just to
@@ -290,15 +290,15 @@ write it a bit formally.</p>
 <ol>
 <li><code>True</code>: evaluates to <code>1</code>.</li>
 <li><code>False</code>: evaluates to <code>0</code>.</li>
-<li><code>s1=s2</code>: Equality. (s1=s2 -&gt; result=1) and (~(s1=s2) -&gt; result=0).</li>
-<li><code>s1!=s2</code>: Inequality. (s1=s2 -&gt; result=0) and (~(s1=s2) -&gt; result=1).</li>
-<li><code>s1 &gt; s2</code>: Signed greater than. s1&gt;s2 -&gt; result=1) and (~(s1&gt;s2) -&gt; result=0).</li>
-<li><code>s1 &lt; s2</code>: Signed less than. (s1&lt;s2 -&gt; result=1) and (~(s1&lt;s2) -&gt; result=0).</li>
-<li><code>s1 &gt;= s2</code>: Signed greater or equal. (s1&gt;=s2 -&gt; result=1) and (~(s1&gt;=s2) -&gt; result=0).</li>
-<li><code>s1 &lt;= s2</code>: Signed less or equal. (s1&lt;=s2 -&gt; result=1) and (~(s1&lt;=s2) -&gt; result=0).</li>
-<li><code>!s</code>: Logical NOT. (s=0 -&gt; result=1) and (~(s=0) -&gt; result=0).</li>
-<li><code>s1 || s2</code>: Logical OR. ((s1=0 and s2=0) -&gt; result=0) and ((~(s1=0) or ~(s2=0)) -&gt; result=1).</li>
-<li><code>s1 &amp;&amp; s2</code>: Logical AND. (~(s1=0) and ~(s2=0)) -&gt; result=1) and (((s1=0) or (s2=0)) -&gt; result=0).</li>
+<li><code>s1=s2</code>: Equality. <code>(s1=s2 -&gt; result=1) and (~(s1=s2) -&gt; result=0)</code>.</li>
+<li><code>s1!=s2</code>: Inequality. <code>(s1=s2 -&gt; result=0) and (~(s1=s2) -&gt; result=1)</code>.</li>
+<li><code>s1 &gt; s2</code>: Signed greater than. <code>s1&gt;s2 -&gt; result=1) and (~(s1&gt;s2) -&gt; result=0)</code>.</li>
+<li><code>s1 &lt; s2</code>: Signed less than. <code>(s1&lt;s2 -&gt; result=1) and (~(s1&lt;s2) -&gt; result=0)</code>.</li>
+<li><code>s1 &gt;= s2</code>: Signed greater or equal. <code>(s1&gt;=s2 -&gt; result=1) and (~(s1&gt;=s2) -&gt; result=0)</code>.</li>
+<li><code>s1 &lt;= s2</code>: Signed less or equal. <code>(s1&lt;=s2 -&gt; result=1) and (~(s1&lt;=s2) -&gt; result=0)</code>.</li>
+<li><code>!s</code>: Logical NOT. <code>(s=0 -&gt; result=1) and (~(s=0) -&gt; result=0)</code>.</li>
+<li><code>s1 || s2</code>: Logical OR. <code>((s1=0 and s2=0) -&gt; result=0) and ((~(s1=0) or ~(s2=0)) -&gt; result=1)</code>.</li>
+<li><code>s1 &amp;&amp; s2</code>: Logical AND. <code>(~(s1=0) and ~(s2=0)) -&gt; result=1) and (((s1=0) or (s2=0)) -&gt; result=0)</code>.</li>
 </ol>
 <h4 id="instructions"><a class="header" href="#instructions">Instructions</a></h4>
 <p>Next we describe the possible instructions supported in the language.</p>
@@ -325,7 +325,7 @@ of <code>x</code> is overwritten. <code>y</code> must be an array.</li>
 <p>[!IMPORTANT]</p>
 <p>Efficient translation of array access/update <code>x[s]</code> to SMT formulas
 is only possible if the index <code>s</code> is a <strong>Constant Simple
-Expression</strong>. </p>
+Expression</strong>.</p>
 </blockquote>
 <h5 id="conditionals"><a class="header" href="#conditionals">Conditionals</a></h5>
 <ol>
@@ -372,7 +372,7 @@ is accessed as <code>#i</code>. Re-declaration of <code>i</code> within the body
 forbidden. This also applies to loop indices sine they are constant
 variables.</p>
 <blockquote>
-<p>[!note] </p>
+<p>[!note]</p>
 <p>This construct is useful for simulating <code>y:=x[#i+1]</code> using
 <code>with_const j=#i+1 { y:=[#j] }</code>, becuase array accesses use only
 simple expressions (so <code>y:=x[#i+1]</code> is not allowed).</p>
