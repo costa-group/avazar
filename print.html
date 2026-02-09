@@ -230,37 +230,43 @@ i.e., the one we use as the entry point to generate the SMT formula.</p>
 that <code>var</code> is the name and <code>t</code> is the type. All Xi must be different,
 and all Yi as well.</p>
 <p>The <code>body</code> is a sequence of instructions.</p>
-<h3 id="instructions"><a class="header" href="#instructions">Instructions</a></h3>
-<p>We group instructions by their kind, and briefly explain the corresponding semantics. We use the following conventions for names</p>
+<h3 id="expressions"><a class="header" href="#expressions">Expressions</a></h3>
+<p>We group expressions by their kind, and briefly explain the corresponding semantics. We use the following conventions for names</p>
 <ol>
-<li>we use <code>x</code>,<code>y</code>,<code>z</code>,... for a variable</li>
-<li>we use <code>v1</code>,<code>v2</code>,... for concrete values</li>
-<li>we use <code>#i</code>,<code>#j</code>,... for refering to the value of a loop index</li>
-<li>we use <code>s1</code>,<code>s2</code>,... for a simple expression that is a <strong>variable over finite field</strong>, a value, or a loop index</li>
+<li>
+<p>We use <code>x</code>,<code>y</code>,<code>z</code>,... for a variable</p>
+</li>
+<li>
+<p>We use <code>v1</code>,<code>v2</code>,... for concrete values</p>
+</li>
+<li>
+<p>We use <code>#i</code>,<code>#j</code>,... for refering to what we call constant
+variables. For example loop indices.</p>
+</li>
+<li>
+<p>we use <code>s1</code>,<code>s2</code>,... for a simple expression that is a <strong>variable
+over finite field</strong>, a value, or a loop index</p>
+</li>
 </ol>
-<blockquote>
-<p>[!NOTE]</p>
-<p>Simple expressions do not include array accesses.</p>
-</blockquote>
 <h4 id="arithmetic"><a class="header" href="#arithmetic">Arithmetic</a></h4>
 <p>The semantics of these operations is simply as the corresponding operations in the finite field.</p>
 <ol>
-<li><code>x := s1</code>.</li>
-<li><code>x := -s1</code>.</li>
-<li><code>x := s1 + s2</code>.</li>
-<li><code>x := s1 - s2</code>.</li>
-<li><code>x := s1 * s2</code>.</li>
-<li><code>x := s1 / s2</code>.</li>
+<li><code>s1</code>.</li>
+<li><code>-s1</code>.</li>
+<li><code>s1 + s2</code>.</li>
+<li><code>s1 - s2</code>.</li>
+<li><code>s1 * s2</code>.</li>
+<li><code>s1 / s2</code>.</li>
 </ol>
-<h4 id="bitwise-operations"><a class="header" href="#bitwise-operations">Bitwise operations</a></h4>
+<h4 id="bitwise-expression"><a class="header" href="#bitwise-expression">Bitwise expression</a></h4>
 <p>The semantics of these operations converts <code>si</code> to bit-vectors of <code>k</code> bits, applies the corresponding bitwise operation, and converts back to finite field.</p>
 <ol>
-<li><code>x := s1 &lt;&lt; s2</code>: left shift.</li>
-<li><code>x := s1 &gt;&gt; s2</code>: right shift.</li>
-<li><code>x := s1 &amp; s2</code>: bitwise-and.</li>
-<li><code>x := s1 | s2</code>: bitwise-or.</li>
-<li><code>x := s1 ^ s2</code>: bitwise-xor.</li>
-<li><code>x := ~s1</code>: bitwise negation.</li>
+<li><code>s1 &lt;&lt; s2</code>: left shift.</li>
+<li><code>s1 &gt;&gt; s2</code>: right shift.</li>
+<li><code>s1 &amp; s2</code>: bitwise-and.</li>
+<li><code>s1 | s2</code>: bitwise-or.</li>
+<li><code>s1 ^ s2</code>: bitwise-xor.</li>
+<li><code>~s1</code>: bitwise negation.</li>
 </ol>
 <blockquote>
 <p>[!NOTE]</p>
@@ -268,7 +274,7 @@ and all Yi as well.</p>
 Calculate the corresponding non-negative integer <code>x</code> and then
 compute <code>x mod P</code>?</p>
 </blockquote>
-<h4 id="comparison-operations"><a class="header" href="#comparison-operations">Comparison operations</a></h4>
+<h4 id="comparison-expressions"><a class="header" href="#comparison-expressions">Comparison expressions</a></h4>
 <p>Every operation has its semantic to the right. Here <code>&lt;</code>, <code>&gt;</code>, <code>&gt;=</code> and <code>&lt;=</code> are interpreted according to the order <code>mid+1,...,P-1,0,...,mid</code> where <code>mid=(p-1)/1</code></p>
 <blockquote>
 <p>[!NOTE]</p>
@@ -276,29 +282,41 @@ compute <code>x mod P</code>?</p>
 write it a bit formally.</p>
 </blockquote>
 <ol>
-<li><code>x := s1=s2</code>: (s1=s2 -&gt; x=1) and (~(s1=s2) -&gt; x=0).</li>
-<li><code>x := s1!=s2</code>: (s1=s2 -&gt; x=0) and (~(s1=s2) -&gt; x=1).</li>
-<li><code>x := s1 &gt; s2</code>: (s1&gt;s2 -&gt; x=1) and (~(s1&gt;s2) -&gt; x=0).</li>
-<li><code>x := s1 &lt; s2</code>: (s1&lt;s2 -&gt; x=1) and (~(s1&lt;s2) -&gt; x=0).</li>
-<li><code>x := s1 &gt;= s2</code>: (s1&gt;=s2 -&gt; x=1) and (~(s1&gt;=s2) -&gt; x=0).</li>
-<li><code>x := s1 &lt;= s2</code>: (s1&lt;=s2 -&gt; x=1) and (~(s1&lt;=s2) -&gt; x=0).</li>
-<li><code>x := !s</code>: (s=0 -&gt; x=1) and (~(s=0) -&gt; x=0).</li>
-<li><code>x := s1 || s2</code>: ((s1=0 and s2=0) -&gt; x=0) and ((~(s1=0) or ~(s2=0)) -&gt; x=1).</li>
-<li><code>x := s1 &amp;&amp; s2</code>: (~(s1=0) and ~(s2=0)) -&gt; x=1) and (((s1=0) or (s2=0)) -&gt; x=0).</li>
+<li><code>s1=s2</code>: (s1=s2 -&gt; result=1) and (~(s1=s2) -&gt; result=0).</li>
+<li><code>s1!=s2</code>: (s1=s2 -&gt; result=0) and (~(s1=s2) -&gt; result=1).</li>
+<li><code>s1 &gt; s2</code>: (s1&gt;s2 -&gt; result=1) and (~(s1&gt;s2) -&gt; result=0).</li>
+<li><code>s1 &lt; s2</code>: (s1&lt;s2 -&gt; result=1) and (~(s1&lt;s2) -&gt; result=0).</li>
+<li><code>s1 &gt;= s2</code>: (s1&gt;=s2 -&gt; result=1) and (~(s1&gt;=s2) -&gt; result=0).</li>
+<li><code>s1 &lt;= s2</code>: (s1&lt;=s2 -&gt; result=1) and (~(s1&lt;=s2) -&gt; result=0).</li>
+<li><code>!s</code>: (s=0 -&gt; result=1) and (~(s=0) -&gt; result=0).</li>
+<li><code>s1 || s2</code>: ((s1=0 and s2=0) -&gt; result=0) and ((~(s1=0) or ~(s2=0)) -&gt; result=1).</li>
+<li><code>s1 &amp;&amp; s2</code>: (~(s1=0) and ~(s2=0)) -&gt; result=1) and (((s1=0) or (s2=0)) -&gt; result=0).</li>
 </ol>
+<h3 id="instructions"><a class="header" href="#instructions">Instructions</a></h3>
+<p>Next we describe the possible instructions supported in the
+language. We say that a simple expression <code>s</code> is constant, if it does
+not involve variables (it can involve constant variables). We say that
+an expression <code>exp</code> is constant if all its simple expressions are
+constant.</p>
+<h4 id="assignment"><a class="header" href="#assignment">Assignment</a></h4>
+<p>An assignment is of the following form:</p>
+<pre><code class="language-text">x := exp
+</code></pre>
+<p>It assigns the value of <code>exp</code> to <code>x</code>. Note that <code>exp</code> is any of the
+expressions described above (it cannot be compound).</p>
 <h4 id="arrays"><a class="header" href="#arrays">Arrays</a></h4>
 <ol>
-<li><code>x := array N</code>: creates an array of <code>N</code> elements of type <code>ff</code>, where <code>N</code> is a constant.</li>
+<li><code>x := new_array N</code>: creates an array of <code>N</code> elements of type <code>ff</code>, where <code>N</code> is a constant.</li>
 <li><code>x := y[s]</code>: extracts the value of <code>y[s]</code> into variable <code>x</code>.</li>
 <li><code>x[s1] := s2</code>: sets the value of <code>x[s1]</code> to a simple expression <code>s2</code>.</li>
-<li><code>x := y</code>: if <code>y</code> is of array type, copies the array <code>y</code> into <code>x</code> (old value of <code>x</code>, if any, is destroyed).</li>
+<li><code>x := cpy_array y</code>: <code>y</code> must of of array type, copies the array <code>y</code> into <code>x</code> (old value of <code>x</code>, if any, is destroyed).</li>
 </ol>
 <blockquote>
 <p>[!NOTE] </p>
-<p>We should be aware that translating an array access <code>x[s]</code> to
-formulas can be done in a compact way only when the index <code>s</code> is a
-value. There is no constant propagation, this should be done
-independently as a preprocessing step.</p>
+<p>We should be aware that translating an array access/update <code>x[s]</code> to
+formulas can be done in a compact way only when the index <code>s</code> is
+constant simple-expression. There is no constant propagation, this
+should be done independently as a preprocessing step.</p>
 </blockquote>
 <h4 id="conditionals"><a class="header" href="#conditionals">Conditionals</a></h4>
 <ol>
@@ -315,10 +333,20 @@ non-trivial encoding.</p>
 <p>A bounded loop is of the form:</p>
 <pre><code class="language-text">for(i,START,N,STEP) { body }
 </code></pre>
-<p>where <code>START</code>, <code>N</code>, and <code>STEP</code> are non-negative integer constants. It
-should be interpreted as follows: start from <code>i=START</code>, and repeat
-<code>body</code> for <code>N</code> times where after each time add <code>STEP</code> to <code>i</code>.</p>
-<p>The loop index <code>i</code> is not a variable, but rather a constant value and
+<p>where <code>START</code>, <code>N</code>, and <code>STEP</code> are constant expression.</p>
+<p>It should be interpreted as follows: </p>
+<ol>
+<li>
+<p>We first evaluate <code>START</code>, <code>N</code>, and <code>STEP</code> into their concrete
+values <code>START_v</code>, <code>N_v</code>, and <code>STEP_v</code>. The evaluation is also done
+in the symbolic execution, since they are constant expressions.</p>
+</li>
+<li>
+<p>Start from <code>i=START_v</code>, and repeat <code>body</code> for <code>N_v</code> times where
+after each time add <code>STEP_v</code> to <code>i</code>.</p>
+</li>
+</ol>
+<p>The loop index <code>i</code> is not a variable, but rather a constant variable and
 inside <code>body</code> it can be used as <code>#i</code>.</p>
 <blockquote>
 <p>[!note]</p>
@@ -328,10 +356,10 @@ index. To refer to this constant value we can use <code>#i</code>. Nested loops
 <strong>must</strong> use different indices.</p>
 </blockquote>
 <blockquote>
-<p>[!important]</p>
-<p>Since <code>#i</code> is not a variable, it cannot appear in the encoding to
-SMT, we must use the corresponding value that is also available at
-symbolic execution time.</p>
+<p>[!note]</p>
+<p>It is possible to allow <code>START</code>, <code>N</code>, and <code>STEP</code> be expressions that
+depends only concrete values or constant expressions. For example, if
+needed, we can support something like <code>for(i,1,10,1) { for(j,#i,10,1) {...} }</code>.</p>
 </blockquote>
 <blockquote>
 <p>[!note]</p>
@@ -339,11 +367,22 @@ symbolic execution time.</p>
 in such case? Just treat it as a finite field negative (i.e., <code>-1</code>
 goes back to <code>P-1</code>)?</p>
 </blockquote>
+<h4 id="constant-definition"><a class="header" href="#constant-definition">Constant definition</a></h4>
+<p>This is an instruction that allows defining a constant value, and is of the form</p>
+<pre><code class="language-text">with_const i=e { body }
+</code></pre>
+<p>where <code>e</code> is a constant expression. Inside body the value of <code>i</code> can
+be accessed as <code>#i</code> and it is available at symbolic execution time as
+well, since <code>e</code> is a constant expressions.</p>
+<blockquote>
+<p>[!note] </p>
+<p>This is useful for simulating <code>y:=x[#i+1]</code> as <code>with_const j=#i+1 { y:=[#j] }</code>, becuase array accesses use only simple expressions.</p>
+</blockquote>
 <h4 id="function-calls"><a class="header" href="#function-calls">Function calls</a></h4>
 <ol>
 <li><code>x1,...,xk = fname(s1,...,sn)</code>: variables <code>x1,...,xk</code> receive the returned values, which can be arrays as well.</li>
 </ol>
-<h4 id="support-for-ssa"><a class="header" href="#support-for-ssa">Support for SSA</a></h4>
+<h3 id="support-for-ssa"><a class="header" href="#support-for-ssa">Support for SSA</a></h3>
 <p>There is no direct support for SSA in the language, because it is
 structured, so we can always add the phi-functions at the end of the
 branches of an if-statement.</p>
