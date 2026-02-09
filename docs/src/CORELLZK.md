@@ -209,6 +209,12 @@ accessed via `#i`.
 > iteration, `#i` can be used to refer to the concrete index for that
 > step. Nested loops must use distinct index names.
 
+>[!note]
+>
+>Should we allow `-(STEP)`? What to do if `i` goes negative in such
+>case? Just treat it as a finite field negative (i.e., `-1` goes back
+>to `P-1`)?
+
 ##### Constant Definition
 
 ```text
