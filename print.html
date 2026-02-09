@@ -363,7 +363,8 @@ used as <code>#i</code>.</p>
 <p>The implementation is based on loop unrolling, where in every
 iteration there is a <strong>constant</strong> that is equivalent to the loop
 index. To refer to this constant value we can use <code>#i</code>. Nested loops
-<strong>must</strong> use different indices.</p>
+<strong>must</strong> use different indices. We cannot define a constant <code>i</code>
+inside <code>body</code> (see <a href="CORELLZK.html#constant-definition">Constant definition</a>.</p>
 </blockquote>
 <blockquote>
 <p>[!note]</p>
@@ -378,14 +379,16 @@ of the form:</p>
 </code></pre>
 <p>where <code>exp</code> is a constant expression. Inside <code>body</code> the value of <code>i</code>
 can be accessed as <code>#i</code> and is available at symbolic execution time as
-well (since <code>exp</code> is a constant expressions).</p>
+well (since <code>exp</code> is a constant expressions). We cannot redefine the
+constant <code>i</code> inside <code>body</code>, not have a loop with index called <code>i</code>.</p>
 <blockquote>
 <p>[!note] </p>
 <p>This is useful for simulating <code>y:=x[#i+1]</code> using <code>with_const j=#i+1 { y:=[#j] }</code>, becuase array accesses use only simple expressions.</p>
 </blockquote>
 <h4 id="function-calls"><a class="header" href="#function-calls">Function calls</a></h4>
 <ol>
-<li><code>x1,...,xk = fname(s1,...,sn)</code>: variables <code>x1,...,xk</code> receive the returned values, which can be arrays as well.</li>
+<li><code>x1,...,xk = fname(s1,...,sn)</code>: variables <code>x1,...,xk</code> receive the
+returned values, which can be arrays as well.</li>
 </ol>
 <h3 id="support-for-ssa"><a class="header" href="#support-for-ssa">Support for SSA</a></h3>
 <p>There is no direct support for SSA in the language, because it is
