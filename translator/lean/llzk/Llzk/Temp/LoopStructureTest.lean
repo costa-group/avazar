@@ -5,6 +5,7 @@
 inductive Com where
   | skip : Com
   | cond (t e : List Com) : Com
+  | loope (start rep : Nat ) (body: List Com) : Com
   | loop (start rep : Nat ) (body: List Com) : Com
 
 mutual
