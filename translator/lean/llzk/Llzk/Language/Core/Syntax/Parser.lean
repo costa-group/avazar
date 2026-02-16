@@ -361,16 +361,18 @@ mutual
       let _ ← expectSymbol '='
       let expr ← parseExpr
       return (Com.assign emptyCMD v expr)
-    | _ => throw (IO.userError s!"Expected a variable on the left-hand side of assignment, got {varTk.token}")
+    | _ => throw (IO.userError
+                  s!"Expected a variable on the left-hand side of assignment, got {varTk.token}")
 
   partial def parseArrayNew {c: ZKConfig}: ParserM (Com c) := do
     let _ ← advance -- consume 'array.new' keyword
-    let sizeTk ← parseExpr
+    let sizeTk ← parseSimpleExpr
     let outTk ← advance
     match outTk.token with
     | Token.ident out =>
       return (Com.new_array emptyCMD out sizeTk)
-    | _ => throw (IO.userError s!"Expected an identifier for output variable, got {outTk.token}")
+    | _ => throw (IO.userError
+                    s!"Expected an identifier for output variable, got {outTk.token}")
 
   partial def parseArrayRead {c: ZKConfig}: ParserM (Com c) := do
     let _ ← advance -- consume 'array.read' keyword
@@ -385,7 +387,8 @@ mutual
       | Token.ident out =>
         return (Com.read_array emptyCMD out a indexExpr)
       | _ => throw (IO.userError s!"Expected an identifier for output variable, got {outTk.token}")
-    | _ => throw (IO.userError s!"Expected an identifier for array variable, got {arrayVarTk.token}")
+    | _ => throw (IO.userError
+                    s!"Expected an identifier for array variable, got {arrayVarTk.token}")
 
   partial def parseArrayWrite {c: ZKConfig}: ParserM (Com c) := do
     let _ ← advance -- consume 'array.write' keyword
@@ -397,7 +400,8 @@ mutual
       let indexExpr ← parseSimpleExpr
       let _ ← expectSymbol ']'
       return (Com.write_array emptyCMD a indexExpr seTk)
-    | _ => throw (IO.userError s!"Expected an identifier for array variable, got {arrayVarTk.token}")
+    | _ => throw (IO.userError
+                    s!"Expected an identifier for array variable, got {arrayVarTk.token}")
 
   partial def parseArrayCopy {c: ZKConfig}: ParserM (Com c) := do
     let _ ← advance -- consume 'array.copy' keyword
@@ -406,7 +410,9 @@ mutual
     match outTk.token, inTk.token with
     | Token.ident out, Token.ident a =>
       return (Com.copy_array emptyCMD out a)
-    | _,_ => throw (IO.userError s!"Expected identifiers for array variables, got {outTk.token} and {inTk.token}")
+    | _,_ => throw
+               (IO.userError
+                  s!"Expected identifiers for array variables, got {outTk.token} and {inTk.token}")
 
   partial def parseSkip {c: ZKConfig}: ParserM (Com c) := do
     let _ ← advance -- consume 'skip' keyword

@@ -20,7 +20,7 @@ structure SemConfig (c : ZKConfig) where
 
 -- Manually define how to print SemConfig
 instance {c : ZKConfig} : Repr (SemConfig c) where
-  reprPrec config _ := s!"SemConfig \{ oracle := <function> }"
+  reprPrec _ _ := s!"SemConfig \{ oracle := <function> }"
 
 
 /- A type for arrays -/
@@ -115,6 +115,13 @@ def evalSimpleExprToFF {c : ZKConfig} (st : State c) (s : SimpleExpr c) : Except
     | Except.error err => Except.error err
   | .cvar id => getCVar st.cvars id
   | .val v => Except.ok v
+
+/- A function for evaluating constant simple expressions -/
+def evalConstSimpleExpr {c : ZKConfig}
+    (st : State c) (s : SimpleExpr c) : Except String (FF c) := do
+   -- Clear variable environment to ensure const-ness
+  let st' := { st with vars := emptyEnv c}
+  evalSimpleExprToFF st' s
 
 /- -/
 def evalSimpleExprToValue {c : ZKConfig}
@@ -338,8 +345,8 @@ def evalAssign {c : ZKConfig}
 
 /- id := new Array(size) -/
 def evalNewArray {c : ZKConfig}
-    (st : State c) (id : VarID) (size : Expr c) : Except String (State c) := do
-  let sizeVal ← evalConstExpr st size
+    (st : State c) (id : VarID) (size : SimpleExpr c) : Except String (State c) := do
+  let sizeVal ← evalConstSimpleExpr st size
   let arr := (List.replicate sizeVal.val (0 : FF c)).toArray -- initialize with zeros
   let newAEnv := setVar st.vars id (Value.array arr)
   Except.ok { st with vars := newAEnv }

@@ -88,7 +88,7 @@ inductive Com (c : ZKConfig) where
   -- for (i,start,rep,step) { body }
   | loop (md: CmdMetaData) (idx: VarID) (start : FF c) (rep : ℕ) (step: FF c) (body: List (Com c))
   -- size is supposed to be a constant expression, runtime error should be thrown if it is not.
-  | new_array (md: CmdMetaData) (out: VarID) (size: Expr c)
+  | new_array (md: CmdMetaData) (out: VarID) (size: SimpleExpr c)
   -- out := arr[idx]
   | read_array (md: CmdMetaData) (out: VarID) (arr: VarID) (idx: SimpleExpr c)
   -- out[idx] := value
@@ -241,7 +241,8 @@ def formatCom {c : ZKConfig} (cmd : Com c) (level : Nat) (sp : String) : String 
   | .if_stmt _ cond tb eb =>
       let tbStr := formatBody tb (level + 1)
       let ebStr := formatBody eb (level + 1)
-      s!"if ({cond}) " ++ "{\n" ++ s!"{tbStr}" ++ s!"{sp}} else " ++ "{\n" ++ s!"{ebStr}" ++ s!"{sp}}"
+      s!"if ({cond}) " ++ "{\n" ++ s!"{tbStr}" ++
+        s!"{sp}} else " ++ "{\n" ++ s!"{ebStr}" ++ s!"{sp}}"
   | .with_const _ out e body =>
       let bodyStr := formatBody body (level + 1)
       s!"with_const (${out} = {e}) " ++ "{\n" ++ s!"{bodyStr}" ++ s!"{sp}}"
@@ -302,7 +303,8 @@ instance {c : ZKConfig} : ToString (Prog c) where
 
 mutual
 
-def printCom {c : ZKConfig} (h : IO.FS.Stream) (cmd : Com c) (level : Nat) (sp : String) : IO Unit := do
+def printCom {c : ZKConfig}
+    (h : IO.FS.Stream) (cmd : Com c) (level : Nat) (sp : String) : IO Unit := do
   match cmd with
   | .skip _ => h.putStr s!"skip"
   | .assign _ out e => h.putStr s!"%{out} = {e}"
