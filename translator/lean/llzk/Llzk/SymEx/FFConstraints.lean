@@ -1,12 +1,12 @@
 import Llzk.Basic
-import Llzk.Language.Core.Syntax
+import Llzk.Language.Core.Syntax.AST
 
 /- This module provides a syntax for SMT formulas over finite fields, their satisfiability,
    and functions to print them in SMT-LIB2 format.
 -/
 namespace Llzk.SymEx.FFConstraints
 
-open Llzk.Language.Core
+open Llzk.Language.Core.Syntax.AST
 
 /- Metadata for FF variables -/
 structure FFVarMetaData where

@@ -1,0 +1,38 @@
+func %foo(%y:ff,%x:arr<10>) : %z:ff,%w:ff {
+  %x = %y
+  for($i, 0, 10, 1) {
+    %x = %y
+    if ( %x == 1) {
+        %w = felt.add - 1 4
+    }
+  }
+  if (%x == -1) {
+    %z = felt.add %x 1
+    %w = felt.mul 2 $i
+  } else {
+    %z = 3
+    %w = 4
+  }
+  array.new 5 %w
+}
+
+func %main(%y:ff,%x:arr<10>) : %z:ff,%w:ff {
+  %x = %y
+  with_const $j=10 {
+  for($i, 0, 10, 1) {
+    %x = %y
+    if ( %x == 1) {
+        %w = felt.add 1 4
+    }
+  }
+  }
+  if (%x == 1) {
+    %z = felt.add %x 1
+    %w = felt.mul 2 $i
+  } else {
+    %z = 3
+    %w = 4
+    call %foo(1,2) to %w,%z 
+    call %foo(%a,$b)
+  }
+}
