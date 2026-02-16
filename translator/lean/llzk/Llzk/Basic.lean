@@ -28,10 +28,14 @@ instance (c : ZKConfig) : NeZero c.k := ⟨by
 /- The finite field F_p induced by the configuration -/
 abbrev FF (c : ZKConfig) := ZMod c.p
 
+/- toString of FF values -/
+instance {c : ZKConfig} : ToString (FF c) where
+  toString x := s!"{x.val}"
+
 /- This function should be used to generate an instance of ZKConfig
    at runtime, in case we want to provide external c.p and c.k.
 
-   Warnning: it might be slow to check primality at runtime.
+   Warning: it might be slow at runtime.
 -/
 def mkZKConfig (k_input : Nat) (p_input : Nat) : Except String ZKConfig :=
   if h_prime : Nat.Prime p_input then -- Check if p is Prime
