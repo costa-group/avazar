@@ -14,22 +14,48 @@ structure FFVarMetaData where
   cmd_meta_data : CmdMetaData
   deriving Repr, BEq, Inhabited
 
+structure BoolVarMetaData where
+  orig_name : String
+  cmd_meta_data : CmdMetaData
+  deriving Repr, BEq, Inhabited
+
 /- A variable in the finite field constraint system -/
 structure FFVar where
   id : ℕ
   meta_data: FFVarMetaData
   deriving Repr, Inhabited
 
+structure BoolVar where
+  id : ℕ
+  meta_data: BoolVarMetaData
+  deriving Repr, Inhabited
+
+
 /-  Equality (BEq) of FFVar -/
 instance : BEq FFVar where
+  beq a b := a.id == b.id && a.meta_data.orig_name == b.meta_data.orig_name
+
+/-  Equality (BEq) of BoolVar -/
+instance : BEq BoolVar where
   beq a b := a.id == b.id && a.meta_data.orig_name == b.meta_data.orig_name
 
 /-  Hashing (Hashable) of FFVar. Needed if we use this in a HashMap or HashSet -/
 instance : Hashable FFVar where
   hash a := mixHash (hash a.id) (hash a.meta_data.orig_name)
 
+/-  Hashing (Hashable) of BoolVar. Needed if we use this in a HashMap or HashSet -/
+instance : Hashable BoolVar where
+  hash a := mixHash (hash a.id) (hash a.meta_data.orig_name)
+
 /-  Ordering (Ord) of FFVar. Needed if we use ordered sets -/
 instance : Ord FFVar where
+  compare a b :=
+    match compare a.meta_data.orig_name b.meta_data.orig_name with
+    | .eq => compare a.id b.id -- Names equal? Check IDs
+    | ord => ord               -- Names different? Return that order
+
+/-  Ordering (Ord) of BoolVar. Needed if we use ordered sets -/
+instance : Ord BoolVar where
   compare a b :=
     match compare a.meta_data.orig_name b.meta_data.orig_name with
     | .eq => compare a.id b.id -- Names equal? Check IDs
@@ -46,40 +72,51 @@ inductive FFTerm (c : ZKConfig) where
 
 /- A formula is a boolean formula with P(x)=0 as atoms.  -/
 inductive FFFormula (c : ZKConfig) where
+  | bool   : BoolVar → FFFormula c          -- A boolean variable
   | eqZero : FFTerm c → FFFormula c       -- P(x) = 0
   | and    : FFFormula c → FFFormula c → FFFormula c
   | or     : FFFormula c → FFFormula c → FFFormula c
   | not    : FFFormula c → FFFormula c
+  | ite    : FFFormula c → FFFormula c → FFFormula c → FFFormula c  -- if-then-else
+  | imply  : FFFormula c → FFFormula c → FFFormula c  -- implication
+  | iff    : FFFormula c → FFFormula c → FFFormula c  -- if and only if
   | true   : FFFormula c
   | false  : FFFormula c
   deriving Repr, BEq, Inhabited
 
 /- An assignment maps variables to FF values -/
-abbrev Assignment (c : ZKConfig) := ℕ → FF c
+structure Assignment (c : ZKConfig) where
+  ff : ℕ → FF c
+  bool : ℕ → Bool
+  deriving Inhabited
 
 
 /- Evaluate Terms to FF values -/
 def eval_term {c : ZKConfig} (assign : Assignment c) (t : FFTerm c) : FF c :=
   match t with
   | .const v => v
-  | .var v => assign v.id
+  | .var v => assign.ff v.id
   | .add a b => (eval_term assign a) + (eval_term assign b)
   | .sub a b => (eval_term assign a) - (eval_term assign b)
   | .mul a b => (eval_term assign a) * (eval_term assign b)
 
 /- Evaluate Formulas to Propositions (Prop) -/
-def eval_formula {c : ZKConfig} (assign : Assignment c) (f : FFFormula c) : Prop :=
+def eval_formula {c : ZKConfig} (assign : Assignment c) (f : FFFormula c) : Bool :=
   match f with
+  | .bool v   => assign.bool v.id
   | .eqZero t => eval_term assign t = 0
-  | .and a b  => (eval_formula assign a) ∧ (eval_formula assign b)
-  | .or a b   => (eval_formula assign a) ∨ (eval_formula assign b)
-  | .not a    => ¬(eval_formula assign a)
-  | .true     => True
-  | .false    => False
+  | .and a b  => (eval_formula assign a) && (eval_formula assign b)
+  | .or a b   => (eval_formula assign a) || (eval_formula assign b)
+  | .not a    => !(eval_formula assign a)
+  | .ite c t e => if eval_formula assign c then eval_formula assign t else eval_formula assign e
+  | .imply a b => !(eval_formula assign a) || (eval_formula assign b)
+  | .iff a b   => (eval_formula assign a) == (eval_formula assign b)
+  | .true     => true
+  | .false    => false
 
 /- Satisfiability: does there EXIST an assignment σ such that evalFormula is true? -/
 def is_sat {c : ZKConfig} (f : FFFormula c) : Prop :=
-  ∃ (σ : Assignment c), eval_formula σ f
+  ∃ (σ : Assignment c), eval_formula σ f = true
 
 
 
@@ -91,6 +128,8 @@ def is_sat {c : ZKConfig} (f : FFFormula c) : Prop :=
 abbrev FFVarSet := Std.TreeSet FFVar compare
 abbrev emptyFFVarSet : FFVarSet := Std.TreeSet.empty
 
+abbrev BoolVarSet := Std.TreeSet BoolVar compare
+abbrev emptyBoolVarSet : BoolVarSet := Std.TreeSet.empty
 
 /- Collect variables from a Term into the accumulator set -/
 partial def collect_vars_term {c : ZKConfig} (acc : FFVarSet) (t : FFTerm c) : FFVarSet :=
@@ -108,9 +147,11 @@ partial def collect_vars_term {c : ZKConfig} (acc : FFVarSet) (t : FFTerm c) : F
       collect_vars_term acc' b
 
 /- Collect variables from a Formula into the accumulator set -/
-partial def collect_vars_formula {c : ZKConfig} (acc : FFVarSet) (f : FFFormula c) : FFVarSet :=
+partial def collect_vars_formula {c : ZKConfig}
+  (acc : FFVarSet × BoolVarSet) (f : FFFormula c) : FFVarSet × BoolVarSet :=
   match f with
-  | .eqZero t => collect_vars_term acc t
+  | .eqZero t => (collect_vars_term acc.1 t, acc.2)
+  | .bool v   => (acc.1, acc.2.insert v)
   | .and a b  =>
       let acc' := collect_vars_formula acc a
       collect_vars_formula acc' b
@@ -118,15 +159,26 @@ partial def collect_vars_formula {c : ZKConfig} (acc : FFVarSet) (f : FFFormula 
       let acc' := collect_vars_formula acc a
       collect_vars_formula acc' b
   | .not a    => collect_vars_formula acc a
+  | .ite c t e =>
+      let acc' := collect_vars_formula acc c
+      let acc'' := collect_vars_formula acc' t
+      collect_vars_formula acc'' e
+  | .imply a b =>
+      let acc' := collect_vars_formula acc a
+      collect_vars_formula acc' b
+  | .iff a b   =>
+      let acc' := collect_vars_formula acc a
+      collect_vars_formula acc' b
   | .true     => acc
   | .false    => acc
 
 /- Returns a list of all unique variables in the formula -/
-def collect_vars {c : ZKConfig} (f : FFFormula c) : List FFVar :=
-  let emptySet : FFVarSet := emptyFFVarSet
-  let finalSet := collect_vars_formula emptySet f
+def collect_vars {c : ZKConfig} (f : FFFormula c) : List FFVar × List BoolVar :=
+  let emptyFFSet : FFVarSet := emptyFFVarSet
+  let emptyBoolSet : BoolVarSet := emptyBoolVarSet
+  let finalSet := collect_vars_formula (emptyFFSet, emptyBoolSet) f
   -- Convert the set back to a List for your SMT printer
-  finalSet.toList
+  (finalSet.1.toList, finalSet.2.toList)
 
 /- Printing formulas in SMT2 format
 
@@ -139,13 +191,22 @@ def get_indent (level : Nat) : String :=
   String.ofList (List.replicate (level * 2) ' ')
 
 /- Generates a unique string identifier for a variable based on its original name and ID -/
-def var_id (v : FFVar) : String :=
+def var_id_ff (v : FFVar) : String :=
+  s!"{v.meta_data.orig_name}_{v.id}_L{v.meta_data.cmd_meta_data.src_info.line}"
+
+/- Generates a unique string identifier for a variable based on its original name and ID -/
+def var_id_bool (v : BoolVar) : String :=
   s!"{v.meta_data.orig_name}_{v.id}_L{v.meta_data.cmd_meta_data.src_info.line}"
 
 /-- Customizable variable printer (e.g., "v_0", "v_1") -/
-def print_var (stream : IO.FS.Stream) (v : FFVar) : IO Unit := do
+def print_var_ff (stream : IO.FS.Stream) (v : FFVar) : IO Unit := do
 --  stream.putStr s!"v_{v.id}"
-  stream.putStr s!"{var_id v}"
+  stream.putStr s!"{var_id_ff v}"
+
+/-- Customizable variable printer (e.g., "v_0", "v_1") -/
+def print_var_bool (stream : IO.FS.Stream) (v : BoolVar) : IO Unit := do
+--  stream.putStr s!"v_{v.id}"
+  stream.putStr s!"{var_id_bool v}"
 
 /-- Prints a term as an S-expression: (+ a b) -/
 partial def print_term {c : ZKConfig}
@@ -154,7 +215,7 @@ partial def print_term {c : ZKConfig}
   | .const val =>
       stream.putStr s!"{val.val}"
   | .var v =>
-      print_var stream v
+      print_var_ff stream v
   | .add a b =>
       stream.putStr "(ff.add "
       print_term stream a
@@ -179,6 +240,8 @@ partial def print_formula_body {c : ZKConfig}
   (stream : IO.FS.Stream) (f : FFFormula c) (level : Nat) : IO Unit := do
   let sp := get_indent level
   match f with
+  | .bool v =>
+      stream.putStr s!"{sp}{var_id_bool v}"
   | .eqZero t =>
       stream.putStr s!"{sp}(= "
       print_term stream t
@@ -190,6 +253,22 @@ partial def print_formula_body {c : ZKConfig}
       stream.putStrLn s!"{sp})"
   | .or a b =>
       stream.putStrLn s!"{sp}(or "
+      print_formula_body stream a (level + 1)
+      print_formula_body stream b (level + 1)
+      stream.putStrLn s!"{sp})"
+  | .ite c t e =>
+      stream.putStrLn s!"{sp}(ite "
+      print_formula_body stream c (level + 1)
+      print_formula_body stream t (level + 1)
+      print_formula_body stream e (level + 1)
+      stream.putStrLn s!"{sp})"
+  | .imply a b =>
+      stream.putStrLn s!"{sp}(=>"
+      print_formula_body stream a (level + 1)
+      print_formula_body stream b (level + 1)
+      stream.putStrLn s!"{sp})"
+  | .iff a b =>
+      stream.putStrLn s!"{sp}(= "
       print_formula_body stream a (level + 1)
       print_formula_body stream b (level + 1)
       stream.putStrLn s!"{sp})"
@@ -205,7 +284,8 @@ partial def print_formula_body {c : ZKConfig}
    which can be obtained using `collect_vars`.
 -/
 def print_smt2 {c : ZKConfig}
-    (vars : List FFVar)
+    (varsFF : List FFVar)
+    (varsBool : List BoolVar)
     (f : FFFormula c)
     (stream : IO.FS.Stream) : IO Unit := do
   -- Header
@@ -214,10 +294,14 @@ def print_smt2 {c : ZKConfig}
   -- The Finite Field sort declaration
   stream.putStrLn s!"(define-sort FFp () (_ FiniteField {c.p}))"
   -- Variable Declarations
-  for v in vars do
+  for v in varsFF do
     stream.putStr "(declare-const "
-    print_var stream v
+    print_var_ff stream v
     stream.putStrLn " FFp)"
+  for v in varsBool do
+    stream.putStr "(declare-const "
+    print_var_bool stream v
+    stream.putStrLn " Bool)"
   -- Assertion
   stream.putStrLn "(assert "
   print_formula_body stream f 1
