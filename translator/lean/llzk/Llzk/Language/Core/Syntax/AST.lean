@@ -182,6 +182,7 @@ def formatExpr {c : ZKConfig} (e : Expr c) : String :=
   | .sub s1 s2 => s!"felt.sub {s1} {s2}"
   | .mul s1 s2 => s!"felt.mul {s1} {s2}"
   | .div s1 s2 => s!"felt.div {s1} {s2}"
+  -- bitwise
   | .shl s bits => s!"bit.shl {s} {bits}"
   | .shr s bits => s!"bit.shr {s} {bits}"
   | .and s1 s2 => s!"bit.and {s1} {s2}"
