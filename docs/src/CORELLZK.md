@@ -52,28 +52,29 @@ sexp := id | cid | Z
 sexps := (sexp ("," sexp)*)?
 
 // finite field operations
-felt_bop := "felt.add" | "felt.mul" | "felt.div"
-felt_uop := "felt.neg"
-felt_nop := sexp
+felt_bin_op := "felt.add" | "felt.mul" | "felt.div"
+felt_unary_op := "felt.neg"
+felt_no_op := sexp
 
 // bitwise operations
-bit_bop := "bit.shl" | "bit.shr" | "bit.and" | "bit.or" | "bit.xor"
-bit_uop := bit.not
+bit_bin_op := "bit.shl" | "bit.shr" | "bit.and" | "bit.or" | "bit.xor"
+bit_unary_op := bit.not
+bit_no_op :=
 
 // boolean operations
-bool_bop := "bool.eq" | "bool.neq" | "bool.lt" | "bool.gt" | "bool.le" | "bool.ge" | "bool.and" | "bool.or"
-bool_uop := "bool.not"
-bool_nop := "True" | "False"
+bool_bin_op := "bool.eq" | "bool.neq" | "bool.lt" | "bool.gt" | "bool.le" | "bool.ge" | "bool.and" | "bool.or"
+bool_unary_op := "bool.not"
+bool_no_op := "True" | "False"
 
-// binary, unary and 'n operand' operations
-bop := felt_bop | bit_bop | bool_bop
-uop := felt_uop | bit_uop | bool_uop
-zop := felt_nop | bool_nop
+// binary, unary and no-operand operations
+bin_op := felt_bin_op | bit_bin_op | bool_bin_op
+unary_op := felt_unary_op | bit_unary_op | bool_unary_op
+no_op := felt_no_op | bool_no_op
 
 // expressions
-exp := bop sexp sexp | uop sexp | zop
+exp := bin_op sexp sexp | unary_op sexp | no_op
 
-//assignment
+// assignment
 assignment := id "=" exp
 
 // if statement
@@ -81,7 +82,7 @@ cond := sexp "==" sexp | sexp "!=" sexp
 if  := "if" "(" cond ")" "{" cmd* "}" [else "{" cmd* "}"]
 
 // bounded for loop
-for := "for" "(" cid "," exp "," exp "," exp  ")" "{" cmd* "}"
+for := "for" "(" cid "," exp "," exp "," exp ")" "{" cmd* "}"
 
 // const variable definition
 wconst := "with_const" cid "=" exp "{" cmd* "}"
@@ -129,11 +130,6 @@ upon usage.
 >
 > Machine integers and booleans are simulated using the `ff` type.
 
-**Conventions:**
-
-A **Constant (Simple) Expression** is one that does not include identifiers (variable), and
-thus can be evaluated during symbolic execution.
-
 ### Structure
 
 A program consists of a set of functions. One function is designated
@@ -160,6 +156,9 @@ def id(id1:t, ...,idn:t) -> id1:t, ..., idk:t {
 
 In what follow we explain the supported expressions by category.
 
+A **Constant (Simple) Expression** is one that does not include identifiers (variables starting with `%`), and
+thus can be evaluated during symbolic execution. Note that it can include constant variables (starting with `$`).
+
 ##### Arithmetic
 
 Semantics correspond to standard operations in the finite field .
@@ -173,7 +172,7 @@ Semantics correspond to standard operations in the finite field .
 
 ##### Bitwise
 
-Semantics: The operands `si` are converted to `k`-bit vectors
+Semantics: The operands `sexpi` are converted to `k`-bit vectors
 (standard unsigned integer representation), the operation is applied,
 and the result is converted back to a finite field element (modulo
 `P`).
