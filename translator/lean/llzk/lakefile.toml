@@ -12,7 +12,12 @@ maxSynthPendingDepth = 3
 [[require]]
 name = "mathlib"
 scope = "leanprover-community"
-rev = "v4.27.0-rc1"
+rev = "v4.28.0"
+
+[[require]]
+name = "Cli"
+git = "https://github.com/mhuisi/lean4-cli"
+rev = "main"
 
 [[lean_lib]]
 name = "Llzk"
