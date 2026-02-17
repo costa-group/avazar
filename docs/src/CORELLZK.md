@@ -42,14 +42,14 @@ Z := an integer (will be interpreted as a finite field value)
 id  := %[_,a-z,A-Z,0-9]* 
 cid := $[_,a-z,A-Z,0-9]*
 
-// one or more id separated by comma
-ids := id [("," id)*]
+// zero or more id separated by comma
+ids := (id ("," id)*)?
 
 // simple expression
 sexp := id | cid | Z
 
 // zero or more simple expressions separated by comma
-sexps := (sexp [("," sexp)*])?
+sexps := (sexp ("," sexp)*)?
 
 // finite field operations
 felt_bop := "felt.add" | "felt.mul" | "felt.div"
@@ -99,13 +99,13 @@ fcall  := "call" id "(" sexps ")" ["to" ids]
 cmd := assignment | if | for | wconst | narray | rarray | warray | carray | fcall
 
 // types
-type := ff | aar<N>
+type := ff | arr<N>
 
 // parameter
 param := id ":" type
 
 // zero or more parameters separated by comma
-params := (param ["," param]*)?
+params := (param ("," param)*)?
 
 // function definition
 function := "func" id "(" params ")" [":" params] "{" cmd* "}"
@@ -131,14 +131,8 @@ upon usage.
 
 **Conventions:**
 
-* `%x`, `%y`, `%z`: Variables of type `ff`.
-* `v`, `v1`, `v2`: Concrete values.
-* `#i`, `#j`: **Constant variables** (e.g., loop indices).
-
-A **Simple Expression** (`s`, `s1`, `s2`) is an atomic unit that can
-be a variable, a value, or a constant variable. A **Constant Simple
-Expression** is one that is not a variable (it can be only a value or
-a constant variable).
+A **Constant (Simple) Expression** is one that does not include identifiers (variable), and
+thus can be evaluated during symbolic execution.
 
 ### Structure
 
@@ -150,7 +144,7 @@ as `%main`, serving as the entry point for generating the SMT formula.
 A function definition follows this syntax:
 
 ```text
-def %fname(%X1:t, ..., %Xn:t) -> %Y1:t, ..., %Yk:t {
+def id(id1:t, ...,idn:t) -> id1:t, ..., idk:t {
   body
 }
 
@@ -160,7 +154,7 @@ def %fname(%X1:t, ..., %Xn:t) -> %Y1:t, ..., %Yk:t {
   follow the format `%name:type`.
 * **Uniqueness:** All parameter names are distinct. All return names
   are distinct.
-* **Body:** `body` is a sequence of instructions (commands).
+* **Body:** `body` is a sequence of commands.
 
 #### Expressions
 
@@ -170,12 +164,12 @@ In what follow we explain the supported expressions by category.
 
 Semantics correspond to standard operations in the finite field .
 
-1. `s1` (Identity)
-2. `felt.neg s1` (Negation)
-3. `felt.add s1 s2` (Addition)
-4. `felt.add s1 s2` (Subtraction)
-5. `felt.mul s1 s2` (Multiplication)
-6. `felt.div s1 s2` (Multiplication by modular inverse)
+1. `sexp` (Identity)
+2. `felt.neg sexp` (Negation)
+3. `felt.add sexp1 sexp2` (Addition)
+4. `felt.add sexp1 sexp2` (Subtraction)
+5. `felt.mul sexp1 sexp2` (Multiplication)
+6. `felt.div sexp1 sexp2` (Multiplication by modular inverse)
 
 ##### Bitwise
 
@@ -184,12 +178,12 @@ Semantics: The operands `si` are converted to `k`-bit vectors
 and the result is converted back to a finite field element (modulo
 `P`).
 
-1. `bit.shl s1 s2` (Left shift)
-2. `bit.shr s1 s2` (Right shift)
-3. `bit.and s1 s2` (Bitwise AND)
-4. `bit.or s1 s2` (Bitwise OR)
-5. `bit.xor s1 s2` (Bitwise XOR)
-6. `bit.not s1` (Bitwise NOT)
+1. `bit.shl sexp1 sexp2` (Left shift)
+2. `bit.shr sexp1 sexp2` (Right shift)
+3. `bit.and sexp1 sexp2` (Bitwise AND)
+4. `bit.or sexp1 sexp2` (Bitwise OR)
+5. `bit.xor sexp1 sexp2` (Bitwise XOR)
+6. `bit.not sexp1` (Bitwise NOT)
 
 > [!NOTE]
 >
@@ -210,24 +204,23 @@ order is defined as `mid+1, ..., P-1, 0, ..., mid`, where
 
 1. `True`: evaluates to `1`.
 2. `False`: evaluates to `0`.
-3. `bool.eq s1 s2`: Equality. `(s1=s2 -> result=1) and (~(s1=s2) -> result=0)`.
-4. `bool.neq s1 s2`: Inequality. `(s1=s2 -> result=0) and (~(s1=s2) -> result=1)`.
-5. `bool.gt s1 s2`: Signed greater than. `s1>s2 -> result=1) and (~(s1>s2) -> result=0)`.
-6. `bool.lt s1 s2`: Signed less than. `(s1<s2 -> result=1) and (~(s1<s2) -> result=0)`.
-7. `bool.ge s1 s2`: Signed greater or equal. `(s1>=s2 -> result=1) and (~(s1>=s2) -> result=0)`.
-8. `bool.le s1 s2`: Signed less or equal. `(s1<=s2 -> result=1) and (~(s1<=s2) -> result=0)`.
-9. `bool.not s`: Logical NOT. `(s=0 -> result=1) and (~(s=0) -> result=0)`.
-10. `bool.or s1 s2`: Logical OR. `((s1=0 and s2=0) -> result=0) and ((~(s1=0) or ~(s2=0)) -> result=1)`.
-11. `bool.and s1 s2`: Logical AND. `(~(s1=0) and ~(s2=0)) -> result=1) and (((s1=0) or (s2=0)) -> result=0)`.
+3. `bool.eq sexp1 sexp2`: Equality. `(sexp1=sexp2 -> result=1) and (~(sexp1=sexp2) -> result=0)`.
+4. `bool.neq sexp1 sexp2`: Inequality. `(sexp1=sexp2 -> result=0) and (~(sexp1=sexp2) -> result=1)`.
+5. `bool.gt sexp1 sexp2`: Signed greater than. `sexp1>sexp2 -> result=1) and (~(sexp1>sexp2) -> result=0)`.
+6. `bool.lt sexp1 sexp2`: Signed less than. `(sexp1<sexp2 -> result=1) and (~(sexp1<sexp2) -> result=0)`.
+7. `bool.ge sexp1 sexp2`: Signed greater or equal. `(sexp1>=sexp2 -> result=1) and (~(sexp1>=sexp2) -> result=0)`.
+8. `bool.le sexp1 sexp2`: Signed less or equal. `(sexp1<=sexp2 -> result=1) and (~(sexp1<=sexp2) -> result=0)`.
+9. `bool.not sexp`: Logical NOT. `(sexp=0 -> result=1) and (~(sexp=0) -> result=0)`.
+10. `bool.or sexp1 sexp2`: Logical OR. `((sexp1=0 and sexp2=0) -> result=0) and ((~(sexp1=0) or ~(sexp2=0)) -> result=1)`.
+11. `bool.and sexp1 sexp2`: Logical AND. `(~(sexp1=0) and ~(sexp2=0)) -> result=1) and (((sexp1=0) or (sexp2=0)) -> result=0)`.
 
 #### Commands
 
 Next we describe the possible commands supported in the language.
 
-Recall that a simple expression `s` is constant, if it does not
-involve variables (it can involve constant variables). We say that an
-expression `exp` is a **constant expression** if all its simple
-expressions are constant.
+Recall that a simple expression `sexp` (or an expressop `exp`) is
+constant, if it does not involve variables (it can involve
+constant variables).
 
 ##### Assignment
 
@@ -235,9 +228,7 @@ expressions are constant.
 id = exp
 ```
 
-Assigns the result of `exp` to `x`. `exp` cannot be a compound
-expression (nested operations are not supported directly; intermediate
-variables must be used).
+Assigns the result of `exp` to `id`.
 
 ##### Arrays
 
@@ -279,11 +270,11 @@ Expressions**.
 **Semantics:**
 
 1. Evaluate `START`, `N`, and `STEP` to concrete values.
-2. Initialize loop counter `cid = START`.
+2. Initialize loop counter `cid = START` as a constant variable.
 3. Execute `body` `N` times. After each iteration, update `cid := cid +
    STEP`.
 
-Inside the loop body, the loop index is a **constant variable**.
+Inside the loop body, the loop counter can be accessed as a **constant variable**.
 
 > [!NOTE]
 >
@@ -293,7 +284,7 @@ Inside the loop body, the loop index is a **constant variable**.
 
 >[!NOTE]
 >
->Should we allow `-(STEP)`? What to do if `i` goes negative in such
+>Should we allow `-(STEP)`? What to do if the loop counter goes negative in such
 >case? Just treat it as a finite field negative (i.e., `-1` goes back
 >to `P-1`)?
 
@@ -321,7 +312,7 @@ call id(sexp1, ..., sexpn) to id1,...,idk
 ```
 
 Executes function with name `id`. The return values (which may include arrays) are
-assigned to `id1, ..., idk`. The `to` keyword is optional of the functions
+assigned to `id1, ..., idk`. The `to` keyword is optional if the functions
 does not return values.
 
 ### SSA Support
