@@ -44,7 +44,7 @@ def peekToken (k : Nat := 0) : ParserM TokenInfo := do
   let st ← get
   match st.buffer[k]? with
   | some tk => return tk
-  | none    => return ⟨ Token.eof, st.lexer.col, st.lexer.line ⟩  -- No more tokens
+  | none    => return ⟨ Token.eof, st.lexer.col, st.lexer.row ⟩  -- No more tokens
 
 /- Consume the next token -/
 def advance : ParserM TokenInfo := do
@@ -54,7 +54,7 @@ def advance : ParserM TokenInfo := do
   | tk :: rest =>
       set { st with buffer := rest }
       return tk
-  | [] => return ⟨ Token.eof, st.lexer.col, st.lexer.line ⟩ -- No more tokens
+  | [] => return ⟨ Token.eof, st.lexer.col, st.lexer.row ⟩ -- No more tokens
 
 /- Consumes the next token if it matches the expected character,
    otherwise fails. -/
@@ -303,7 +303,7 @@ mutual
         let _ ← expectSymbol '='
         let expr ← parseExpr
         let body ← parseBlock
-        return (Com.with_const emptyCMD v expr body)
+        return (Com.with_const v expr body)
     | _ => throw (IO.userError s!"Expected a constant variable after 'with_const', got {varTk}")
 
   partial def parseFor {c: ZKConfig}: ParserM (Com c) := do
@@ -320,12 +320,12 @@ mutual
         let stepExpr ← parseExpr
         let _ ← expectSymbol ')'
         let body ← parseBlock
-        return (Com.loop_exp emptyCMD v startExpr repExpr stepExpr body)
+        return (Com.loop_exp v startExpr repExpr stepExpr body)
     | _ => throw (IO.userError s!"Expected a constant variable after 'for(', got {varTk.token}")
 
   partial def parseIf {c: ZKConfig}: ParserM (Com c) := do
     let _ ← advance -- Consume the 'if' keyword
-      let _ ← expectSymbol '('
+    let _ ← expectSymbol '('
     let cond ← parseCond
     let _ ← expectSymbol ')'
     let thenBranch ← parseBlock
@@ -335,7 +335,7 @@ mutual
         let _ ← advance -- consume 'else'
         parseBlock
       else pure []
-    return (Com.if_stmt emptyCMD cond thenBranch elseBranch)
+    return (Com.if_stmt cond thenBranch elseBranch)
 
   partial def parseFunCall {c: ZKConfig}: ParserM (Com c) := do
     let _ ← advance -- Consume the 'call' keyword
@@ -351,7 +351,7 @@ mutual
           let _ ← advance -- consume 'to'
           parseIdentSeq
         | _ => pure []
-      return (Com.func_call emptyCMD outs fname args)
+      return (Com.func_call outs fname args)
     | _ => throw (IO.userError s!"Expected a function name after 'call', got {nameTk.token}")
 
   partial def parseAssignment {c: ZKConfig}: ParserM (Com c) := do
@@ -360,7 +360,7 @@ mutual
     | Token.ident v =>
       let _ ← expectSymbol '='
       let expr ← parseExpr
-      return (Com.assign emptyCMD v expr)
+      return (Com.assign v expr)
     | _ => throw (IO.userError
                   s!"Expected a variable on the left-hand side of assignment, got {varTk.token}")
 
@@ -370,7 +370,7 @@ mutual
     let outTk ← advance
     match outTk.token with
     | Token.ident out =>
-      return (Com.new_array emptyCMD out sizeTk)
+      return (Com.new_array out sizeTk)
     | _ => throw (IO.userError
                     s!"Expected an identifier for output variable, got {outTk.token}")
 
@@ -385,7 +385,7 @@ mutual
       let outTk ← advance
       match outTk.token with
       | Token.ident out =>
-        return (Com.read_array emptyCMD out a indexExpr)
+        return (Com.read_array out a indexExpr)
       | _ => throw (IO.userError s!"Expected an identifier for output variable, got {outTk.token}")
     | _ => throw (IO.userError
                     s!"Expected an identifier for array variable, got {arrayVarTk.token}")
@@ -399,7 +399,7 @@ mutual
       let _ ← expectSymbol '['
       let indexExpr ← parseSimpleExpr
       let _ ← expectSymbol ']'
-      return (Com.write_array emptyCMD a indexExpr seTk)
+      return (Com.write_array a indexExpr seTk)
     | _ => throw (IO.userError
                     s!"Expected an identifier for array variable, got {arrayVarTk.token}")
 
@@ -409,14 +409,14 @@ mutual
     let outTk ← advance
     match outTk.token, inTk.token with
     | Token.ident out, Token.ident a =>
-      return (Com.copy_array emptyCMD out a)
+      return (Com.copy_array out a)
     | _,_ => throw
                (IO.userError
                   s!"Expected identifiers for array variables, got {outTk.token} and {inTk.token}")
 
   partial def parseSkip {c: ZKConfig}: ParserM (Com c) := do
     let _ ← advance -- consume 'skip' keyword
-    return (Com.skip emptyCMD) -- TODO: implement this
+    return (Com.skip) -- TODO: implement this
 
   /-- Parse a command -/
   partial def parseCommand {c : ZKConfig}: ParserM (Com c) := do
@@ -456,18 +456,19 @@ mutual
         throw (IO.userError s!"Unexpected token {t0} when parsing command")
 
   /-- Parses a list of statements until it hits a '}' -/
-  partial def parseBlock {c : ZKConfig} : ParserM (List (Com c)) := do
+  partial def parseBlock {c : ZKConfig} : ParserM (List (MDWrap (Com c))) := do
 
     expectSymbol '{' -- We expect the opening '{'
 
-    let rec loop (acc : List (Com c)) : ParserM (List (Com c)) := do
+    let rec loop (acc : List (MDWrap (Com c))) : ParserM (List (MDWrap (Com c))) := do
       let tk ← peekToken 0
       if tk.token == Token.symbol '}' then
         let _ ← advance -- Consume the '}'
         return acc.reverse
       else
+      let (row, col) := (tk.row, tk.col)
         let ast ← parseCommand
-        loop (ast :: acc)
+        loop ( (MDWrap.mk ⟨⟨row, col⟩⟩ ast) :: acc)
 
     loop []
 
@@ -486,17 +487,19 @@ mutual
               parseParamSeq
           | _ => pure []
       let body ← parseBlock
-      return { md := emptyCMD, name := name, params := params, rets := rets, body := body }
+      return (Function.mk name params rets body)
     | _ => throw (IO.userError s!"Expected a function name after 'func', got {nameTk}")
 end
 
-partial def parseProg {c : ZKConfig} (acc : List (Function c)) : ParserM (List (Function c)) := do
+partial def parseProg {c : ZKConfig}
+  (acc : List (MDWrap (Function c))) : ParserM (List (MDWrap (Function c))) := do
   let t0 ← peekToken 0
   if t0.token == Token.eof then
     return acc
   else
+    let (row, col) := (t0.row, t0.col)
     let ast ← parseFunction
-    parseProg (ast :: acc)
+    parseProg ( (MDWrap.mk ⟨⟨row, col⟩⟩ ast) :: acc)
 
 
 

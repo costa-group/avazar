@@ -10,45 +10,47 @@ open Llzk.Language.Core.Semantics.Basic
 mutual
 
 def evalCmd {c : ZKConfig} (cfg : SemConfig c)
-    (p : Prog c) (st : State c) (cmd : Com c) : Except String (State c) := do
-  match cmd with
-  | Com.skip _ => evalSkip st
-  | Com.assign _ id e => evalAssign st id e
-  | Com.new_array _ id size => evalNewArray st id size
-  | Com.read_array _ out a index => evalReadArray st out a index
-  | Com.write_array _ a index value => evalWriteArray st a index value
-  | Com.copy_array _ out a => evalCopyArray st out a
-  | Com.if_stmt _ cond tb eb =>
-      let condVal ← evalCond st cond
-      if condVal then evalCmds cfg p st tb else evalCmds cfg p st eb
-  | Com.with_const _ out e body =>
-      ensureNotDefinedCVar st.cvars out -- ensure the constant variable is not already defined
-      let constVal ← evalConstExpr st e
-      let st' := { st with cvars := st.cvars.insert out constVal }
-      let st'' ← evalCmds cfg p st' body
-      let st''' := { st'' with cvars := st''.cvars.erase out }  -- remove constant variable after
-      return st'''
-  | Com.loop_exp md idx start rep step body =>
-      let startVal ← evalConstExpr st start
-      let repVal ← evalConstExpr st rep
-      let stepVal ← evalConstExpr st step
-      let loop := Com.loop md idx startVal repVal.val stepVal body
-      evalCmd cfg p st loop
-  | Com.loop  md idx start (rep+1) step body =>
-      ensureNotDefinedCVar st.cvars idx -- ensure loop constant variable is not already defined
-      let st' := { st with cvars := st.cvars.insert idx start } -- insert loop variable into cvars
-      let st'' ← evalCmds cfg p st' body -- evaluate loop body (1 iteration)
-      let st''' := { st'' with cvars := st''.cvars.erase idx }  -- remove loop variable
-      evalCmd cfg p st''' (Com.loop md idx (start+step) rep step body) -- evaluate the rest
-  | Com.loop  _md _idx _start 0 _step _body =>
-      return st
-  | Com.func_call _ outs fname args =>
-    let argVals ← evalSimpleExprsToValue st args
-    let outVals ← evalFun cfg p fname argVals
-    let vars_env ← setVars st.vars outs outVals
-    let st' := { st with vars := vars_env }
-    return st'
-termination_by (p.length, numOfLoopExpCom cmd, sizeOfCom cmd)
+    (p : Prog c) (st : State c) (i : MDWrap (Com c)) : Except String (State c) := do
+  match i with
+   | .mk md cmd =>
+      match cmd with
+      | Com.skip => evalSkip st
+      | Com.assign id e => evalAssign st id e
+      | Com.new_array id size => evalNewArray st id size
+      | Com.read_array out a index => evalReadArray st out a index
+      | Com.write_array a index value => evalWriteArray st a index value
+      | Com.copy_array out a => evalCopyArray st out a
+      | Com.if_stmt cond tb eb =>
+          let condVal ← evalCond st cond
+          if condVal then evalCmds cfg p st tb else evalCmds cfg p st eb
+      | Com.with_const out e body =>
+          ensureNotDefinedCVar st.cvars out -- ensure the constant variable is not already defined
+          let constVal ← evalConstExpr st e
+          let st' := { st with cvars := st.cvars.insert out constVal }
+          let st'' ← evalCmds cfg p st' body
+          let st''' := { st'' with cvars := st''.cvars.erase out }  -- remove constant variable
+          return st'''
+      | Com.loop_exp idx start rep step body =>
+          let startVal ← evalConstExpr st start
+          let repVal ← evalConstExpr st rep
+          let stepVal ← evalConstExpr st step
+          let loop := (MDWrap.mk md (Com.loop idx startVal repVal.val stepVal body))
+          evalCmd cfg p st loop
+      | Com.loop idx start (rep+1) step body =>
+          ensureNotDefinedCVar st.cvars idx -- ensure loop constant variable is not already defined
+          let st' := { st with cvars := st.cvars.insert idx start } -- declare loop variable
+          let st'' ← evalCmds cfg p st' body -- evaluate loop body (1 iteration)
+          let st''' := { st'' with cvars := st''.cvars.erase idx }  -- remove loop variable
+          evalCmd cfg p st''' (MDWrap.mk md (Com.loop idx (start+step) rep step body)) -- the rest
+      | Com.loop _idx _start 0 _step _body =>
+          return st
+      | Com.func_call outs fname args =>
+        let argVals ← evalSimpleExprsToValue st args
+        let outVals ← evalFun cfg p fname argVals
+        let vars_env ← setVars st.vars outs outVals
+        let st' := { st with vars := vars_env }
+        return st'
+termination_by (p.length, numOfLoopExpCom i, sizeOfCom i)
 decreasing_by
     all_goals -- in all recursive calls the program remain the same
       apply Prod.Lex.right
@@ -101,7 +103,7 @@ decreasing_by
 
 
 def evalCmds {c : ZKConfig} (cfg : SemConfig c)
-    (p : Prog c) (st : State c) (cmds : List (Com c)) : Except String (State c) := do
+    (p : Prog c) (st : State c) (cmds : List (MDWrap (Com c))) : Except String (State c) := do
   match cmds with
   | [] => Except.ok st
   | cmd :: rest => do
@@ -142,11 +144,15 @@ def evalFun {c : ZKConfig} (cfg : SemConfig c)
     match _h_fetch: fetchFunc p fname with
     | Except.error e => Except.error e
     | Except.ok (f, p') =>
-        let vars_env ← bindInParams (emptyEnv c) f.params args
-        let st := ⟨vars_env, emptyCEnv c⟩
-        let st' ← evalCmds cfg p' st f.body
-        let rets ← bindOutParams st'.vars f.rets
-        Except.ok rets
+      match f with
+      | .mk _ func =>
+      match func with
+       | Function.mk _ params rets body =>
+           let vars_env ← bindInParams (emptyEnv c) params args
+           let st := ⟨vars_env, emptyCEnv c⟩
+           let st' ← evalCmds cfg p' st body
+           let rets ← bindOutParams st'.vars rets
+           Except.ok rets
 termination_by (p.length, 0 ,0)
 decreasing_by
     apply Prod.Lex.left

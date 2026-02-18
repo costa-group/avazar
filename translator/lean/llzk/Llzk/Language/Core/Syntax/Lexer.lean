@@ -1,14 +1,13 @@
 import Init.System.IO
 
 namespace Llzk.Language.Core.Syntax.Lexer
-
 /- A structure to keep track of the lexer's state, including a buffer,
  position, and error reporting information -/
 structure Lexer where
   handle : IO.FS.Handle -- Where we read from (file handle)
   buffer : String       -- Buffer of text read from the file
   pos    : Nat          -- We store position strictly as a Nat
-  line   : Nat          -- For error reporting: current line number
+  row    : Nat          -- For error reporting: current row number
   col    : Nat          -- For error reporting: current column number
 
 /- Create a Lexer from a file path -/
@@ -18,7 +17,7 @@ def Lexer.fromFile (path : System.FilePath) : IO Lexer := do
     handle := h,
     buffer := "",
     pos := 0,
-    line := 1,
+    row := 1,
     col := 0
   }
 
@@ -54,10 +53,10 @@ def Lexer.next (st : Lexer) : IO (Option Char × Lexer) := do
   if hasData then
     let c := String.Pos.Raw.get st.buffer ⟨st.pos⟩ -- Get the current character
     let ⟨newPosNat⟩ := String.Pos.Raw.next st.buffer ⟨st.pos⟩ -- Move to the next position
-    let (newLine, newCol) := if c == '\n' then (st.line + 1, 0) else (st.line, st.col + 1) -- Update line/col
+    let (newRow, newCol) := if c == '\n' then (st.row + 1, 0) else (st.row, st.col + 1) -- Update row/col
     return (some c, { st with
       pos := newPosNat,
-      line := newLine,
+      row := newRow,
       col := newCol
     })
   else
@@ -78,16 +77,16 @@ partial def Lexer.scanWhile (st : Lexer) (pred : Char → Bool) (acc : String :=
       let char := String.Pos.Raw.get st.buffer (String.Pos.Raw.mk p)
       if pred char then
         let ⟨nextP⟩ := String.Pos.Raw.next st.buffer (String.Pos.Raw.mk p)
-        let (newL, newC) := -- update col/row
+        let (newRow, newCol) := -- update col/row
           if char == '\n' then (l + 1, 0) else (l, c + 1)
-        loop nextP newL newC -- keep matching
+        loop nextP newRow newCol -- keep matching
       else
         (p, l, c) -- Predicate failed, return current state
     else
       (p, l, c) -- End of buffer, return current state
 
   -- Run the loop
-  let (endPos, finalLine, finalCol) := loop startPos st.line st.col
+  let (endPos, finalRow, finalCol) := loop startPos st.row st.col
 
   -- Extract the string
   let chunk := String.Pos.Raw.extract st.buffer (String.Pos.Raw.mk startPos) (String.Pos.Raw.mk endPos)
@@ -97,7 +96,7 @@ partial def Lexer.scanWhile (st : Lexer) (pred : Char → Bool) (acc : String :=
   let currentWord := if acc.isEmpty then chunk else acc ++ chunk
 
   -- Update state with the values we already calculated
-  let st' := { st with pos := endPos, line := finalLine, col := finalCol }
+  let st' := { st with pos := endPos, row := finalRow, col := finalCol }
 
   -- If the loop stopped because it has reached the end, we try call recursively
   -- to read more data and continue scanning.
@@ -143,7 +142,7 @@ structure TokenInfo where
 
 /- Convert token information to its string representation -/
 def TokenInfo.toString (info : TokenInfo) : String :=
-  s!"{info.token} at line {info.row}, column {info.col}"
+  s!"{info.token} at row {info.row}, column {info.col}"
 
 /- Register ToString instance for TokenInfo -/
 instance : ToString TokenInfo where
@@ -162,14 +161,14 @@ partial def Lexer.nextToken (st : Lexer) : IO (TokenInfo × Lexer) := do
   let st ← skipWhitespace st -- Skip leading whitespace
   let (optChar,st) ← st.peek -- peek at the next character to decide what to do
   match optChar with
-  | none => return (⟨ Token.eof, st.col, st.line ⟩, st)
+  | none => return (⟨ Token.eof, st.col, st.row ⟩, st)
   | some c =>
   let col := st.col
-  let row := st.line
-    -- Comment: Start with '#', skip until the end of the line and return the next token after that
+  let row := st.row
+    -- Comment: Start with '#', skip until the end of the row and return the next token after that
     if c == '#' then
       let (_, st) ← st.next -- consume the '#' character
-      let (_, st) ← st.scanWhile (fun x => x != '\n') -- skip until the end of the line
+      let (_, st) ← st.scanWhile (fun x => x != '\n') -- skip until the end of the row
       nextToken st -- After skipping comment, get the next token
 
     -- Variable: Start with '%', read while alphanumeric or underscore
