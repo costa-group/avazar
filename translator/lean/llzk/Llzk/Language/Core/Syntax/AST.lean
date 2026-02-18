@@ -10,7 +10,8 @@ namespace Llzk.Language.Core.Syntax.AST
    can be added later.
 -/
 structure SrcInfo where
-  line : ℕ
+  row : ℕ
+  col : ℕ
   deriving Repr, BEq, Inhabited
 
 /- A structure for command metadata. More fields can be added later. -/
@@ -18,7 +19,7 @@ structure CmdMetaData where
   src_info : SrcInfo
   deriving Repr, BEq, Inhabited
 
-abbrev emptyCMD : CmdMetaData := ⟨⟨0⟩⟩
+abbrev emptyCMD : CmdMetaData := ⟨⟨0, 0⟩⟩
 
 abbrev VarID := String -- Program variable identifier
 abbrev FName := String -- Function name
@@ -67,36 +68,40 @@ inductive Cond (c : ZKConfig) where
   | neq (e1 e2 : SimpleExpr c) : Cond c
   deriving Repr, BEq, Inhabited
 
+inductive MDWrap (T : Type) where
+  | mk (md : CmdMetaData) (info : T) : MDWrap T
+  deriving Repr, BEq, Inhabited
+
 /- A data type for command -/
 inductive Com (c : ZKConfig) where
   -- in principle `skip` is not needed, we keep so we can augment it with
   -- debugging information if needed in the future, like a list of variables
   -- to print, etc.
-  | skip (md: CmdMetaData)
+  | skip
   -- x := e
-  | assign (md: CmdMetaData) (out: VarID) (e : Expr c)
+  | assign (out: VarID) (e : Expr c)
   -- if (cond) {tb} else {eb}
-  | if_stmt (md: CmdMetaData) (cond: Cond c) (tb eb :  List (Com c))
+  | if_stmt (cond: Cond c) (tb eb :  List (MDWrap (Com c)))
   -- with (out := e) { body }
   -- e is supposed to be a constant expression, runtime error should be thrown
   -- if it is not. We keep it as Expr for simplicity.
-  | with_const (md: CmdMetaData) (out: VarID) (e : Expr c) (body: List (Com c))
+  | with_const (out: VarID) (e : Expr c) (body: List (MDWrap (Com c)))
   -- for (i,start,rep,step) { body }
   -- expressions are supposed to be constant expression, runtime error
   -- should be thrown if they are not. We keep them as Expr for simplicity
-  | loop_exp (md: CmdMetaData) (idx: VarID) (start rep step: Expr c) (body: List (Com c))
+  | loop_exp (idx: VarID) (start rep step: Expr c) (body: List (MDWrap (Com c)))
   -- for (i,start,rep,step) { body }
-  | loop (md: CmdMetaData) (idx: VarID) (start : FF c) (rep : ℕ) (step: FF c) (body: List (Com c))
+  | loop (idx: VarID) (start : FF c) (rep : ℕ) (step: FF c) (body: List (MDWrap (Com c)))
   -- size is supposed to be a constant expression, runtime error should be thrown if it is not.
-  | new_array (md: CmdMetaData) (out: VarID) (size: SimpleExpr c)
+  | new_array (out: VarID) (size: SimpleExpr c)
   -- out := arr[idx]
-  | read_array (md: CmdMetaData) (out: VarID) (arr: VarID) (idx: SimpleExpr c)
+  | read_array (out: VarID) (arr: VarID) (idx: SimpleExpr c)
   -- out[idx] := value
-  | write_array (md: CmdMetaData) (arr: VarID) (idx: SimpleExpr c) (value: SimpleExpr c)
+  | write_array (arr: VarID) (idx: SimpleExpr c) (value: SimpleExpr c)
   -- out := copy_array arr
-  | copy_array (md: CmdMetaData) (out: VarID) (arr: VarID)
+  | copy_array (out: VarID) (arr: VarID)
   -- out1, out2, ... := func(args)
-  | func_call (md: CmdMetaData) (outs: List VarID) (fname: FName) (args: List (SimpleExpr c))
+  | func_call (outs: List VarID) (fname: FName) (args: List (SimpleExpr c))
    deriving Repr, BEq, Inhabited
 
 
@@ -112,48 +117,114 @@ abbrev Param := (VarID × VarType)
 /- A function receives input parameters `params`, executes the whole `body`,
    and returns the variables in `rets`.
 -/
-structure Function (c : ZKConfig) where
-  md : CmdMetaData
-  name : FName
-  params : List Param
-  rets : List Param
-  body : List (Com c)
+inductive Function (c : ZKConfig) where
+  | mk (name : FName) (params : List Param)
+       (rets : List Param) (body : List (MDWrap (Com c))) : Function c
   deriving Repr, BEq, Inhabited
 
 /- A program is a list of functions. Since we forbid recursion, a function can only call
 those that precede it in the list (this should be forced in the semantics)
  -/
-abbrev Prog (c : ZKConfig) := List (Function c)
+abbrev Prog (c : ZKConfig) := List (MDWrap (Function c))
 
 
 /- Search a function by name. It returns the function and the remaining program,
    which includes the functions that can be called by it. -/
-def fetchFunc {c : ZKConfig} (p : Prog c) (fname : FName) : Except String (Function c × Prog c) :=
+def fetchFunc {c : ZKConfig}
+  (p : Prog c) (fname : FName) : Except String (MDWrap (Function c) × Prog c) :=
   match p with
   | [] => Except.error s!"Function {fname} not found in the program"
-  | f :: fs =>
-    if f.name == fname then
-      Except.ok (f, fs)
-    else
-      fetchFunc fs fname
+  | func :: fs =>
+    match func with
+    | .mk _ f =>
+    match f with
+     | .mk name _ _ _ =>
+       if name == fname then
+         Except.ok (func, fs)
+       else
+         fetchFunc fs fname
 
 /- fetchFunc returns a smaller program -/
-theorem fetchLT {c : ZKConfig} (p : Prog c) (fname : FName) (f : Function c) (p' : Prog c) :
+theorem fetchLT {c : ZKConfig}
+  (p : Prog c) (fname : FName) (f : MDWrap (Function c)) (p' : Prog c) :
   fetchFunc p fname = Except.ok (f, p') → p'.length < p.length := by
   cases p with
   | nil => simp [fetchFunc]
-  | cons f' fs =>
-    simp only [fetchFunc]
-    by_cases hname : f'.name = fname
-    · simp only [hname]
-      simp only [BEq.rfl, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, List.length_cons, and_imp]
-      intro h1 h2
-      rw [h2]
-      simp only [lt_add_iff_pos_right, zero_lt_one]
-    · simp only [beq_iff_eq, hname, ↓reduceIte, List.length_cons]
-      intro h1
-      have h2 := fetchLT fs fname f p' h1
-      grind
+  | cons func fs =>
+    match func with
+    | .mk _ f' =>
+      match f' with
+      | .mk name params rets body =>
+        simp only [fetchFunc]
+        by_cases hname : name = fname
+        · simp only [hname]
+          simp only [BEq.rfl, List.length_cons]
+          simp only [if_true]
+          intro h_eq
+          injection h_eq with h_inner
+          injection h_inner with h_func h_prog
+          rw [h_prog]
+          apply Nat.le_refl
+        · simp only [beq_iff_eq, hname, List.length_cons]
+          simp only [if_false]
+          intro h1
+          have h2 := fetchLT fs fname f p' h1
+          apply Nat.lt_of_lt_of_le h2
+          apply Nat.le_succ
+
+/- Size of a command and list of commands. They are used to prove termination of
+   functions that manipulate programs -/
+
+mutual
+
+def sizeOfCom {c : ZKConfig} (i : MDWrap (Com c)) : Nat :=
+  match i with
+  | .mk _ info =>
+    match info with
+    | .skip => 1
+    | .if_stmt _ tb eb =>
+        1 + sizeOfComs tb + sizeOfComs eb
+    | .with_const _ _ body =>
+      1 + sizeOfComs body
+    | .loop_exp _ _ _ _ body =>
+      1 + sizeOfComs body
+    | .loop _ _ rep _ body =>
+      1 + rep*(1+sizeOfComs body)
+    | _ => 1
+
+def sizeOfComs {c : ZKConfig} (cmds : List (MDWrap (Com c))) : Nat :=
+match cmds with
+| [] => 0
+| cmd::rest => 1 + sizeOfCom cmd + sizeOfComs rest
+
+end -- mutual
+
+/- Number of loop_exp in a command and list of commands. They are used to prove termination of
+   functions that manipulate programs -/
+
+mutual
+
+def numOfLoopExpCom {c : ZKConfig} (cmd : MDWrap (Com c)) : Nat :=
+  match cmd with
+  | .mk _ info =>
+    match info with
+    | .if_stmt _ tb eb =>
+        numOfLoopExpComs tb + numOfLoopExpComs eb
+    | .with_const _ _ body =>
+        numOfLoopExpComs body
+    | .loop_exp _ _ _ _ body =>
+      1 + numOfLoopExpComs body
+    | .loop _ _ _ _ body =>
+      numOfLoopExpComs body
+    | _ => 0
+
+def numOfLoopExpComs {c : ZKConfig} (cmds : List (MDWrap (Com c))) : Nat :=
+  match cmds with
+  | [] => 0
+  | cmd::rest => numOfLoopExpCom cmd + numOfLoopExpComs rest
+
+end -- mutual
+
 
 
 /- The following few functions are used to convert a program to a string
@@ -235,43 +306,45 @@ instance : ToString (List Param) where
 
 mutual
 
-def formatCom {c : ZKConfig} (cmd : Com c) (level : Nat) (sp : String) : String :=
-  match cmd with
-  | .skip _ => s!"skip"
-  | .assign _ out e => s!"%{out} := {e}"
-  | .if_stmt _ cond tb eb =>
-      let tbStr := formatBody tb (level + 1)
-      let ebStr := formatBody eb (level + 1)
-      s!"if ({cond}) " ++ "{\n" ++ s!"{tbStr}" ++
-        s!"{sp}} else " ++ "{\n" ++ s!"{ebStr}" ++ s!"{sp}}"
-  | .with_const _ out e body =>
-      let bodyStr := formatBody body (level + 1)
-      s!"with_const ${out} = {e} " ++ "{\n" ++ s!"{bodyStr}" ++ s!"{sp}}"
-  | .loop_exp _ idx start rep step body =>
-      let bodyStr := formatBody body (level + 1)
-      s!"for (${idx}, {start}, {rep}, {step}) " ++ "{\n" ++
-      s!"{bodyStr}" ++ s!"{sp}}"
-  | .loop _ idx start rep step body =>
-      let bodyStr := formatBody body (level + 1)
-      s!"for (${idx}, {start}, {rep}, {step}) " ++ "{\n" ++
-      s!"{bodyStr}" ++ s!"{sp}}"
-  | .new_array _ out size =>
-      s!"array.new {size} %{out}"
-  | .read_array _ out arr idx =>
-      s!"array.read %{arr}[{idx}] %{out}"
-  | .write_array _ arr idx value =>
-      s!"array.write {value} %{arr}[{idx}]"
-  | .copy_array _ out arr =>
-      s!"array.copy %{arr} %{out}"
-  | .func_call _ outs fname args =>
-      let outsStr := String.intercalate ", " (outs.map (fun v => s!"%{v}"))
-      let argsStr := String.intercalate ", " (args.map toString)
-      if (outs == []) then
-        s!"call %{fname} ({argsStr})"
-      else
-        s!"call %{fname} ({argsStr}) to {outsStr}"
+def formatCom {c : ZKConfig} (i : MDWrap (Com c)) (level : Nat) (sp : String) : String :=
+  match i with
+  | .mk _ info =>
+      match info with
+      | .skip => s!"skip"
+      | .assign out e => s!"%{out} := {e}"
+      | .if_stmt cond tb eb =>
+          let tbStr := formatBody tb (level + 1)
+          let ebStr := formatBody eb (level + 1)
+          s!"if ({cond}) " ++ "{\n" ++ s!"{tbStr}" ++
+          s!"{sp}} else " ++ "{\n" ++ s!"{ebStr}" ++ s!"{sp}}"
+      | .with_const out e body =>
+         let bodyStr := formatBody body (level + 1)
+         s!"with_const ${out} = {e} " ++ "{\n" ++ s!"{bodyStr}" ++ s!"{sp}}"
+      | .loop_exp idx start rep step body =>
+          let bodyStr := formatBody body (level + 1)
+          s!"for (${idx}, {start}, {rep}, {step}) " ++ "{\n" ++
+          s!"{bodyStr}" ++ s!"{sp}}"
+      | .loop idx start rep step body =>
+          let bodyStr := formatBody body (level + 1)
+          s!"for (${idx}, {start}, {rep}, {step}) " ++ "{\n" ++
+          s!"{bodyStr}" ++ s!"{sp}}"
+      | .new_array out size =>
+         s!"array.new {size} %{out}"
+      | .read_array out arr idx =>
+         s!"array.read %{arr}[{idx}] %{out}"
+      | .write_array arr idx value =>
+          s!"array.write {value} %{arr}[{idx}]"
+      | .copy_array out arr =>
+         s!"array.copy %{arr} %{out}"
+      | .func_call outs fname args =>
+         let outsStr := String.intercalate ", " (outs.map (fun v => s!"%{v}"))
+         let argsStr := String.intercalate ", " (args.map toString)
+         if (outs == []) then
+            s!"call %{fname} ({argsStr})"
+         else
+            s!"call %{fname} ({argsStr}) to {outsStr}"
 
-def formatBody {c : ZKConfig} (p : List (Com c)) (level : Nat) : String :=
+def formatBody {c : ZKConfig} (p : List (MDWrap (Com c))) (level : Nat) : String :=
   let sp := getIndent level
   match p with
   | [] => ""
@@ -282,15 +355,19 @@ def formatBody {c : ZKConfig} (p : List (Com c)) (level : Nat) : String :=
 
 end -- mutual
 
-def formatFunction {c : ZKConfig} (f : Function c) : String :=
-  let bodyStr := formatBody f.body 1
-  if (f.rets == []) then
-    s!"func %{f.name}({f.params}) " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
-  else
-    s!"func %{f.name}({f.params}) : {f.rets} " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
+def formatFunction {c : ZKConfig} (f : MDWrap (Function c)) : String :=
+  match f with
+  | .mk _ func =>
+    match func with
+    | .mk name params rets body =>
+      let bodyStr := formatBody body 1
+      if (rets == []) then
+        s!"func %{name}({params}) " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
+      else
+        s!"func %{name}({params}) : {rets} " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
 
 -- register ToString instance for Function
-instance {c : ZKConfig} : ToString (Function c) where
+instance {c : ZKConfig} : ToString (MDWrap (Function c)) where
   toString f := formatFunction f
 
 def formatProg {c : ZKConfig} (p : Prog c) : String :=
@@ -305,54 +382,56 @@ instance {c : ZKConfig} : ToString (Prog c) where
 mutual
 
 def printCom {c : ZKConfig}
-    (h : IO.FS.Stream) (cmd : Com c) (level : Nat) (sp : String) : IO Unit := do
-  match cmd with
-  | .skip _ => h.putStr s!"skip"
-  | .assign _ out e => h.putStr s!"%{out} = {e}"
-  | .if_stmt _ cond tb eb =>
-      h.putStr s!"if ({cond})"
-      h.putStrLn " {"
-      printBody h tb (level + 1)
-      h.putStr sp
-      h.putStrLn "} else {"
-      printBody h eb (level + 1)
-      h.putStr sp
-      h.putStr "}"
-  | .with_const _ out e body =>
-      h.putStr s!"with_const ${out} = {e}"
-      h.putStrLn " {"
-      printBody h body (level + 1)
-      h.putStr sp
-      h.putStr "}"
-  | .loop_exp _ idx start rep step body =>
-      h.putStr s!"for (${idx}, {start}, {rep}, {step})"
-      h.putStrLn " {"
-      printBody h body (level + 1)
-      h.putStr sp
-      h.putStr "}"
-  | .loop _ idx start rep step body =>
-      h.putStr s!"for (${idx}, {start}, {rep}, {step})"
-      h.putStrLn " {"
-      printBody h body (level + 1)
-      h.putStr sp
-      h.putStrLn "}"
-  | .new_array _ out size =>
-      h.putStr s!"array.new {size} %{out}"
-  | .read_array _ out arr idx =>
-      h.putStr s!"array.read %{arr}[{idx}] %{out}"
-  | .write_array _ arr idx value =>
-      h.putStr s!"array.write {value} %{arr}[{idx}]"
-  | .copy_array _ out arr =>
-      h.putStr s!"array.copy %{arr} %{out}"
-  | .func_call _ outs fname args =>
-      let outsStr := String.intercalate ", " (outs.map (fun v => s!"%{v}"))
-      let argsStr := String.intercalate ", " (args.map toString)
-      if (outs == []) then
-        h.putStr s!"call %{fname} ({argsStr})"
-      else
-        h.putStr s!"call %{fname} ({argsStr}) to {outsStr}"
+    (h : IO.FS.Stream) (i : MDWrap (Com c)) (level : Nat) (sp : String) : IO Unit := do
+  match i with
+  | .mk _ info =>
+      match info with
+      | .skip => h.putStr s!"skip"
+      | .assign out e => h.putStr s!"%{out} = {e}"
+      | .if_stmt cond tb eb =>
+          h.putStr s!"if ({cond})"
+          h.putStrLn " {"
+          printBody h tb (level + 1)
+          h.putStr sp
+          h.putStrLn "} else {"
+          printBody h eb (level + 1)
+          h.putStr sp
+          h.putStrLn "}"
+      | .with_const out e body =>
+          h.putStr s!"with_const ${out} = {e}"
+          h.putStrLn " {"
+          printBody h body (level + 1)
+          h.putStr sp
+          h.putStr "}"
+      | .loop_exp idx start rep step body =>
+          h.putStr s!"for (${idx}, {start}, {rep}, {step})"
+          h.putStrLn " {"
+          printBody h body (level + 1)
+          h.putStr sp
+          h.putStr "}"
+      | .loop idx start rep step body =>
+          h.putStr s!"for (${idx}, {start}, {rep}, {step})"
+          h.putStrLn " {"
+          printBody h body (level + 1)
+          h.putStr sp
+          h.putStrLn "}"
+      | .new_array out size =>
+          h.putStr s!"array.new {size} %{out}"
+      | .read_array out arr idx =>
+          h.putStr s!"array.read %{arr}[{idx}] %{out}"
+      | .write_array arr idx value =>
+          h.putStr s!"array.write {value} %{arr}[{idx}]"
+      | .copy_array out arr =>
+          h.putStr s!"array.copy %{arr} %{out}"
+      | .func_call outs fname args =>
+          let outsStr := String.intercalate ", " (outs.map (fun v => s!"%{v}"))
+          let argsStr := String.intercalate ", " (args.map toString)
+          if (outs == []) then
+            h.putStr s!"call %{fname} ({argsStr})"
+          else
+            h.putStr s!"call %{fname} ({argsStr}) to {outsStr}"
 
-def printBody {c : ZKConfig} (h : IO.FS.Stream) (p : List (Com c)) (level : Nat) : IO Unit := do
+def printBody {c : ZKConfig} (h : IO.FS.Stream) (p : List (MDWrap (Com c))) (level : Nat) : IO Unit := do
   let sp := getIndent level
   match p with
   | [] => pure ()
@@ -364,69 +443,23 @@ def printBody {c : ZKConfig} (h : IO.FS.Stream) (p : List (Com c)) (level : Nat)
 
 end -- mutual
 
-def printFunction {c : ZKConfig} (h : IO.FS.Stream) (f : Function c) : IO Unit := do
-  if (f.rets == []) then
-    h.putStr s!"func %{f.name}({f.params})"
-  else
-    h.putStr s!"func %{f.name}({f.params}) : {f.rets}"
-  h.putStrLn " {"
-  printBody h f.body 1
-  h.putStrLn "}"
+def printFunction {c : ZKConfig} (h : IO.FS.Stream) (f : MDWrap (Function c)) : IO Unit := do
+  match f with
+  | .mk _ func =>
+    match func with
+    | .mk name params rets body =>
+      if (rets == []) then
+        h.putStr s!"func %{name}({params})"
+      else
+        h.putStr s!"func %{name}({params}) : {rets}"
+      h.putStrLn " {"
+      printBody h body 1
+      h.putStrLn "}"
 
 def printProg {c : ZKConfig} (h : IO.FS.Stream) (p : Prog c) : IO Unit := do
     for f in p do
       printFunction h f
       h.putStrLn ""
-
-
-/- Size of a command and list of commands. They are used to prove termination of
-   functions that manipulate programs -/
-
-mutual
-
-def sizeOfCom {c : ZKConfig} (cmd : Com c) : Nat :=
-  match cmd with
-  | .if_stmt _ _ tb eb =>
-      1 + sizeOfComs tb + sizeOfComs eb
-  | .with_const _ _ _ body =>
-      1 + sizeOfComs body
-  | .loop_exp _ _ _ _ _ body =>
-      1 + sizeOfComs body
-  | .loop _ _ _ rep _ body =>
-      1 + rep*(1+sizeOfComs body)
-  | _ => 1
-
-def sizeOfComs {c : ZKConfig} (cmds : List (Com c)) : Nat :=
-match cmds with
-| [] => 0
-| cmd::rest => 1 + sizeOfCom cmd + sizeOfComs rest
-
-end -- mutual
-
-/- Number of loop_exp in a command and list of commands. They are used to prove termination of
-   functions that manipulate programs -/
-
-mutual
-
-def numOfLoopExpCom {c : ZKConfig} (cmd : Com c) : Nat :=
-  match cmd with
-  | .if_stmt _ _ tb eb =>
-      numOfLoopExpComs tb + numOfLoopExpComs eb
-  | .with_const _ _ _ body =>
-      numOfLoopExpComs body
-  | .loop_exp _ _ _ _ _ body =>
-      1 + numOfLoopExpComs body
-  | .loop _ _ _ _ _ body =>
-      numOfLoopExpComs body
-  | _ => 0
-
-def numOfLoopExpComs {c : ZKConfig} (cmds : List (Com c)) : Nat :=
-  match cmds with
-  | [] => 0
-  | cmd::rest => numOfLoopExpCom cmd + numOfLoopExpComs rest
-
-end -- mutual
-
 
 
 end Llzk.Language.Core.Syntax.AST
