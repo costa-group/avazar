@@ -49,4 +49,4 @@ def main (args : List String) : IO UInt32 := do
   llzkCmd.validate args
 
 
--- #eval main <| "-o output/out.txt test_progs/syntax/simple.txt".splitOn " "
+-- #eval main <| "-o tmp/out.txt test_progs/syntax/simple.txt".splitOn " "
