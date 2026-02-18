@@ -47,6 +47,3 @@ def llzkCmd : Cmd := `[Cli|
 /-- Main entry point for symbolic execution from command line -/
 def main (args : List String) : IO UInt32 := do
   llzkCmd.validate args
-
-
-#eval main <| "-o tmp/out.txt test_progs/syntax/simple.txt".splitOn " "

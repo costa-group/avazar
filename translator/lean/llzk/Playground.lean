@@ -1,3 +1,4 @@
-import Llzk.Basic
-import Llzk.Language.Core.Syntax.AST
-import Llzk.Language.Core.Syntax.Parser
+import Main
+
+
+#eval main <| "-o tmp/out.txt test_progs/syntax/simple.txt".splitOn " "
