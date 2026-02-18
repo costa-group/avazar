@@ -1,19 +1,24 @@
+
+# this is a comment
 func %foo(%y:ff,%x:arr<10>) : %z:ff,%w:ff {
   %x = %y
   for($i, 0, 10, 1) {
-    %x = %y
+    %x = %y # this is a comment
     if ( %x == 1) {
-        %w = felt.add - 1 4
+        %w = felt.add -1 $i
     }
   }
   if (%x == -1) {
     %z = felt.add %x 1
-    %w = felt.mul 2 $i
+    %w = felt.mul 2 %z
   } else {
     %z = 3
     %w = 4
+    %x = bit.shl %a %b
   }
   array.new 5 %w
+  array.write %z %w[%a]
+  array.read %w[%a] %o
 }
 
 func %main(%y:ff,%x:arr<10>) : %z:ff,%w:ff {
@@ -21,8 +26,9 @@ func %main(%y:ff,%x:arr<10>) : %z:ff,%w:ff {
   with_const $j=10 {
   for($i, 0, 10, 1) {
     %x = %y
+    %x = bool.eq %x $j
     if ( %x == 1) {
-        %w = felt.add 1 4
+        %w = felt.add $i 4
     }
   }
   }

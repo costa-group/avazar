@@ -246,7 +246,7 @@ def formatCom {c : ZKConfig} (cmd : Com c) (level : Nat) (sp : String) : String 
         s!"{sp}} else " ++ "{\n" ++ s!"{ebStr}" ++ s!"{sp}}"
   | .with_const _ out e body =>
       let bodyStr := formatBody body (level + 1)
-      s!"with_const (${out} = {e}) " ++ "{\n" ++ s!"{bodyStr}" ++ s!"{sp}}"
+      s!"with_const ${out} = {e} " ++ "{\n" ++ s!"{bodyStr}" ++ s!"{sp}}"
   | .loop_exp _ idx start rep step body =>
       let bodyStr := formatBody body (level + 1)
       s!"for (${idx}, {start}, {rep}, {step}) " ++ "{\n" ++
@@ -319,7 +319,7 @@ def printCom {c : ZKConfig}
       h.putStr sp
       h.putStr "}"
   | .with_const _ out e body =>
-      h.putStr s!"with_const (${out} := {e})"
+      h.putStr s!"with_const ${out} = {e}"
       h.putStrLn " {"
       printBody h body (level + 1)
       h.putStr sp
