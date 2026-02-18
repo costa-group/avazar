@@ -153,18 +153,18 @@ def bindInParams {c : ZKConfig}
     (env : Env c) (params : List Param) (args : List (Value c)) : Except String (Env c) := do
   match params, args with
   | [], [] => Except.ok env
-  | (id, type) :: ps, v :: vs =>
-      ensureCorrectType v type
-      bindInParams (setVar env id v) ps vs
+  | p :: ps, v :: vs =>
+      ensureCorrectType v p.type
+      bindInParams (setVar env p.name v) ps vs
   | _, _ => Except.error "Mismatched lengths of parameters and arguments"
 
 def bindOutParams {c : ZKConfig}
     (env : Env c) (rets : List Param) : Except String (List (Value c)) := do
   match rets with
   | [] => Except.ok []
-  | (id, type) :: rets' =>
-      let v ← getVar env id
-      ensureCorrectType v type
+  | p :: rets' =>
+      let v ← getVar env p.name
+      ensureCorrectType v p.type
       let vs ← bindOutParams env rets'
       Except.ok (v :: vs)
 

@@ -252,7 +252,7 @@ partial def parseParam : ParserM Param := do
   | Token.ident v =>
     let _ ← expectSymbol ':'
     let varType ← parseVarType
-    return (v,varType)
+    return ⟨v, varType ⟩
   | _ => throw (IO.userError s!"Expected a parameter, got {tk}")
 
 
@@ -456,11 +456,11 @@ mutual
         throw (IO.userError s!"Unexpected token {t0} when parsing command")
 
   /-- Parses a list of statements until it hits a '}' -/
-  partial def parseBlock {c : ZKConfig} : ParserM (List (MDWrap (Com c))) := do
+  partial def parseBlock {c : ZKConfig} : ParserM (List (ProgElem (Com c))) := do
 
     expectSymbol '{' -- We expect the opening '{'
 
-    let rec loop (acc : List (MDWrap (Com c))) : ParserM (List (MDWrap (Com c))) := do
+    let rec loop (acc : List (ProgElem (Com c))) : ParserM (List (ProgElem (Com c))) := do
       let tk ← peekToken 0
       if tk.token == Token.symbol '}' then
         let _ ← advance -- Consume the '}'
@@ -468,7 +468,7 @@ mutual
       else
       let (row, col) := (tk.row, tk.col)
         let ast ← parseCommand
-        loop ( (MDWrap.mk ⟨⟨row, col⟩⟩ ast) :: acc)
+        loop ( (ProgElem.mk ⟨⟨row, col⟩⟩ ast) :: acc)
 
     loop []
 
@@ -492,14 +492,14 @@ mutual
 end
 
 partial def parseProg {c : ZKConfig}
-  (acc : List (MDWrap (Function c))) : ParserM (List (MDWrap (Function c))) := do
+  (acc : List (ProgElem (Function c))) : ParserM (List (ProgElem (Function c))) := do
   let t0 ← peekToken 0
   if t0.token == Token.eof then
     return acc
   else
     let (row, col) := (t0.row, t0.col)
     let ast ← parseFunction
-    parseProg ( (MDWrap.mk ⟨⟨row, col⟩⟩ ast) :: acc)
+    parseProg ( (ProgElem.mk ⟨⟨row, col⟩⟩ ast) :: acc)
 
 
 

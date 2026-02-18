@@ -15,11 +15,18 @@ structure SrcInfo where
   deriving Repr, BEq, Inhabited
 
 /- A structure for command metadata. More fields can be added later. -/
-structure CmdMetaData where
+structure ProgMetaData where
   src_info : SrcInfo
   deriving Repr, BEq, Inhabited
 
-abbrev emptyCMD : CmdMetaData := ⟨⟨0, 0⟩⟩
+abbrev emptyCMD : ProgMetaData := ⟨⟨0, 0⟩⟩
+
+
+inductive ProgElem (T : Type) where
+  | mk (md : ProgMetaData) (elem : T) : ProgElem T
+  deriving Repr, BEq, Inhabited
+
+
 
 abbrev VarID := String -- Program variable identifier
 abbrev FName := String -- Function name
@@ -68,10 +75,6 @@ inductive Cond (c : ZKConfig) where
   | neq (e1 e2 : SimpleExpr c) : Cond c
   deriving Repr, BEq, Inhabited
 
-inductive MDWrap (T : Type) where
-  | mk (md : CmdMetaData) (info : T) : MDWrap T
-  deriving Repr, BEq, Inhabited
-
 /- A data type for command -/
 inductive Com (c : ZKConfig) where
   -- in principle `skip` is not needed, we keep so we can augment it with
@@ -81,17 +84,17 @@ inductive Com (c : ZKConfig) where
   -- x := e
   | assign (out: VarID) (e : Expr c)
   -- if (cond) {tb} else {eb}
-  | if_stmt (cond: Cond c) (tb eb :  List (MDWrap (Com c)))
+  | if_stmt (cond: Cond c) (tb eb :  List (ProgElem (Com c)))
   -- with (out := e) { body }
   -- e is supposed to be a constant expression, runtime error should be thrown
   -- if it is not. We keep it as Expr for simplicity.
-  | with_const (out: VarID) (e : Expr c) (body: List (MDWrap (Com c)))
+  | with_const (out: VarID) (e : Expr c) (body: List (ProgElem (Com c)))
   -- for (i,start,rep,step) { body }
   -- expressions are supposed to be constant expression, runtime error
   -- should be thrown if they are not. We keep them as Expr for simplicity
-  | loop_exp (idx: VarID) (start rep step: Expr c) (body: List (MDWrap (Com c)))
+  | loop_exp (idx: VarID) (start rep step: Expr c) (body: List (ProgElem (Com c)))
   -- for (i,start,rep,step) { body }
-  | loop (idx: VarID) (start : FF c) (rep : ℕ) (step: FF c) (body: List (MDWrap (Com c)))
+  | loop (idx: VarID) (start : FF c) (rep : ℕ) (step: FF c) (body: List (ProgElem (Com c)))
   -- size is supposed to be a constant expression, runtime error should be thrown if it is not.
   | new_array (out: VarID) (size: SimpleExpr c)
   -- out := arr[idx]
@@ -112,26 +115,29 @@ inductive VarType where
   deriving Repr, BEq, Inhabited
 
 /- A parameter is a pair of variable identifier and its type -/
-abbrev Param := (VarID × VarType)
+structure Param where
+  name : VarID
+  type : VarType
+  deriving Repr, BEq, Inhabited
 
 /- A function receives input parameters `params`, executes the whole `body`,
    and returns the variables in `rets`.
 -/
 inductive Function (c : ZKConfig) where
   | mk (name : FName) (params : List Param)
-       (rets : List Param) (body : List (MDWrap (Com c))) : Function c
+       (rets : List Param) (body : List (ProgElem (Com c))) : Function c
   deriving Repr, BEq, Inhabited
 
 /- A program is a list of functions. Since we forbid recursion, a function can only call
 those that precede it in the list (this should be forced in the semantics)
  -/
-abbrev Prog (c : ZKConfig) := List (MDWrap (Function c))
+abbrev Prog (c : ZKConfig) := List (ProgElem (Function c))
 
 
 /- Search a function by name. It returns the function and the remaining program,
    which includes the functions that can be called by it. -/
 def fetchFunc {c : ZKConfig}
-  (p : Prog c) (fname : FName) : Except String (MDWrap (Function c) × Prog c) :=
+  (p : Prog c) (fname : FName) : Except String (ProgElem (Function c) × Prog c) :=
   match p with
   | [] => Except.error s!"Function {fname} not found in the program"
   | func :: fs =>
@@ -146,7 +152,7 @@ def fetchFunc {c : ZKConfig}
 
 /- fetchFunc returns a smaller program -/
 theorem fetchLT {c : ZKConfig}
-  (p : Prog c) (fname : FName) (f : MDWrap (Function c)) (p' : Prog c) :
+  (p : Prog c) (fname : FName) (f : ProgElem (Function c)) (p' : Prog c) :
   fetchFunc p fname = Except.ok (f, p') → p'.length < p.length := by
   cases p with
   | nil => simp [fetchFunc]
@@ -177,7 +183,7 @@ theorem fetchLT {c : ZKConfig}
 
 mutual
 
-def sizeOfCom {c : ZKConfig} (i : MDWrap (Com c)) : Nat :=
+def sizeOfCom {c : ZKConfig} (i : ProgElem (Com c)) : Nat :=
   match i with
   | .mk _ info =>
     match info with
@@ -192,7 +198,7 @@ def sizeOfCom {c : ZKConfig} (i : MDWrap (Com c)) : Nat :=
       1 + rep*(1+sizeOfComs body)
     | _ => 1
 
-def sizeOfComs {c : ZKConfig} (cmds : List (MDWrap (Com c))) : Nat :=
+def sizeOfComs {c : ZKConfig} (cmds : List (ProgElem (Com c))) : Nat :=
 match cmds with
 | [] => 0
 | cmd::rest => 1 + sizeOfCom cmd + sizeOfComs rest
@@ -204,7 +210,7 @@ end -- mutual
 
 mutual
 
-def numOfLoopExpCom {c : ZKConfig} (cmd : MDWrap (Com c)) : Nat :=
+def numOfLoopExpCom {c : ZKConfig} (cmd : ProgElem (Com c)) : Nat :=
   match cmd with
   | .mk _ info =>
     match info with
@@ -218,7 +224,7 @@ def numOfLoopExpCom {c : ZKConfig} (cmd : MDWrap (Com c)) : Nat :=
       numOfLoopExpComs body
     | _ => 0
 
-def numOfLoopExpComs {c : ZKConfig} (cmds : List (MDWrap (Com c))) : Nat :=
+def numOfLoopExpComs {c : ZKConfig} (cmds : List (ProgElem (Com c))) : Nat :=
   match cmds with
   | [] => 0
   | cmd::rest => numOfLoopExpCom cmd + numOfLoopExpComs rest
@@ -287,11 +293,10 @@ instance {c : ZKConfig} : ToString (Cond c) where
   toString cond := formatCond cond
 
 def formatParam (p : Param) : String :=
-  let (varName, varType) := p
-  let typeStr := match varType with
+  let typeStr := match p.type with
                  | VarType.ff => "ff"
                  | VarType.array size => s!"arr<{size}>"
-  s!"%{varName}:{typeStr}"
+  s!"%{p.name}:{typeStr}"
 
 -- register ToString instance for Param
 instance : ToString Param where
@@ -306,7 +311,7 @@ instance : ToString (List Param) where
 
 mutual
 
-def formatCom {c : ZKConfig} (i : MDWrap (Com c)) (level : Nat) (sp : String) : String :=
+def formatCom {c : ZKConfig} (i : ProgElem (Com c)) (level : Nat) (sp : String) : String :=
   match i with
   | .mk _ info =>
       match info with
@@ -344,7 +349,7 @@ def formatCom {c : ZKConfig} (i : MDWrap (Com c)) (level : Nat) (sp : String) : 
          else
             s!"call %{fname} ({argsStr}) to {outsStr}"
 
-def formatBody {c : ZKConfig} (p : List (MDWrap (Com c))) (level : Nat) : String :=
+def formatBody {c : ZKConfig} (p : List (ProgElem (Com c))) (level : Nat) : String :=
   let sp := getIndent level
   match p with
   | [] => ""
@@ -355,7 +360,7 @@ def formatBody {c : ZKConfig} (p : List (MDWrap (Com c))) (level : Nat) : String
 
 end -- mutual
 
-def formatFunction {c : ZKConfig} (f : MDWrap (Function c)) : String :=
+def formatFunction {c : ZKConfig} (f : ProgElem (Function c)) : String :=
   match f with
   | .mk _ func =>
     match func with
@@ -367,7 +372,7 @@ def formatFunction {c : ZKConfig} (f : MDWrap (Function c)) : String :=
         s!"func %{name}({params}) : {rets} " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
 
 -- register ToString instance for Function
-instance {c : ZKConfig} : ToString (MDWrap (Function c)) where
+instance {c : ZKConfig} : ToString (ProgElem (Function c)) where
   toString f := formatFunction f
 
 def formatProg {c : ZKConfig} (p : Prog c) : String :=
@@ -382,7 +387,7 @@ instance {c : ZKConfig} : ToString (Prog c) where
 mutual
 
 def printCom {c : ZKConfig}
-    (h : IO.FS.Stream) (i : MDWrap (Com c)) (level : Nat) (sp : String) : IO Unit := do
+    (h : IO.FS.Stream) (i : ProgElem (Com c)) (level : Nat) (sp : String) : IO Unit := do
   match i with
   | .mk _ info =>
       match info with
@@ -431,7 +436,8 @@ def printCom {c : ZKConfig}
           else
             h.putStr s!"call %{fname} ({argsStr}) to {outsStr}"
 
-def printBody {c : ZKConfig} (h : IO.FS.Stream) (p : List (MDWrap (Com c))) (level : Nat) : IO Unit := do
+def printBody {c : ZKConfig}
+  (h : IO.FS.Stream) (p : List (ProgElem (Com c))) (level : Nat) : IO Unit := do
   let sp := getIndent level
   match p with
   | [] => pure ()
@@ -443,7 +449,7 @@ def printBody {c : ZKConfig} (h : IO.FS.Stream) (p : List (MDWrap (Com c))) (lev
 
 end -- mutual
 
-def printFunction {c : ZKConfig} (h : IO.FS.Stream) (f : MDWrap (Function c)) : IO Unit := do
+def printFunction {c : ZKConfig} (h : IO.FS.Stream) (f : ProgElem (Function c)) : IO Unit := do
   match f with
   | .mk _ func =>
     match func with
