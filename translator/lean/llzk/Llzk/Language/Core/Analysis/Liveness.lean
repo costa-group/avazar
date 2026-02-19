@@ -86,6 +86,8 @@ def eraseParams (vars : VarIDSet) (params : List Param) : VarIDSet :=
 
 mutual
 
+/- Computes the liveness information for a single command,
+   and adds it to the meta data -/
 def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
     match i with
     | .mk md cmd =>
@@ -93,10 +95,12 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
         | .skip =>
           ComWithMD.mk { md with liveness := { live_in := out, live_out := out } } cmd
         | .assign id e =>
+          -- live_in = live_out \ {id} ∪ usedVars(e)
           let out' := out.erase id
           let liveIn := addUsedVarsExpr out' e
           ComWithMD.mk { md with liveness := { live_in := liveIn, live_out := out } } cmd
         | .if_stmt cond tb eb =>
+          -- live_in = (live_in_then ∪ live_in_else) ∪ usedVars(cond)
           let tb' := addLivenessCmds tb out
           let eb' := addLivenessCmds eb out
           let liveInThen := getCmdsLiveIn tb'
@@ -105,6 +109,7 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
           let cmd' := Com.if_stmt cond tb' eb'
           ComWithMD.mk { md with liveness := { live_in := liveIn, live_out := out } } cmd'
         | .with_const _id _e body =>
+          -- live_in = live_in_body
           -- Variable 'id' is not considered since it is a constant variable. Also 'e'
           -- is not considered since it is supposed to be a constant expression.
           let body' := addLivenessCmds body out
@@ -112,10 +117,11 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
           let cmd' := Com.with_const _id _e body'
           ComWithMD.mk { md with liveness := { live_in := liveIn, live_out := out } } cmd'
         | .loop_exp _idx _start _rep _step body =>
+          -- live_in = live_in of (body;body)
           -- None of the expressions are considered since they are supposed to be constant
           -- expressions. Also the loop variable 'idx' is not considered since it is a
           -- constant variable. We need to iterate the loop twice to get the fixed point of the
-          -- live variables.
+          -- live variables. 2 iteration are enough.
           let body' := addLivenessCmds body out
           let liveIn := getCmdsLiveIn body'
           let body'' := addLivenessCmds body (liveIn.union out)
@@ -123,6 +129,7 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
           let cmd' := Com.loop_exp _idx _start _rep _step body''
           ComWithMD.mk { md with liveness := { live_in := liveIn', live_out := out } } cmd'
         | .loop _idx _start _rep _step body =>
+          -- live_in = live_in of (body;body)
           -- The loop variable 'idx' is not considered since it is a constant variable.
           -- We need to iterate the loop twice to get the fixed point of the live variables.
           let body' := addLivenessCmds body out
@@ -132,30 +139,35 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
           let cmd' := Com.loop _idx _start _rep _step body''
           ComWithMD.mk { md with liveness := { live_in := liveIn', live_out := out } } cmd'
         | .new_array id _size =>
-        -- We do not consider size since it is supposed to be a constant expression.
+          -- live_in = live_out \ {id}
+          -- We do not consider size since it is supposed to be a constant expression.
           let liveIn := out.erase id
           ComWithMD.mk { md with liveness := { live_in := liveIn, live_out := out } } cmd
         | .read_array id arr idx => -- id := arr[idx]
+          -- live_in = (live_out \ {id}) ∪ {arr} ∪ usedVars(idx)
           let out' := out.erase id
           let liveIn := out'.insert arr
           let liveIn' := addUsedVarsSimpleExpr liveIn idx
           ComWithMD.mk { md with liveness := { live_in := liveIn', live_out := out } } cmd
         | .write_array arr idx val => -- arr[idx] := val
+            -- live_in = live_out ∪ {arr} ∪ usedVars(idx) ∪ usedVars(val)
             -- Note that 'arr' is considered live-in since it is an array access
             let liveIn := out.insert arr
             let liveIn' := addUsedVarsSimpleExpr liveIn idx
             let liveIn'' := addUsedVarsSimpleExpr liveIn' val
             ComWithMD.mk { md with liveness := { live_in := liveIn'', live_out := out } } cmd
         | .copy_array dst src =>
+          -- live_in = (live_out \ {dst}) ∪ {src}
           let liveIn := out.erase dst
           let liveIn' := liveIn.insert src
           ComWithMD.mk { md with liveness := { live_in := liveIn', live_out := out } } cmd
         | .func_call rets _id args =>
+          -- live_in = (live_out \ rets) ∪ usedVars(args)
           let out' := eraseVars out rets
           let liveIn := addUsedVarsSimpleExprs out' args
           ComWithMD.mk { md with liveness := { live_in := liveIn, live_out := out } } cmd
 
-
+/-- Computes the liveness information for a list of commands -/
 def addLivenessCmds {c : ZKConfig} (cmds : List (ComWithMD c)) (out : VarIDSet) :=
     match cmds with
     | [] => []
@@ -168,7 +180,8 @@ def addLivenessCmds {c : ZKConfig} (cmds : List (ComWithMD c)) (out : VarIDSet) 
 end
 
 
-
+/-- Computes the liveness information for a function, and adds it to the
+    meta data -/
 def addLivenessFunc {c : ZKConfig} (f : FuncWithMD c) : FuncWithMD c :=
     match f with
     | .mk md func =>
@@ -180,11 +193,13 @@ def addLivenessFunc {c : ZKConfig} (f : FuncWithMD c) : FuncWithMD c :=
      let func' := Func.mk name params rets body'
      FuncWithMD.mk { md with liveness := { live_in := liveIn, live_out := out } } func'
 
+/-- Computes the liveness information for a list of functions -/
 def addLivenessFuncs {c : ZKConfig} (funcs : List (FuncWithMD c)) : List (FuncWithMD c) :=
     match funcs with
     | [] => []
     | f :: rest => addLivenessFunc f :: addLivenessFuncs rest
 
+/-- Computes the liveness information for a program -/
 def addLivenessProg {c : ZKConfig} (p : ProgWithMD c) : ProgWithMD c :=
     match p with
     | .mk md funcs =>
