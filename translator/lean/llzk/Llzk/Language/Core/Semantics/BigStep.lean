@@ -10,7 +10,7 @@ open Llzk.Language.Core.Semantics.Basic
 mutual
 
 def evalCmd {c : ZKConfig} (cfg : SemConfig c)
-    (p : Prog c) (st : State c) (i : ProgElem (Com c)) : Except String (State c) := do
+    (p : Prog c) (st : State c) (i : ComWithMD c) : Except String (State c) := do
   match i with
    | .mk md cmd =>
       match cmd with
@@ -34,14 +34,15 @@ def evalCmd {c : ZKConfig} (cfg : SemConfig c)
           let startVal ← evalConstExpr st start
           let repVal ← evalConstExpr st rep
           let stepVal ← evalConstExpr st step
-          let loop := (ProgElem.mk md (Com.loop idx startVal repVal.val stepVal body))
+          let loop := (ComWithMD.mk md (Com.loop idx startVal repVal.val stepVal body))
           evalCmd cfg p st loop
       | Com.loop idx start (rep+1) step body =>
           ensureNotDefinedCVar st.cvars idx -- ensure loop constant variable is not already defined
           let st' := { st with cvars := st.cvars.insert idx start } -- declare loop variable
           let st'' ← evalCmds cfg p st' body -- evaluate loop body (1 iteration)
           let st''' := { st'' with cvars := st''.cvars.erase idx }  -- remove loop variable
-          evalCmd cfg p st''' (ProgElem.mk md (Com.loop idx (start+step) rep step body)) -- the rest
+          -- evaluate the rest iterations of loop
+          evalCmd cfg p st''' (ComWithMD.mk md (Com.loop idx (start+step) rep step body))
       | Com.loop _idx _start 0 _step _body =>
           return st
       | Com.func_call outs fname args =>
@@ -103,7 +104,7 @@ decreasing_by
 
 
 def evalCmds {c : ZKConfig} (cfg : SemConfig c)
-    (p : Prog c) (st : State c) (cmds : List (ProgElem (Com c))) : Except String (State c) := do
+    (p : Prog c) (st : State c) (cmds : List (ComWithMD c)) : Except String (State c) := do
   match cmds with
   | [] => Except.ok st
   | cmd :: rest => do
@@ -147,7 +148,7 @@ def evalFun {c : ZKConfig} (cfg : SemConfig c)
       match f with
       | .mk _ func =>
       match func with
-       | Function.mk _ params rets body =>
+       | Func.mk _ params rets body =>
            let vars_env ← bindInParams (emptyEnv c) params args
            let st := ⟨vars_env, emptyCEnv c⟩
            let st' ← evalCmds cfg p' st body
