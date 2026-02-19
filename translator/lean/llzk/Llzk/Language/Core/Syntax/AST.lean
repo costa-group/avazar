@@ -1,9 +1,26 @@
 import Llzk.Basic
-import Init.Data.BitVec
+import Std.Data.TreeSet.Basic
 
 /- This is a namespace for the core language -/
 
 namespace Llzk.Language.Core.Syntax.AST
+
+
+abbrev VarID := String -- Program variable identifier
+abbrev FName := String -- Function name
+
+
+abbrev VarIDSet := Std.TreeSet VarID
+abbrev emptyVarIDSet : VarIDSet := Std.TreeSet.empty
+
+/- toString instance for VarIDSet -/
+def VarIDSetToString (s : VarIDSet) : String :=
+  let vars := s.toList
+  String.intercalate ", " vars
+
+instance : ToString VarIDSet where
+  toString s := "{" ++ VarIDSetToString s ++ "}"
+
 
 /- A structure for command information. It will be mainly used to related
    instructions to the source code, like line numbers, etc. More fields
@@ -14,22 +31,25 @@ structure SrcInfo where
   col : ℕ
   deriving Repr, BEq, Inhabited
 
-/- A structure for command metadata. More fields can be added later. -/
-structure ProgMetaData where
+structure LivenessInfo where
+  live_in : VarIDSet := emptyVarIDSet
+  live_out : VarIDSet := emptyVarIDSet
+  deriving Repr, BEq, Inhabited
+
+structure CmdMD where
   src_info : SrcInfo
+  liveness : LivenessInfo := default
   deriving Repr, BEq, Inhabited
 
-abbrev emptyCMD : ProgMetaData := ⟨⟨0, 0⟩⟩
+structure FuncMD where
+  src_info : SrcInfo
+  liveness : LivenessInfo := default
+  deriving Repr, BEq, Inhabited
 
-
-inductive ProgElem (T : Type) where
-  | mk (md : ProgMetaData) (elem : T) : ProgElem T
+structure ProgMD where
   deriving Repr, BEq, Inhabited
 
 
-
-abbrev VarID := String -- Program variable identifier
-abbrev FName := String -- Function name
 
 
 /- A simple expression is either a variable, constant variable, or a finite field value -/
@@ -43,37 +63,39 @@ inductive SimpleExpr (c : ZKConfig) where
 /- Expression can be binary or unary operations, where operands are simple expressions -/
 inductive Expr (c : ZKConfig) where
   -- arithmetic
-  | id (e : SimpleExpr c) : Expr c  -- identity
-  | neg (e : SimpleExpr c) : Expr c -- negation
-  | add (e1 e2 : SimpleExpr c) : Expr c
-  | sub (e1 e2 : SimpleExpr c) : Expr c
-  | mul (e1 e2 : SimpleExpr c) : Expr c
-  | div (e1 e2 : SimpleExpr c) : Expr c
+  | id (s : SimpleExpr c) : Expr c  -- identity
+  | neg (s : SimpleExpr c) : Expr c -- negation
+  | add (s1 s2 : SimpleExpr c) : Expr c
+  | sub (s1 s2 : SimpleExpr c) : Expr c
+  | mul (s1 s2 : SimpleExpr c) : Expr c
+  | div (s1 s2 : SimpleExpr c) : Expr c
   -- bitwise
-  | shl (e bits: SimpleExpr c) : Expr c -- shift left
-  | shr (e bits : SimpleExpr c) : Expr c -- shift right
-  | and (e1 e2 : SimpleExpr c) : Expr c -- bitwise and
-  | or (e1 e2 : SimpleExpr c) : Expr c -- bitwise or
-  | xor (e1 e2 : SimpleExpr c) : Expr c -- bitwise xor
-  | not (e : SimpleExpr c) : Expr c -- bitwise not
+  | shl (s bits: SimpleExpr c) : Expr c -- shift left
+  | shr (s bits : SimpleExpr c) : Expr c -- shift right
+  | and (s1 s2 : SimpleExpr c) : Expr c -- bitwise and
+  | or (s1 s2 : SimpleExpr c) : Expr c -- bitwise or
+  | xor (s1 s2 : SimpleExpr c) : Expr c -- bitwise xor
+  | not (s : SimpleExpr c) : Expr c -- bitwise not
   -- boolean
   | True : Expr c -- boolean true
   | False : Expr c -- boolean false
-  | eq (e1 e2 : SimpleExpr c) : Expr c -- equality check
-  | neq (e1 e2 : SimpleExpr c) : Expr c -- inequality check
-  | lt (e1 e2 : SimpleExpr c) : Expr c -- less than check
-  | gt (e1 e2 : SimpleExpr c) : Expr c -- greater than check
-  | le (e1 e2 : SimpleExpr c) : Expr c -- less than or equal check
-  | ge (e1 e2 : SimpleExpr c) : Expr c -- greater than or equal check
-  | bor (e1 e2 : SimpleExpr c) : Expr c -- logical or
-  | band (e1 e2 : SimpleExpr c) : Expr c -- logical and
-  | bneg (e : SimpleExpr c) : Expr c -- logical negation
+  | eq (s1 s2 : SimpleExpr c) : Expr c -- equality check
+  | neq (s1 s2 : SimpleExpr c) : Expr c -- inequality check
+  | lt (s1 s2 : SimpleExpr c) : Expr c -- less than check
+  | gt (s1 s2 : SimpleExpr c) : Expr c -- greater than check
+  | le (s1 s2 : SimpleExpr c) : Expr c -- less than or equal check
+  | ge (s1 s2 : SimpleExpr c) : Expr c -- greater than or equal check
+  | bor (s1 s2 : SimpleExpr c) : Expr c -- logical or
+  | band (s1 s2 : SimpleExpr c) : Expr c -- logical and
+  | bneg (s : SimpleExpr c) : Expr c -- logical negation
    deriving Repr, BEq, Inhabited
 
 inductive Cond (c : ZKConfig) where
-  | eq (e1 e2 : SimpleExpr c) : Cond c
-  | neq (e1 e2 : SimpleExpr c) : Cond c
+  | eq (s1 s2 : SimpleExpr c) : Cond c
+  | neq (s1 s2 : SimpleExpr c) : Cond c
   deriving Repr, BEq, Inhabited
+
+mutual
 
 /- A data type for command -/
 inductive Com (c : ZKConfig) where
@@ -84,17 +106,17 @@ inductive Com (c : ZKConfig) where
   -- x := e
   | assign (out: VarID) (e : Expr c)
   -- if (cond) {tb} else {eb}
-  | if_stmt (cond: Cond c) (tb eb :  List (ProgElem (Com c)))
+  | if_stmt (cond: Cond c) (tb eb :  List (ComWithMD c))
   -- with (out := e) { body }
   -- e is supposed to be a constant expression, runtime error should be thrown
   -- if it is not. We keep it as Expr for simplicity.
-  | with_const (out: VarID) (e : Expr c) (body: List (ProgElem (Com c)))
+  | with_const (out: VarID) (e : Expr c) (body: List (ComWithMD c))
   -- for (i,start,rep,step) { body }
   -- expressions are supposed to be constant expression, runtime error
   -- should be thrown if they are not. We keep them as Expr for simplicity
-  | loop_exp (idx: VarID) (start rep step: Expr c) (body: List (ProgElem (Com c)))
+  | loop_exp (idx: VarID) (start rep step: Expr c) (body: List (ComWithMD c))
   -- for (i,start,rep,step) { body }
-  | loop (idx: VarID) (start : FF c) (rep : ℕ) (step: FF c) (body: List (ProgElem (Com c)))
+  | loop (idx: VarID) (start : FF c) (rep : ℕ) (step: FF c) (body: List (ComWithMD c))
   -- size is supposed to be a constant expression, runtime error should be thrown if it is not.
   | new_array (out: VarID) (size: SimpleExpr c)
   -- out := arr[idx]
@@ -107,6 +129,15 @@ inductive Com (c : ZKConfig) where
   | func_call (outs: List VarID) (fname: FName) (args: List (SimpleExpr c))
    deriving Repr, BEq, Inhabited
 
+/- Adding metadata to commands -/
+inductive ComWithMD (c : ZKConfig) : Type
+  | mk (md : CmdMD) (cmd : Com c) : ComWithMD c
+  deriving Repr, BEq, Inhabited
+
+end
+
+/- A command with metadata -/
+--abbrev ComWithMD (c : ZKConfig) := ProgElem (Com c)
 
 /- We have two types: finite field and array -/
 inductive VarType where
@@ -123,36 +154,46 @@ structure Param where
 /- A function receives input parameters `params`, executes the whole `body`,
    and returns the variables in `rets`.
 -/
-inductive Function (c : ZKConfig) where
+inductive Func (c : ZKConfig) where
   | mk (name : FName) (params : List Param)
-       (rets : List Param) (body : List (ProgElem (Com c))) : Function c
+       (rets : List Param) (body : List (ComWithMD c)) : Func c
+  deriving Repr, BEq, Inhabited
+
+/- A function with metadata -/
+inductive FuncWithMD (c : ZKConfig) where
+  | mk (md : FuncMD) (func : Func c) : FuncWithMD c
   deriving Repr, BEq, Inhabited
 
 /- A program is a list of functions. Since we forbid recursion, a function can only call
 those that precede it in the list (this should be forced in the semantics)
  -/
-abbrev Prog (c : ZKConfig) := List (ProgElem (Function c))
+abbrev Prog (c : ZKConfig) := List (FuncWithMD c)
 
+/- A program with metadata. It is the top-level element of a program, which includes
+   the whole program and the metadata for it. -/
+inductive ProgWithMD (c : ZKConfig) where
+  | mk (md : ProgMD) (prog : Prog c) : ProgWithMD c
+  deriving Repr, BEq, Inhabited
 
 /- Search a function by name. It returns the function and the remaining program,
    which includes the functions that can be called by it. -/
 def fetchFunc {c : ZKConfig}
-  (p : Prog c) (fname : FName) : Except String (ProgElem (Function c) × Prog c) :=
+  (p : Prog c) (fname : FName) : Except String (FuncWithMD c × Prog c) :=
   match p with
   | [] => Except.error s!"Function {fname} not found in the program"
-  | func :: fs =>
-    match func with
+  | funcWMD :: fs =>
+    match funcWMD with
     | .mk _ f =>
     match f with
      | .mk name _ _ _ =>
        if name == fname then
-         Except.ok (func, fs)
+         Except.ok (funcWMD, fs)
        else
          fetchFunc fs fname
 
 /- fetchFunc returns a smaller program -/
 theorem fetchLT {c : ZKConfig}
-  (p : Prog c) (fname : FName) (f : ProgElem (Function c)) (p' : Prog c) :
+  (p : Prog c) (fname : FName) (f : FuncWithMD c) (p' : Prog c) :
   fetchFunc p fname = Except.ok (f, p') → p'.length < p.length := by
   cases p with
   | nil => simp [fetchFunc]
@@ -183,7 +224,7 @@ theorem fetchLT {c : ZKConfig}
 
 mutual
 
-def sizeOfCom {c : ZKConfig} (i : ProgElem (Com c)) : Nat :=
+def sizeOfCom {c : ZKConfig} (i : ComWithMD c) : Nat :=
   match i with
   | .mk _ info =>
     match info with
@@ -198,7 +239,7 @@ def sizeOfCom {c : ZKConfig} (i : ProgElem (Com c)) : Nat :=
       1 + rep*(1+sizeOfComs body)
     | _ => 1
 
-def sizeOfComs {c : ZKConfig} (cmds : List (ProgElem (Com c))) : Nat :=
+def sizeOfComs {c : ZKConfig} (cmds : List (ComWithMD c)) : Nat :=
 match cmds with
 | [] => 0
 | cmd::rest => 1 + sizeOfCom cmd + sizeOfComs rest
@@ -210,7 +251,7 @@ end -- mutual
 
 mutual
 
-def numOfLoopExpCom {c : ZKConfig} (cmd : ProgElem (Com c)) : Nat :=
+def numOfLoopExpCom {c : ZKConfig} (cmd : ComWithMD c) : Nat :=
   match cmd with
   | .mk _ info =>
     match info with
@@ -224,7 +265,7 @@ def numOfLoopExpCom {c : ZKConfig} (cmd : ProgElem (Com c)) : Nat :=
       numOfLoopExpComs body
     | _ => 0
 
-def numOfLoopExpComs {c : ZKConfig} (cmds : List (ProgElem (Com c))) : Nat :=
+def numOfLoopExpComs {c : ZKConfig} (cmds : List (ComWithMD c)) : Nat :=
   match cmds with
   | [] => 0
   | cmd::rest => numOfLoopExpCom cmd + numOfLoopExpComs rest
@@ -311,7 +352,7 @@ instance : ToString (List Param) where
 
 mutual
 
-def formatCom {c : ZKConfig} (i : ProgElem (Com c)) (level : Nat) (sp : String) : String :=
+def formatCom {c : ZKConfig} (i : ComWithMD c) (level : Nat) (sp : String) : String :=
   match i with
   | .mk _ info =>
       match info with
@@ -349,7 +390,7 @@ def formatCom {c : ZKConfig} (i : ProgElem (Com c)) (level : Nat) (sp : String) 
          else
             s!"call %{fname} ({argsStr}) to {outsStr}"
 
-def formatBody {c : ZKConfig} (p : List (ProgElem (Com c))) (level : Nat) : String :=
+def formatBody {c : ZKConfig} (p : List (ComWithMD c)) (level : Nat) : String :=
   let sp := getIndent level
   match p with
   | [] => ""
@@ -360,7 +401,7 @@ def formatBody {c : ZKConfig} (p : List (ProgElem (Com c))) (level : Nat) : Stri
 
 end -- mutual
 
-def formatFunction {c : ZKConfig} (f : ProgElem (Function c)) : String :=
+def formatFunction {c : ZKConfig} (f : FuncWithMD c) : String :=
   match f with
   | .mk _ func =>
     match func with
@@ -372,24 +413,26 @@ def formatFunction {c : ZKConfig} (f : ProgElem (Function c)) : String :=
         s!"func %{name}({params}) : {rets} " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
 
 -- register ToString instance for Function
-instance {c : ZKConfig} : ToString (ProgElem (Function c)) where
+instance {c : ZKConfig} : ToString (FuncWithMD c) where
   toString f := formatFunction f
 
-def formatProg {c : ZKConfig} (p : Prog c) : String :=
-  let funcStrs := p.map toString
-  String.intercalate "\n\n" funcStrs
+def formatProg {c : ZKConfig} (p : ProgWithMD c) : String :=
+  match p with
+  | .mk _ fs =>
+      let funcStrs := fs.reverse.map toString
+      String.intercalate "\n\n" funcStrs
 
 -- register ToString instance for Program
-instance {c : ZKConfig} : ToString (Prog c) where
+instance {c : ZKConfig} : ToString (ProgWithMD c) where
   toString p := formatProg p
 
 
 mutual
 
 def printCom {c : ZKConfig}
-    (h : IO.FS.Stream) (i : ProgElem (Com c)) (level : Nat) (sp : String) : IO Unit := do
+    (h : IO.FS.Stream) (i : ComWithMD c) (level : Nat) (sp : String) : IO Unit := do
   match i with
-  | .mk _ info =>
+  | .mk _md info =>
       match info with
       | .skip => h.putStr s!"skip"
       | .assign out e => h.putStr s!"%{out} = {e}"
@@ -437,19 +480,23 @@ def printCom {c : ZKConfig}
             h.putStr s!"call %{fname} ({argsStr}) to {outsStr}"
 
 def printBody {c : ZKConfig}
-  (h : IO.FS.Stream) (p : List (ProgElem (Com c))) (level : Nat) : IO Unit := do
+  (h : IO.FS.Stream) (p : List (ComWithMD c)) (level : Nat) : IO Unit := do
   let sp := getIndent level
   match p with
   | [] => pure ()
   | cmd::cmds =>
-      h.putStr s!"{sp}"
-      printCom h cmd level sp
-      h.putStrLn ""
-      printBody h cmds level
+      match cmd with
+      | .mk md _ =>
+        h.putStr s!"{sp}"
+        h.putStrLn s!"# {md.liveness.live_in} -> {md.liveness.live_out}"
+        h.putStr s!"{sp}"
+        printCom h cmd level sp
+        h.putStrLn ""
+        printBody h cmds level
 
 end -- mutual
 
-def printFunction {c : ZKConfig} (h : IO.FS.Stream) (f : ProgElem (Function c)) : IO Unit := do
+def printFunction {c : ZKConfig} (h : IO.FS.Stream) (f : FuncWithMD c) : IO Unit := do
   match f with
   | .mk _ func =>
     match func with
@@ -462,10 +509,12 @@ def printFunction {c : ZKConfig} (h : IO.FS.Stream) (f : ProgElem (Function c)) 
       printBody h body 1
       h.putStrLn "}"
 
-def printProg {c : ZKConfig} (h : IO.FS.Stream) (p : Prog c) : IO Unit := do
-    for f in p do
-      printFunction h f
-      h.putStrLn ""
+def printProg {c : ZKConfig} (h : IO.FS.Stream) (p : ProgWithMD c) : IO Unit := do
+    match p with
+    | .mk _ fs =>
+      for f in fs.reverse do
+        printFunction h f
+        h.putStrLn ""
 
 
 end Llzk.Language.Core.Syntax.AST

@@ -456,11 +456,11 @@ mutual
         throw (IO.userError s!"Unexpected token {t0} when parsing command")
 
   /-- Parses a list of statements until it hits a '}' -/
-  partial def parseBlock {c : ZKConfig} : ParserM (List (ProgElem (Com c))) := do
+  partial def parseBlock {c : ZKConfig} : ParserM (List (ComWithMD c)) := do
 
     expectSymbol '{' -- We expect the opening '{'
 
-    let rec loop (acc : List (ProgElem (Com c))) : ParserM (List (ProgElem (Com c))) := do
+    let rec loop (acc : List (ComWithMD c)) : ParserM (List (ComWithMD c)) := do
       let tk ← peekToken 0
       if tk.token == Token.symbol '}' then
         let _ ← advance -- Consume the '}'
@@ -468,11 +468,11 @@ mutual
       else
       let (row, col) := (tk.row, tk.col)
         let ast ← parseCommand
-        loop ( (ProgElem.mk ⟨⟨row, col⟩⟩ ast) :: acc)
+        loop ( (ComWithMD.mk { src_info := ⟨row, col⟩ } ast) :: acc)
 
     loop []
 
-  partial def parseFunction {c: ZKConfig}: ParserM (Function c) := do
+  partial def parseFunction {c: ZKConfig}: ParserM (Func c) := do
     let _ ← advance -- consume 'func' keyword
     let nameTk ← advance
     match nameTk.token with
@@ -487,19 +487,19 @@ mutual
               parseParamSeq
           | _ => pure []
       let body ← parseBlock
-      return (Function.mk name params rets body)
+      return (Func.mk name params rets body)
     | _ => throw (IO.userError s!"Expected a function name after 'func', got {nameTk}")
 end
 
 partial def parseProg {c : ZKConfig}
-  (acc : List (ProgElem (Function c))) : ParserM (List (ProgElem (Function c))) := do
+  (acc : List (FuncWithMD c)) : ParserM (ProgWithMD c) := do
   let t0 ← peekToken 0
   if t0.token == Token.eof then
-    return acc
+    return ProgWithMD.mk {} acc
   else
     let (row, col) := (t0.row, t0.col)
     let ast ← parseFunction
-    parseProg ( (ProgElem.mk ⟨⟨row, col⟩⟩ ast) :: acc)
+    parseProg ( (FuncWithMD.mk { src_info := ⟨row, col⟩ } ast) :: acc)
 
 
 

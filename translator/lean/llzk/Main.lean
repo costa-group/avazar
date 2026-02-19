@@ -1,10 +1,13 @@
 import Llzk.Language.Core.Syntax.AST
 import Llzk.Language.Core.Syntax.Parser
 import Llzk.Basic
+import Llzk.Language.Core.Analysis.Liveness
+
 import Cli
 
 open Llzk.Language.Core.Syntax.AST
 open Llzk.Language.Core.Syntax.Parser
+open Llzk.Language.Core.Analysis.Liveness
 
 open Cli
 
@@ -14,8 +17,9 @@ def prettyPrinting (inFile : String) (outStream : IO.FS.Stream) : IO Unit := do
      IO.println s!"Parsing program {inFile}..."
      let initialState ← ParserM.fromFile inFile
      let (prog,_) ← StateT.run (@parseProg F11 []) initialState
+     let progWithLiveness := addLivenessProg prog
      IO.println s!"Printing program ..."
-     @printProg F11 outStream prog.reverse
+     @printProg F11 outStream progWithLiveness
      outStream.flush
 
 
