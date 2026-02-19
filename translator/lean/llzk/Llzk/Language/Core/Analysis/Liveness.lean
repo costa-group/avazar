@@ -61,9 +61,10 @@ def addUsedVarsCond {c : ZKConfig} (vars : VarIDSet) (cond : Cond c) : VarIDSet 
     | .neq s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
 
 
-def getCmdsLiveIn {c : ZKConfig} (cmds : List (ComWithMD c)) : VarIDSet :=
+def getCmdsLiveIn {c : ZKConfig}
+    (cmds : List (ComWithMD c)) (default : VarIDSet := emptyVarIDSet) : VarIDSet :=
     match cmds with
-    | [] => emptyVarIDSet
+    | [] => default
     | i :: _ =>
         match i with
         | .mk md _ => md.liveness.live_in
@@ -94,7 +95,6 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
         | .assign id e =>
           let out' := out.erase id
           let liveIn := addUsedVarsExpr out' e
-          dbg_trace s!"Assign: {id} := {e}, live_out: {out}, live_in: {liveIn} {out'}"
           ComWithMD.mk { md with liveness := { live_in := liveIn, live_out := out } } cmd
         | .if_stmt cond tb eb =>
           let tb' := addLivenessCmds tb out
@@ -159,12 +159,12 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
 def addLivenessCmds {c : ZKConfig} (cmds : List (ComWithMD c)) (out : VarIDSet) :=
     match cmds with
     | [] => []
-    | [i] => [addLivenessCmd i out]
     | i :: rest =>
         let rest' := addLivenessCmds rest out
-        let out' := getCmdsLiveIn rest'
+        let out' := getCmdsLiveIn rest' out -- for empty list we get 'out' as default
         let i' := addLivenessCmd i out'
         i' :: rest'
+
 end
 
 
@@ -176,7 +176,7 @@ def addLivenessFunc {c : ZKConfig} (f : FuncWithMD c) : FuncWithMD c :=
      | Func.mk name params rets body =>
      let out := addParams emptyVarIDSet rets
      let body' := addLivenessCmds body out
-     let liveIn := getCmdsLiveIn body'
+     let liveIn := getCmdsLiveIn body' out
      let func' := Func.mk name params rets body'
      FuncWithMD.mk { md with liveness := { live_in := liveIn, live_out := out } } func'
 
