@@ -444,7 +444,7 @@ def printCom {c : ZKConfig}
           h.putStrLn "} else {"
           printBody h eb (level + 1)
           h.putStr sp
-          h.putStrLn "}"
+          h.putStr "}"
       | .with_const out e body =>
           h.putStr s!"with_const ${out} = {e}"
           h.putStrLn " {"
@@ -462,7 +462,7 @@ def printCom {c : ZKConfig}
           h.putStrLn " {"
           printBody h body (level + 1)
           h.putStr sp
-          h.putStrLn "}"
+          h.putStr "}"
       | .new_array out size =>
           h.putStr s!"array.new {size} %{out}"
       | .read_array out arr idx =>
@@ -488,7 +488,7 @@ def printBody {c : ZKConfig}
       match cmd with
       | .mk md _ =>
         h.putStr s!"{sp}"
-        h.putStrLn s!"# {md.liveness.live_in} -> {md.liveness.live_out}"
+        h.putStrLn s!"# live_in={md.liveness.live_in}, live_out={md.liveness.live_out}"
         h.putStr s!"{sp}"
         printCom h cmd level sp
         h.putStrLn ""

@@ -1,0 +1,6 @@
+func %main(%x:ff) : %y:ff {
+  %y = 0
+  for($i,0,10,1) {
+    %y = felt.add %y %x
+  }
+}

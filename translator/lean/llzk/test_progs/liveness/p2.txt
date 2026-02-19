@@ -1,9 +1,8 @@
-
-
 func %main(%x:ff) : %y:ff {
-
   %b = bool.gt %x 1
   if ( %b == 1) {
+    %a = 1
+    %b = felt.add %a 4
     %z = felt.add 10 %x
   } else {
     %z = felt.add 10 %w
