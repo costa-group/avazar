@@ -229,14 +229,14 @@ Assigns the result of `exp` to `id`.
 
 > [!IMPORTANT]
 >
-> In symbolic execution requires that size of arrays is known (at symbolic execution time),
-> otherwise it would fail.
+> The size of an array must be computable at symbolic
+> execution time, i.e., does not depend on input parameters.
 
 > [!IMPORTANT]
 >
 > Efficient translation of array access/update `id[sexp]` to SMT formulas
-> is only possible if the index `sexp` is a **Constant Simple
-> Expression**.
+> is only possible if the index `sexp` is computable at symbolic execution
+> time.
 
 ##### Conditionals
 
@@ -255,11 +255,14 @@ The `else` part is optional.
 repeat sexp  { body }
 ```
 
-Repeats `body` for `sexp` times. There is no loop counter, should be taken care of independently (i.e., initializing a variable before the loop and increment it inside `body`).
+Repeats `body` for `sexp` times. There is no loop counter, should be
+taken care of independently (i.e., initializing a variable before the
+loop and increment it inside `body`).
 
 > [!IMPORTANT]
 >
-> 'sexp' must be computed at symbolic execution time, otherwise we cannot unfold the loop.
+> 'sexp' must be computable at symbolic execution time, i.e., does
+> not depend on input parameters, otherwise we cannot unfold the loop.
 
 **Semantics:**
 
@@ -272,9 +275,9 @@ Repeats `body` for `sexp` times. There is no loop counter, should be taken care 
 call id(sexp1, ..., sexpn) to id1,...,idk
 ```
 
-Executes function with name `id`. The return values (which may include arrays) are
-assigned to `id1, ..., idk`. The `to` keyword is optional if the functions
-does not return values.
+Executes function with name `id`. The return values (which
+may include arrays) are assigned to `id1, ..., idk`. The `to`
+keyword is optional if the functions does not return values.
 
 ### SSA Support
 
