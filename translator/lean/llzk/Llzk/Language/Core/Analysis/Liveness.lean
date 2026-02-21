@@ -108,15 +108,7 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
           let liveIn := addUsedVarsCond (liveInThen.union liveInElse) cond
           let cmd' := Com.if_stmt cond tb' eb'
           ComWithMD.mk { md with liveness := { live_in := liveIn, live_out := out } } cmd'
-        | .with_const _id _e body =>
-          -- live_in = live_in_body
-          -- Variable 'id' is not considered since it is a constant variable. Also 'e'
-          -- is not considered since it is supposed to be a constant expression.
-          let body' := addLivenessCmds body out
-          let liveIn := getCmdsLiveIn body'
-          let cmd' := Com.with_const _id _e body'
-          ComWithMD.mk { md with liveness := { live_in := liveIn, live_out := out } } cmd'
-        | .loop_exp _idx _start _rep _step body =>
+        | .loop_exp  rep body =>
           -- live_in = live_in of (body;body)
           -- None of the expressions are considered since they are supposed to be constant
           -- expressions. Also the loop variable 'idx' is not considered since it is a
@@ -126,9 +118,10 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
           let liveIn := getCmdsLiveIn body'
           let body'' := addLivenessCmds body (liveIn.union out)
           let liveIn' := getCmdsLiveIn body''
-          let cmd' := Com.loop_exp _idx _start _rep _step body''
-          ComWithMD.mk { md with liveness := { live_in := liveIn', live_out := out } } cmd'
-        | .loop _idx _start _rep _step body =>
+          let liveIn'' := addUsedVarsSimpleExpr liveIn' rep
+          let cmd' := Com.loop_exp rep body''
+          ComWithMD.mk { md with liveness := { live_in := liveIn'', live_out := out } } cmd'
+        | .loop _rep body =>
           -- live_in = live_in of (body;body)
           -- The loop variable 'idx' is not considered since it is a constant variable.
           -- We need to iterate the loop twice to get the fixed point of the live variables.
@@ -136,7 +129,7 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
           let liveIn := getCmdsLiveIn body'
           let body'' := addLivenessCmds body (liveIn.union out)
           let liveIn' := getCmdsLiveIn body''
-          let cmd' := Com.loop _idx _start _rep _step body''
+          let cmd' := Com.loop _rep body''
           ComWithMD.mk { md with liveness := { live_in := liveIn', live_out := out } } cmd'
         | .new_array id _size =>
           -- live_in = live_out \ {id}

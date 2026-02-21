@@ -52,10 +52,9 @@ structure ProgMD where
 
 
 
-/- A simple expression is either a variable, constant variable, or a finite field value -/
+/- A simple expression is either a variable or a finite field value -/
 inductive SimpleExpr (c : ZKConfig) where
   | var (name : VarID) : SimpleExpr c   -- variable
-  | cvar (name : VarID) : SimpleExpr c  -- constant variable
   | val (val : FF c) : SimpleExpr c     -- FF value
   deriving Repr, BEq, Inhabited
 
@@ -110,13 +109,10 @@ inductive Com (c : ZKConfig) where
   -- with (out := e) { body }
   -- e is supposed to be a constant expression, runtime error should be thrown
   -- if it is not. We keep it as Expr for simplicity.
-  | with_const (out: VarID) (e : Expr c) (body: List (ComWithMD c))
-  -- for (i,start,rep,step) { body }
-  -- expressions are supposed to be constant expression, runtime error
-  -- should be thrown if they are not. We keep them as Expr for simplicity
-  | loop_exp (idx: VarID) (start rep step: Expr c) (body: List (ComWithMD c))
-  -- for (i,start,rep,step) { body }
-  | loop (idx: VarID) (start : FF c) (rep : ℕ) (step: FF c) (body: List (ComWithMD c))
+  | loop_exp (rep: SimpleExpr c) (body: List (ComWithMD c))
+  -- repeat N { body }
+  -- N is supposed to be a natural number
+  | loop (rep : ℕ) (body: List (ComWithMD c))
   -- size is supposed to be a constant expression, runtime error should be thrown if it is not.
   | new_array (out: VarID) (size: SimpleExpr c)
   -- out := arr[idx]
@@ -231,11 +227,9 @@ def sizeOfCom {c : ZKConfig} (i : ComWithMD c) : Nat :=
     | .skip => 1
     | .if_stmt _ tb eb =>
         1 + sizeOfComs tb + sizeOfComs eb
-    | .with_const _ _ body =>
+    | .loop_exp _ body =>
       1 + sizeOfComs body
-    | .loop_exp _ _ _ _ body =>
-      1 + sizeOfComs body
-    | .loop _ _ rep _ body =>
+    | .loop rep body =>
       1 + rep*(1+sizeOfComs body)
     | _ => 1
 
@@ -257,11 +251,9 @@ def numOfLoopExpCom {c : ZKConfig} (cmd : ComWithMD c) : Nat :=
     match info with
     | .if_stmt _ tb eb =>
         numOfLoopExpComs tb + numOfLoopExpComs eb
-    | .with_const _ _ body =>
-        numOfLoopExpComs body
-    | .loop_exp _ _ _ _ body =>
+    | .loop_exp _ body =>
       1 + numOfLoopExpComs body
-    | .loop _ _ _ _ body =>
+    | .loop _ body =>
       numOfLoopExpComs body
     | _ => 0
 
@@ -284,7 +276,6 @@ def getIndent (level : Nat) : String :=
 def formatSexpr {c : ZKConfig} (s : SimpleExpr c) : String :=
   match s with
   | .var varName => s!"%{varName}"
-  | .cvar cvarName => s!"${cvarName}"
   | .val val => s!"{val}"
 
 -- register ToString instance for SimpleExpr
@@ -363,17 +354,12 @@ def formatCom {c : ZKConfig} (i : ComWithMD c) (level : Nat) (sp : String) : Str
           let ebStr := formatBody eb (level + 1)
           s!"if ({cond}) " ++ "{\n" ++ s!"{tbStr}" ++
           s!"{sp}} else " ++ "{\n" ++ s!"{ebStr}" ++ s!"{sp}}"
-      | .with_const out e body =>
-         let bodyStr := formatBody body (level + 1)
-         s!"with_const ${out} = {e} " ++ "{\n" ++ s!"{bodyStr}" ++ s!"{sp}}"
-      | .loop_exp idx start rep step body =>
+      | .loop_exp rep body =>
           let bodyStr := formatBody body (level + 1)
-          s!"for (${idx}, {start}, {rep}, {step}) " ++ "{\n" ++
-          s!"{bodyStr}" ++ s!"{sp}}"
-      | .loop idx start rep step body =>
+          s!"repeat {rep} " ++ "{\n" ++ s!"{bodyStr}" ++ s!"{sp}}"
+      | .loop rep body =>
           let bodyStr := formatBody body (level + 1)
-          s!"for (${idx}, {start}, {rep}, {step}) " ++ "{\n" ++
-          s!"{bodyStr}" ++ s!"{sp}}"
+          s!"for {rep} " ++ "{\n" ++ s!"{bodyStr}" ++ s!"{sp}}"
       | .new_array out size =>
          s!"array.new {size} %{out}"
       | .read_array out arr idx =>
@@ -445,20 +431,14 @@ def printCom {c : ZKConfig}
           printBody h eb (level + 1)
           h.putStr sp
           h.putStr "}"
-      | .with_const out e body =>
-          h.putStr s!"with_const ${out} = {e}"
+      | .loop_exp rep body =>
+          h.putStr s!"repeat {rep}"
           h.putStrLn " {"
           printBody h body (level + 1)
           h.putStr sp
           h.putStr "}"
-      | .loop_exp idx start rep step body =>
-          h.putStr s!"for (${idx}, {start}, {rep}, {step})"
-          h.putStrLn " {"
-          printBody h body (level + 1)
-          h.putStr sp
-          h.putStr "}"
-      | .loop idx start rep step body =>
-          h.putStr s!"for (${idx}, {start}, {rep}, {step})"
+      | .loop rep body =>
+          h.putStr s!"repeat {rep}"
           h.putStrLn " {"
           printBody h body (level + 1)
           h.putStr sp

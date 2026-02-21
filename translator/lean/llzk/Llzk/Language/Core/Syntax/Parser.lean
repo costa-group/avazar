@@ -98,7 +98,6 @@ def parseSimpleExpr {c : ZKConfig} : ParserM (SimpleExpr c):= do
     let tk ← advance
     match tk.token with
     | Token.ident v => return SimpleExpr.var v
-    | Token.cvar v => return SimpleExpr.cvar v
     | Token.number n => return SimpleExpr.val n.toInt!
     | _ => throw (IO.userError s!"Expected a simple expression, got {tk.token}")
 
@@ -281,7 +280,6 @@ partial def parseSimpExprSeq {c : ZKConfig} : ParserM (List (SimpleExpr c)) := d
     let tk ← peekToken 0
     match tk.token with
     | Token.ident _
-    | Token.cvar _
     | Token.number _ =>    -- first token is an identifier (of the parameter)
         let s ← parseSimpleExpr   -- consume the parameter
         let commaTk ← peekToken 0 -- check if the next token is a comma
@@ -295,33 +293,11 @@ partial def parseSimpExprSeq {c : ZKConfig} : ParserM (List (SimpleExpr c)) := d
 
 mutual
 
-  partial def parseWithConst {c: ZKConfig}: ParserM (Com c) := do
-    let _ ← advance -- Consume the 'with_const' keyword
-    let varTk ← advance
-    match varTk.token with
-    | Token.cvar v =>
-        let _ ← expectSymbol '='
-        let expr ← parseExpr
-        let body ← parseBlock
-        return (Com.with_const v expr body)
-    | _ => throw (IO.userError s!"Expected a constant variable after 'with_const', got {varTk}")
-
-  partial def parseFor {c: ZKConfig}: ParserM (Com c) := do
+  partial def parseLoop {c: ZKConfig}: ParserM (Com c) := do
     let _ ← advance -- Consume the 'for' keyword
-    let _ ← expectSymbol '('
-    let varTk ← advance
-    match varTk.token with
-    | Token.cvar v =>
-        let _ ← expectSymbol ','
-        let startExpr ← parseExpr
-        let _ ← expectSymbol ','
-        let repExpr ← parseExpr
-        let _ ← expectSymbol ','
-        let stepExpr ← parseExpr
-        let _ ← expectSymbol ')'
-        let body ← parseBlock
-        return (Com.loop_exp v startExpr repExpr stepExpr body)
-    | _ => throw (IO.userError s!"Expected a constant variable after 'for(', got {varTk.token}")
+    let rep ← parseSimpleExpr
+    let body ← parseBlock
+    return (Com.loop_exp rep body)
 
   partial def parseIf {c: ZKConfig}: ParserM (Com c) := do
     let _ ← advance -- Consume the 'if' keyword
@@ -426,11 +402,8 @@ mutual
     | Token.keyword "if", _ =>
         let ast ← parseIf
         return ast
-    | Token.keyword "with_const",_ =>
-        let ast ← parseWithConst
-        return ast
-    | Token.keyword "for", _ =>
-        let ast ← parseFor
+    | Token.keyword "repeat", _ =>
+        let ast ← parseLoop
         return ast
     | Token.keyword "call", _ =>
         let ast ← parseFunCall

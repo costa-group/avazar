@@ -23,27 +23,15 @@ def evalCmd {c : ZKConfig} (cfg : SemConfig c)
       | Com.if_stmt cond tb eb =>
           let condVal ← evalCond st cond
           if condVal then evalCmds cfg p st tb else evalCmds cfg p st eb
-      | Com.with_const out e body =>
-          ensureNotDefinedCVar st.cvars out -- ensure the constant variable is not already defined
-          let constVal ← evalConstExpr st e
-          let st' := { st with cvars := st.cvars.insert out constVal }
-          let st'' ← evalCmds cfg p st' body
-          let st''' := { st'' with cvars := st''.cvars.erase out }  -- remove constant variable
-          return st'''
-      | Com.loop_exp idx start rep step body =>
-          let startVal ← evalConstExpr st start
-          let repVal ← evalConstExpr st rep
-          let stepVal ← evalConstExpr st step
-          let loop := (ComWithMD.mk md (Com.loop idx startVal repVal.val stepVal body))
+      | Com.loop_exp rep body =>
+          let repVal ← evalSimpleExprToFF st rep
+          let loop := (ComWithMD.mk md (Com.loop repVal.val body))
           evalCmd cfg p st loop
-      | Com.loop idx start (rep+1) step body =>
-          ensureNotDefinedCVar st.cvars idx -- ensure loop constant variable is not already defined
-          let st' := { st with cvars := st.cvars.insert idx start } -- declare loop variable
-          let st'' ← evalCmds cfg p st' body -- evaluate loop body (1 iteration)
-          let st''' := { st'' with cvars := st''.cvars.erase idx }  -- remove loop variable
+      | Com.loop (rep+1) body =>
+          let st' ← evalCmds cfg p st body -- evaluate loop body (1 iteration)
           -- evaluate the rest iterations of loop
-          evalCmd cfg p st''' (ComWithMD.mk md (Com.loop idx (start+step) rep step body))
-      | Com.loop _idx _start 0 _step _body =>
+          evalCmd cfg p st' (ComWithMD.mk md (Com.loop rep body))
+      | Com.loop 0 _body =>
           return st
       | Com.func_call outs fname args =>
         let argVals ← evalSimpleExprsToValue st args
@@ -77,11 +65,6 @@ decreasing_by
         apply Prod.Lex.right
         simp only [sizeOfCom]
         grind
-    -- recursive call in with_const
-    ·  simp only [numOfLoopExpCom]
-       apply Prod.Lex.right
-       simp only [sizeOfCom]
-       grind
     -- the case of loop_exp
     · simp only [numOfLoopExpCom]
       apply Prod.Lex.left
@@ -150,7 +133,7 @@ def evalFun {c : ZKConfig} (cfg : SemConfig c)
       match func with
        | Func.mk _ params rets body =>
            let vars_env ← bindInParams (emptyEnv c) params args
-           let st := ⟨vars_env, emptyCEnv c⟩
+           let st := ⟨vars_env⟩
            let st' ← evalCmds cfg p' st body
            let rets ← bindOutParams st'.vars rets
            Except.ok rets

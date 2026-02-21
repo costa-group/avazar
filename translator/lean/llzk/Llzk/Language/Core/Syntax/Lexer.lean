@@ -108,7 +108,6 @@ partial def Lexer.scanWhile (st : Lexer) (pred : Char → Bool) (acc : String :=
 /- Token definitions. It includes all possible tokens in the language -/
 inductive Token where
   | ident    : String → Token    -- variables, functions names, e.g., "%x", "%foo"
-  | cvar     : String → Token    -- constant variable, e.g., "$x"
   | keyword  : String → Token    -- keyword, e.g., "if", "for", etc.
   | number   : String → Token    -- number, e.g., 123
   | eq       : Token             -- '=' symbol
@@ -121,7 +120,6 @@ inductive Token where
 def Token.toString (tk : Token) : String :=
   match tk with
   | Token.ident v => s!"%{v} (var)"
-  | Token.cvar v => s!"${v} (cvar)"
   | Token.keyword i => s!"{i} (keyword)"
   | Token.number n => s!"{n} (number)"
   | Token.eq => "'==' (symbol)"
@@ -176,12 +174,6 @@ partial def Lexer.nextToken (st : Lexer) : IO (TokenInfo × Lexer) := do
       let (_, st) ← st.next -- consume the '%' character
       let (s, st) ← st.scanWhile (fun x => x.isAlphanum || x == '_') -- read the variable name
       return (⟨ Token.ident s, col, row ⟩, st)
-
-    -- Constant Variable: Start with '@', read while alphanumeric or underscore
-    else if c == '$' then
-      let (_, st) ← st.next -- consume the '@' character
-      let (s, st) ← st.scanWhile (fun x => x.isAlphanum || x == '_') -- read the constant variable name
-      return (⟨ Token.cvar s, col, row ⟩, st)
 
     -- Equality sign: '=='
     else if c == '=' then
