@@ -108,108 +108,108 @@ def parseExpr {c : ZKConfig} : ParserM (Expr c) := do
   -- | Token.keyword "felt.id" =>
   --   let op1 ← parseSimpleExpr
   --   return Expr.id op1
-  | Token.keyword "felt.neg" =>
+  | Token.ident "felt.neg" =>
     let _ ← advance -- consume the 'felt.neg' keyword
     let op1 ← parseSimpleExpr
     return Expr.neg op1
-  | Token.keyword "felt.add" =>
+  | Token.ident "felt.add" =>
     let _ ← advance -- consume the 'felt.add' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.add op1 op2
-  | Token.keyword "felt.sub" =>
+  | Token.ident "felt.sub" =>
     let _ ← advance -- consume the 'felt.sub' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.sub op1 op2
-  | Token.keyword "felt.mul" =>
+  | Token.ident "felt.mul" =>
     let _ ← advance -- consume the 'felt.mul' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.mul op1 op2
-  | Token.keyword "felt.div" =>
+  | Token.ident "felt.div" =>
     let _ ← advance -- consume the 'felt.div' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.div op1 op2
   -- Bitwise
-  | Token.keyword "bit.shl" =>
+  | Token.ident "bit.shl" =>
     let _ ← advance -- consume the 'bit.shl' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.shl op1 op2
-  | Token.keyword "bit.shr" =>
+  | Token.ident "bit.shr" =>
     let _ ← advance -- consume the 'bit.shr' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.shr op1 op2
-  | Token.keyword "bit.and" =>
+  | Token.ident "bit.and" =>
     let _ ← advance -- consume the 'bit.and' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.and op1 op2
-  | Token.keyword "bit.or" =>
+  | Token.ident "bit.or" =>
     let _ ← advance -- consume the 'bit.or' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.or op1 op2
-  | Token.keyword "bit.xor" =>
+  | Token.ident "bit.xor" =>
     let _ ← advance -- consume the 'bit.xor' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.xor op1 op2
-  | Token.keyword "bit.not" =>
+  | Token.ident "bit.not" =>
     let _ ← advance -- consume the 'bit.not' keyword
     let op1 ← parseSimpleExpr
     return Expr.not op1
   -- Comparison
-  | Token.keyword "bool.True" =>
+  | Token.ident "bool.True" =>
     let _ ← advance -- consume the 'bool.True' keyword
     return Expr.True
-  | Token.keyword "bool.False" =>
+  | Token.ident "bool.False" =>
     let _ ← advance -- consume the 'bool.False' keyword
     return Expr.False
-  | Token.keyword "bool.eq" =>
+  | Token.ident "bool.eq" =>
     let _ ← advance -- consume the 'bool.eq' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.eq op1 op2
-  | Token.keyword "bool.neq" =>
+  | Token.ident "bool.neq" =>
     let _ ← advance -- consume the 'bool.neq' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.neq op1 op2
-  | Token.keyword "bool.lt" =>
+  | Token.ident "bool.lt" =>
     let _ ← advance -- consume the 'bool.lt' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.lt op1 op2
-  | Token.keyword "bool.gt" =>
+  | Token.ident "bool.gt" =>
     let _ ← advance -- consume the 'bool.gt' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.gt op1 op2
-  | Token.keyword "bool.le" =>
+  | Token.ident "bool.le" =>
     let _ ← advance -- consume the 'bool.le' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.le op1 op2
-  | Token.keyword "bool.ge" =>
+  | Token.ident "bool.ge" =>
     let _ ← advance -- consume the 'bool.ge' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.ge op1 op2
-  | Token.keyword "bool.and" =>
+  | Token.ident "bool.and" =>
     let _ ← advance -- consume the 'bool.and' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.band op1 op2
-  | Token.keyword "bool.or" =>
+  | Token.ident "bool.or" =>
     let _ ← advance -- consume the 'bool.or' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.bor op1 op2
-  | Token.keyword "bool.not" =>
+  | Token.ident "bool.not" =>
     let _ ← advance -- consume the 'bool.not' keyword
     let op1 ← parseSimpleExpr
     return Expr.bneg op1
@@ -233,8 +233,8 @@ def parseCond {c : ZKConfig} : ParserM (Cond c) := do
 partial def parseVarType : ParserM VarType := do
   let tk ← advance
   match tk.token with
-  | Token.keyword "ff" => return VarType.ff
-  | Token.keyword "arr" =>
+  | Token.ident "ff" => return VarType.ff
+  | Token.ident "arr" =>
     let _ ← expectSymbol '<'
     let sizeToken ← advance
     match sizeToken.token with
@@ -307,7 +307,7 @@ mutual
     let thenBranch ← parseBlock
     let elseBranch ← do
       let tk ← peekToken 0
-      if tk.token == Token.keyword "else" then do
+      if tk.token == Token.ident "else" then do
         let _ ← advance -- consume 'else'
         parseBlock
       else pure []
@@ -323,7 +323,7 @@ mutual
       let _ ← expectSymbol ')'
       let toTk ← peekToken 0
       let outs ← match toTk.token with
-        | Token.keyword "to" =>
+        | Token.ident "to" =>
           let _ ← advance -- consume 'to'
           parseIdentSeq
         | _ => pure []
@@ -399,25 +399,25 @@ mutual
     let t0 ← peekToken 0
     let t1 ← peekToken 1
     match t0.token, t1.token with
-    | Token.keyword "if", _ =>
+    | Token.ident "if", _ =>
         let ast ← parseIf
         return ast
-    | Token.keyword "repeat", _ =>
+    | Token.ident "repeat", _ =>
         let ast ← parseLoop
         return ast
-    | Token.keyword "call", _ =>
+    | Token.ident "call", _ =>
         let ast ← parseFunCall
         return ast
-    | Token.keyword "array.new", _ =>
+    | Token.ident "array.new", _ =>
         let ast ← parseArrayNew
         return ast
-    | Token.keyword "array.read", _ =>
+    | Token.ident "array.read", _ =>
         let ast ← parseArrayRead
         return ast
-    | Token.keyword "array.write", _ =>
+    | Token.ident "array.write", _ =>
         let ast ← parseArrayWrite
         return ast
-    | Token.keyword "array.copy", _ =>
+    | Token.ident "array.copy", _ =>
         let ast ← parseArrayCopy
         return ast
 

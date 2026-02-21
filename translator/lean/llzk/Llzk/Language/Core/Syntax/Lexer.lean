@@ -107,8 +107,7 @@ partial def Lexer.scanWhile (st : Lexer) (pred : Char → Bool) (acc : String :=
 
 /- Token definitions. It includes all possible tokens in the language -/
 inductive Token where
-  | ident    : String → Token    -- variables, functions names, e.g., "%x", "%foo"
-  | keyword  : String → Token    -- keyword, e.g., "if", "for", etc.
+  | ident    : String → Token    -- variables, functions names, statements, etc.
   | number   : String → Token    -- number, e.g., 123
   | eq       : Token             -- '=' symbol
   | neq      : Token             -- '!=' symbol
@@ -119,8 +118,7 @@ inductive Token where
 /- Convert a token to its string representation -/
 def Token.toString (tk : Token) : String :=
   match tk with
-  | Token.ident v => s!"%{v} (var)"
-  | Token.keyword i => s!"{i} (keyword)"
+  | Token.ident v => s!"%{v} (identifier/keyword)"
   | Token.number n => s!"{n} (number)"
   | Token.eq => "'==' (symbol)"
   | Token.neq => "'!=' (symbol)"
@@ -169,12 +167,6 @@ partial def Lexer.nextToken (st : Lexer) : IO (TokenInfo × Lexer) := do
       let (_, st) ← st.scanWhile (fun x => x != '\n') -- skip until the end of the row
       nextToken st -- After skipping comment, get the next token
 
-    -- Variable: Start with '%', read while alphanumeric or underscore
-    else if c == '%' then
-      let (_, st) ← st.next -- consume the '%' character
-      let (s, st) ← st.scanWhile (fun x => x.isAlphanum || x == '_') -- read the variable name
-      return (⟨ Token.ident s, col, row ⟩, st)
-
     -- Equality sign: '=='
     else if c == '=' then
       let (_, st) ← st.next -- consume the '=' character
@@ -195,10 +187,11 @@ partial def Lexer.nextToken (st : Lexer) : IO (TokenInfo × Lexer) := do
       else
         return (⟨ Token.symbol '!', col, row ⟩, st)
 
-    -- Keyword: any sequence starting with a letter or underscore, followed by letters, digits, or underscore.
-    else if c.isAlpha then
-      let (s, st) ← scanWhile st (fun x => x.isAlpha || x == '.' || x == '_') -- read the identifier
-      return (⟨ Token.keyword s, col, row ⟩, st)
+    -- identifier, any sequence of alphanumeric characters, underscores, '%', '@', '#', or '.'
+    -- that starts with a letter, underscore, '%', or '@'.
+    else if c == '_' || c == '%' || c == '@' || c.isAlpha then
+      let (s, st) ← st.scanWhile (fun x => x.isAlphanum || x == '_' || x == '%' || x == '@' || x == '#' || x == '.')
+      return (⟨ Token.ident s, col, row ⟩, st)
 
     -- Number: any sequence of digits (for negative numbers, the sign is supposed to be handled
     -- by the parser as a different token)
