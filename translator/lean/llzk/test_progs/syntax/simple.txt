@@ -24,9 +24,9 @@ func %foo(%y:ff,%x:arr<10>) : %z:ff,%w:ff {
 }
 
 func %main(%y:ff,%x:arr<10>) : %z:ff,%w:ff {
-  %w = %y
+  w#1 = %y
   %i = 0
-  repeat %w {
+  repeat w#1 {
     %x = %y
     %x = bool.lt %x %j
     if ( %x == 1) {

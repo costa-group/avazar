@@ -275,7 +275,7 @@ def getIndent (level : Nat) : String :=
 
 def formatSexpr {c : ZKConfig} (s : SimpleExpr c) : String :=
   match s with
-  | .var varName => s!"%{varName}"
+  | .var varName => s!"{varName}"
   | .val val => s!"{val}"
 
 -- register ToString instance for SimpleExpr
@@ -328,7 +328,7 @@ def formatParam (p : Param) : String :=
   let typeStr := match p.type with
                  | VarType.ff => "ff"
                  | VarType.array size => s!"arr<{size}>"
-  s!"%{p.name}:{typeStr}"
+  s!"{p.name}:{typeStr}"
 
 -- register ToString instance for Param
 instance : ToString Param where
@@ -348,7 +348,7 @@ def formatCom {c : ZKConfig} (i : ComWithMD c) (level : Nat) (sp : String) : Str
   | .mk _ info =>
       match info with
       | .skip => s!"skip"
-      | .assign out e => s!"%{out} := {e}"
+      | .assign out e => s!"{out} := {e}"
       | .if_stmt cond tb eb =>
           let tbStr := formatBody tb (level + 1)
           let ebStr := formatBody eb (level + 1)
@@ -361,20 +361,20 @@ def formatCom {c : ZKConfig} (i : ComWithMD c) (level : Nat) (sp : String) : Str
           let bodyStr := formatBody body (level + 1)
           s!"for {rep} " ++ "{\n" ++ s!"{bodyStr}" ++ s!"{sp}}"
       | .new_array out size =>
-         s!"array.new {size} %{out}"
+         s!"array.new {size} {out}"
       | .read_array out arr idx =>
-         s!"array.read %{arr}[{idx}] %{out}"
+         s!"array.read {arr}[{idx}] {out}"
       | .write_array arr idx value =>
-          s!"array.write {value} %{arr}[{idx}]"
+          s!"array.write {value} {arr}[{idx}]"
       | .copy_array out arr =>
-         s!"array.copy %{arr} %{out}"
+         s!"array.copy {arr} {out}"
       | .func_call outs fname args =>
-         let outsStr := String.intercalate ", " (outs.map (fun v => s!"%{v}"))
+         let outsStr := String.intercalate ", " (outs.map (fun v => s!"{v}"))
          let argsStr := String.intercalate ", " (args.map toString)
          if (outs == []) then
-            s!"call %{fname} ({argsStr})"
+            s!"call {fname} ({argsStr})"
          else
-            s!"call %{fname} ({argsStr}) to {outsStr}"
+            s!"call {fname} ({argsStr}) to {outsStr}"
 
 def formatBody {c : ZKConfig} (p : List (ComWithMD c)) (level : Nat) : String :=
   let sp := getIndent level
@@ -394,9 +394,9 @@ def formatFunction {c : ZKConfig} (f : FuncWithMD c) : String :=
     | .mk name params rets body =>
       let bodyStr := formatBody body 1
       if (rets == []) then
-        s!"func %{name}({params}) " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
+        s!"func {name}({params}) " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
       else
-        s!"func %{name}({params}) : {rets} " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
+        s!"func {name}({params}) : {rets} " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
 
 -- register ToString instance for Function
 instance {c : ZKConfig} : ToString (FuncWithMD c) where
@@ -421,7 +421,7 @@ def printCom {c : ZKConfig}
   | .mk _md info =>
       match info with
       | .skip => h.putStr s!"skip"
-      | .assign out e => h.putStr s!"%{out} = {e}"
+      | .assign out e => h.putStr s!"{out} = {e}"
       | .if_stmt cond tb eb =>
           h.putStr s!"if ({cond})"
           h.putStrLn " {"
@@ -444,20 +444,20 @@ def printCom {c : ZKConfig}
           h.putStr sp
           h.putStr "}"
       | .new_array out size =>
-          h.putStr s!"array.new {size} %{out}"
+          h.putStr s!"array.new {size} {out}"
       | .read_array out arr idx =>
-          h.putStr s!"array.read %{arr}[{idx}] %{out}"
+          h.putStr s!"array.read {arr}[{idx}] {out}"
       | .write_array arr idx value =>
-          h.putStr s!"array.write {value} %{arr}[{idx}]"
+          h.putStr s!"array.write {value} {arr}[{idx}]"
       | .copy_array out arr =>
-          h.putStr s!"array.copy %{arr} %{out}"
+          h.putStr s!"array.copy {arr} {out}"
       | .func_call outs fname args =>
-          let outsStr := String.intercalate ", " (outs.map (fun v => s!"%{v}"))
+          let outsStr := String.intercalate ", " (outs.map (fun v => s!"{v}"))
           let argsStr := String.intercalate ", " (args.map toString)
           if (outs == []) then
-            h.putStr s!"call %{fname} ({argsStr})"
+            h.putStr s!"call {fname} ({argsStr})"
           else
-            h.putStr s!"call %{fname} ({argsStr}) to {outsStr}"
+            h.putStr s!"call {fname} ({argsStr}) to {outsStr}"
 
 def printBody {c : ZKConfig}
   (h : IO.FS.Stream) (p : List (ComWithMD c)) (level : Nat) : IO Unit := do
@@ -482,9 +482,9 @@ def printFunction {c : ZKConfig} (h : IO.FS.Stream) (f : FuncWithMD c) : IO Unit
     match func with
     | .mk name params rets body =>
       if (rets == []) then
-        h.putStr s!"func %{name}({params})"
+        h.putStr s!"func {name}({params})"
       else
-        h.putStr s!"func %{name}({params}) : {rets}"
+        h.putStr s!"func {name}({params}) : {rets}"
       h.putStrLn " {"
       printBody h body 1
       h.putStrLn "}"
