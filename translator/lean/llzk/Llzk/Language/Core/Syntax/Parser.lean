@@ -1,5 +1,6 @@
 import Llzk.Basic
 import Llzk.Language.Core.Syntax.AST
+import Llzk.Language.Core.Syntax.Printer
 import Llzk.Language.Core.Syntax.Lexer
 
 /- A parser for the core language.
@@ -9,6 +10,7 @@ namespace Llzk.Language.Core.Syntax.Parser
 
 
 open Llzk.Language.Core.Syntax.AST
+open Llzk.Language.Core.Syntax.Printer
 open Llzk.Language.Core.Syntax.Lexer
 
 /- Parser state, which include a Lexer and a lookahead tokens buffer -/
