@@ -1,29 +1,34 @@
-import Llzk.Language.Core.Syntax.AST
+import Llzk.Language.Core.Syntax.Printer
 import Llzk.Language.Core.Syntax.Parser
 import Llzk.Basic
 import Llzk.Language.Core.Analysis.Liveness
 
 import Cli
 
-open Llzk.Language.Core.Syntax.AST
+open Llzk.Language.Core.Syntax.Printer
 open Llzk.Language.Core.Syntax.Parser
 open Llzk.Language.Core.Analysis.Liveness
 
 open Cli
 
 
-
-def prettyPrinting (inFile : String) (outStream : IO.FS.Stream) : IO Unit := do
-     IO.println s!"Parsing program {inFile}..."
+/- Pretty printing of a given program -/
+def prettyPrinting (p : Parsed) (inFile : String) (outStream : IO.FS.Stream) : IO Unit := do
+     let cf : FormatConfig := {
+       indentSize := 2,
+       showLiveness := p.hasFlag "showliveness"
+     }
+     IO.println s!"Parsing {inFile}..."
      let initialState ← ParserM.fromFile inFile
      let (prog,_) ← StateT.run (@parseProg F11 []) initialState
      let progWithLiveness := addLivenessProg prog
-     IO.println s!"Printing program ..."
-     @printProg F11 outStream progWithLiveness
+     IO.println s!"Pretty printing the input program..."
+     IO.println s!""
+     @printProg F11 progWithLiveness outStream cf
      outStream.flush
 
 
-
+/- Main entry point for the command line interface -/
 def runLlzkCmd (p : Parsed) : IO UInt32 := do
   let input : String := p.positionalArg! "input" |>.as! String
   let outStream ← if p.hasFlag "output" then
@@ -32,16 +37,20 @@ def runLlzkCmd (p : Parsed) : IO UInt32 := do
     pure (IO.FS.Stream.ofHandle h)
   else
     IO.getStdout
-  prettyPrinting input outStream
+  if p.hasFlag "prettyprint" then
+     prettyPrinting p input outStream
+  else
+     IO.println "No action specified. Use --help for more information."
   return 0
 
 
-
+/- Commandline options -/
 def llzkCmd : Cmd := `[Cli|
   llzkCmd VIA runLlzkCmd; ["0.0.1"]
   "Translator for Core Llzk programs."
   FLAGS:
-    pp, prettyprinting;         "Parse and pretty-print the input program."
+    sl, showliveness;           "Show liveness information for each command."
+    pp, prettyprint;         "Parse and pretty-print the input program."
     o, output : String;         "The output file. If not provided, stdout is used."
   ARGS:
     input : String;      "The input program"
