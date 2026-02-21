@@ -40,13 +40,12 @@ Z := an integer (will be interpreted as a finite field value)
 
 // identifiers
 id  := %[_,a-z,A-Z,0-9]* 
-cid := $[_,a-z,A-Z,0-9]*
 
 // zero or more id separated by comma
 ids := (id ("," id)*)?
 
 // simple expression
-sexp := id | cid | Z
+sexp := id | Z
 
 // zero or more simple expressions separated by comma
 sexps := (sexp ("," sexp)*)?
@@ -81,11 +80,8 @@ assignment := id "=" exp
 cond := sexp "==" sexp | sexp "!=" sexp
 if  := "if" "(" cond ")" "{" cmd* "}" [else "{" cmd* "}"]
 
-// bounded for loop
-for := "for" "(" cid "," exp "," exp "," exp ")" "{" cmd* "}"
-
-// const variable definition
-wconst := "with_const" cid "=" exp "{" cmd* "}"
+// bounded loops
+for := "repeat" sexpr "{" cmd* "}"
 
 // array operations
 narray := "array.new" sexp id
@@ -156,9 +152,6 @@ def id(id1:t, ...,idn:t) -> id1:t, ..., idk:t {
 
 In what follow we explain the supported expressions by category.
 
-A **Constant (Simple) Expression** is one that does not include identifiers (variables starting with `%`), and
-thus can be evaluated during symbolic execution. Note that it can include constant variables (starting with `$`).
-
 ##### Arithmetic
 
 Semantics correspond to standard operations in the finite field .
@@ -217,10 +210,6 @@ order is defined as `mid+1, ..., P-1, 0, ..., mid`, where
 
 Next we describe the possible commands supported in the language.
 
-Recall that a simple expression `sexp` (or an expressop `exp`) is
-constant, if it does not involve variables (it can involve
-constant variables).
-
 ##### Assignment
 
 ```text
@@ -240,6 +229,11 @@ Assigns the result of `exp` to `id`.
 
 > [!IMPORTANT]
 >
+> In symbolic execution requires that size of arrays is known (at symbolic execution time),
+> otherwise it would fail.
+
+> [!IMPORTANT]
+>
 > Efficient translation of array access/update `id[sexp]` to SMT formulas
 > is only possible if the index `sexp` is a **Constant Simple
 > Expression**.
@@ -253,56 +247,24 @@ The `else` part is optional.
 
 > [!NOTE]
 >
-> Only equality checks are supported in guards. Other comparisons
-> (e.g., `>`) must be computed beforehand or encoded, as they do not
-> simplify the SMT translation.
+> Types of all live variables at exit of both branches must coincide.
 
 ##### Bounded Loops
 
 ```text
-for(cid, START, N, STEP) { body }
+repeat sexp  { body }
 ```
 
-`START`, `N` (iteration count), and `STEP` must be **Constant
-Expressions**.
+Repeats `body` for `sexp` times. There is no loop counter, should be taken care of independently (i.e., initializing a variable before the loop and increment it inside `body`).
+
+> [!IMPORTANT]
+>
+> 'sexp' must be computed at symbolic execution time, otherwise we cannot unfold the loop.
 
 **Semantics:**
 
-1. Evaluate `START`, `N`, and `STEP` to concrete values.
-2. Initialize loop counter `cid = START` as a constant variable.
-3. Execute `body` `N` times. After each iteration, update `cid := cid +
-   STEP`.
-
-Inside the loop body, the loop counter can be accessed as a **constant variable**.
-
-> [!NOTE]
->
-> This construct relies on loop unrolling. In every unrolled
-> iteration, `cid` can be used to refer to the concrete index for that
-> step. Nested loops must use distinct index names.
-
->[!NOTE]
->
->Should we allow `-(STEP)`? What to do if the loop counter goes negative in such
->case? Just treat it as a finite field negative (i.e., `-1` goes back
->to `P-1`)?
-
-##### Constant Definition
-
-```text
-with_const cid = exp { body }
-```
-
-Defines a scope where `cid` is a constant variable with the value of
-`exp` (which must be a constant expression). Inside `body`, this value
-is accessed as `cid`. Re-declaration of `cid` within the body is
-forbidden. This also applies to loop indices sine they are constant
-variables.
-
->[!NOTE]
->
->This construct is useful for simulating `%x[$i+1]` using
->`with_const $j=$i+1 { ... x[$j] ... }`.
+1. Evaluate `sexp` to a value `N`.
+2. Repeat `body` for `N` times.
 
 ##### Function Calls
 

@@ -2,11 +2,13 @@
 # this is a comment
 func %foo(%y:ff,%x:arr<10>) : %z:ff,%w:ff {
   %x = %y
-  for($i, 0, 10, 1) {
+  %i = 0
+  repeat 10 {
     %x = %y # this is a comment
     if ( %x == 1) {
-        %w = felt.add -1 $i
+        %w = felt.add -1 %i
     }
+    %i = felt.add %i 1
   }
   if (%x == -1) {
     %z = felt.add %x 1
@@ -22,23 +24,23 @@ func %foo(%y:ff,%x:arr<10>) : %z:ff,%w:ff {
 }
 
 func %main(%y:ff,%x:arr<10>) : %z:ff,%w:ff {
-  %x = %y
-  with_const $j=10 {
-  for($i, 0, 10, 1) {
+  %w = %y
+  %i = 0
+  repeat %w {
     %x = %y
-    %x = bool.eq %x $j
+    %x = bool.lt %x %j
     if ( %x == 1) {
-        %w = felt.add $i 4
+        %w = felt.add %i 4
     }
-  }
+    %i = felt.add %i 1
   }
   if (%x == 1) {
     %z = felt.add %x 1
-    %w = felt.mul 2 $i
+    %w = felt.mul 2 %i
   } else {
     %z = 3
     %w = 4
     call %foo(1,2) to %w,%z 
-    call %foo(%a,$b)
+    call %foo(%a,%b)
   }
 }

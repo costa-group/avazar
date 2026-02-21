@@ -38,17 +38,10 @@ abbrev Env (c : ZKConfig) := Std.TreeMap VarID (Value c)
 /- Empty environment -/
 def emptyEnv (c : ZKConfig) : Env c := Std.TreeMap.empty
 
-/- Constants Environment: A mapping from constant variables to FF -/
-abbrev CEnv (c : ZKConfig) := Std.TreeMap VarID (FF c)
-
-/- Empty constants environment -/
-def emptyCEnv (c : ZKConfig) : CEnv c := Std.TreeMap.empty
-
-/- A state is a structure holding the environments for variables and
-   constant variables -/
+/- A state is a structure holding the environments. Maybe we add more information
+   later -/
 structure State (c : ZKConfig) where
   vars : Env c
-  cvars : CEnv c
   deriving Repr, Inhabited
 
 /- The next few functions provide an abstraction of the different operations
@@ -78,30 +71,6 @@ def setVars {c : ZKConfig}
       Except.ok env'
   | _, _ => Except.error "Mismatched lengths of ids and values"
 
-/- Retrieve a value from an environment. It fails if the variable
-   is not in the environment -/
-def getCVar {c : ZKConfig} (env : CEnv c) (id : VarID) : Except String (FF c) :=
-  match env.get? id with
-  | some v => Except.ok v
-  | none   => Except.error s!"Variable '{id}' not found"
-
-/- Set the value of a variable in an environment. It updates
-   the value if it exists already. It never fails -/
-def setCVar {c : ZKConfig} (env : CEnv c) (id : VarID) (v : FF c) : CEnv c :=
-  env.insert id v
-
-/- Remove a variable from an environment. It never fails -/
-def rmCVar {c : ZKConfig} (env : CEnv c) (id : VarID) : CEnv c :=
-  env.erase id
-
-/- Ensure that a constant variable is not already defined in the environment. It fails
-   if the variable is already defined -/
-def ensureNotDefinedCVar {c : ZKConfig} (env : CEnv c) (id : VarID) : Except String Unit :=
-  if env.contains id then
-    Except.error s!"Constant variable '{id}' already defined"
-  else
-    Except.ok ()
-
 
 /- Evaluate a simple expressions (a variable or a field value) to a field value,
    by looking it up in the state. It fails if the variable is not found or if
@@ -113,7 +82,6 @@ def evalSimpleExprToFF {c : ZKConfig} (st : State c) (s : SimpleExpr c) : Except
     | Except.ok (Value.scalar v) => Except.ok v
     | Except.ok (Value.array _) => Except.error s!"Variable '{id}' is an array, expected scalar"
     | Except.error err => Except.error err
-  | .cvar id => getCVar st.cvars id
   | .val v => Except.ok v
 
 /- A function for evaluating constant simple expressions -/
@@ -128,15 +96,11 @@ def evalSimpleExprToValue {c : ZKConfig}
     (st : State c) (s : SimpleExpr c) : Except String (Value c) := do
   match s with
   | .var id => getVar st.vars id
-  | .cvar id =>
-      let v ← getCVar st.cvars id
-      Except.ok (Value.scalar v)
   | .val v => Except.ok (Value.scalar v)
 
 def evalSimpleExprsToValue {c : ZKConfig}
     (st : State c) (l : List (SimpleExpr c)) : Except String (List (Value c)) := do
   l.mapM (evalSimpleExprToValue st)
-
 
 
 def ensureCorrectType {c : ZKConfig} (v : Value c) (type : VarType) : Except String Unit :=
