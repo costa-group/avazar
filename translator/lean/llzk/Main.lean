@@ -14,7 +14,7 @@ open Cli
 
 /- Pretty printing of a given program -/
 def prettyPrinting (p : Parsed) (inFile : String) (outStream : IO.FS.Stream) : IO Unit := do
-     let cf : FormatConfig := {
+     let fc : FormatConfig := {
        indentSize := 2,
        showLiveness := p.hasFlag "showliveness"
      }
@@ -24,7 +24,7 @@ def prettyPrinting (p : Parsed) (inFile : String) (outStream : IO.FS.Stream) : I
      let progWithLiveness := addLivenessProg prog
      IO.println s!"Pretty printing the input program..."
      IO.println s!""
-     @printProg F11 progWithLiveness outStream cf
+     @printProg fc F11 progWithLiveness outStream
      outStream.flush
 
 
