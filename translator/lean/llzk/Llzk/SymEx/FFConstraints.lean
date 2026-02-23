@@ -19,17 +19,20 @@ structure BoolVarMetaData where
   src_info : SrcInfo
   deriving Repr, BEq, Inhabited
 
-/- A variable in the finite field constraint system -/
+/- A finite field variable -/
 structure FFVar where
   id : ℕ
   meta_data: FFVarMetaData
   deriving Repr, Inhabited
 
+/- A boolean variable -/
 structure BoolVar where
   id : ℕ
   meta_data: BoolVarMetaData
   deriving Repr, Inhabited
 
+/- A variable, which can be either a finite field variable or a boolean variable -/
+abbrev Var := FFVar ⊕ BoolVar
 
 /-  Equality (BEq) of FFVar -/
 instance : BEq FFVar where
@@ -61,7 +64,6 @@ instance : Ord BoolVar where
     | .eq => compare a.id b.id -- Names equal? Check IDs
     | ord => ord               -- Names different? Return that order
 
-abbrev Var := FFVar ⊕ BoolVar
 
 /- Term is a polynomial expression over finite fields -/
 inductive FFTerm (c : ZKConfig) where
@@ -87,7 +89,9 @@ inductive FFFormula (c : ZKConfig) where
   | call   : String → List Var → FFFormula c  -- macro call
   deriving Repr, BEq, Inhabited
 
-/- Trivial definition for size of formula, to be used for proving termination -/
+/- Trivial definition for size of formula, to be used for proving termination.
+   Tried to use the default sizeOf but failed to unfold at some point.
+   Revisit this later. -/
 def sizeOfFormula {c : ZKConfig} : FFFormula c → Nat
   | .true | .false => 1
   | .bool _ => 1
@@ -104,14 +108,14 @@ structure FFMacro (c : ZKConfig) where
   body : FFFormula c
   deriving Repr, BEq, Inhabited
 
-/- A constraint system consists of a list of macros and a main formula -/
+/- A constraint system consists of a list of macros and the name of the main macro -/
 structure FFConstraintSystem (c : ZKConfig) where
   macros : List (FFMacro c)
   main : String
   deriving Repr, BEq, Inhabited
 
-
-/-- Fetch a macro by name from a constraint system. Throws an error if the macro is not found. -/
+/-- Fetch a macro by name from a list of macros. Throws an error if
+    the macro is not found. -/
 def fetchMacro {c : ZKConfig}
     (ms : List (FFMacro c)) (name : String) : Except String (FFMacro c × List (FFMacro c)) :=
   match ms with
@@ -120,7 +124,7 @@ def fetchMacro {c : ZKConfig}
       if m.name == name then Except.ok (m, rest)
       else fetchMacro rest name
 
-/- fetchMacro returns a smaller list -/
+/- fetchMacro returns a smaller list of macros -/
 theorem fetchMacroLT {c : ZKConfig} (ms ms' : List (FFMacro c)) (name : String) (m : FFMacro c) :
   fetchMacro ms name = Except.ok (m, ms') → ms'.length < ms.length := by
   cases ms with
@@ -138,8 +142,9 @@ theorem fetchMacroLT {c : ZKConfig} (ms ms' : List (FFMacro c)) (name : String) 
         have h2 := fetchMacroLT tail ms' name m h1
         grind
 
-
-/- An assignment maps variables to FF values -/
+/- An assignment maps variables to values. There are two types of
+   variables, finite field variables and boolean variables, so we have
+   two maps -/
 structure Assignment (c : ZKConfig) where
   ff : ℕ → FF c
   bool : ℕ → Bool
@@ -159,7 +164,6 @@ def newAssignment' {c : ZKConfig}
   | (.inr org) :: orgs, (.inr new) :: news =>
     let boolMap' : ℕ → Bool := fun id => if id == new.id then assign.bool org.id else boolMap id
     newAssignment' assign orgs news ffMap boolMap'
-  -- This case should not happen if the input lists are well-formed. Later will throw an exception.
   | _, _ => Except.error "Mismatched variable lists"
 
 def newAssignment {c : ZKConfig}
@@ -169,36 +173,36 @@ def newAssignment {c : ZKConfig}
   let boolMap : ℕ → Bool := fun _id => false
   newAssignment' assign orginNames newNames ffMap boolMap
 
-/- Evaluate Terms to FF values -/
-def eval_term {c : ZKConfig} (assign : Assignment c) (t : FFTerm c) : FF c :=
+/- Evaluate a term to FF value -/
+def evalTerm {c : ZKConfig} (assign : Assignment c) (t : FFTerm c) : FF c :=
   match t with
   | .const v => v
   | .var v => assign.ff v.id
-  | .add a b => (eval_term assign a) + (eval_term assign b)
-  | .sub a b => (eval_term assign a) - (eval_term assign b)
-  | .mul a b => (eval_term assign a) * (eval_term assign b)
+  | .add a b => (evalTerm assign a) + (evalTerm assign b)
+  | .sub a b => (evalTerm assign a) - (evalTerm assign b)
+  | .mul a b => (evalTerm assign a) * (evalTerm assign b)
 
-/- Evaluate Formulas to Propositions (Prop) -/
-def eval_formula {c : ZKConfig}
+/- Evaluate a formula to a boolean value -/
+def evalFormula {c : ZKConfig}
    (assign : Assignment c) (f : FFFormula c) (ms : List (FFMacro c)) : Except String Bool := do
   match f with
   | .true     => return true
   | .false    => return false
   | .bool v   => return assign.bool v.id
-  | .eqZero t => return eval_term assign t = 0
-  | .and a b  => return (← eval_formula assign a ms) && (← eval_formula assign b ms)
-  | .or a b   => return (← eval_formula assign a ms) || (← eval_formula assign b ms)
-  | .not a    => return !(← eval_formula assign a ms)
-  | .ite c t e => if (← eval_formula assign c ms) then eval_formula assign t ms
-                  else eval_formula assign e ms
-  | .imply a b => return !(← eval_formula assign a ms) || (← eval_formula assign b ms)
-  | .iff a b   => return (← eval_formula assign a ms) == (← eval_formula assign b ms)
+  | .eqZero t => return evalTerm assign t = 0
+  | .and a b  => return (← evalFormula assign a ms) && (← evalFormula assign b ms)
+  | .or a b   => return (← evalFormula assign a ms) || (← evalFormula assign b ms)
+  | .not a    => return !(← evalFormula assign a ms)
+  | .ite c t e => if (← evalFormula assign c ms) then evalFormula assign t ms
+                  else evalFormula assign e ms
+  | .imply a b => return !(← evalFormula assign a ms) || (← evalFormula assign b ms)
+  | .iff a b   => return (← evalFormula assign a ms) == (← evalFormula assign b ms)
   | .call name args =>
      match _h_fetchm: fetchMacro ms name with
      | Except.error e => Except.error e
      | Except.ok (m,ms') =>
        let newAssign ← newAssignment assign args m.params
-       eval_formula newAssign m.body ms'
+       evalFormula newAssign m.body ms'
 termination_by (ms.length, sizeOfFormula f)
 decreasing_by
   any_goals
@@ -209,88 +213,27 @@ decreasing_by
   apply Prod.Lex.left
   apply fetchMacroLT ms ms' name m _h_fetchm
 
+/- The main formula of a constraint system is a call to the main macro -/
+def mainFormula {c : ZKConfig}
+  (sys : FFConstraintSystem c) : Except String (FFFormula c × List Var) := do
+  let (m,_) ← fetchMacro sys.macros sys.main
+  return (FFFormula.call m.name m.params, m.params)
+
 /- Satisfiability of a formula:
 
-   Does there EXIST an assignment σ such that evalFormula is true?
+   EXIST an assignment σ such that evalFormula return true
 -/
-def is_sat_formula {c : ZKConfig} (f : FFFormula c) (ms : List (FFMacro c)) : Prop :=
-  ∃ (σ : Assignment c), eval_formula σ f ms = Except.ok true
+def isSatFormula {c : ZKConfig} (f : FFFormula c) (ms : List (FFMacro c)) : Prop :=
+  ∃ (σ : Assignment c), evalFormula σ f ms = Except.ok true
 
 
 /- Satisfiability of a system:
 
-   Does there EXIST an assignment σ such that the main formula is true?
+  EXIST an assignment σ such that the main formula is true?
 -/
-def is_sat_sys {c : ZKConfig} (sys : FFConstraintSystem c) : Except String Prop := do
-  let (m,ms') ← fetchMacro sys.macros sys.main
-  let p := is_sat_formula m.body ms'
-  return p
-
-/- The next functions are used to collect all variables that are used in a formula.
-   Note that variables with the same id and name, but with different metadata are
-   considered equal. This should not happen in practice
--/
-
-abbrev FFVarSet := Std.TreeSet FFVar compare
-abbrev emptyFFVarSet : FFVarSet := Std.TreeSet.empty
-
-abbrev BoolVarSet := Std.TreeSet BoolVar compare
-abbrev emptyBoolVarSet : BoolVarSet := Std.TreeSet.empty
-
-/- Collect variables from a Term into the accumulator set -/
-partial def collectVarsTerm {c : ZKConfig} (acc : FFVarSet) (t : FFTerm c) : FFVarSet :=
-  match t with
-  | .const _   => acc
-  | .var v     => acc.insert v
-  | .add a b   =>
-      let acc' := collectVarsTerm acc a
-      collectVarsTerm acc' b
-  | .sub a b   =>
-      let acc' := collectVarsTerm acc a
-      collectVarsTerm acc' b
-  | .mul a b   =>
-      let acc' := collectVarsTerm acc a
-      collectVarsTerm acc' b
-
-/- Collect variables from a Formula into the accumulator set -/
-partial def collectVarsFormula {c : ZKConfig}
-  (acc : FFVarSet × BoolVarSet) (f : FFFormula c) : FFVarSet × BoolVarSet :=
-  match f with
-  | .true     => acc
-  | .false    => acc
-  | .eqZero t => (collectVarsTerm acc.1 t, acc.2)
-  | .bool v   => (acc.1, acc.2.insert v)
-  | .and a b  =>
-      let acc' := collectVarsFormula acc a
-      collectVarsFormula acc' b
-  | .or a b   =>
-      let acc' := collectVarsFormula acc a
-      collectVarsFormula acc' b
-  | .not a    => collectVarsFormula acc a
-  | .ite c t e =>
-      let acc' := collectVarsFormula acc c
-      let acc'' := collectVarsFormula acc' t
-      collectVarsFormula acc'' e
-  | .imply a b =>
-      let acc' := collectVarsFormula acc a
-      collectVarsFormula acc' b
-  | .iff a b   =>
-      let acc' := collectVarsFormula acc a
-      collectVarsFormula acc' b
-  | .call _ args =>
-      args.foldl (fun acc var =>
-        match var with
-        | .inl ffVar => (acc.1.insert ffVar, acc.2)
-        | .inr boolVar => (acc.1, acc.2.insert boolVar)
-      ) acc
-
-/- Returns a list of all unique variables in the formula -/
-def collectVars {c : ZKConfig} (f : FFFormula c) : List FFVar × List BoolVar :=
-  let emptyFFSet : FFVarSet := emptyFFVarSet
-  let emptyBoolSet : BoolVarSet := emptyBoolVarSet
-  let finalSet := collectVarsFormula (emptyFFSet, emptyBoolSet) f
-  -- Convert the set back to a List for your SMT printer
-  (finalSet.1.toList, finalSet.2.toList)
+def isSatSys {c : ZKConfig} (sys : FFConstraintSystem c) : Except String Prop := do
+  let (f,_) ← mainFormula sys
+  return isSatFormula f sys.macros
 
 /- Printing formulas in SMT2 format
 
@@ -425,15 +368,15 @@ def printMacros {c : ZKConfig}
 
 def printConstraintSystem {c : ZKConfig}
   (stream : IO.FS.Stream) (sys : FFConstraintSystem c) : IO Unit := do
-  match fetchMacro sys.macros sys.main with
+  match mainFormula sys with
   | Except.error e => stream.putStrLn s!"Error: {e}"
-  | Except.ok (m, _) =>
+  | Except.ok (f, vars) =>
   stream.putStrLn "(set-logic QF_FF)"
   stream.putStrLn ""
   -- The Finite Field sort declaration
   stream.putStrLn s!"(define-sort FFp () (_ FiniteField {c.p}))"
   -- Variable Declarations
-  for v in m.params do
+  for v in vars do
     stream.putStr "(declare-const "
     match v with
     | .inl ffVar =>
@@ -445,7 +388,6 @@ def printConstraintSystem {c : ZKConfig}
   -- Macros
   printMacros stream sys.macros.reverse -- we assume main is first
   -- Main formula
-  let f : FFFormula c := FFFormula.call m.name m.params
   stream.putStrLn "(assert "
   printFormula stream f 1
   stream.putStrLn ")"
