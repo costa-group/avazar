@@ -189,7 +189,7 @@ partial def Lexer.nextToken (st : Lexer) : IO (TokenInfo × Lexer) := do
 
     -- identifier, any sequence of alphanumeric characters, underscores, '%', '@', '#', or '.'
     -- that starts with a letter, underscore, '%', or '@'.
-    else if c == '_' || c == '%' || c == '@' || c.isAlpha then
+    else if c == '_' || c == '%' || c == '@' || c == '.' || c.isAlpha then
       let (s, st) ← st.scanWhile (fun x => x.isAlphanum || x == '_' || x == '%' || x == '@' || x == '#' || x == '.')
       return (⟨ Token.ident s, col, row ⟩, st)
 
