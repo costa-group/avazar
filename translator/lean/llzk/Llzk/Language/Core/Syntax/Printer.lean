@@ -167,7 +167,6 @@ variable (fc : FormatConfig)
 
 mutual
 
-
 def printCom {c : ZKConfig}
     (h : IO.FS.Stream) (i : ComWithMD c) (level : Nat) (sp : String) : IO Unit := do
   match i with
@@ -230,12 +229,14 @@ def printBody {c : ZKConfig}
 
 end -- mutual
 
-def printFunction {c : ZKConfig} (fc : FormatConfig)
+def printFunction {c : ZKConfig}
     (h : IO.FS.Stream) (f : FuncWithMD c) : IO Unit := do
   match f with
-  | .mk _ func =>
+  | .mk md func =>
     match func with
     | .mk name params rets body =>
+      if fc.showLiveness then
+        h.putStrLn s!"# live_in={md.liveness.live_in}, live_out={md.liveness.live_out}"
       if (rets == []) then
         h.putStr s!"func {name}({params})"
       else
@@ -245,7 +246,7 @@ def printFunction {c : ZKConfig} (fc : FormatConfig)
       h.putStrLn "}"
 
 def printProg {c : ZKConfig} (p : ProgWithMD c)
-    (h : IO.FS.Stream) (fc : FormatConfig) : IO Unit := do
+    (h : IO.FS.Stream) : IO Unit := do
     match p with
     | .mk _ fs =>
       for f in fs.reverse do

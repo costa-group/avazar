@@ -1,6 +1,8 @@
 func %main(%x:ff) : %y:ff {
-  %y = 0
+  %y = %x
+  %i = 0
   repeat 10 {
-    %y = felt.add %y %x
+    %y = felt.add %y %i
+    %i = felt.add %i 1
   }
 }
