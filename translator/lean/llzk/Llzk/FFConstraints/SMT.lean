@@ -62,6 +62,10 @@ def printTerm {c : ZKConfig}
       stream.putStr " "
       printTerm stream b
       stream.putStr ")"
+  | .neg a =>
+      stream.putStr "(ff.neg "
+      printTerm stream a
+      stream.putStr ")"
 
 /- Prints the boolean formula structure -/
 def printFormula {c : ZKConfig}
@@ -72,10 +76,12 @@ def printFormula {c : ZKConfig}
   | .false => stream.putStrLn s!"{sp}false"
   | .bool v =>
       stream.putStr s!"{sp}{boolVarID v}"
-  | .eqZero t =>
+  | .eq a b =>
       stream.putStr s!"{sp}(= "
-      printTerm stream t
-      stream.putStrLn " 0)"
+      printTerm stream a
+      stream.putStr " "
+      printTerm stream b
+      stream.putStrLn ")"
   | .and a b =>
       stream.putStrLn s!"{sp}(and "
       printFormula stream a (level + 1)
