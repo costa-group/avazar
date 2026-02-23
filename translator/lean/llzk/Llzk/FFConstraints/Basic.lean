@@ -72,6 +72,7 @@ inductive FFTerm (c : ZKConfig) where
   | add   : FFTerm c → FFTerm c → FFTerm c
   | sub   : FFTerm c → FFTerm c → FFTerm c
   | mul   : FFTerm c → FFTerm c → FFTerm c
+  | neg   : FFTerm c → FFTerm c
   deriving Repr, BEq, Inhabited
 
 /- A formula is a boolean formula with P(x)=0 as atoms.  -/
@@ -79,7 +80,7 @@ inductive FFFormula (c : ZKConfig) where
   | true   : FFFormula c
   | false  : FFFormula c
   | bool   : BoolVar → FFFormula c        -- A boolean variable
-  | eqZero : FFTerm c → FFFormula c       -- P(x) = 0
+  | eq     : FFTerm c → FFTerm c → FFFormula c       -- P(x) = 0
   | and    : FFFormula c → FFFormula c → FFFormula c -- and
   | or     : FFFormula c → FFFormula c → FFFormula c -- or
   | not    : FFFormula c → FFFormula c -- negation
@@ -95,7 +96,7 @@ inductive FFFormula (c : ZKConfig) where
 def sizeOfFormula {c : ZKConfig} : FFFormula c → Nat
   | .true | .false => 1
   | .bool _ => 1
-  | .eqZero _ => 1
+  | .eq _ _ => 1
   | .and a b | .or a b | .imply a b | .iff a b => 1 + sizeOfFormula a + sizeOfFormula b
   | .not a => 1 + sizeOfFormula a
   | .ite c t e => 1 + sizeOfFormula c + sizeOfFormula t + sizeOfFormula e

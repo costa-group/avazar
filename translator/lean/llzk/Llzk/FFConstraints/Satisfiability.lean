@@ -46,6 +46,7 @@ def evalTerm {c : ZKConfig} (assign : Assignment c) (t : FFTerm c) : FF c :=
   | .add a b => (evalTerm assign a) + (evalTerm assign b)
   | .sub a b => (evalTerm assign a) - (evalTerm assign b)
   | .mul a b => (evalTerm assign a) * (evalTerm assign b)
+  | .neg a => -(evalTerm assign a)
 
 /- Evaluate a formula to a boolean value -/
 def evalFormula {c : ZKConfig}
@@ -54,7 +55,7 @@ def evalFormula {c : ZKConfig}
   | .true     => return true
   | .false    => return false
   | .bool v   => return assign.bool v.id
-  | .eqZero t => return evalTerm assign t = 0
+  | .eq a b => return evalTerm assign a == evalTerm assign b
   | .and a b  => return (← evalFormula assign a ms) && (← evalFormula assign b ms)
   | .or a b   => return (← evalFormula assign a ms) || (← evalFormula assign b ms)
   | .not a    => return !(← evalFormula assign a ms)
