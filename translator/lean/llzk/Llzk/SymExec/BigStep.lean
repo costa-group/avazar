@@ -13,7 +13,7 @@ open Llzk.SymExec.Basic
 
 mutual
 
-def evalCmd {c : ZKConfig}
+def symExecCmd {c : ZKConfig}
     (p : Prog c) (i : ComWithMD c) : Except String (CmdsSpec c) := do
   match i with
    | .mk md cmd =>
@@ -25,19 +25,19 @@ def evalCmd {c : ZKConfig}
       | Com.write_array _a _index _value => return {}
       | Com.copy_array _out _a => return {}
       | Com.if_stmt _cond tb eb =>
-          let _ ← evalCmds p tb
-          let _ ← evalCmds p eb
+          let _ ← symExecCmds p tb
+          let _ ← symExecCmds p eb
           return {}
       | Com.loop_exp _rep body =>
           let loop := (ComWithMD.mk md (Com.loop 1 body))
-          evalCmd p loop
+          symExecCmd p loop
       | Com.loop (rep+1) body =>
-          let _ ← evalCmds p body --
-          evalCmd p (ComWithMD.mk md (Com.loop rep body))
+          let _ ← symExecCmds p body --
+          symExecCmd p (ComWithMD.mk md (Com.loop rep body))
       | Com.loop 0 _body =>
           return {}
       | Com.func_call _outs fname _args =>
-          let _ ← evalFun p fname
+          let _ ← symExecFun p fname
           return {}
 termination_by (p.length, numOfLoopExpCom i, sizeOfCom i)
 decreasing_by
@@ -86,13 +86,13 @@ decreasing_by
       grind
 
 
-def evalCmds {c : ZKConfig}
+def symExecCmds {c : ZKConfig}
     (p : Prog c)  (cmds : List (ComWithMD c)) : Except String (CmdsSpec c) := do
   match cmds with
   | [] => return {}
   | cmd :: rest => do
-    let _ ← evalCmd p cmd
-    let _ ← evalCmds p rest
+    let _ ← symExecCmd p cmd
+    let _ ← symExecCmds p rest
     return {}
 termination_by (p.length, numOfLoopExpComs cmds, sizeOfComs cmds)
 decreasing_by
@@ -123,7 +123,7 @@ decreasing_by
       simp only [sizeOfComs]
       grind
 
-def evalFun {c : ZKConfig} (p : Prog c) (fname : FName) : Except String (CmdsSpec c) := do
+def symExecFun {c : ZKConfig} (p : Prog c) (fname : FName) : Except String (CmdsSpec c) := do
     match _h_fetch: fetchFunc p fname with
     | Except.error e => Except.error e
     | Except.ok (f, p') =>
@@ -131,7 +131,7 @@ def evalFun {c : ZKConfig} (p : Prog c) (fname : FName) : Except String (CmdsSpe
       | .mk _ func =>
       match func with
        | Func.mk _ _params _rets body =>
-           let _ ← evalCmds p'  body
+           let _ ← symExecCmds p'  body
            return {}
 termination_by (p.length, 0 ,0)
 decreasing_by
