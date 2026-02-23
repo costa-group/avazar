@@ -1,9 +1,9 @@
 import Llzk.Basic
 import Llzk.Language.Core.Syntax.AST
 
-/- This module provides a syntax for SMT formulas over finite fields, their satisfiability,
-   and functions to print them in SMT-LIB2 format.
--/
+/- This module defines the syntax of constraint systems over finite fields
+   and boolean variables -/
+
 namespace Llzk.FFConstraints.Basic
 
 open Llzk.Language.Core.Syntax.AST
