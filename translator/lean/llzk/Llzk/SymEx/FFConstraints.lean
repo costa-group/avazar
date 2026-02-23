@@ -107,7 +107,7 @@ structure FFMacro (c : ZKConfig) where
 /- A constraint system consists of a list of macros and a main formula -/
 structure FFConstraintSystem (c : ZKConfig) where
   macros : List (FFMacro c)
-  formula : FFFormula c
+  main : String
   deriving Repr, BEq, Inhabited
 
 
@@ -221,9 +221,10 @@ def is_sat_formula {c : ZKConfig} (f : FFFormula c) (ms : List (FFMacro c)) : Pr
 
    Does there EXIST an assignment σ such that the main formula is true?
 -/
-def is_sat_sys {c : ZKConfig} (sys : FFConstraintSystem c) : Prop :=
-  is_sat_formula sys.formula sys.macros
-
+def is_sat_sys {c : ZKConfig} (sys : FFConstraintSystem c) : Except String Prop := do
+  let (m,ms') ← fetchMacro sys.macros sys.main
+  let p := is_sat_formula m.body ms'
+  return p
 
 /- The next functions are used to collect all variables that are used in a formula.
    Note that variables with the same id and name, but with different metadata are
@@ -424,27 +425,29 @@ def printMacros {c : ZKConfig}
 
 def printConstraintSystem {c : ZKConfig}
   (stream : IO.FS.Stream) (sys : FFConstraintSystem c) : IO Unit := do
-  let (ffVars, boolVars) := collectVars sys.formula
-  printMacros stream sys.macros
-  printFormula stream sys.formula 0
+  match fetchMacro sys.macros sys.main with
+  | Except.error e => stream.putStrLn s!"Error: {e}"
+  | Except.ok (m, _) =>
   stream.putStrLn "(set-logic QF_FF)"
   stream.putStrLn ""
   -- The Finite Field sort declaration
   stream.putStrLn s!"(define-sort FFp () (_ FiniteField {c.p}))"
   -- Variable Declarations
-  for v in ffVars do
+  for v in m.params do
     stream.putStr "(declare-const "
-    printVarFF stream v
-    stream.putStrLn " FFp)"
-  for v in boolVars do
-    stream.putStr "(declare-const "
-    printVarBool stream v
-    stream.putStrLn " Bool)"
+    match v with
+    | .inl ffVar =>
+        printVarFF stream ffVar
+        stream.putStrLn " FFp)"
+    | .inr boolVar =>
+        printVarBool stream boolVar
+        stream.putStrLn " Bool)"
   -- Macros
   printMacros stream sys.macros.reverse -- we assume main is first
   -- Main formula
+  let f : FFFormula c := FFFormula.call m.name m.params
   stream.putStrLn "(assert "
-  printFormula stream sys.formula 1
+  printFormula stream f 1
   stream.putStrLn ")"
   stream.flush
 
