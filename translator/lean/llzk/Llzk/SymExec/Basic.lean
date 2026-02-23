@@ -17,6 +17,7 @@ open Llzk.FFConstraints.Basic
    to the code
 -/
 structure SymExecConfig (c : ZKConfig) where
+  lastUsedId : Nat := 0
   deriving Inhabited
 
 /- A symbolic variable can either be a concrete value of a finite
@@ -54,5 +55,24 @@ structure CmdsSpec (c : ZKConfig) where
 
 
 def emptyCmdsSpec {c : ZKConfig} : CmdsSpec c := {}
+
+
+def symExecSkip {c : ZKConfig} (cfg : SymExecConfig c) (md: CmdMD) (symEnv : SymEnv c) : CmdsSpec c :=
+  {}
+
+def symExecAssignment {c : ZKConfig} (cfg : SymExecConfig c) (md: CmdMD) (symEnv : SymEnv c) (id : String) (e : Expr c) : CmdsSpec c :=
+  {}
+
+def symExecNewArray {c : ZKConfig} (cfg : SymExecConfig c) (md: CmdMD) (symEnv : SymEnv c) (id : String) (size : SimpleExpr c) : CmdsSpec c :=
+  {}
+
+def symExecArrayRead {c : ZKConfig} (cfg : SymExecConfig c) (md: CmdMD) (symEnv : SymEnv c) (out : String) (a : String) (idx : SimpleExpr c) : CmdsSpec c :=
+  {}
+
+def symExecArrayWrite {c : ZKConfig} (cfg : SymExecConfig c) (md: CmdMD) (symEnv : SymEnv c) (a : String) (idx : SimpleExpr c) (value : SimpleExpr c) : CmdsSpec c :=
+  {}
+
+def symExecArrayCopy {c : ZKConfig} (cfg : SymExecConfig c) (md: CmdMD) (symEnv : SymEnv c) (out : String) (a : String) : CmdsSpec c :=
+  {}
 
 end Llzk.SymExec.Basic
