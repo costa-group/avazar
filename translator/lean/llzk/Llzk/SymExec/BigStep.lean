@@ -13,33 +13,33 @@ open Llzk.SymExec.Basic
 
 mutual
 
-def symExecCmd {c : ZKConfig}
+def seCmd {c : ZKConfig}
     (cfg : SymExecConfig c)
     (symEnv : SymEnv c)
     (p : Prog c) (i : ComWithMD c) : Except String (CmdsSpec c) := do
   match i with
    | .mk md cmd =>
       match cmd with
-      | Com.skip => return symExecSkip cfg md symEnv
-      | Com.assign id e => return symExecAssignment cfg md symEnv id e
-      | Com.new_array id size => return symExecNewArray cfg md symEnv id size
-      | Com.read_array out a idx => return symExecArrayRead cfg md symEnv out a idx
-      | Com.write_array a idx value => return symExecArrayWrite cfg md symEnv a idx value
-      | Com.copy_array out a => return symExecArrayCopy cfg md symEnv out a
+      | Com.skip => seSkip cfg md symEnv
+      | Com.assign id e => seAssignment cfg md symEnv id e
+      | Com.new_array id size => seNewArray cfg md symEnv id size
+      | Com.read_array out a idx => seArrayRead cfg md symEnv out a idx
+      | Com.write_array a idx value => seArrayWrite cfg md symEnv a idx value
+      | Com.copy_array out a => seArrayCopy cfg md symEnv out a
       | Com.if_stmt _cond tb eb =>
-          let _ ← symExecCmds cfg symEnv p tb
-          let _ ← symExecCmds cfg symEnv p eb
+          let _ ← seCmds cfg symEnv p tb
+          let _ ← seCmds cfg symEnv p eb
           return {}
       | Com.loop_exp _rep body =>
           let loop := (ComWithMD.mk md (Com.loop 1 body))
-          symExecCmd cfg symEnv p loop
+          seCmd cfg symEnv p loop
       | Com.loop (rep+1) body =>
-          let _ ← symExecCmds cfg symEnv p body --
-          symExecCmd cfg symEnv p (ComWithMD.mk md (Com.loop rep body))
+          let _ ← seCmds cfg symEnv p body --
+          seCmd cfg symEnv p (ComWithMD.mk md (Com.loop rep body))
       | Com.loop 0 _body =>
           return {}
       | Com.func_call _outs fname _args =>
-          let _ ← symExecFun cfg symEnv p fname
+          let _ ← seFuncCall cfg symEnv p fname
           return {}
 termination_by (p.length, numOfLoopExpCom i, sizeOfCom i)
 decreasing_by
@@ -88,14 +88,14 @@ decreasing_by
       grind
 
 
-def symExecCmds {c : ZKConfig}
+def seCmds {c : ZKConfig}
   (cfg : SymExecConfig c)
   (symEnv : SymEnv c) (p : Prog c)  (cmds : List (ComWithMD c)) : Except String (CmdsSpec c) := do
   match cmds with
   | [] => return {}
   | cmd :: rest => do
-    let _ ← symExecCmd cfg symEnv p cmd
-    let _ ← symExecCmds cfg symEnv p rest
+    let _ ← seCmd cfg symEnv p cmd
+    let _ ← seCmds cfg symEnv p rest
     return {}
 termination_by (p.length, numOfLoopExpComs cmds, sizeOfComs cmds)
 decreasing_by
@@ -126,7 +126,7 @@ decreasing_by
       simp only [sizeOfComs]
       grind
 
-def symExecFun {c : ZKConfig}
+def seFuncCall {c : ZKConfig}
     (cfg : SymExecConfig c)
     (symEnv : SymEnv c) (p : Prog c) (fname : FName) : Except String (CmdsSpec c) := do
     match _h_fetch: fetchFunc p fname with
@@ -136,7 +136,7 @@ def symExecFun {c : ZKConfig}
       | .mk _ func =>
       match func with
        | Func.mk _ _params _rets body =>
-           let _ ← symExecCmds cfg symEnv p'  body
+           let _ ← seCmds cfg symEnv p'  body
            return {}
 termination_by (p.length, 0 ,0)
 decreasing_by

@@ -65,6 +65,15 @@ instance : Ord BoolVar where
     | ord => ord               -- Names different? Return that order
 
 
+
+/- FFVar set -/
+abbrev FFVarSet := Std.TreeSet FFVar compare
+abbrev emptyFFVarSet : FFVarSet := Std.TreeSet.empty
+
+/- BoolVar set -/
+abbrev BoolVarSet := Std.TreeSet BoolVar compare
+abbrev emptyBoolVarSet : BoolVarSet := Std.TreeSet.empty
+
 /- Term is a polynomial expression over finite fields -/
 inductive FFTerm (c : ZKConfig) where
   | const : FF c →  FFTerm c
