@@ -38,8 +38,9 @@ separately.
 N := a natural number
 Z := an integer (will be interpreted as a finite field value)
 
-// identifiers (sequence of _,a-z,A-Z,0-9,%,@ or # that does not start with #
-id  := [_,a-z,A-Z,%,@] [_,a-z,A-Z,0-9,%,@,#]* 
+// identifiers: sequence of _,a-z,A-Z,0-9,%,@,# or . (dot) that 
+// does not start with # or a digit
+id  := [_,a-z,A-Z,%,@,.] [_,a-z,A-Z,0-9,%,@,#,.]* 
 
 // zero or more id separated by comma
 ids := (id ("," id)*)?
