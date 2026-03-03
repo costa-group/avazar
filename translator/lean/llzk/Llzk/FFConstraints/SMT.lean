@@ -20,11 +20,11 @@ def getIndent (level : Nat) : String :=
 
 /- Generates a unique string identifier for a variable based on its original name and ID -/
 def ffVarID (v : FFVar) : String :=
-  s!"{v.meta_data.orig_name}_{v.id}_L{v.meta_data.src_info.row}_C{v.meta_data.src_info.col}"
+  s!"{v}"
 
 /- Generates a unique string identifier for a variable based on its original name and ID -/
 def boolVarID (v : BoolVar) : String :=
-  s!"{v.meta_data.orig_name}_{v.id}_L{v.meta_data.src_info.row}_C{v.meta_data.src_info.col}"
+  s!"{v}"
 
 /-- Customizable variable printer (e.g., "v_0", "v_1") -/
 def printVarFF (stream : IO.FS.Stream) (v : FFVar) : IO Unit := do
@@ -83,15 +83,27 @@ def printFormula {c : ZKConfig}
       printTerm stream b
       stream.putStrLn ")"
   | .and a b =>
-      stream.putStrLn s!"{sp}(and "
-      printFormula stream a (level + 1)
-      printFormula stream b (level + 1)
-      stream.putStrLn s!"{sp})"
+      -- we remove trivial cases to simplify the output
+      if a == (@FFFormula.true c) then
+        printFormula stream b level
+      else if b == (@FFFormula.true c) then
+        printFormula stream a level
+      else
+        stream.putStrLn s!"{sp}(and "
+        printFormula stream a (level + 1)
+        printFormula stream b (level + 1)
+        stream.putStrLn s!"{sp})"
   | .or a b =>
-      stream.putStrLn s!"{sp}(or "
-      printFormula stream a (level + 1)
-      printFormula stream b (level + 1)
-      stream.putStrLn s!"{sp})"
+      -- we remove trivial cases to simplify the output
+      if a == (@FFFormula.false c) then
+        printFormula stream b level
+      else if b == (@FFFormula.false c) then
+        printFormula stream a level
+      else
+        stream.putStrLn s!"{sp}(or "
+        printFormula stream a (level + 1)
+        printFormula stream b (level + 1)
+        stream.putStrLn s!"{sp})"
   | .ite c t e =>
       stream.putStrLn s!"{sp}(ite "
       printFormula stream c (level + 1)
@@ -114,10 +126,12 @@ def printFormula {c : ZKConfig}
       stream.putStrLn s!"{sp})"
   | .call name args =>
       stream.putStr s!"{sp}({name} "
-      let argStrs := args.map (fun var =>
-        match var with
-        | .inl ffVar => ffVarID ffVar
-        | .inr boolVar => boolVarID boolVar
+      let argStrs := args.map (fun a =>
+        match a with
+        | .var (.inl ffVar) => ffVarID ffVar
+        | .var (.inr boolVar) => boolVarID boolVar
+        | .ff t => s!"{t.val}"
+        | .bool b => s!"{b}"
       )
       stream.putStr (String.intercalate " " argStrs)
       stream.putStrLn ")"
@@ -134,6 +148,7 @@ def printMacro {c : ZKConfig}
   stream.putStr (String.intercalate " " paramStrs)
   stream.putStrLn ") Bool"
   printFormula stream m.body 1
+  stream.putStrLn ")"
 
 def printMacros {c : ZKConfig}
   (stream : IO.FS.Stream) (ms : List (FFMacro c)) : IO Unit := do
@@ -153,7 +168,14 @@ def printConstraintSystem {c : ZKConfig}
   stream.putStrLn "(set-logic QF_FF)"
   stream.putStrLn ""
   -- The Finite Field sort declaration
-  stream.putStrLn s!"(define-sort FFp () (_ FiniteField {c.p}))"
+  stream.putStrLn s!"; (define-sort FFp () (_ FiniteField {c.p}))"
+  --
+  stream.putStrLn s!"(define-sort FFp () Int)"
+  stream.putStrLn s!"(declare-fun ff.add (FFp FFp) FFp)"
+  stream.putStrLn s!"(declare-fun ff.mul (FFp FFp) FFp)"
+  stream.putStrLn s!"(declare-fun ff.sub (FFp FFp) FFp)"
+  stream.putStrLn s!"(declare-fun ff.neg (FFp) FFp)"
+  stream.putStrLn s!""
   -- Variable Declarations
   for v in vars do
     stream.putStr "(declare-const "
@@ -164,6 +186,7 @@ def printConstraintSystem {c : ZKConfig}
     | .inr boolVar =>
         printVarBool stream boolVar
         stream.putStrLn " Bool)"
+  stream.putStrLn ""
   -- Macros
   printMacros stream sys.macros.reverse -- we assume main is first
   -- Main formula

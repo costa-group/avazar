@@ -1,0 +1,5 @@
+func main(%x:ff) : %y:ff {
+  %x = felt.mul 2 %x
+  %z = felt.add 2 %x
+  %y = felt.mul 2 %z
+}
