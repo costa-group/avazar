@@ -1,0 +1,13 @@
+func izero(in:ff) : out:ff {
+  if (in != 0) {
+    inv = felt.div 1 in
+  } else {
+    inv = 0
+  }
+  aux = felt.mul in inv
+  out = felt.sub 1 aux
+}
+
+func main(%x:ff) : %y:ff {
+  call izero(%x) to %y
+}

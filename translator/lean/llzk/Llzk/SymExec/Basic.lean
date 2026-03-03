@@ -314,6 +314,60 @@ def sEvalExprDiv {c : ZKConfig}
           nextId := cfg.nextId
   }
 
+
+def sEvalTrue {c : ZKConfig}
+  (cfg : SymExecConfig c) (_md : CmdMD) (senv : SymEnv c) (outFFVar : FFVar)
+  : Except String (ExprSpec c) := do
+  return {
+          inSymEnv := senv,
+          f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.const 1), -- outVar = 1
+          resVar := outFFVar,
+          nextId := cfg.nextId
+  }
+
+def sEvalFalse {c : ZKConfig}
+  (cfg : SymExecConfig c) (_md : CmdMD) (senv : SymEnv c) (outFFVar : FFVar)
+  : Except String (ExprSpec c) := do
+  return {
+          inSymEnv := senv,
+          f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.const 0), -- outVar = 0
+          resVar := outFFVar,
+          nextId := cfg.nextId
+  }
+
+
+def sEvalEq {c : ZKConfig}
+  (cfg : SymExecConfig c) (_md : CmdMD)
+  (senv : SymEnv c) (id1 id2 : SimpleExpr c) (outFFVar : FFVar)
+  : Except String (ExprSpec c) := do
+  let v1 ← simpleExprToTerm senv id1
+  let v2 ← simpleExprToTerm senv id2
+  return {
+          inSymEnv := senv,
+          f := FFFormula.ite
+                 (FFFormula.eq v1 v2)
+                 (FFFormula.eq (FFTerm.var outFFVar) (FFTerm.const 1))
+                 (FFFormula.eq (FFTerm.var outFFVar) (FFTerm.const 0)),
+          resVar := outFFVar,
+          nextId := cfg.nextId
+  }
+
+def sEvalNeq {c : ZKConfig}
+  (cfg : SymExecConfig c) (_md : CmdMD)
+  (senv : SymEnv c) (id1 id2 : SimpleExpr c) (outFFVar : FFVar)
+  : Except String (ExprSpec c) := do
+  let v1 ← simpleExprToTerm senv id1
+  let v2 ← simpleExprToTerm senv id2
+  return {
+          inSymEnv := senv,
+          f := FFFormula.ite
+                 (FFFormula.eq v1 v2)
+                 (FFFormula.eq (FFTerm.var outFFVar) (FFTerm.const 0))
+                 (FFFormula.eq (FFTerm.var outFFVar) (FFTerm.const 1)),
+          resVar := outFFVar,
+          nextId := cfg.nextId
+  }
+
 def sEvalExpr {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c) (e : Expr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
@@ -325,6 +379,11 @@ def sEvalExpr {c : ZKConfig}
   | .sub s1 s2 => sEvalExprSub cfg md symEnv s1 s2 outFFVar
   | .mul s1 s2 => sEvalExprMul cfg md symEnv s1 s2 outFFVar
   | .div s1 s2 => sEvalExprDiv cfg md symEnv s1 s2 outFFVar
+  -- boolean
+  | .True => sEvalTrue cfg md symEnv outFFVar
+  | .False => sEvalFalse cfg md symEnv outFFVar
+  | .eq s1 s2 => sEvalEq cfg md symEnv s1 s2 outFFVar
+  | .neq s1 s2 => sEvalNeq cfg md symEnv s1 s2 outFFVar
   | _ => Except.error s!"Expression evaluation not implemented yet"
 
 
