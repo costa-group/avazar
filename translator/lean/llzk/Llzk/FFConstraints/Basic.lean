@@ -23,24 +23,55 @@ structure BoolVarMetaData where
 structure FFVar where
   id : ℕ
   meta_data: FFVarMetaData
-  deriving Repr, Inhabited
+  deriving Repr, BEq, Inhabited
 
 /- A boolean variable -/
 structure BoolVar where
   id : ℕ
   meta_data: BoolVarMetaData
-  deriving Repr, Inhabited
+  deriving Repr, BEq, Inhabited
 
 /- A variable, which can be either a finite field variable or a boolean variable -/
 abbrev Var := FFVar ⊕ BoolVar
 
+/- When calling a macro we provide a value or a variable -/
+inductive MacroCallParam (c : ZKConfig) where
+  | var (v : Var) : MacroCallParam c
+  | ff (t : FF c) : MacroCallParam c
+  | bool (b : Bool) : MacroCallParam c
+  deriving Repr, BEq, Inhabited
+
+-- /-  Equality (BEq) of FFVar -/
+-- instance : BEq FFVar where
+--   beq a b := a.id == b.id && a.meta_data.orig_name == b.meta_data.orig_name && a.meta_data.src_info == b.meta_data.src_info
+
+-- /-  Equality (BEq) of BoolVar -/
+-- instance : BEq BoolVar where
+--   beq a b := a.id == b.id && a.meta_data.orig_name == b.meta_data.orig_name && a.meta_data.src_info == b.meta_data.src_info
+
+-- /- ToString instance for FFVar -/
+-- instance : ToString FFVar where
+--   toString v := s!"v_{v.id}_{v.meta_data.orig_name}_L{v.meta_data.src_info.row}_C{v.meta_data.src_info.col}"
+
+-- /- ToString instance for BoolVar -/
+-- instance : ToString BoolVar where
+--   toString v := s!"v_{v.id}_{v.meta_data.orig_name}_L{v.meta_data.src_info.row}_C{v.meta_data.src_info.col}"
+
 /-  Equality (BEq) of FFVar -/
 instance : BEq FFVar where
-  beq a b := a.id == b.id && a.meta_data.orig_name == b.meta_data.orig_name
+  beq a b := a.id == b.id
 
 /-  Equality (BEq) of BoolVar -/
 instance : BEq BoolVar where
-  beq a b := a.id == b.id && a.meta_data.orig_name == b.meta_data.orig_name
+  beq a b := a.id == b.id
+
+/- ToString instance for FFVar -/
+instance : ToString FFVar where
+  toString v := s!"v_{v.id}"
+
+/- ToString instance for BoolVar -/
+instance : ToString BoolVar where
+  toString v := s!"v_{v.id}"
 
 /-  Hashing (Hashable) of FFVar. Needed if we use this in a HashMap or HashSet -/
 instance : Hashable FFVar where
@@ -84,19 +115,20 @@ inductive FFTerm (c : ZKConfig) where
   | neg   : FFTerm c → FFTerm c
   deriving Repr, BEq, Inhabited
 
+
 /- A formula is a boolean formula with P(x)=0 as atoms.  -/
 inductive FFFormula (c : ZKConfig) where
   | true   : FFFormula c
   | false  : FFFormula c
   | bool   : BoolVar → FFFormula c        -- A boolean variable
-  | eq     : FFTerm c → FFTerm c → FFFormula c       -- P(x) = 0
+  | eq     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) = P2(x)
   | and    : FFFormula c → FFFormula c → FFFormula c -- and
   | or     : FFFormula c → FFFormula c → FFFormula c -- or
   | not    : FFFormula c → FFFormula c -- negation
-  | ite    : FFFormula c → FFFormula c → FFFormula c → FFFormula c  -- if-then-else
+  | ite    : FFFormula c → FFFormula c → FFFormula c → FFFormula c  -- bool if-then-else
   | imply  : FFFormula c → FFFormula c → FFFormula c  -- implication
   | iff    : FFFormula c → FFFormula c → FFFormula c  -- if and only if
-  | call   : String → List Var → FFFormula c  -- macro call
+  | call   : String → List (MacroCallParam c) → FFFormula c  -- macro call
   deriving Repr, BEq, Inhabited
 
 /- Trivial definition for size of formula, to be used for proving termination.
@@ -144,7 +176,7 @@ theorem fetchMacroLT {c : ZKConfig} (ms ms' : List (FFMacro c)) (name : String) 
       by_cases h : head.name = name
       · simp only [h, BEq.rfl, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, List.length_cons,
         Order.lt_add_one_iff, and_imp] at *
-        intro h1 h2
+        intro  h1 h2
         rw [h2]
       · simp only [h, not_false_eq_true, beq_iff_eq, ↓reduceIte, List.length_cons,
         Order.lt_add_one_iff] at *
@@ -156,6 +188,7 @@ theorem fetchMacroLT {c : ZKConfig} (ms ms' : List (FFMacro c)) (name : String) 
 def mainFormula {c : ZKConfig}
   (sys : FFConstraintSystem c) : Except String (FFFormula c × List Var) := do
   let (m,_) ← fetchMacro sys.macros sys.main
-  return (FFFormula.call m.name m.params, m.params)
+  let params : List (MacroCallParam c) := m.params.map (fun var => (.var var))
+  return (FFFormula.call m.name params, m.params)
 
 end Llzk.FFConstraints.Basic

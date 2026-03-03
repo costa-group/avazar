@@ -18,25 +18,36 @@ structure Assignment (c : ZKConfig) where
 /- Renaming of variables for macro calls -/
 def newAssignment' {c : ZKConfig}
    (assign : Assignment c)
-   (orginNames newNames : List Var)
+   (args : List (MacroCallParam c)) (params : List Var)
    (ffMap : ℕ → FF c)
    (boolMap : ℕ → Bool) : Except String (Assignment c) :=
-  match orginNames, newNames with
+  match params, args with
   | [], [] => Except.ok { ff := ffMap, bool := boolMap }
-  | (.inl org) :: orgs, (.inl new) :: news =>
-    let ffMap' : ℕ → FF c := fun id => if id == new.id then assign.ff org.id else ffMap id
-    newAssignment' assign orgs news ffMap' boolMap
-  | (.inr org) :: orgs, (.inr new) :: news =>
-    let boolMap' : ℕ → Bool := fun id => if id == new.id then assign.bool org.id else boolMap id
-    newAssignment' assign orgs news ffMap boolMap'
+  -- parameter is a FFVar, argument is also a FFVar
+  | (.inl p) :: params', (.var (.inl a)) :: args' =>
+    let ffMap' : ℕ → FF c := fun id => if id == p.id then assign.ff a.id else ffMap id
+    newAssignment' assign args' params' ffMap' boolMap
+  -- parameter is a FFVar, argument is also a FF value
+  | (.inl p) :: params', (.ff t) :: args' =>
+    let ffMap' : ℕ → FF c := fun id => if id == p.id then t else ffMap id
+    newAssignment' assign args' params' ffMap' boolMap
+  -- parameter is a BoolVar, argument is also a BoolVar
+  | (.inr p) :: params', (.var (.inr a)) :: args' =>
+    let boolMap' : ℕ → Bool := fun id => if id == p.id then assign.bool a.id else boolMap id
+    newAssignment' assign args' params' ffMap boolMap'
+  -- parameter is a BoolVar, argument is also a Bool value
+  | (.inr p) :: params', (.bool t) :: args' =>
+    let boolMap' : ℕ → Bool := fun id => if id == p.id then t else boolMap id
+    newAssignment' assign args' params' ffMap boolMap'
+  -- any other combination is an error
   | _, _ => Except.error "Mismatched variable lists"
 
 def newAssignment {c : ZKConfig}
    (assign : Assignment c)
-   (orginNames newNames : List Var) : Except String (Assignment c) :=
+   (args : List (MacroCallParam c)) (params : List Var) : Except String (Assignment c) :=
   let ffMap : ℕ → FF c := fun _id => 0
   let boolMap : ℕ → Bool := fun _id => false
-  newAssignment' assign orginNames newNames ffMap boolMap
+  newAssignment' assign args params ffMap boolMap
 
 /- Evaluate a term to FF value -/
 def evalTerm {c : ZKConfig} (assign : Assignment c) (t : FFTerm c) : FF c :=

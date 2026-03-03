@@ -1,0 +1,10 @@
+func foo(%x:ff) : %y:ff {
+  %y = felt.mul 2 %x
+}
+
+func main(%x:ff) : %y:ff {
+  repeat 3 {
+    %x = felt.add %x 1
+  }
+  call foo(%x) to %y
+}

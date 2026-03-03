@@ -1,0 +1,12 @@
+func foo(%x:ff) : %y:ff {
+  %y = felt.mul 2 %x
+}
+
+func main(%x:ff) : %y:ff {
+  if (%x == 1) {
+    %z = felt.mul %x 1
+  } else {
+    call foo(%x) to %z
+  }
+  %y = felt.add %z 1
+}

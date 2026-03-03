@@ -3,6 +3,12 @@ import Std.Data.TreeSet.Basic
 
 /- This is a namespace for the core language -/
 
+/- This is the reference to LLZK dialects, where the different
+   operations are defined
+
+ https://project-llzk.github.io/llzk-lib/main/dialects.html#felt-dialect
+
+-/
 namespace Llzk.Language.Core.Syntax.AST
 
 
