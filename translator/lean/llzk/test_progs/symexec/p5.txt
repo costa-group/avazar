@@ -3,8 +3,10 @@ func foo(%x:ff) : %y:ff {
 }
 
 func main(%x:ff) : %y:ff {
+  %i = 1
   repeat 3 {
-    %x = felt.add %x 1
+    %x = felt.add %x %i
+    %i = felt.add %i 1
   }
   call foo(%x) to %y
 }

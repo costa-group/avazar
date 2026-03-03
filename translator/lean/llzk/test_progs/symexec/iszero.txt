@@ -1,3 +1,14 @@
+# template IsZero() {
+#  signal input in;
+#  signal output out;
+#
+#  signal inv <-- in != 0 ? 1 / in : 0;
+#  out <== 1 - (in * inv);
+#
+#  in * out === 0;
+# }
+
+
 func izero(in:ff) : out:ff {
   if (in != 0) {
     inv = felt.div 1 in

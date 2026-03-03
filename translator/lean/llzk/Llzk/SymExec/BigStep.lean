@@ -131,7 +131,7 @@ def mergeIfBranches' {c : ZKConfig}
     match liveVars with
     | [] =>
         return {
-          inSymEnv := symEnv,
+          inSymEnv := inSymEnv,
           outSymEnv := symEnv,
           tbF := tbF,
           ebF := ebF,
@@ -533,7 +533,7 @@ def genRetsBinding {c : ZKConfig}
         match symVal with
         | .ffVar v =>
           let t := symVarToTerm v
-          let ffVar := FFVar.mk cfg.nextId (FFVarMetaData.mk s!"ret_{ret.name}" md.src_info)
+          let ffVar := FFVar.mk nextId (FFVarMetaData.mk s!"ret_{ret.name}" md.src_info)
           let f := .eq (FFTerm.var ffVar) t
           loop rets' (nextId + 1) (ffVar :: acc) (.and bodySpecF f)
         | .ffArray arr =>
@@ -546,7 +546,7 @@ def genRetsBinding {c : ZKConfig}
                                  (FFVarMetaData.mk s!"ret_{ret.name}_at_{idx}" md.src_info)
                   let eq := .eq (FFTerm.var ffVar) v
                   (idx + 1, nextId + 1, ffVar :: acc, .and f eq))
-                (0, cfg.nextId, [], bodySpecF)
+                (0, nextId, acc, bodySpecF)
           loop rets' nextId' acc' bodySpecF'
   loop rets cfg.nextId [] bodySpecF
 
