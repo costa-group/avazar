@@ -43,19 +43,33 @@ inductive MacroCallParam (c : ZKConfig) where
 
 -- /-  Equality (BEq) of FFVar -/
 -- instance : BEq FFVar where
---   beq a b := a.id == b.id && a.meta_data.orig_name == b.meta_data.orig_name && a.meta_data.src_info == b.meta_data.src_info
+--   beq a b := a.id == b.id &&
+--   a.meta_data.orig_name == b.meta_data.orig_name &&
+--   a.meta_data.src_info == b.meta_data.src_info
 
 -- /-  Equality (BEq) of BoolVar -/
 -- instance : BEq BoolVar where
---   beq a b := a.id == b.id && a.meta_data.orig_name == b.meta_data.orig_name && a.meta_data.src_info == b.meta_data.src_info
+--   beq a b := a.id == b.id &&
+--   a.meta_data.orig_name == b.meta_data.orig_name &&
+--   a.meta_data.src_info == b.meta_data.src_info
 
 -- /- ToString instance for FFVar -/
 -- instance : ToString FFVar where
---   toString v := s!"v_{v.id}_{v.meta_data.orig_name}_L{v.meta_data.src_info.row}_C{v.meta_data.src_info.col}"
+--   toString v :=
+--     s!"v_{v.id}_{v.meta_data.orig_name}_L{v.meta_data.src_info.row}_C{v.meta_data.src_info.col}"
 
 -- /- ToString instance for BoolVar -/
 -- instance : ToString BoolVar where
---   toString v := s!"v_{v.id}_{v.meta_data.orig_name}_L{v.meta_data.src_info.row}_C{v.meta_data.src_info.col}"
+--   toString v :=
+--     s!"v_{v.id}_{v.meta_data.orig_name}_L{v.meta_data.src_info.row}_C{v.meta_data.src_info.col}"
+
+-- /-  Ordering (Ord) of FFVar. Needed if we use ordered sets -/
+-- instance : Ord FFVar where
+--   compare a b := compare (toString a) (toString b)
+
+-- /-  Ordering (Ord) of BoolVar. Needed if we use ordered sets -/
+-- instance : Ord BoolVar where
+--   compare a b := compare (toString a) (toString b)
 
 /-  Equality (BEq) of FFVar -/
 instance : BEq FFVar where
@@ -73,6 +87,14 @@ instance : ToString FFVar where
 instance : ToString BoolVar where
   toString v := s!"v_{v.id}"
 
+/-  Ordering (Ord) of FFVar. Needed if we use ordered sets -/
+instance : Ord FFVar where
+  compare a b := compare a.id b.id
+
+/-  Ordering (Ord) of BoolVar. Needed if we use ordered sets -/
+instance : Ord BoolVar where
+  compare a b := compare a.id b.id
+
 /-  Hashing (Hashable) of FFVar. Needed if we use this in a HashMap or HashSet -/
 instance : Hashable FFVar where
   hash a := mixHash (hash a.id) (hash a.meta_data.orig_name)
@@ -81,19 +103,6 @@ instance : Hashable FFVar where
 instance : Hashable BoolVar where
   hash a := mixHash (hash a.id) (hash a.meta_data.orig_name)
 
-/-  Ordering (Ord) of FFVar. Needed if we use ordered sets -/
-instance : Ord FFVar where
-  compare a b :=
-    match compare a.meta_data.orig_name b.meta_data.orig_name with
-    | .eq => compare a.id b.id -- Names equal? Check IDs
-    | ord => ord               -- Names different? Return that order
-
-/-  Ordering (Ord) of BoolVar. Needed if we use ordered sets -/
-instance : Ord BoolVar where
-  compare a b :=
-    match compare a.meta_data.orig_name b.meta_data.orig_name with
-    | .eq => compare a.id b.id -- Names equal? Check IDs
-    | ord => ord               -- Names different? Return that order
 
 
 

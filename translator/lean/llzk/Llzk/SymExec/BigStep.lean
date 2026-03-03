@@ -333,9 +333,17 @@ def seCmd {c : ZKConfig}
               let tbSpec ← seCmds cfg symEnv specs tb
               let ebSpec ← seCmds cfg symEnv specs eb
               let cfg' := { cfg with nextId := max tbSpec.nextId ebSpec.nextId }
-              mergeIfBranches
-                 cfg' md
-                symEnv tbSpec.outSymEnv ebSpec.outSymEnv tbSpec.f ebSpec.f cond
+              let ifSpec ← mergeIfBranches
+                            cfg' md
+                            symEnv tbSpec.outSymEnv ebSpec.outSymEnv tbSpec.f ebSpec.f cond
+              return {
+                inSymEnv := symEnv,
+                outSymEnv := ifSpec.outSymEnv,
+                f := ifSpec.f,
+                nextId := ifSpec.nextId,
+                newFFVars := ifSpec.newFFVars ∪ tbSpec.newFFVars ∪ ebSpec.newFFVars,
+                newBoolVars := ifSpec.newBoolVars ∪ tbSpec.newBoolVars ∪ ebSpec.newBoolVars
+              }
           | Except.ok condVal =>
               if condVal then
                 let tb ← seCmds cfg symEnv specs tb
@@ -550,9 +558,10 @@ def seExecFunc {c : ZKConfig}
   match f with
   | .mk name params rets body =>
     let (nextId, inVars, symEnv) ← genInitialSymEnv md params
-    let cfg := { cfg with nextId := nextId }
-    let bodySpec ← seCmds cfg symEnv specs body
-    let (nextId, retVars, bodySpecF) ← genRetsBinding cfg md rets bodySpec.outSymEnv bodySpec.f
+    let cfg' := { cfg with nextId := nextId }
+    let bodySpec ← seCmds cfg' symEnv specs body
+    let cfg'' := { cfg' with nextId := bodySpec.nextId }
+    let (nextId, retVars, bodySpecF) ← genRetsBinding cfg'' md rets bodySpec.outSymEnv bodySpec.f
     let boolAuxVars : List Var := bodySpec.newBoolVars.toList.map (fun v => .inr v)
     let ffAuxVars : List Var := bodySpec.newFFVars.toList.map (fun v => .inl v)
     let auxVars := ffAuxVars ++ boolAuxVars
