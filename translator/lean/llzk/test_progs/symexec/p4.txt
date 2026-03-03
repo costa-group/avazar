@@ -3,8 +3,8 @@ func foo(%x:ff) : %y:ff {
 }
 
 func main(%x:ff) : %y:ff {
-  %y = 1
-  %c = %x
+  %y = 0
+  %c = %x # try replacing 0 by %x 
   if (%c == 2) {
     call foo(%x) to %y    
   } else {
