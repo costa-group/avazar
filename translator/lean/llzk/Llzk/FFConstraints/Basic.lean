@@ -129,8 +129,14 @@ inductive FFTerm (c : ZKConfig) where
 inductive FFFormula (c : ZKConfig) where
   | true   : FFFormula c
   | false  : FFFormula c
+  | range  : FFTerm c → FF c -> FF c -> FFFormula c        -- P(x) in the range of the field
   | bool   : BoolVar → FFFormula c        -- A boolean variable
   | eq     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) = P2(x)
+  | lt     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) < P2(x)
+  | gt     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) > P2(x)
+  | le     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) <= P2(x)
+  | ge     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) >= P2(x)
+  -- TODO add lt, etc with the same semantics as in the interpreter
   | and    : FFFormula c → FFFormula c → FFFormula c -- and
   | or     : FFFormula c → FFFormula c → FFFormula c -- or
   | not    : FFFormula c → FFFormula c -- negation
@@ -145,8 +151,13 @@ inductive FFFormula (c : ZKConfig) where
    Revisit this later. -/
 def sizeOfFormula {c : ZKConfig} : FFFormula c → Nat
   | .true | .false => 1
+  | .range _ _ _=> 1
   | .bool _ => 1
   | .eq _ _ => 1
+  | .lt _ _ => 1
+  | .gt _ _ => 1
+  | .le _ _ => 1
+  | .ge _ _ => 1
   | .and a b | .or a b | .imply a b | .iff a b => 1 + sizeOfFormula a + sizeOfFormula b
   | .not a => 1 + sizeOfFormula a
   | .ite c t e => 1 + sizeOfFormula c + sizeOfFormula t + sizeOfFormula e
