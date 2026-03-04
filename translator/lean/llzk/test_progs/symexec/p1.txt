@@ -1,5 +1,6 @@
 
 
-func main(%x:ff) : %y:ff {
+func main(%x:ff) : %y:ff { 
   %y = felt.mul 2 %x
 }
+
