@@ -74,10 +74,42 @@ def printFormula {c : ZKConfig}
   match f with
   | .true  => stream.putStrLn s!"{sp}true"
   | .false => stream.putStrLn s!"{sp}false"
+  | .range t l u =>
+      stream.putStr s!"{sp}(ff.range "
+      printTerm stream t
+      stream.putStr " "
+      stream.putStr s!"{l.val}"
+      stream.putStr " "
+      stream.putStr s!"{u.val}"
+      stream.putStrLn ")"
   | .bool v =>
       stream.putStr s!"{sp}{boolVarID v}"
   | .eq a b =>
       stream.putStr s!"{sp}(= "
+      printTerm stream a
+      stream.putStr " "
+      printTerm stream b
+      stream.putStrLn ")"
+  | .lt a b =>
+      stream.putStr s!"{sp}(ff.lt "
+      printTerm stream a
+      stream.putStr " "
+      printTerm stream b
+      stream.putStrLn ")"
+  | .gt a b =>
+      stream.putStr s!"{sp}(ff.gt "
+      printTerm stream a
+      stream.putStr " "
+      printTerm stream b
+      stream.putStrLn ")"
+  | .le a b =>
+      stream.putStr s!"{sp}(ff.le "
+      printTerm stream a
+      stream.putStr " "
+      printTerm stream b
+      stream.putStrLn ")"
+  | .ge a b =>
+      stream.putStr s!"{sp}(ff.ge "
       printTerm stream a
       stream.putStr " "
       printTerm stream b
@@ -175,6 +207,11 @@ def printConstraintSystem {c : ZKConfig}
   stream.putStrLn s!"(declare-fun ff.mul (FFp FFp) FFp)"
   stream.putStrLn s!"(declare-fun ff.sub (FFp FFp) FFp)"
   stream.putStrLn s!"(declare-fun ff.neg (FFp) FFp)"
+  stream.putStrLn s!"(declare-fun ff.range (FFp FFp FFp) Bool)"
+  stream.putStrLn s!"(declare-fun ff.lt (FFp FFp) Bool)"
+  stream.putStrLn s!"(declare-fun ff.gt (FFp FFp) Bool)"
+  stream.putStrLn s!"(declare-fun ff.le (FFp FFp) Bool)"
+  stream.putStrLn s!"(declare-fun ff.ge (FFp FFp) Bool)"
   stream.putStrLn s!""
   -- Variable Declarations
   for v in vars do

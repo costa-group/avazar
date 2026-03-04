@@ -234,9 +234,9 @@ def sEvalCond {c : ZKConfig}
 /- Symbolic expression of .id expression -/
 def sEvalExprId {c : ZKConfig}
   (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (id : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s : SimpleExpr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
-  let v ← simpleExprToTerm senv id
+  let v ← simpleExprToTerm senv s
   return {
           inSymEnv := senv,
           f := FFFormula.eq (FFTerm.var outFFVar) v, -- outVar = v
@@ -247,9 +247,9 @@ def sEvalExprId {c : ZKConfig}
 /- Symbolic expression of .neg expression -/
 def sEvalExprNeg {c : ZKConfig}
   (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (id : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s : SimpleExpr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
-  let v ← simpleExprToTerm senv id
+  let v ← simpleExprToTerm senv s
   return {
           inSymEnv := senv,
           f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.neg v), -- outVar = -v
@@ -260,10 +260,10 @@ def sEvalExprNeg {c : ZKConfig}
 /- Symbolic expression of .add expression -/
 def sEvalExprAdd {c : ZKConfig}
   (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (id1 id2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
-  let v1 ← simpleExprToTerm senv id1
-  let v2 ← simpleExprToTerm senv id2
+  let v1 ← simpleExprToTerm senv s1
+  let v2 ← simpleExprToTerm senv s2
   return {
           inSymEnv := senv,
           f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.add v1 v2), -- outVar = v1 + v2
@@ -274,10 +274,10 @@ def sEvalExprAdd {c : ZKConfig}
 /- Symbolic expression of .sub expression -/
 def sEvalExprSub {c : ZKConfig}
   (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (id1 id2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
-  let v1 ← simpleExprToTerm senv id1
-  let v2 ← simpleExprToTerm senv id2
+  let v1 ← simpleExprToTerm senv s1
+  let v2 ← simpleExprToTerm senv s2
   return {
           inSymEnv := senv,
           f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.sub v1 v2), -- outVar = v1 - v2
@@ -288,10 +288,10 @@ def sEvalExprSub {c : ZKConfig}
 /- Symbolic expression of .mul expression -/
 def sEvalExprMul {c : ZKConfig}
   (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (id1 id2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
-  let v1 ← simpleExprToTerm senv id1
-  let v2 ← simpleExprToTerm senv id2
+  let v1 ← simpleExprToTerm senv s1
+  let v2 ← simpleExprToTerm senv s2
   return {
           inSymEnv := senv,
           f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.mul v1 v2), -- outVar = v1 * v2
@@ -302,10 +302,10 @@ def sEvalExprMul {c : ZKConfig}
 /- Symbolic expression of .div expression -/
 def sEvalExprDiv {c : ZKConfig}
   (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (id1 id2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
-  let v1 ← simpleExprToTerm senv id1
-  let v2 ← simpleExprToTerm senv id2
+  let v1 ← simpleExprToTerm senv s1
+  let v2 ← simpleExprToTerm senv s2
   return {
           inSymEnv := senv,
           -- outVar*v2 = v1
@@ -338,10 +338,10 @@ def sEvalFalse {c : ZKConfig}
 
 def sEvalEq {c : ZKConfig}
   (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (id1 id2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
-  let v1 ← simpleExprToTerm senv id1
-  let v2 ← simpleExprToTerm senv id2
+  let v1 ← simpleExprToTerm senv s1
+  let v2 ← simpleExprToTerm senv s2
   return {
           inSymEnv := senv,
           f := FFFormula.ite
@@ -354,16 +354,63 @@ def sEvalEq {c : ZKConfig}
 
 def sEvalNeq {c : ZKConfig}
   (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (id1 id2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
-  let v1 ← simpleExprToTerm senv id1
-  let v2 ← simpleExprToTerm senv id2
+  let v1 ← simpleExprToTerm senv s1
+  let v2 ← simpleExprToTerm senv s2
   return {
           inSymEnv := senv,
           f := FFFormula.ite
-                 (FFFormula.eq v1 v2)
+                 (FFFormula.not (FFFormula.eq v1 v2))
                  (FFFormula.eq (FFTerm.var outFFVar) (FFTerm.const 0))
                  (FFFormula.eq (FFTerm.var outFFVar) (FFTerm.const 1)),
+          resVar := outFFVar,
+          nextId := cfg.nextId
+  }
+
+def sEvalBor {c : ZKConfig}
+  (cfg : SymExecConfig c) (_md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  : Except String (ExprSpec c) := do
+  let v1 ← simpleExprToTerm senv s1
+  let v2 ← simpleExprToTerm senv s2
+  return {
+          inSymEnv := senv,
+          f : FFFormula c :=
+               .ite (.or (.eq v1 (.const 1)) (.eq v2 (.const 1)))
+                    (.eq (.var outFFVar) (.const 1))
+                    (.eq (.var outFFVar) (.const 0)),
+          resVar := outFFVar,
+          nextId := cfg.nextId
+  }
+
+def sEvalAnd {c : ZKConfig}
+  (cfg : SymExecConfig c) (_md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  : Except String (ExprSpec c) := do
+  let v1 ← simpleExprToTerm senv s1
+  let v2 ← simpleExprToTerm senv s2
+  return {
+          inSymEnv := senv,
+          f : FFFormula c :=
+               .ite (.and (.eq v1 (.const 1)) (.eq v2 (.const 1)))
+                    (.eq (.var outFFVar) (.const 1))
+                    (.eq (.var outFFVar) (.const 0)),
+          resVar := outFFVar,
+          nextId := cfg.nextId
+  }
+
+def sEvalNeg {c : ZKConfig}
+  (cfg : SymExecConfig c) (_md : CmdMD)
+  (senv : SymEnv c) (s : SimpleExpr c) (outFFVar : FFVar)
+  : Except String (ExprSpec c) := do
+  let v ← simpleExprToTerm senv s
+  return {
+          inSymEnv := senv,
+          f : FFFormula c :=
+               .ite (.eq v (FFTerm.const 1))
+                    (.eq (FFTerm.var outFFVar) (.const 0))
+                    (.eq (FFTerm.var outFFVar) (.const 1)),
           resVar := outFFVar,
           nextId := cfg.nextId
   }
@@ -379,11 +426,17 @@ def sEvalExpr {c : ZKConfig}
   | .sub s1 s2 => sEvalExprSub cfg md symEnv s1 s2 outFFVar
   | .mul s1 s2 => sEvalExprMul cfg md symEnv s1 s2 outFFVar
   | .div s1 s2 => sEvalExprDiv cfg md symEnv s1 s2 outFFVar
+  -- bitwise are all missing
   -- boolean
   | .True => sEvalTrue cfg md symEnv outFFVar
   | .False => sEvalFalse cfg md symEnv outFFVar
   | .eq s1 s2 => sEvalEq cfg md symEnv s1 s2 outFFVar
   | .neq s1 s2 => sEvalNeq cfg md symEnv s1 s2 outFFVar
+  -- missing lt, le, gt, and ge
+  | .bor s1 s2 => sEvalBor cfg md symEnv s1 s2 outFFVar
+  | .and s1 s2 => sEvalAnd cfg md symEnv s1 s2 outFFVar
+  | .bneg s => sEvalNeg cfg md symEnv s outFFVar
+   -- bitwise operations and comparisons are not implemented yet
   | _ => Except.error s!"Expression evaluation not implemented yet"
 
 
@@ -408,7 +461,7 @@ def seAssignmentConst {c : ZKConfig}
 
 /- Symbolic execution of non-constant assignment -/
 def seAssignmentNonConst {c : ZKConfig}
-  (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c) (id : String) (e : Expr c)
+  (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c) (id : VarID) (e : Expr c)
   : Except String (CmdsSpec c) := do
   -- new variable for the result of the expression
   let outFFVar : FFVar := { id := cfg.nextId,
@@ -430,31 +483,120 @@ def seAssignmentNonConst {c : ZKConfig}
 
 /- Symbolic execution of assignment -/
 def seAssignment {c : ZKConfig}
-  (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c) (id : String) (e : Expr c)
+  (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c) (id : VarID) (e : Expr c)
   : Except String (CmdsSpec c) := do
   match seAssignmentConst cfg md symEnv id e with -- try to do constant propagation first
   | Except.ok spec => return spec
   | Except.error _ => seAssignmentNonConst cfg md symEnv id e
 
+/- Symbolic execution of array creation -/
 def seNewArray {c : ZKConfig}
-  (_cfg : SymExecConfig c) (_md : CmdMD) (_symEnv : SymEnv c) (_id : String) (_size : SimpleExpr c)
+  (_cfg : SymExecConfig c) (_md : CmdMD) (symEnv : SymEnv c) (id : VarID) (size : SimpleExpr c)
   : Except String (CmdsSpec c) := do
-  throw s!"seNewArray operations not implemented yet"
+  match simpleExprToFF symEnv size with
+  | Except.error err => Except.error ("seNewArray: failed to evaluate size expression: " ++ err)
+  | Except.ok sz =>
+    let arr : SymFFArray c := (List.replicate sz.val (.const 0)).toArray
+    let newSymEnv := setVar symEnv id (SymValue.ffArray arr)
+    return { inSymEnv := symEnv,
+             outSymEnv := newSymEnv,
+             f := FFFormula.true,
+             nextId := _cfg.nextId,
+             newFFVars := emptyFFVarSet,
+             newBoolVars := emptyBoolVarSet
+    }
 
-def seArrayRead {c : ZKConfig}
-  (_cfg : SymExecConfig c) (_md : CmdMD) (_symEnv : SymEnv c) (_out : String) (_a : String)
-  (_idx : SimpleExpr c)
+
+def seArrayReadConstIdx {c : ZKConfig}
+  (cfg : SymExecConfig c) (_md : CmdMD) (symEnv : SymEnv c)
+  (out : VarID) (a : VarID) (idx : SimpleExpr c)
   : Except String (CmdsSpec c) := do
-  throw s!"seArrayRead operations not implemented yet"
+  let idxVal ← simpleExprToFF symEnv idx
+  match getVar symEnv a with
+  | Except.error err => Except.error ("seArrayReadConstIdx: failed to get array variable: " ++ err)
+  | Except.ok (SymValue.ffArray arr) =>
+    if h : idxVal.val < arr.size then
+      let elem := arr[idxVal.val]'h
+      match elem with
+      | SymFFVar.const v =>
+        let newSymEnv := setVar symEnv out (SymValue.ffVar (SymFFVar.const v))
+        return { inSymEnv := symEnv,
+                 outSymEnv := newSymEnv,
+                 f := FFFormula.true,
+                 nextId := cfg.nextId,
+                 newFFVars := emptyFFVarSet,
+                 newBoolVars := emptyBoolVarSet
+        }
+      | SymFFVar.var v =>
+        let newSymEnv := setVar symEnv out (SymValue.ffVar (SymFFVar.var v))
+        return { inSymEnv := symEnv,
+                 outSymEnv := newSymEnv,
+                 f := FFFormula.true,
+                 nextId := cfg.nextId,
+                 newFFVars := emptyFFVarSet,
+                 newBoolVars := emptyBoolVarSet
+        }
+    else
+      Except.error
+         s!"seArrayReadConstIdx: index {idxVal.val} out of bounds for array of size {arr.size}"
+  | Except.ok _ => Except.error s!"seArrayReadConstIdx: variable '{a}' is not an array"
+
+/- Symbolic execution of array read -/
+def seArrayRead {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
+  (out : VarID) (a : VarID) (idx : SimpleExpr c)
+  : Except String (CmdsSpec c) := do
+  match seArrayReadConstIdx cfg md symEnv out a idx with
+  | Except.ok spec => return spec
+  | Except.error _ =>
+    throw s!"seArrayRead operations with non-constant index not implemented yet"
+
+
+def simpleExprToSymFFVar {c : ZKConfig}
+  (senv : SymEnv c) (s : SimpleExpr c)
+  : Except String (SymFFVar c) :=
+  match s with
+  | .var id => match getVar senv id with
+    | Except.ok (SymValue.ffVar v) => Except.ok v
+    | Except.ok (SymValue.ffArray _) => Except.error s!"Variable '{id}' is an array"
+    | Except.error err => Except.error err
+  | .val v => Except.ok (SymFFVar.const v)
+
+def seArrayWriteConstIdx {c : ZKConfig}
+  (cfg : SymExecConfig c) (_md : CmdMD) (symEnv : SymEnv c)
+  (a : VarID) (idx : SimpleExpr c) (value : SimpleExpr c)
+  : Except String (CmdsSpec c) := do
+  let idxVal ← simpleExprToFF symEnv idx
+  let valueVal ← simpleExprToSymFFVar symEnv value
+  match getVar symEnv a with
+  | Except.error err => Except.error ("seArrayWriteConstIdx: failed to get array variable: " ++ err)
+  | Except.ok (SymValue.ffArray arr) =>
+    if h : idxVal.val < arr.size then
+      let newArr := arr.set idxVal.val valueVal
+      let newSymEnv := setVar symEnv a (SymValue.ffArray newArr)
+      return { inSymEnv := symEnv,
+               outSymEnv := newSymEnv,
+               f := FFFormula.true,
+               nextId := cfg.nextId,
+               newFFVars := emptyFFVarSet,
+               newBoolVars := emptyBoolVarSet
+      }
+    else
+      Except.error
+         s!"seArrayWriteConstIdx: index {idxVal.val} out of bounds for array of size {arr.size}"
+  | Except.ok _ => Except.error s!"seArrayWriteConstIdx: variable '{a}' is not an array"
 
 def seArrayWrite {c : ZKConfig}
-  (_cfg : SymExecConfig c) (_md : CmdMD) (_symEnv : SymEnv c) (_a : String) (_idx : SimpleExpr c)
-  (_value : SimpleExpr c)
+  (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
+  (a : VarID) (idx : SimpleExpr c) (value : SimpleExpr c)
   : Except String (CmdsSpec c) := do
-  throw s!"seArrayWrite operations not implemented yet"
+  match seArrayWriteConstIdx cfg md symEnv a idx value with
+  | Except.ok spec => return spec
+  | Except.error e =>
+     throw s!"seArrayWrite operations not implemented yet: {e}"
 
 def seArrayCopy {c : ZKConfig}
-  (_cfg : SymExecConfig c) (_md : CmdMD) (_symEnv : SymEnv c) (_out : String) (_a : String)
+  (_cfg : SymExecConfig c) (_md : CmdMD) (_symEnv : SymEnv c) (_out : VarID) (_a : VarID)
   : Except String (CmdsSpec c) := do
   throw s!"seArrayCopy operations not implemented yet"
 

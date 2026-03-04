@@ -1,11 +1,13 @@
 import Llzk.Basic
 import Llzk.FFConstraints.Basic
+import Llzk.Language.Core.Semantics.Basic
 
 namespace Llzk.FFConstraints.Satisfiability
 
 
 open Llzk.FFConstraints.Basic
 open Llzk.Language.Core.Syntax.AST
+open Llzk.Language.Core.Semantics.Basic
 
 /- An assignment maps variables to values. There are two types of
    variables, finite field variables and boolean variables, so we have
@@ -65,8 +67,22 @@ def evalFormula {c : ZKConfig}
   match f with
   | .true     => return true
   | .false    => return false
+  | .range t l u => let v := evalTerm assign t
+                    return l.val <= v.val && v.val <= u.val
   | .bool v   => return assign.bool v.id
   | .eq a b => return evalTerm assign a == evalTerm assign b
+  | .lt a b => let va := evalTerm assign a
+                let vb := evalTerm assign b
+                return evalLt va vb == 1
+  | .gt a b => let va := evalTerm assign a
+                let vb := evalTerm assign b
+                return evalGt va vb == 1
+  | .le a b => let va := evalTerm assign a
+                let vb := evalTerm assign b
+                return evalLe va vb == 1
+  | .ge a b => let va := evalTerm assign a
+                let vb := evalTerm assign b
+                return evalGe va vb == 1
   | .and a b  => return (← evalFormula assign a ms) && (← evalFormula assign b ms)
   | .or a b   => return (← evalFormula assign a ms) || (← evalFormula assign b ms)
   | .not a    => return !(← evalFormula assign a ms)
