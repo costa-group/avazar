@@ -1,0 +1,14 @@
+func foo(x:ff) : y:ff, z:arr<3> {
+  y = felt.add x x
+  array.new 3 z
+  i = 0
+  repeat 3 {
+    array.read z[i] aux
+    aux = felt.add aux 1
+    array.write aux z[i]
+    i = felt.add i 1
+  }
+}
+
+func main() {
+}
