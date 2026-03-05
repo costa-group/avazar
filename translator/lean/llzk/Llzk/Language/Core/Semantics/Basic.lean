@@ -217,8 +217,7 @@ signed_int(f) = f    if 0 <= f < p/2 + 1
 signed_int(f) = f-p  if p/2 + 1 <= f < p
 -/
 def toSigned {c : ZKConfig} (x : FF c) : Int :=
-  let midpoint := c.p/2 + 1
-  if x.val < midpoint then
+  if x.val < c.midpoint then
     (x.val : Int)        -- 0, 1, ... midpoint-1
   else
     (x.val : Int) - c.p  -- -1 (p-1), -2 (p-2), ... -midpoint (p-midpoint)
