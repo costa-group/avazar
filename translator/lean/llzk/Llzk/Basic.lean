@@ -7,8 +7,10 @@ import Mathlib.Data.Nat.Prime.Basic
 structure ZKConfig where
   k : ℕ  -- bit-width of p
   p : ℕ  -- the prime number
+  midpoint : ℕ := p / 2 + 1 -- the midpoint of the field, used for signed representation
   p_prime : p.Prime -- stating that p is a prime.
   p_fits : p ≥ 2^(k-1) && p < 2^k -- k is indeed the bit-width of p
+  midpoint_ok : midpoint = p / 2 + 1 := by rfl
 
 /- Register that c.p is a prime number -/
 instance (c : ZKConfig) : Fact c.p.Prime := ⟨c.p_prime⟩
@@ -65,7 +67,7 @@ def goldilocks64 : ZKConfig := {
   k := 64
   p := goldilocks_p
   p_prime := goldilocks_is_prime
-  p_fits := by decide
+  p_fits := by rfl
 }
 
 /- We need to add a fact that myConfig.p is a prime so Lean can
@@ -78,7 +80,7 @@ def F11 : ZKConfig := {
   k := 4
   p := 11
   p_prime := by decide
-  p_fits := by decide
+  p_fits := by rfl
 }
 
 /- We need to add a fact that myConfig.p is a prime so Lean can
