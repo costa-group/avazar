@@ -209,12 +209,19 @@ def evalEq {c : ZKConfig} (v1 v2 : FF c) : FF c :=
 def evalNeq {c : ZKConfig} (v1 v2 : FF c) : FF c :=
   if v1 ≠ v2 then 1 else 0
 
+/-
+https://project-llzk.github.io/llzk-lib/main/dialects.html
+
+signed_int(f) = f    if 0 <= f < p/2 + 1
+    "p/2" here is unsigned integer division rounding towards 0
+signed_int(f) = f-p  if p/2 + 1 <= f < p
+-/
 def toSigned {c : ZKConfig} (x : FF c) : Int :=
-  let midpoint := (c.p - 1) / 2
-  if x.val <= midpoint then
-    (x.val : Int)        -- 0, 1, ... midpoint
+  let midpoint := c.p/2 + 1
+  if x.val < midpoint then
+    (x.val : Int)        -- 0, 1, ... midpoint-1
   else
-    (x.val : Int) - c.p    -- -1, -2, ... -midpoint
+    (x.val : Int) - c.p  -- -1 (p-1), -2 (p-2), ... -midpoint (p-midpoint)
 
 def evalLt {c : ZKConfig} (v1 v2 : FF c) : FF c :=
   if toSigned v1 < toSigned v2 then 1 else 0
@@ -237,33 +244,41 @@ def evalBand {c : ZKConfig} (v1 v2 : FF c) : FF c :=
 def evalBneg {c : ZKConfig} (v : FF c) : FF c :=
   if v = 0 then 1 else 0
 
+
+
 /- Functions for evaluating expressions -/
 def evalExpr {c : ZKConfig} (st : State c) (e : Expr c) : Except String (FF c) := do
   match e with
-  | .id s => Except.ok (evalId (← evalSimpleExprToFF st s))
-  | .neg s => Except.ok (evalNeg (← evalSimpleExprToFF st s))
-  | .add s1 s2 => Except.ok (evalAdd (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .sub s1 s2 => Except.ok (evalSub (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .mul s1 s2 => Except.ok (evalMul (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .div s1 s2 => Except.ok (evalDiv (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .shl s bits => Except.ok (evalShl (← evalSimpleExprToFF st s) (← evalSimpleExprToFF st bits))
-  | .shr s bits => Except.ok (evalShr (← evalSimpleExprToFF st s) (← evalSimpleExprToFF st bits))
-  | .and s1 s2 => Except.ok (evalAnd (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .or s1 s2 => Except.ok (evalOr (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .xor s1 s2 => Except.ok (evalXor (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .not s => Except.ok (evalNot (← evalSimpleExprToFF st s))
-   -- boolean
-  | .True => Except.ok evalTrue
-  | .False => Except.ok evalFalse
-  | .eq s1 s2 => Except.ok (evalEq (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .neq s1 s2 => Except.ok (evalNeq (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .lt s1 s2 => Except.ok (evalLt (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .gt s1 s2 => Except.ok (evalGt (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .le s1 s2 => Except.ok (evalLe (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .ge s1 s2 => Except.ok (evalGe (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .bor s1 s2 => Except.ok (evalBor (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .band s1 s2 => Except.ok (evalBand (← evalSimpleExprToFF st s1) (← evalSimpleExprToFF st s2))
-  | .bneg s => Except.ok (evalBneg (← evalSimpleExprToFF st s))
+  | .bop op s1 s2 => do
+      let val1 ← evalSimpleExprToFF st s1
+      let val2 ← evalSimpleExprToFF st s2
+      match op with
+      | .add => Except.ok (evalAdd val1 val2)
+      | .sub => Except.ok (evalSub val1 val2)
+      | .mul => Except.ok (evalMul val1 val2)
+      | .div => Except.ok (evalDiv val1 val2)
+      | .shl => Except.ok (evalShl val1 val2)
+      | .shr => Except.ok (evalShr val1 val2)
+      | .and => Except.ok (evalAnd val1 val2)
+      | .or  => Except.ok (evalOr val1 val2)
+      | .xor => Except.ok (evalXor val1 val2)
+      | .bor => Except.ok (evalBor val1 val2)
+      | .band => Except.ok (evalBand val1 val2)
+      | .eq  => Except.ok (evalEq val1 val2)
+      | .neq => Except.ok (evalNeq val1 val2)
+      | .lt  => Except.ok (evalLt val1 val2)
+      | .gt  => Except.ok (evalGt val1 val2)
+      | .le  => Except.ok (evalLe val1 val2)
+      | .ge  => Except.ok (evalGe val1 val2)
+  | .uop op s => do
+      let val ← evalSimpleExprToFF st s
+      match op with
+      | .neg => Except.ok (evalNeg val)
+      | .not => Except.ok (evalNot val)
+      | .bneg => Except.ok (evalBneg val)
+  | .id s => do
+      let val ← evalSimpleExprToFF st s
+      Except.ok (evalId val)
 
 /- A function for evaluating constant expressions -/
 def evalConstExpr {c : ZKConfig} (st : State c) (e : Expr c) : Except String (FF c) := do
@@ -278,13 +293,6 @@ def evalCond {c : ZKConfig} (st : State c) (cond : Cond c) : Except String Bool 
     let val1 ← evalSimpleExprToFF st s1
     let val2 ← evalSimpleExprToFF st s2
     if val1 = val2 then
-      Except.ok true
-    else
-      Except.ok false
-  | .neq s1 s2 => do
-    let val1 ← evalSimpleExprToFF st s1
-    let val2 ← evalSimpleExprToFF st s2
-    if val1 ≠ val2 then
       Except.ok true
     else
       Except.ok false

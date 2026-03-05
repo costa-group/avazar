@@ -5,10 +5,10 @@ import Mathlib.Data.Nat.Prime.Basic
    some corresponding requirements
 -/
 structure ZKConfig where
-  k : ℕ  -- number of bits
+  k : ℕ  -- bit-width of p
   p : ℕ  -- the prime number
   p_prime : p.Prime -- stating that p is a prime.
-  p_fits : p < 2^k -- p must fit in k bits
+  p_fits : p ≥ 2^(k-1) && p < 2^k -- k is indeed the bit-width of p
 
 /- Register that c.p is a prime number -/
 instance (c : ZKConfig) : Fact c.p.Prime := ⟨c.p_prime⟩
@@ -39,7 +39,7 @@ instance {c : ZKConfig} : ToString (FF c) where
 -/
 def mkZKConfig (k_input : Nat) (p_input : Nat) : Except String ZKConfig :=
   if h_prime : Nat.Prime p_input then -- Check if p is Prime
-    if h_fits : p_input < 2^k_input then -- Check if p fits in k bits
+    if h_fits : p_input ≥ 2^(k_input-1) && p_input < 2^k_input then -- Check if p fits in k bits
       return {
         k := k_input
         p := p_input

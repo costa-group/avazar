@@ -56,8 +56,6 @@ structure ProgMD where
   deriving Repr, BEq, Inhabited
 
 
-
-
 /- A simple expression is either a variable or a finite field value -/
 inductive SimpleExpr (c : ZKConfig) where
   | var (name : VarID) : SimpleExpr c   -- variable
@@ -65,39 +63,42 @@ inductive SimpleExpr (c : ZKConfig) where
   deriving Repr, BEq, Inhabited
 
 
+inductive BinOp where
+  | add
+  | sub
+  | mul
+  | div
+  | shl
+  | shr
+  | and
+  | or
+  | xor
+  | eq
+  | neq
+  | lt
+  | gt
+  | le
+  | ge
+  | bor
+  | band
+  deriving Repr, BEq, Inhabited
+
+inductive UnOp where
+  | neg
+  | not
+  | bneg
+  deriving Repr, BEq, Inhabited
+
 /- Expression can be binary or unary operations, where operands are simple expressions -/
 inductive Expr (c : ZKConfig) where
   -- arithmetic
-  | id (s : SimpleExpr c) : Expr c  -- identity
-  | neg (s : SimpleExpr c) : Expr c -- negation
-  | add (s1 s2 : SimpleExpr c) : Expr c
-  | sub (s1 s2 : SimpleExpr c) : Expr c
-  | mul (s1 s2 : SimpleExpr c) : Expr c
-  | div (s1 s2 : SimpleExpr c) : Expr c
-  -- bitwise
-  | shl (s bits: SimpleExpr c) : Expr c -- shift left
-  | shr (s bits : SimpleExpr c) : Expr c -- shift right
-  | and (s1 s2 : SimpleExpr c) : Expr c -- bitwise and
-  | or (s1 s2 : SimpleExpr c) : Expr c -- bitwise or
-  | xor (s1 s2 : SimpleExpr c) : Expr c -- bitwise xor
-  | not (s : SimpleExpr c) : Expr c -- bitwise not
-  -- boolean
-  | True : Expr c -- boolean true
-  | False : Expr c -- boolean false
-  | eq (s1 s2 : SimpleExpr c) : Expr c -- equality check
-  | neq (s1 s2 : SimpleExpr c) : Expr c -- inequality check
-  | lt (s1 s2 : SimpleExpr c) : Expr c -- less than check
-  | gt (s1 s2 : SimpleExpr c) : Expr c -- greater than check
-  | le (s1 s2 : SimpleExpr c) : Expr c -- less than or equal check
-  | ge (s1 s2 : SimpleExpr c) : Expr c -- greater than or equal check
-  | bor (s1 s2 : SimpleExpr c) : Expr c -- logical or
-  | band (s1 s2 : SimpleExpr c) : Expr c -- logical and
-  | bneg (s : SimpleExpr c) : Expr c -- logical negation
+  | bop (op : BinOp) (s1 s2 : SimpleExpr c) : Expr c
+  | uop (op : UnOp) (s : SimpleExpr c) : Expr c
+  | id (s : SimpleExpr c) : Expr c
    deriving Repr, BEq, Inhabited
 
 inductive Cond (c : ZKConfig) where
   | eq (s1 s2 : SimpleExpr c) : Cond c
-  | neq (s1 s2 : SimpleExpr c) : Cond c
   deriving Repr, BEq, Inhabited
 
 mutual

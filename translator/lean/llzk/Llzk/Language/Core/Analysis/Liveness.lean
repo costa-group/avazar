@@ -31,35 +31,15 @@ def addUsedVarsSimpleExprs {c : ZKConfig} (vars : VarIDSet) (ss : List (SimpleEx
 
 def addUsedVarsExpr {c : ZKConfig} (vars : VarIDSet) (e : Expr c) : VarIDSet :=
     match e with
+    | .bop _ s1 s2 =>
+        addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
+    | .uop _ s =>
+        addUsedVarsSimpleExpr vars s
     | .id s => addUsedVarsSimpleExpr vars s
-    | .neg s => addUsedVarsSimpleExpr vars s
-    | .add s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .sub s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .mul s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .div s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .shl s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .shr s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .and s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .or s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .xor s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .not s => addUsedVarsSimpleExpr vars s
-    | .True => vars
-    | .False => vars
-    | .eq s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .neq s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .lt s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .gt s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .le s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .ge s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .bor s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .band s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .bneg s => addUsedVarsSimpleExpr vars s
 
 def addUsedVarsCond {c : ZKConfig} (vars : VarIDSet) (cond : Cond c) : VarIDSet :=
     match cond with
     | .eq s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-    | .neq s1 s2 => addUsedVarsSimpleExpr (addUsedVarsSimpleExpr vars s1) s2
-
 
 def getCmdsLiveIn {c : ZKConfig}
     (cmds : List (ComWithMD c)) (default : VarIDSet := emptyVarIDSet) : VarIDSet :=
