@@ -54,32 +54,27 @@ sexps := (sexp ("," sexp)*)?
 // finite field operations
 felt_bin_op := "felt.add" | "felt.mul" | "felt.div"
 felt_unary_op := "felt.neg"
-felt_no_op := sexp
 
 // bitwise operations
 bit_bin_op := "bit.shl" | "bit.shr" | "bit.and" | "bit.or" | "bit.xor"
 bit_unary_op := bit.not
-bit_no_op :=
 
-// boolean operations
+// boolean operations -- use 0/1 for false and true
 bool_bin_op := "bool.eq" | "bool.neq" | "bool.lt" | "bool.gt" | "bool.le" | "bool.ge" | "bool.and" | "bool.or"
 bool_unary_op := "bool.not"
-bool_no_op := "True" | "False"
 
 // binary, unary and no-operand operations
 bin_op := felt_bin_op | bit_bin_op | bool_bin_op
 unary_op := felt_unary_op | bit_unary_op | bool_unary_op
-no_op := felt_no_op | bool_no_op
 
 // expressions
-exp := bin_op sexp sexp | unary_op sexp | no_op
+exp := bin_op sexp sexp | unary_op sexp | sexp
 
 // assignment
 assignment := id "=" exp
 
 // if statement
-cond := sexp "==" sexp | sexp "!=" sexp
-if  := "if" "(" cond ")" "{" cmd* "}" [else "{" cmd* "}"]
+if  := "if" "(" sexp "==" sexp ")" "{" cmd* "}" [else "{" cmd* "}"]
 
 // bounded loops
 for := "repeat" sexpr "{" cmd* "}"
@@ -195,17 +190,15 @@ order is defined as `mid+1, ..., P-1, 0, ..., mid`, where
 > The semantics on the right is not an encoding to SMT, it is just to
 > write it a bit formally.
 
-1. `True`: evaluates to `1`.
-2. `False`: evaluates to `0`.
-3. `bool.eq sexp1 sexp2`: Equality. `(sexp1=sexp2 -> result=1) and (~(sexp1=sexp2) -> result=0)`.
-4. `bool.neq sexp1 sexp2`: Inequality. `(sexp1=sexp2 -> result=0) and (~(sexp1=sexp2) -> result=1)`.
-5. `bool.gt sexp1 sexp2`: Signed greater than. `sexp1>sexp2 -> result=1) and (~(sexp1>sexp2) -> result=0)`.
-6. `bool.lt sexp1 sexp2`: Signed less than. `(sexp1<sexp2 -> result=1) and (~(sexp1<sexp2) -> result=0)`.
-7. `bool.ge sexp1 sexp2`: Signed greater or equal. `(sexp1>=sexp2 -> result=1) and (~(sexp1>=sexp2) -> result=0)`.
-8. `bool.le sexp1 sexp2`: Signed less or equal. `(sexp1<=sexp2 -> result=1) and (~(sexp1<=sexp2) -> result=0)`.
-9. `bool.not sexp`: Logical NOT. `(sexp=0 -> result=1) and (~(sexp=0) -> result=0)`.
-10. `bool.or sexp1 sexp2`: Logical OR. `((sexp1=0 and sexp2=0) -> result=0) and ((~(sexp1=0) or ~(sexp2=0)) -> result=1)`.
-11. `bool.and sexp1 sexp2`: Logical AND. `(~(sexp1=0) and ~(sexp2=0)) -> result=1) and (((sexp1=0) or (sexp2=0)) -> result=0)`.
+1. `bool.eq sexp1 sexp2`: Equality. `(sexp1=sexp2 -> result=1) and (~(sexp1=sexp2) -> result=0)`.
+2. `bool.neq sexp1 sexp2`: Inequality. `(sexp1=sexp2 -> result=0) and (~(sexp1=sexp2) -> result=1)`.
+3. `bool.gt sexp1 sexp2`: Signed greater than. `sexp1>sexp2 -> result=1) and (~(sexp1>sexp2) -> result=0)`.
+4. `bool.lt sexp1 sexp2`: Signed less than. `(sexp1<sexp2 -> result=1) and (~(sexp1<sexp2) -> result=0)`.
+5. `bool.ge sexp1 sexp2`: Signed greater or equal. `(sexp1>=sexp2 -> result=1) and (~(sexp1>=sexp2) -> result=0)`.
+6. `bool.le sexp1 sexp2`: Signed less or equal. `(sexp1<=sexp2 -> result=1) and (~(sexp1<=sexp2) -> result=0)`.
+7. `bool.not sexp`: Logical NOT. `(sexp=0 -> result=1) and (~(sexp=0) -> result=0)`.
+8. `bool.or sexp1 sexp2`: Logical OR. `((sexp1=0 and sexp2=0) -> result=0) and ((~(sexp1=0) or ~(sexp2=0)) -> result=1)`.
+9. `bool.and sexp1 sexp2`: Logical AND. `(~(sexp1=0) and ~(sexp2=0)) -> result=1) and (((sexp1=0) or (sexp2=0)) -> result=0)`.
 
 #### Commands
 
@@ -241,8 +234,7 @@ Assigns the result of `exp` to `id`.
 
 ##### Conditionals
 
-1. `if sexp1==sexp2 { body } else { body }`
-2. `if sexp1!=exps2 { body } else { body }`
+`if sexp1==sexp2 { body } else { body }`
 
 The `else` part is optional.
 
