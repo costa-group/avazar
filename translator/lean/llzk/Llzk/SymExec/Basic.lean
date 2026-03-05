@@ -197,8 +197,8 @@ def evalExpr {c : ZKConfig}
     | .not => Except.ok (SymFFVar.const (evalNot v))
     | .bneg => Except.ok (SymFFVar.const (evalBneg v))
   | .id s =>
-    let v ← simpleExprToFF senv s
-    Except.ok (SymFFVar.const v)
+    simpleExprToSymFFVar senv s
+
 
 /- Try to evaluate a condition to a boolean value. This is used to discard
    infeasible branches in if-statements.
