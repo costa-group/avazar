@@ -10,7 +10,6 @@ namespace Llzk.Language.Core.Syntax.Parser
 
 
 open Llzk.Language.Core.Syntax.AST
-open Llzk.Language.Core.Syntax.Printer
 open Llzk.Language.Core.Syntax.Lexer
 
 /- Parser state, which include a Lexer and a lookahead tokens buffer -/
@@ -113,108 +112,102 @@ def parseExpr {c : ZKConfig} : ParserM (Expr c) := do
   | Token.ident "felt.neg" =>
     let _ ← advance -- consume the 'felt.neg' keyword
     let op1 ← parseSimpleExpr
-    return Expr.neg op1
+    return Expr.uop UnOp.neg op1
   | Token.ident "felt.add" =>
     let _ ← advance -- consume the 'felt.add' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.add op1 op2
+    return Expr.bop BinOp.add op1 op2
   | Token.ident "felt.sub" =>
     let _ ← advance -- consume the 'felt.sub' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.sub op1 op2
+    return Expr.bop BinOp.sub op1 op2
   | Token.ident "felt.mul" =>
     let _ ← advance -- consume the 'felt.mul' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.mul op1 op2
+    return Expr.bop BinOp.mul op1 op2
   | Token.ident "felt.div" =>
     let _ ← advance -- consume the 'felt.div' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.div op1 op2
+    return Expr.bop BinOp.div op1 op2
   -- Bitwise
   | Token.ident "bit.shl" =>
     let _ ← advance -- consume the 'bit.shl' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.shl op1 op2
+    return Expr.bop BinOp.shl op1 op2
   | Token.ident "bit.shr" =>
     let _ ← advance -- consume the 'bit.shr' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.shr op1 op2
+    return Expr.bop BinOp.shr op1 op2
   | Token.ident "bit.and" =>
     let _ ← advance -- consume the 'bit.and' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.and op1 op2
+    return Expr.bop BinOp.and op1 op2
   | Token.ident "bit.or" =>
     let _ ← advance -- consume the 'bit.or' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.or op1 op2
+    return Expr.bop BinOp.or op1 op2
   | Token.ident "bit.xor" =>
     let _ ← advance -- consume the 'bit.xor' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.xor op1 op2
+    return Expr.bop BinOp.xor op1 op2
   | Token.ident "bit.not" =>
     let _ ← advance -- consume the 'bit.not' keyword
     let op1 ← parseSimpleExpr
-    return Expr.not op1
+    return Expr.uop UnOp.not op1
   -- Comparison
-  | Token.ident "bool.True" =>
-    let _ ← advance -- consume the 'bool.True' keyword
-    return Expr.True
-  | Token.ident "bool.False" =>
-    let _ ← advance -- consume the 'bool.False' keyword
-    return Expr.False
   | Token.ident "bool.eq" =>
     let _ ← advance -- consume the 'bool.eq' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.eq op1 op2
+    return Expr.bop BinOp.eq op1 op2
   | Token.ident "bool.neq" =>
     let _ ← advance -- consume the 'bool.neq' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.neq op1 op2
+    return Expr.bop BinOp.neq op1 op2
   | Token.ident "bool.lt" =>
     let _ ← advance -- consume the 'bool.lt' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.lt op1 op2
+    return Expr.bop BinOp.lt op1 op2
   | Token.ident "bool.gt" =>
     let _ ← advance -- consume the 'bool.gt' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.gt op1 op2
+    return Expr.bop BinOp.gt op1 op2
   | Token.ident "bool.le" =>
     let _ ← advance -- consume the 'bool.le' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.le op1 op2
+    return Expr.bop BinOp.le op1 op2
   | Token.ident "bool.ge" =>
     let _ ← advance -- consume the 'bool.ge' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.ge op1 op2
+    return Expr.bop BinOp.ge op1 op2
   | Token.ident "bool.and" =>
     let _ ← advance -- consume the 'bool.and' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.band op1 op2
+    return Expr.bop BinOp.band op1 op2
   | Token.ident "bool.or" =>
     let _ ← advance -- consume the 'bool.or' keyword
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
-    return Expr.bor op1 op2
+    return Expr.bop BinOp.bor op1 op2
   | Token.ident "bool.not" =>
     let _ ← advance -- consume the 'bool.not' keyword
     let op1 ← parseSimpleExpr
-    return Expr.bneg op1
+    return Expr.uop UnOp.bneg op1
   | _ => -- must be a simple expression
     let op1 ← parseSimpleExpr
     return Expr.id op1
@@ -226,8 +219,6 @@ def parseCond {c : ZKConfig} : ParserM (Cond c) := do
   match sym.token with
   | Token.eq=>
     return Cond.eq l r
-  | Token.neq=>
-    return Cond.neq l r
   | _ =>
     throw (IO.userError s!"Expected a condition, got {l} {sym} {r}")
 

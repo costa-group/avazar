@@ -110,7 +110,6 @@ inductive Token where
   | ident    : String → Token    -- variables, functions names, statements, etc.
   | number   : String → Token    -- number, e.g., 123
   | eq       : Token             -- '=' symbol
-  | neq      : Token             -- '!=' symbol
   | symbol   : Char → Token      -- symbol, e.g., '+', '=', '{'
   | eof      : Token             -- End of File
   deriving Repr, BEq, Inhabited
@@ -121,7 +120,6 @@ def Token.toString (tk : Token) : String :=
   | Token.ident v => s!"%{v} (identifier/keyword)"
   | Token.number n => s!"{n} (number)"
   | Token.eq => "'==' (symbol)"
-  | Token.neq => "'!=' (symbol)"
   | Token.symbol c => s!"'{c}' (symbol)"
   | Token.eof => "<EOF>"
 
@@ -176,16 +174,6 @@ partial def Lexer.nextToken (st : Lexer) : IO (TokenInfo × Lexer) := do
         return (⟨ Token.eq, col, row ⟩, st)
       else
         return (⟨ Token.symbol '=', col, row ⟩, st)
-
-    -- Not equal sign: '!='
-    else if c == '!' then
-      let (_, st) ← st.next -- consume the '!' character
-      let (nextCharOpt, st) ← st.peek
-      if nextCharOpt == some '=' then
-        let (_, st) ← st.next -- consume the '=' character
-        return (⟨ Token.neq, col, row ⟩, st)
-      else
-        return (⟨ Token.symbol '!', col, row ⟩, st)
 
     -- identifier, any sequence of alphanumeric characters, underscores, '%', '@', '#', or '.'
     -- that starts with a letter, underscore, '%', or '@'.

@@ -24,34 +24,50 @@ def formatSexpr {c : ZKConfig} (s : SimpleExpr c) : String :=
 instance {c : ZKConfig} : ToString (SimpleExpr c) where
   toString s := formatSexpr s
 
+def formatBinOp (s : BinOp) : String :=
+  match s with
+  | .add => "felt.add"
+  | .sub => "felt.sub"
+  | .mul => "felt.mul"
+  | .div => "felt.div"
+  | .shl => "bit.shl"
+  | .shr => "bit.shr"
+  | .and => "bit.and"
+  | .or => "bit.or"
+  | .xor => "bit.xor"
+  | .eq => "bool.eq"
+  | .neq => "bool.neq"
+  | .lt => "bool.lt"
+  | .gt => "bool.gt"
+  | .le => "bool.le"
+  | .ge => "bool.ge"
+  | .bor => "bool.or"
+  | .band => "bool.and"
+
+-- register ToString instance for BinOp
+instance : ToString (BinOp) where
+  toString s := formatBinOp s
+
+def formatUnOp (s : UnOp) : String :=
+  match s with
+  | .neg => "felt.neg"
+  | .not => "bool.not"
+  | .bneg => "bit.bneg"
+
+-- register ToString instance for UnOp
+instance : ToString (UnOp) where
+  toString s := formatUnOp s
+
+
 def formatExpr {c : ZKConfig} (e : Expr c) : String :=
   match e with
   -- arithmetic
-  | .id s => s!"{s}"
-  | .neg s => s!"felt.neg {s}"
-  | .add s1 s2 => s!"felt.add {s1} {s2}"
-  | .sub s1 s2 => s!"felt.sub {s1} {s2}"
-  | .mul s1 s2 => s!"felt.mul {s1} {s2}"
-  | .div s1 s2 => s!"felt.div {s1} {s2}"
-  -- bitwise
-  | .shl s bits => s!"bit.shl {s} {bits}"
-  | .shr s bits => s!"bit.shr {s} {bits}"
-  | .and s1 s2 => s!"bit.and {s1} {s2}"
-  | .or s1 s2 => s!"bit.or {s1} {s2}"
-  | .xor s1 s2 => s!"bit.xor {s1} {s2}"
-  | .not s => s!"bit.not {s}"
-   -- boolean
-  | .True => "bool.True"
-  | .False => "bool.False"
-  | .eq s1 s2 => s!"bool.eq {s1} {s2}"
-  | .neq s1 s2 => s!"bool.neq {s1} {s2}"
-  | .lt s1 s2 => s!"bool.lt {s1} {s2}"
-  | .gt s1 s2 => s!"bool.gt {s1} {s2}"
-  | .le s1 s2 => s!"bool.le {s1} {s2}"
-  | .ge s1 s2 => s!"bool.ge {s1} {s2}"
-  | .bor s1 s2 => s!"bool.or {s1} {s2}"
-  | .band s1 s2 => s!"bool.and {s1} {s2}"
-  | .bneg s => s!"bool.not {s}"
+  | .bop op s1 s2 =>
+      s!"{op} {s1} {s2}"
+  | .uop op s =>
+      s!"{op} {s}"
+  | .id s =>
+      s!"{s}"
 
 -- register ToString instance for Expr
 instance {c : ZKConfig} : ToString (Expr c) where
@@ -60,7 +76,6 @@ instance {c : ZKConfig} : ToString (Expr c) where
 def formatCond {c : ZKConfig} (cond : Cond c) : String :=
   match cond with
   | .eq s1 s2 => s!"{s1} == {s2}"
-  | .neq s1 s2 => s!"{s1} != {s2}"
 
 -- register ToString instance for Cond
 instance {c : ZKConfig} : ToString (Cond c) where

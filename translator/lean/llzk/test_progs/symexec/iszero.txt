@@ -22,3 +22,4 @@ func izero(in:ff) : out:ff {
 func main(%x:ff) : %y:ff {
   call izero(%x) to %y
 }
+

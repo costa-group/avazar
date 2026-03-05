@@ -1,5 +1,6 @@
 import Llzk.Basic
 import Llzk.Language.Core.Syntax.AST
+import Llzk.Language.Core.Syntax.Printer
 import Llzk.FFConstraints.Basic
 import Llzk.Language.Core.Semantics.Basic
 import Std.Data.TreeMap.Basic
@@ -166,34 +167,38 @@ def symVarToTerm {c : ZKConfig} (v : SymFFVar c) : FFTerm c :=
 -/
 def evalExpr {c : ZKConfig}
   (senv : SymEnv c) (e : Expr c)
-  : Except String (FF c) := do
+  : Except String (SymFFVar c) := do
   match e with
-  -- arithmetic
-  | .id s => Except.ok (evalId (← simpleExprToFF senv s))
-  | .neg s => Except.ok (evalNeg (← simpleExprToFF senv s))
-  | .add s1 s2 => Except.ok (evalAdd (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  | .sub s1 s2 => Except.ok (evalSub (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  | .mul s1 s2 => Except.ok (evalMul (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  | .div s1 s2 => Except.ok (evalDiv (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  -- bitwise
-  | .shl s bits => Except.ok (evalShl (← simpleExprToFF senv s) (← simpleExprToFF senv bits))
-  | .shr s bits => Except.ok (evalShr (← simpleExprToFF senv s) (← simpleExprToFF senv bits))
-  | .and s1 s2 => Except.ok (evalAnd (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  | .or s1 s2 => Except.ok (evalOr (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  | .xor s1 s2 => Except.ok (evalXor (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  | .not s => Except.ok (evalNot (← simpleExprToFF senv s))
-   -- boolean
-  | .True => Except.ok evalTrue
-  | .False => Except.ok evalFalse
-  | .eq s1 s2 => Except.ok (evalEq (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  | .neq s1 s2 => Except.ok (evalNeq (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  | .lt s1 s2 => Except.ok (evalLt (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  | .gt s1 s2 => Except.ok (evalGt (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  | .le s1 s2 => Except.ok (evalLe (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  | .ge s1 s2 => Except.ok (evalGe (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  | .bor s1 s2 => Except.ok (evalBor (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  | .band s1 s2 => Except.ok (evalBand (← simpleExprToFF senv s1) (← simpleExprToFF senv s2))
-  | .bneg s => Except.ok (evalBneg (← simpleExprToFF senv s))
+  | .bop op op1 op2 =>
+    let v1 ← simpleExprToFF senv op1
+    let v2 ← simpleExprToFF senv op2
+    match op with
+    | .add => Except.ok (SymFFVar.const (evalAdd v1 v2))
+    | .sub => Except.ok (SymFFVar.const (evalSub v1 v2))
+    | .mul => Except.ok (SymFFVar.const (evalMul v1 v2))
+    | .div => Except.ok (SymFFVar.const (evalDiv v1 v2))
+    | .shl => Except.ok (SymFFVar.const (evalShl v1 v2))
+    | .shr => Except.ok (SymFFVar.const (evalShr v1 v2))
+    | .and => Except.ok (SymFFVar.const (evalAnd v1 v2))
+    | .or => Except.ok (SymFFVar.const (evalOr v1 v2))
+    | .xor => Except.ok (SymFFVar.const (evalXor v1 v2))
+    | .eq => Except.ok (SymFFVar.const (evalEq v1 v2))
+    | .neq => Except.ok (SymFFVar.const (evalNeq v1 v2))
+    | .lt => Except.ok (SymFFVar.const (evalLt v1 v2))
+    | .gt => Except.ok (SymFFVar.const (evalGt v1 v2))
+    | .le => Except.ok (SymFFVar.const (evalLe v1 v2))
+    | .ge => Except.ok (SymFFVar.const (evalGe v1 v2))
+    | .bor => Except.ok (SymFFVar.const (evalBor v1 v2))
+    | .band => Except.ok (SymFFVar.const (evalBand v1 v2))
+  | .uop op s =>
+    let v ← simpleExprToFF senv s
+    match op with
+    | .neg => Except.ok (SymFFVar.const (evalNeg v))
+    | .not => Except.ok (SymFFVar.const (evalNot v))
+    | .bneg => Except.ok (SymFFVar.const (evalBneg v))
+  | .id s =>
+    let v ← simpleExprToFF senv s
+    Except.ok (SymFFVar.const v)
 
 /- Try to evaluate a condition to a boolean value. This is used to discard
    infeasible branches in if-statements.
@@ -208,10 +213,6 @@ def evalCond {c : ZKConfig}
     let v1 ← simpleExprToFF senv s1
     let v2 ← simpleExprToFF senv s2
     return v1 == v2
-  | .neq s1 s2 =>
-    let v1 ← simpleExprToFF senv s1
-    let v2 ← simpleExprToFF senv s2
-    return v1 != v2
 
 /- Symbolic execution of conditions -/
 def sEvalCond {c : ZKConfig}
@@ -229,29 +230,7 @@ def sEvalCond {c : ZKConfig}
       newFFVars := emptyFFVarSet,
       newBoolVars := emptyBoolVarSet
     }
-  | .neq s1 s2 =>
-    let v1 ← simpleExprToTerm senv s1
-    let v2 ← simpleExprToTerm senv s2
-    return {
-      inSymEnv := senv,
-      f := .not (.eq v1 v2),
-      nextId := cfg.nextId,
-      newFFVars := emptyFFVarSet,
-      newBoolVars := emptyBoolVarSet
-    }
 
-/- Symbolic expression of .id expression -/
-def sEvalExprId {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s : SimpleExpr c) (outFFVar : FFVar)
-  : Except String (ExprSpec c) := do
-  let v ← simpleExprToTerm senv s
-  return {
-          inSymEnv := senv,
-          f := FFFormula.eq (FFTerm.var outFFVar) v, -- outVar = v
-          resVar := outFFVar,
-          nextId := cfg.nextId
-  }
 
 /- Symbolic expression of .neg expression -/
 def sEvalExprNeg {c : ZKConfig}
@@ -323,28 +302,6 @@ def sEvalExprDiv {c : ZKConfig}
           nextId := cfg.nextId
   }
 
-
-def sEvalTrue {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD) (senv : SymEnv c) (outFFVar : FFVar)
-  : Except String (ExprSpec c) := do
-  return {
-          inSymEnv := senv,
-          f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.const 1), -- outVar = 1
-          resVar := outFFVar,
-          nextId := cfg.nextId
-  }
-
-def sEvalFalse {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD) (senv : SymEnv c) (outFFVar : FFVar)
-  : Except String (ExprSpec c) := do
-  return {
-          inSymEnv := senv,
-          f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.const 0), -- outVar = 0
-          resVar := outFFVar,
-          nextId := cfg.nextId
-  }
-
-
 def sEvalEq {c : ZKConfig}
   (cfg : SymExecConfig c) (_md : CmdMD)
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
@@ -386,14 +343,14 @@ def sEvalBor {c : ZKConfig}
   return {
           inSymEnv := senv,
           f : FFFormula c :=
-               .ite (.or (.eq v1 (.const 1)) (.eq v2 (.const 1)))
-                    (.eq (.var outFFVar) (.const 1))
-                    (.eq (.var outFFVar) (.const 0)),
+               .ite (.and (.eq v1 (.const 0)) (.eq v2 (.const 0)))
+                    (.eq (.var outFFVar) (.const 0))
+                    (.eq (.var outFFVar) (.const 1)),
           resVar := outFFVar,
           nextId := cfg.nextId
   }
 
-def sEvalAnd {c : ZKConfig}
+def sEvalBAnd {c : ZKConfig}
   (cfg : SymExecConfig c) (_md : CmdMD)
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
@@ -402,14 +359,14 @@ def sEvalAnd {c : ZKConfig}
   return {
           inSymEnv := senv,
           f : FFFormula c :=
-               .ite (.and (.eq v1 (.const 1)) (.eq v2 (.const 1)))
-                    (.eq (.var outFFVar) (.const 1))
-                    (.eq (.var outFFVar) (.const 0)),
+               .ite (.or (.eq v1 (.const 0)) (.eq v2 (.const 0)))
+                    (.eq (.var outFFVar) (.const 0))
+                    (.eq (.var outFFVar) (.const 1)),
           resVar := outFFVar,
           nextId := cfg.nextId
   }
 
-def sEvalNeg {c : ZKConfig}
+def sEvalBNeg {c : ZKConfig}
   (cfg : SymExecConfig c) (_md : CmdMD)
   (senv : SymEnv c) (s : SimpleExpr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
@@ -417,9 +374,9 @@ def sEvalNeg {c : ZKConfig}
   return {
           inSymEnv := senv,
           f : FFFormula c :=
-               .ite (.eq v (FFTerm.const 1))
-                    (.eq (FFTerm.var outFFVar) (.const 0))
-                    (.eq (FFTerm.var outFFVar) (.const 1)),
+               .ite (.eq v (FFTerm.const 0))
+                    (.eq (FFTerm.var outFFVar) (.const 1))
+                    (.eq (FFTerm.var outFFVar) (.const 0)),
           resVar := outFFVar,
           nextId := cfg.nextId
   }
@@ -428,25 +385,24 @@ def sEvalExpr {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c) (e : Expr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
   match e with
-  -- arithmetic
-  | .id s => sEvalExprId cfg md symEnv s outFFVar
-  | .neg s => sEvalExprNeg cfg md symEnv s outFFVar
-  | .add s1 s2 => sEvalExprAdd cfg md symEnv s1 s2 outFFVar
-  | .sub s1 s2 => sEvalExprSub cfg md symEnv s1 s2 outFFVar
-  | .mul s1 s2 => sEvalExprMul cfg md symEnv s1 s2 outFFVar
-  | .div s1 s2 => sEvalExprDiv cfg md symEnv s1 s2 outFFVar
-  -- bitwise are all missing
-  -- boolean
-  | .True => sEvalTrue cfg md symEnv outFFVar
-  | .False => sEvalFalse cfg md symEnv outFFVar
-  | .eq s1 s2 => sEvalEq cfg md symEnv s1 s2 outFFVar
-  | .neq s1 s2 => sEvalNeq cfg md symEnv s1 s2 outFFVar
-  -- missing lt, le, gt, and ge
-  | .bor s1 s2 => sEvalBor cfg md symEnv s1 s2 outFFVar
-  | .and s1 s2 => sEvalAnd cfg md symEnv s1 s2 outFFVar
-  | .bneg s => sEvalNeg cfg md symEnv s outFFVar
-   -- bitwise operations and comparisons are not implemented yet
-  | _ => Except.error s!"Expression evaluation not implemented yet"
+  | .bop op s1 s2 =>
+    match op with
+    | .add => sEvalExprAdd cfg md symEnv s1 s2 outFFVar
+    | .sub => sEvalExprSub cfg md symEnv s1 s2 outFFVar
+    | .mul => sEvalExprMul cfg md symEnv s1 s2 outFFVar
+    | .div => sEvalExprDiv cfg md symEnv s1 s2 outFFVar
+    | .bor => sEvalBor cfg md symEnv s1 s2 outFFVar
+    | .band => sEvalBAnd cfg md symEnv s1 s2 outFFVar
+    | .eq => sEvalEq cfg md symEnv s1 s2 outFFVar
+    | .neq => sEvalNeq cfg md symEnv s1 s2 outFFVar
+    | _ => Except.error s!"Binary expression {op} evaluation not implemented yet"
+  | .uop op s =>
+    match op with
+     | .neg => sEvalExprNeg cfg md symEnv s outFFVar
+     | .bneg => sEvalBNeg cfg md symEnv s outFFVar
+     | _ => Except.error s!"Unary expression {op} evaluation not implemented yet"
+  | .id _ =>
+      Except.error s!"Evaluation of identifier is handled somewhere else, should not reach here"
 
 
 /- Symbolic execution of 'skip' -/
@@ -459,7 +415,7 @@ def seAssignmentConst {c : ZKConfig}
   (cfg : SymExecConfig c) (_md : CmdMD) (symEnv : SymEnv c) (id : String) (e : Expr c)
   : Except String (CmdsSpec c) := do
   let r ← evalExpr symEnv e
-  let newSymEnv := setVar symEnv id (SymValue.ffVar (SymFFVar.const r))
+  let newSymEnv := setVar symEnv id (SymValue.ffVar r)
   return { inSymEnv := symEnv,
            outSymEnv := newSymEnv,
            f := FFFormula.true,
