@@ -135,6 +135,15 @@ def simpleExprToFF {c : ZKConfig}
     | Except.error err => Except.error err
   | .val v => Except.ok v
 
+def simpleExprToSymFFVar {c : ZKConfig}
+  (senv : SymEnv c) (s : SimpleExpr c)
+  : Except String (SymFFVar c) :=
+  match s with
+  | .var id => match getVar senv id with
+    | Except.ok (SymValue.ffVar v) => Except.ok v
+    | Except.ok (SymValue.ffArray _) => Except.error s!"Variable '{id}' is an array"
+    | Except.error err => Except.error err
+  | .val v => Except.ok (SymFFVar.const v)
 
 def simpleExprToTerm {c : ZKConfig}
   (senv : SymEnv c) (s : SimpleExpr c)
@@ -552,15 +561,6 @@ def seArrayRead {c : ZKConfig}
     throw s!"seArrayRead operations with non-constant index not implemented yet"
 
 
-def simpleExprToSymFFVar {c : ZKConfig}
-  (senv : SymEnv c) (s : SimpleExpr c)
-  : Except String (SymFFVar c) :=
-  match s with
-  | .var id => match getVar senv id with
-    | Except.ok (SymValue.ffVar v) => Except.ok v
-    | Except.ok (SymValue.ffArray _) => Except.error s!"Variable '{id}' is an array"
-    | Except.error err => Except.error err
-  | .val v => Except.ok (SymFFVar.const v)
 
 def seArrayWriteConstIdx {c : ZKConfig}
   (cfg : SymExecConfig c) (_md : CmdMD) (symEnv : SymEnv c)
@@ -595,9 +595,22 @@ def seArrayWrite {c : ZKConfig}
   | Except.error e =>
      throw s!"seArrayWrite operations not implemented yet: {e}"
 
+/- Symbolic execution of array copy -/
 def seArrayCopy {c : ZKConfig}
-  (_cfg : SymExecConfig c) (_md : CmdMD) (_symEnv : SymEnv c) (_out : VarID) (_a : VarID)
+  (cfg : SymExecConfig c) (_md : CmdMD) (symEnv : SymEnv c) (out : VarID) (a : VarID)
   : Except String (CmdsSpec c) := do
-  throw s!"seArrayCopy operations not implemented yet"
+  match getVar symEnv a with
+  | Except.error err => Except.error ("seArrayCopy: failed to get array variable: " ++ err)
+  | Except.ok (SymValue.ffArray arr) =>
+    let newSymEnv := setVar symEnv out (SymValue.ffArray arr)
+    return { inSymEnv := symEnv,
+             outSymEnv := newSymEnv,
+             f := FFFormula.true,
+             nextId := cfg.nextId,
+             newFFVars := emptyFFVarSet,
+             newBoolVars := emptyBoolVarSet
+    }
+  | Except.ok _ => Except.error s!"seArrayCopy: variable '{a}' is not an array"
+
 
 end Llzk.SymExec.Basic
