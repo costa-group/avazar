@@ -10,7 +10,7 @@ structure ZKConfig where
   midpoint : ℕ := p / 2 + 1 -- the midpoint of the field, used for signed representation
   p_prime : p.Prime -- stating that p is a prime.
   p_fits : p ≥ 2^(k-1) && p < 2^k -- k is indeed the bit-width of p
-  midpoint_ok : midpoint = p / 2 + 1 := by rfl
+  midpoint_ok : midpoint = p / 2 + 1 := by rfl -- ensure midpoint is correctly defined
 
 /- Register that c.p is a prime number -/
 instance (c : ZKConfig) : Fact c.p.Prime := ⟨c.p_prime⟩
@@ -73,7 +73,7 @@ def goldilocks64 : ZKConfig := {
 /- We need to add a fact that myConfig.p is a prime so Lean can
    find it automatically.
 -/
-instance : Fact goldilocks64.p.Prime := ⟨goldilocks64.p_prime⟩ -- ⟨⟩ are for fact
+instance : Fact goldilocks64.p.Prime := ⟨goldilocks64.p_prime⟩
 
 
 def F11 : ZKConfig := {
@@ -86,4 +86,4 @@ def F11 : ZKConfig := {
 /- We need to add a fact that myConfig.p is a prime so Lean can
    find it automatically.
 -/
-instance : Fact F11.p.Prime := ⟨F11.p_prime⟩ -- ⟨⟩ are for fact
+instance : Fact F11.p.Prime := ⟨F11.p_prime⟩
