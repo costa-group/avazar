@@ -506,6 +506,13 @@ def seArrayReadConstIdx {c : ZKConfig}
          s!"seArrayReadConstIdx: index {idxVal.val} out of bounds for array of size {arr.size}"
   | Except.ok _ => Except.error s!"seArrayReadConstIdx: variable '{a}' is not an array"
 
+def seArrayReadNonConstIdx {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
+  (out : VarID) (a : VarID) (idx : SimpleExpr c)
+  : Except String (CmdsSpec c) := do
+  throw s!"seArrayRead operations with non-constant index not implemented yet"
+
+
 /- Symbolic execution of array read -/
 def seArrayRead {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
@@ -513,8 +520,7 @@ def seArrayRead {c : ZKConfig}
   : Except String (CmdsSpec c) := do
   match seArrayReadConstIdx cfg md symEnv out a idx with
   | Except.ok spec => return spec
-  | Except.error _ =>
-    throw s!"seArrayRead operations with non-constant index not implemented yet"
+  | Except.error _ => seArrayReadNonConstIdx cfg md symEnv out a idx
 
 
 
@@ -542,6 +548,12 @@ def seArrayWriteConstIdx {c : ZKConfig}
          s!"seArrayWriteConstIdx: index {idxVal.val} out of bounds for array of size {arr.size}"
   | Except.ok _ => Except.error s!"seArrayWriteConstIdx: variable '{a}' is not an array"
 
+def seArrayWriteNonConstIdx {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
+  (a : VarID) (idx : SimpleExpr c) (value : SimpleExpr c)
+  : Except String (CmdsSpec c) := do
+  throw s!"seArrayWrite operations with non-constant index not implemented yet"
+
 def seArrayWrite {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
   (a : VarID) (idx : SimpleExpr c) (value : SimpleExpr c)
@@ -549,7 +561,7 @@ def seArrayWrite {c : ZKConfig}
   match seArrayWriteConstIdx cfg md symEnv a idx value with
   | Except.ok spec => return spec
   | Except.error e =>
-     throw s!"seArrayWrite operations not implemented yet: {e}"
+     seArrayWriteNonConstIdx cfg md symEnv a idx value
 
 /- Symbolic execution of array copy -/
 def seArrayCopy {c : ZKConfig}
