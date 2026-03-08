@@ -15,7 +15,7 @@ open Llzk.FFConstraints.SMT
 
 open Cli
 
-def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Stream) : IO Unit := do
+def symExec (c : ZKConfig) (_p : Parsed) (inFile : String) (outStream : IO.FS.Stream) : IO Unit := do
      IO.println s!"Parsing {inFile}..."
      let initialState ← ParserM.fromFile inFile
      let (prog,_) ← StateT.run (@parseProg c []) initialState

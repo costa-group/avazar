@@ -29,13 +29,26 @@ def sEvalExpr {c : ZKConfig}
     | .band => sEvalBAnd cfg md symEnv s1 s2 outFFVar -- bool
     | .eq => sEvalEq cfg md symEnv s1 s2 outFFVar -- bool
     | .neq => sEvalNeq cfg md symEnv s1 s2 outFFVar -- bool
-    | .lt => sEvalLt cfg md symEnv s1 s2 outFFVar -- bool
-    | _ => Except.error s!"Binary expression {op} evaluation not implemented yet"
+    -- Unsigned
+    -- | .lt => sEvalLtUnSigned cfg md symEnv s1 s2 outFFVar -- bool
+    -- | .le => sEvalLeUnSigned cfg md symEnv s1 s2 outFFVar -- bool
+    -- | .gt => sEvalGtUnSigned cfg md symEnv s1 s2 outFFVar -- bool
+    -- | .ge => sEvalGeUnSigned cfg md symEnv s1 s2 outFFVar -- bool
+    -- Signed
+    | .lt => sEvalLtSigned cfg md symEnv s1 s2 outFFVar -- bool
+    | .le => sEvalLeSigned cfg md symEnv s1 s2 outFFVar -- bool
+    | .gt => sEvalGtSigned cfg md symEnv s1 s2 outFFVar -- bool
+    | .ge => sEvalGeSigned cfg md symEnv s1 s2 outFFVar -- bool
+    | .and => sEvalBitWiseAND cfg md symEnv s1 s2 outFFVar -- bitwise
+    | .or => sEvalBitWiseOR cfg md symEnv s1 s2 outFFVar -- bitwise
+    | .xor => sEvalBitWiseXOR cfg md symEnv s1 s2 outFFVar -- bitwise
+    | .shl => sEvalBitWiseSHL cfg md symEnv s1 s2 outFFVar -- bitwise
+    | .shr => sEvalBitWiseSHR cfg md symEnv s1 s2 outFFVar -- bitwise
   | .uop op s =>
     match op with
      | .neg => sEvalExprNeg cfg md symEnv s outFFVar
      | .bneg => sEvalBNeg cfg md symEnv s outFFVar
-     | _ => Except.error s!"Unary expression {op} evaluation not implemented yet"
+     | .not => sEvalBitWiseNOT cfg md symEnv s outFFVar
   | .id _ =>
       Except.error s!"Evaluation of identifier is handled somewhere else, should not reach here"
 
