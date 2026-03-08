@@ -123,5 +123,14 @@ structure RetVarsSpec (c : ZKConfig) where
   actRetsVars : List (MacroCallParam c) := []
   deriving Inhabited
 
+structure BitifySpec (c : ZKConfig) where
+  nextId : Nat := 0
+  f : FFFormula c := FFFormula.false
+  bits : List (FFTerm c) := []
+  vars : List FFVar := []
+  bitifedTerm : FFTerm c := default
+  newFFVars : FFVarSet := emptyFFVarSet
+  newBoolVars : BoolVarSet := emptyBoolVarSet
+  deriving Inhabited
 
 end Llzk.SymExec.Basic
