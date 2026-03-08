@@ -41,7 +41,7 @@ def newAssignment' {c : ZKConfig}
   | (.inr p) :: params', (.bool t) :: args' =>
     let boolMap' : ℕ → Bool := fun id => if id == p.id then t else boolMap id
     newAssignment' assign args' params' ffMap boolMap'
-  -- any other combination is an error
+  --valther combination is an error
   | _, _ => Except.error "Mismatched variable lists"
 
 def newAssignment {c : ZKConfig}
@@ -51,61 +51,98 @@ def newAssignment {c : ZKConfig}
   let boolMap : ℕ → Bool := fun _id => false
   newAssignment' assign args params ffMap boolMap
 
+mutual
+
 /- Evaluate a term to FF value -/
-def evalTerm {c : ZKConfig} (assign : Assignment c) (t : FFTerm c) : FF c :=
+def evalTerm {c : ZKConfig}
+  (assign : Assignment c) (t : FFTerm c) (ms : List (FFMacro c))
+  : Except String (FF c) := do
   match t with
-  | .const v => v
-  | .var v => assign.ff v.id
-  | .add a b => (evalTerm assign a) + (evalTerm assign b)
-  | .sub a b => (evalTerm assign a) - (evalTerm assign b)
-  | .mul a b => (evalTerm assign a) * (evalTerm assign b)
-  | .neg a => -(evalTerm assign a)
+  | .val v => return v
+  | .var v => return assign.ff v.id
+  | .add a b =>
+     let va ← evalTerm assign a ms
+     let vb ← evalTerm assign b ms
+     return va + vb
+  | .sub a b => let va ← evalTerm assign a ms
+                let vb ← evalTerm assign b ms
+                return va - vb
+  | .mul a b => let va ← evalTerm assign a ms
+                let vb ← evalTerm assign b ms
+                return va * vb
+  | .neg a => let va ← evalTerm assign a ms
+              return -va
+  | .ite c t e =>
+    let cVal ←  evalFormula assign c ms
+    if cVal then evalTerm assign t ms else evalTerm assign e ms
+
+termination_by (ms.length, sizeOfTerm t)
+decreasing_by
+  all_goals
+    apply Prod.Lex.right
+    simp only [sizeOfTerm]
+    grind
+
 
 /- Evaluate a formula to a boolean value -/
 def evalFormula {c : ZKConfig}
-   (assign : Assignment c) (f : FFFormula c) (ms : List (FFMacro c)) : Except String Bool := do
+  (assign : Assignment c) (f : FFFormula c) (ms : List (FFMacro c))
+  : Except String Bool := do
   match f with
   | .true     => return true
   | .false    => return false
-  | .range t l u => let v := evalTerm assign t
+  | .range t l u => let v ← evalTerm assign t ms
                     return l.val <= v.val && v.val <= u.val
   | .bool v   => return assign.bool v.id
-  | .eq a b => return evalTerm assign a == evalTerm assign b
-  | .lt a b => let va := evalTerm assign a
-                let vb := evalTerm assign b
+  | .eq a b =>  let va ← evalTerm assign a ms
+                let vb ← evalTerm assign b ms
+                return va == vb
+  | .lt a b => let va ← evalTerm assign a ms
+                let vb ← evalTerm assign b ms
                 return evalLt va vb == 1
-  | .gt a b => let va := evalTerm assign a
-                let vb := evalTerm assign b
+  | .gt a b => let va ← evalTerm assign a ms
+                let vb ← evalTerm assign b ms
                 return evalGt va vb == 1
-  | .le a b => let va := evalTerm assign a
-                let vb := evalTerm assign b
+  | .le a b => let va ← evalTerm assign a ms
+                let vb ← evalTerm assign b ms
                 return evalLe va vb == 1
-  | .ge a b => let va := evalTerm assign a
-                let vb := evalTerm assign b
+  | .ge a b => let va ← evalTerm assign a ms
+                let vb ← evalTerm assign b ms
                 return evalGe va vb == 1
-  | .and a b  => return (← evalFormula assign a ms) && (← evalFormula assign b ms)
-  | .or a b   => return (← evalFormula assign a ms) || (← evalFormula assign b ms)
-  | .not a    => return !(← evalFormula assign a ms)
-  | .ite c t e => if (← evalFormula assign c ms) then evalFormula assign t ms
+  | .and a b  => let va ← evalFormula assign a ms
+                 let vb ← evalFormula assign b ms
+                 return va && vb
+  | .or a b   => let va ← evalFormula assign a ms
+                 let vb ← evalFormula assign b ms
+                 return va || vb
+  | .not a    => let va ← evalFormula assign a ms
+                 return !va
+  | .ite c t e => let vc ← evalFormula assign c ms
+                  if vc then evalFormula assign t ms
                   else evalFormula assign e ms
-  | .imply a b => return !(← evalFormula assign a ms) || (← evalFormula assign b ms)
-  | .iff a b   => return (← evalFormula assign a ms) == (← evalFormula assign b ms)
+  | .imply a b => let va ← evalFormula assign a ms
+                  let vb ← evalFormula assign b ms
+                  return !va || vb
+  | .iff a b   => let va ← evalFormula assign a ms
+                  let vb ← evalFormula assign b ms
+                  return va == vb
   | .call name args =>
      match _h_fetchm: fetchMacro ms name with
      | Except.error e => Except.error e
      | Except.ok (m,ms') =>
        let newAssign ← newAssignment assign args m.params
        evalFormula newAssign m.body ms'
+
 termination_by (ms.length, sizeOfFormula f)
 decreasing_by
   any_goals
     apply Prod.Lex.right
     simp only [sizeOfFormula]
     grind
-  -- the call to a macro
-  apply Prod.Lex.left
-  apply fetchMacroLT ms ms' name m _h_fetchm
+  · apply Prod.Lex.left
+    apply fetchMacroLT ms ms' name m _h_fetchm
 
+end
 
 /- Satisfiability of a formula:
 
