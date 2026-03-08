@@ -160,24 +160,22 @@ def sEvalLtBitCmp {c : ZKConfig}
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
   -- we will compare the bits of v1 and v2 from the most significant bit to
-  let (ffVars1,bits1,bits1F) := bitify cfg md v1
-  let cfg' := { cfg with nextId := cfg.nextId + c.k }
-  let (ffVars2,bits2,bits2F) := bitify cfg' md v2
+  let bits1Spec := bitify cfg md v1
+  let cfg' := { cfg with nextId := bits1Spec.nextId }
+  let bits2Spec := bitify cfg' md v2
   -- we generate the formula for the less than comparison using the bits
   -- (bits1[0] < bits2[0]) \/ (bits1[0] = bits2[0] /\ bits1[1] < bits2[1])
   let ite := List.foldl (fun acc (b1, b2) => FFTerm.ite
                                                (.and (.eq b1 (.val 0)) (.eq b2 (.val 1)))
                                                (.val 1)
                                                (.ite (.and (.eq b1 (.val 1)) (.eq b2 (.val 0))) (.val 0) acc))
-                                               (.val 0) (List.zip bits1 bits2)
-  let bits1Set : FFVarSet := ffVars1.foldl (fun s v => s.insert v) emptyFFVarSet
-  let bits2Set : FFVarSet := ffVars2.foldl (fun s v => s.insert v) emptyFFVarSet
-  let newFFVars := bits1Set ∪ bits2Set
+                                               (.val 0) (List.zip bits1Spec.bits bits2Spec.bits)
+  let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars
   return {
           inSymEnv := senv,
-          f := .and bits1F (.and bits2F (.eq (FFTerm.var outFFVar) ite)),
+          f := .and bits1Spec.f (.and bits2Spec.f (.eq (FFTerm.var outFFVar) ite)),
           resVar := outFFVar,
-          nextId := cfg'.nextId+ c.k,
+          nextId := bits2Spec.nextId,x`
           newFFVars := newFFVars,
           newBoolVars := ∅
   }
