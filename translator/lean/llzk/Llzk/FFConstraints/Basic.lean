@@ -114,14 +114,17 @@ abbrev emptyFFVarSet : FFVarSet := Std.TreeSet.empty
 abbrev BoolVarSet := Std.TreeSet BoolVar compare
 abbrev emptyBoolVarSet : BoolVarSet := Std.TreeSet.empty
 
+
+mutual
 /- Term is a polynomial expression over finite fields -/
 inductive FFTerm (c : ZKConfig) where
-  | const : FF c →  FFTerm c
-  | var   : FFVar → FFTerm c
-  | add   : FFTerm c → FFTerm c → FFTerm c
-  | sub   : FFTerm c → FFTerm c → FFTerm c
-  | mul   : FFTerm c → FFTerm c → FFTerm c
-  | neg   : FFTerm c → FFTerm c
+  | val : FF c →  FFTerm c
+  | var : FFVar → FFTerm c
+  | add : FFTerm c → FFTerm c → FFTerm c
+  | sub : FFTerm c → FFTerm c → FFTerm c
+  | mul : FFTerm c → FFTerm c → FFTerm c
+  | neg : FFTerm c → FFTerm c
+  | ite : FFFormula c → FFTerm c → FFTerm c → FFTerm c  -- term if-then-else
   deriving Repr, BEq, Inhabited
 
 
@@ -146,22 +149,40 @@ inductive FFFormula (c : ZKConfig) where
   | call   : String → List (MacroCallParam c) → FFFormula c  -- macro call
   deriving Repr, BEq, Inhabited
 
+end
+
 /- Trivial definition for size of formula, to be used for proving termination.
    Tried to use the default sizeOf but failed to unfold at some point.
    Revisit this later. -/
+
+mutual
+
+def sizeOfTerm {c : ZKConfig} : FFTerm c → Nat
+  | .val _ => 1
+  | .var _ => 1
+  | .add a b | .sub a b | .mul a b => 1 + sizeOfTerm a + sizeOfTerm b
+  | .neg a => 1 + sizeOfTerm a
+  | .ite c t e => 1 + sizeOfFormula c + sizeOfTerm t + sizeOfTerm e
+
 def sizeOfFormula {c : ZKConfig} : FFFormula c → Nat
   | .true | .false => 1
-  | .range _ _ _=> 1
+  | .range t _ _=> 1 + sizeOfTerm t
   | .bool _ => 1
-  | .eq _ _ => 1
-  | .lt _ _ => 1
-  | .gt _ _ => 1
-  | .le _ _ => 1
-  | .ge _ _ => 1
-  | .and a b | .or a b | .imply a b | .iff a b => 1 + sizeOfFormula a + sizeOfFormula b
+  | .eq a b => 1 + sizeOfTerm a + sizeOfTerm b
+  | .lt a b => 1 + sizeOfTerm a + sizeOfTerm b
+  | .gt a b => 1 + sizeOfTerm a + sizeOfTerm b
+  | .le a b => 1 + sizeOfTerm a + sizeOfTerm b
+  | .ge a b => 1 + sizeOfTerm a + sizeOfTerm b
+  | .and a b => 1 + sizeOfFormula a + sizeOfFormula b
+  | .or a b => 1 + sizeOfFormula a + sizeOfFormula b
+  | .imply a b => 1 + sizeOfFormula a + sizeOfFormula b
+  | .iff a b => 1 + sizeOfFormula a + sizeOfFormula b
   | .not a => 1 + sizeOfFormula a
   | .ite c t e => 1 + sizeOfFormula c + sizeOfFormula t + sizeOfFormula e
   | .call _ _ => 1
+
+end
+
 
 /- A macro is a named formula with parameters -/
 structure FFMacro (c : ZKConfig) where

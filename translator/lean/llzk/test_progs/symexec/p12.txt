@@ -1,0 +1,11 @@
+func foo(x:ff,y:ff) : z:ff {
+  c = bool.lt x y
+  if (c == 1) {
+    z = felt.add x y
+  } else {
+    z = felt.mul x y
+  }
+}
+
+func main() {
+}

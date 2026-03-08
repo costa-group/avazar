@@ -1,14 +1,20 @@
 import Llzk.Basic
 import Llzk.SymExec.Basic
+import Llzk.SymExec.SymInstr
+import Llzk.SymExec.Assignment
 import Llzk.FFConstraints.Basic
 import Llzk.Language.Core.Syntax.AST
 import Llzk.Language.Core.Semantics.BigStep
 import Llzk.FFConstraints.Basic
+
+
 namespace Llzk.SymExec.BigStep
 
 
 open Llzk.Language.Core.Syntax.AST
 open Llzk.SymExec.Basic
+open Llzk.SymExec.SymInstr
+
 open Llzk.FFConstraints.Basic
 
 
