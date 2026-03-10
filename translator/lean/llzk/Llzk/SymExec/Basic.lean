@@ -84,19 +84,6 @@ structure ExprSpec (c : ZKConfig) where
   newBoolVars : BoolVarSet := emptyBoolVarSet
   deriving Inhabited
 
-structure CompSpec (c : ZKConfig) where
-  inSymEnv : SymEnv c := emptySymEnv
-  f : FFFormula c := FFFormula.false
-  -- resVar is not really used now. Maybe it will
-  -- be useful for the proofs later.
-  resTerm : FFTerm c := default
-  lbits : List (FFTerm c) := []
-  rbits : List (FFTerm c) := []
-  nextId : Nat := 0
-  newFFVars : FFVarSet := emptyFFVarSet
-  newBoolVars : BoolVarSet := emptyBoolVarSet
-  deriving Inhabited
-
 structure CondSpec (c : ZKConfig) where
   inSymEnv : SymEnv c := emptySymEnv
   f : FFFormula c := FFFormula.false

@@ -185,7 +185,7 @@ def sEvalLtUnSignedConstRight {c : ZKConfig}
 def sEvalLtUnSignedBitCmp {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
-  : Except String (CompSpec c) := do
+  : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
   let bits1Spec := bitify cfg md v1 -- bitify v1
@@ -206,8 +206,6 @@ def sEvalLtUnSignedBitCmp {c : ZKConfig}
           f := f,
           resTerm := (FFTerm.var outFFVar),
           nextId := bits2Spec.nextId,
-          lbits := bits1Spec.bits,
-          rbits := bits2Spec.bits,
           newFFVars := newFFVars,
           newBoolVars := ∅
   }
@@ -226,15 +224,7 @@ def sEvalLtUnSigned {c : ZKConfig}
     | Except.ok spec => return spec
     | Except.error _ =>
       match sEvalLtUnSignedBitCmp cfg md senv s1 s2 outFFVar with
-      | Except.ok compSpec =>
-        return {
-          inSymEnv := senv,
-          f := compSpec.f,
-          resTerm := (FFTerm.var outFFVar),
-          nextId := compSpec.nextId,
-          newFFVars := compSpec.newFFVars,
-          newBoolVars := compSpec.newBoolVars
-        }
+      | Except.ok spec => return spec
       | Except.error err => throw err
 
 /- x <= y is be encoded as ~(y < x), which is 1 minus the result
