@@ -191,12 +191,12 @@ s2 must fit in floor(log2(k))+1 bits, otherwise the result is 0
 where F is as follows. Let b1,...,bi be the log2(k)+1 lsb bits of s2
 
    outVars0 = s1
-   ite (eq b1 1) (shr outVar_0 1 outVar_1) (eq outVar_1 outVars0)
-   ite (eq b2 1) (shr outVar_1 2 outVar_2) (eq outVar_2 outVars1)
-   ite (eq b3 1) (shr outVar_2 4 outVar_3) (eq outVar_3 outVars2)
-   ite (eq b4 1) (shr outVar_3 8 outVar_4) (eq outVar_4 outVars_3)
+   ite (eq b1 1) (shl outVar_0 1 outVar_1) (eq outVar_1 outVars0)
+   ite (eq b2 1) (shl outVar_1 2 outVar_2) (eq outVar_2 outVars1)
+   ite (eq b3 1) (shl outVar_2 4 outVar_3) (eq outVar_3 outVars2)
+   ite (eq b4 1) (shl outVar_3 8 outVar_4) (eq outVar_4 outVars_3)
    ...
-   ite (eq bi 1) (shr outVar_i 2^{i-1} outVar_{i+1}) (eq outVar_{i+1} outVars_{i})
+   ite (eq bi 1) (shl outVar_i 2^{i-1} outVar_{i+1}) (eq outVar_{i+1} outVars_{i})
    outVar = outVar_{i+1}
 
 -/
@@ -254,7 +254,8 @@ def sEvalBitWiseSHLNonConstShift {c : ZKConfig}
                                           })
   let nextId' := nextId + numOfBits
   let cfg''' : SymExecConfig c := { cfg'' with nextId := nextId' }
-  let newFFVars := ffVars.foldl (fun acc v => acc.insert v) (ltSpec.newFFVars ∪ shiftSpec.newFFVars)
+  let newFFVars :=
+      ffVars.foldl (fun acc v => acc.insert v) (ltSpec.newFFVars ∪ shiftSpec.newFFVars ∪ {ltVar})
   let newBoolVars := ltSpec.newBoolVars ∪ shiftSpec.newBoolVars
   let initExpSpec : ExprSpec c := {
     inSymEnv := senv,
@@ -410,7 +411,8 @@ def sEvalBitWiseSHRNonConstShift {c : ZKConfig}
                                           })
   let nextId' := nextId + numOfBits
   let cfg''' : SymExecConfig c := { cfg'' with nextId := nextId' }
-  let newFFVars := ffVars.foldl (fun acc v => acc.insert v) (ltSpec.newFFVars ∪ shiftSpec.newFFVars)
+  let newFFVars :=
+      ffVars.foldl (fun acc v => acc.insert v) (ltSpec.newFFVars ∪ shiftSpec.newFFVars ∪ {ltVar})
   let newBoolVars := ltSpec.newBoolVars ∪ shiftSpec.newBoolVars
   let initExpSpec : ExprSpec c := {
     inSymEnv := senv,

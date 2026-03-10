@@ -1,9 +1,9 @@
 func shr_const_test(x:ff) : z:ff {
-  z = bit.shr x 9
+  z = bit.shr x 3
 }
 
 func shl_const_test(x:ff) : z:ff {
-  z = bit.shl x 9
+  z = bit.shl x 3
 }
 
 func shr_nonconst_test(x:ff,y:ff) : z:ff {

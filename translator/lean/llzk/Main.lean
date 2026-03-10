@@ -15,14 +15,15 @@ open Llzk.FFConstraints.SMT
 
 open Cli
 
-def symExec (c : ZKConfig) (_p : Parsed) (inFile : String) (outStream : IO.FS.Stream) : IO Unit := do
+def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Stream) : IO Unit := do
      IO.println s!"Parsing {inFile}..."
      let initialState ← ParserM.fromFile inFile
      let (prog,_) ← StateT.run (@parseProg c []) initialState
      IO.println s!"Adding liveness information..."
      let progWithLiveness := addLivenessProg prog
      IO.println s!"Performing symbolic execution..."
-     match @seExecProg c {} progWithLiveness "main" with
+     let mainFunc := p.flag! "main" |>.as! String
+     match @seExecProg c {} progWithLiveness mainFunc with
      | Except.error e =>
          IO.println s!"Error during symbolic execution: {e}"
      | Except.ok constraints =>
@@ -83,11 +84,12 @@ def llzkCmd : Cmd := `[Cli|
     pp, prettyprint;         "Parse and pretty-print the input program."
     se, symbolicexec;        "Perform symbolic execution of the input program."
     zk, zkconfig : String;   "The ZKConfig to use for symbolic execution (f11,g64)"
+    m, main : String;        "The main function for symbolic execution (default: main)"
     o, output : String;      "The output file. If not provided, stdout is used."
   ARGS:
     input : String;      "The input program"
   EXTENSIONS:
-    defaultValues! #[("zkconfig", "f11")]
+    defaultValues! #[("zkconfig", "f11"), ("main", "main")]
 ]
 
 
