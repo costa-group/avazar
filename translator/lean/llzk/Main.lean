@@ -51,6 +51,7 @@ def getZKConfig (p : Parsed) : IO ZKConfig := do
   let zkConfigStr := p.flag! "zkconfig" |>.as! String
   match zkConfigStr with
   | "f11" => return F11
+  | "f5" => return F5
   | "g64" => return goldilocks64
   | _ => panic! s!"Unsupported ZKConfig: {zkConfigStr}"
 
