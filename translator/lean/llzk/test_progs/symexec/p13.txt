@@ -10,5 +10,9 @@ func shr_nonconst_test(x:ff,y:ff) : z:ff {
   z = bit.shr x y
 }
 
+func shl_nonconst_test(x:ff,y:ff) : z:ff {
+  z = bit.shl x y
+}
+
 func main() {
 }
