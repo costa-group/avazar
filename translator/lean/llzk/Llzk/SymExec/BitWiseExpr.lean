@@ -174,16 +174,6 @@ def sEvalBitWiseSHLConstShift {c : ZKConfig}
   let v2 ← simpleExprToFF senv s2 -- the number of bits
   sEvalBitWiseSHLAux cfg md senv v1 v2.val outFFVar
 
-/-
-   outVars1 = shl outVar0 1
-   outVars2 = shl outVar1 2
-   outVars3 = shl outVar2 4
-   outVars4 = shl outVar2 4
-
-
-
--/
-
 
 def sEvalBitWiseSHL {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
@@ -293,26 +283,31 @@ def sEvalBitWiseSHRNonConstShift {c : ZKConfig}
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
+  let v2 ← simpleExprToTerm senv s2
   let numOfBits := c.k.log2 +1 -- number of bits needed to represent shift amount
   let ltVar := FFVar.mk cfg.nextId { orig_name := "shift_amount_lt_k", src_info := md.src_info }
-  let ltSpec ← sEvalLtUnSignedBitCmp cfg md senv s2 (SimpleExpr.val numOfBits) ltVar -- s2 is not a constant
+  let cfg' : SymExecConfig c := { cfg with nextId := cfg.nextId + 1 }
+  -- the +1 because we are using the encoding of lt
+  let ltSpec ← sEvalLtUnSignedConstLeft cfg' md senv s2 (SimpleExpr.val (numOfBits+1)) ltVar
   -- we only care about the lower bits that represent the shift amount
-  let shiftBits := (ltSpec.lbits.reverse.drop (c.k-numOfBits)).reverse
-  let nextId := ltSpec.nextId
+  let cfg'' : SymExecConfig c := { cfg' with nextId := ltSpec.nextId }
+  let shiftSpec := bitify cfg'' md v2 -- bitify the ltVar to get the bits for the shift amount
+  let shiftBits := (shiftSpec.bits.reverse.drop (c.k-numOfBits)).reverse
+  let nextId := shiftSpec.nextId
   let ffVars := List.range numOfBits |>.map (fun i => FFVar.mk (nextId + i) { orig_name := s!"shift_bit_{i}", src_info := md.src_info })
   let nextId' := nextId + numOfBits
-  let cfg' : SymExecConfig c := { cfg with nextId := nextId' }
-  let newFFVars := ffVars.foldl (fun acc v => acc.insert v) ltSpec.newFFVars
-  let newBoolVars := ltSpec.newBoolVars
+  let cfg''' : SymExecConfig c := { cfg'' with nextId := nextId' }
+  let newFFVars := ffVars.foldl (fun acc v => acc.insert v) (ltSpec.newFFVars ∪ shiftSpec.newFFVars)
+  let newBoolVars := ltSpec.newBoolVars ∪ shiftSpec.newBoolVars
   let initExpSpec : ExprSpec c := {
     inSymEnv := senv,
-    f := .true
+    f := shiftSpec.f,
     resTerm := v1, -- we will update this in the loop, but it needs to be initialized to something
     nextId := nextId',
     newFFVars := newFFVars,
     newBoolVars := newBoolVars
   }
-  let finalExpSpec ← sEvalBitWiseSHRNonConstShift_Loop cfg' md senv shiftBits ffVars 1 initExpSpec
+  let finalExpSpec ← sEvalBitWiseSHRNonConstShift_Loop cfg''' md senv shiftBits ffVars 1 initExpSpec
   let f := .and ltSpec.f
                 (.ite (.eq ltSpec.resTerm (FFTerm.val 1))
                       (.and finalExpSpec.f
