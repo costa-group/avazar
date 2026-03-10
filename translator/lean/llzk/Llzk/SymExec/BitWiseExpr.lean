@@ -133,6 +133,10 @@ def sEvalBitWiseNOT {c : ZKConfig}
     newFFVars := newFFVars
   }
 
+
+/- SHIFT LEFT
+-/
+
 def sEvalBitWiseSHLAux {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
   (senv : SymEnv c) (v1 : FFTerm c) (v2 : Nat) (outFFVar : FFVar)
@@ -175,15 +179,114 @@ def sEvalBitWiseSHLConstShift {c : ZKConfig}
   sEvalBitWiseSHLAux cfg md senv v1 v2.val outFFVar
 
 
+
+
+/-
+
+s2 must fit in floor(log2(k))+1 bits, otherwise the result is 0
+
+   ite (< s2 k) (eq outVar 0) F
+
+where F is as follows. Let b1,...,bi be the log2(k)+1 lsb bits of s2
+
+   outVars0 = s1
+   ite (eq b1 1) (shr outVar_0 1 outVar_1) (eq outVar_1 outVars0)
+   ite (eq b2 1) (shr outVar_1 2 outVar_2) (eq outVar_2 outVars1)
+   ite (eq b3 1) (shr outVar_2 4 outVar_3) (eq outVar_3 outVars2)
+   ite (eq b4 1) (shr outVar_3 8 outVar_4) (eq outVar_4 outVars_3)
+   ...
+   ite (eq bi 1) (shr outVar_i 2^{i-1} outVar_{i+1}) (eq outVar_{i+1} outVars_{i})
+   outVar = outVar_{i+1}
+
+-/
+
+def sEvalBitWiseSHLNonConstShift_Loop {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c)
+  (bits : List (FFTerm c))
+  (ffVars : List (FFVar))
+  (shiftAmount : Nat)
+  (accm : ExprSpec c)
+  : Except String (ExprSpec c) := do
+  match bits, ffVars with
+  | [], [] => return accm -- no more bits to process, return true
+  | b::bs, ffV::ffVs =>
+      let shiftSpec ← sEvalBitWiseSHLAux cfg md senv accm.resTerm shiftAmount ffV
+      let cfg' : SymExecConfig c := { cfg with nextId := shiftSpec.nextId }
+      let ffVTerm := FFTerm.var ffV
+      let newF : FFFormula c := .and accm.f
+                                        (.ite (FFFormula.eq b (FFTerm.val 1))
+                                              shiftSpec.f
+                                              (FFFormula.eq ffVTerm accm.resTerm))
+      let newAccm : ExprSpec c := {
+                                    inSymEnv := senv,
+                                    f := newF,
+                                    nextId := cfg'.nextId,
+                                    resTerm := ffVTerm,
+                                    newFFVars := accm.newFFVars ∪ shiftSpec.newFFVars,
+                                    newBoolVars := accm.newBoolVars ∪ shiftSpec.newBoolVars
+                                  }
+      sEvalBitWiseSHLNonConstShift_Loop cfg md senv bs ffVs (shiftAmount * 2) newAccm
+  | _, _ => throw "Mismatched bits and ffVars lists, should not happen since they are generated together"
+
+
+def sEvalBitWiseSHLNonConstShift {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  : Except String (ExprSpec c) := do
+  let v1 ← simpleExprToTerm senv s1
+  let v2 ← simpleExprToTerm senv s2
+  let numOfBits := c.k.log2 +1 -- number of bits needed to represent shift amount
+  let ltVar := FFVar.mk cfg.nextId { orig_name := "shift_amount_lt_k", src_info := md.src_info }
+  let cfg' : SymExecConfig c := { cfg with nextId := cfg.nextId + 1 }
+  -- the +1 because we are using the encoding of lt
+  let ltSpec ← sEvalLtUnSignedConstLeft cfg' md senv s2 (SimpleExpr.val (numOfBits+1)) ltVar
+  -- we only care about the lower bits that represent the shift amount
+  let cfg'' : SymExecConfig c := { cfg' with nextId := ltSpec.nextId }
+  let shiftSpec := bitify cfg'' md v2 -- bitify the ltVar to get the bits for the shift amount
+  let shiftBits := (shiftSpec.bits.reverse.drop (c.k-numOfBits)).reverse
+  let nextId := shiftSpec.nextId
+  let ffVars := List.range numOfBits |>.map (fun i => FFVar.mk (nextId + i) { orig_name := s!"shift_bit_{i}", src_info := md.src_info })
+  let nextId' := nextId + numOfBits
+  let cfg''' : SymExecConfig c := { cfg'' with nextId := nextId' }
+  let newFFVars := ffVars.foldl (fun acc v => acc.insert v) (ltSpec.newFFVars ∪ shiftSpec.newFFVars)
+  let newBoolVars := ltSpec.newBoolVars ∪ shiftSpec.newBoolVars
+  let initExpSpec : ExprSpec c := {
+    inSymEnv := senv,
+    f := shiftSpec.f,
+    resTerm := v1, -- we will update this in the loop, but it needs to be initialized to something
+    nextId := nextId',
+    newFFVars := newFFVars,
+    newBoolVars := newBoolVars
+  }
+  let finalExpSpec ← sEvalBitWiseSHLNonConstShift_Loop cfg''' md senv shiftBits ffVars 1 initExpSpec
+  let f := .and ltSpec.f
+                (.ite (.eq ltSpec.resTerm (FFTerm.val 1))
+                      (.and finalExpSpec.f
+                            (FFFormula.eq (FFTerm.var outFFVar) finalExpSpec.resTerm))
+                      (FFFormula.eq (FFTerm.var outFFVar) (FFTerm.val 0)))
+  return {
+    inSymEnv := senv,
+    f := f,
+    resTerm := (FFTerm.var outFFVar),
+    nextId := finalExpSpec.nextId,
+    newFFVars := finalExpSpec.newFFVars,
+    newBoolVars := finalExpSpec.newBoolVars
+  }
+
+
 def sEvalBitWiseSHL {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
   match sEvalBitWiseSHLConstShift cfg md senv s1 s2 outFFVar with
   | Except.ok spec => return spec
-  | Except.error _ =>
-      Except.error "Bitwise shift left with non-constant not implemented yet"
+  | Except.error _ => sEvalBitWiseSHLNonConstShift cfg md senv s1 s2 outFFVar
 
+
+
+/- SHIFT RIGHT
+-/
 
 
 def sEvalBitWiseSHRAux {c : ZKConfig}
