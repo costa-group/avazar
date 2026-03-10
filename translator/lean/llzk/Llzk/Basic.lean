@@ -87,3 +87,17 @@ def F11 : ZKConfig := {
    find it automatically.
 -/
 instance : Fact F11.p.Prime := ⟨F11.p_prime⟩
+
+
+
+def F5 : ZKConfig := {
+  k := 3
+  p := 5
+  p_prime := by decide
+  p_fits := by rfl
+}
+
+/- We need to add a fact that myConfig.p is a prime so Lean can
+   find it automatically.
+-/
+instance : Fact F5.p.Prime := ⟨F5.p_prime⟩

@@ -35,7 +35,7 @@ def sEvalEq {c : ZKConfig}
           f := FFFormula.eq
                     (FFTerm.var outFFVar)
                     (FFTerm.ite (FFFormula.eq v1 v2) (.val 1) (.val 0))
-          resVar := outFFVar,
+          resTerm := (FFTerm.var outFFVar),
           nextId := cfg.nextId
   }
 
@@ -55,7 +55,7 @@ def sEvalNeq {c : ZKConfig}
           f := FFFormula.eq
                  (FFTerm.var outFFVar)
                  (FFTerm.ite (FFFormula.eq v1 v2) (.val 0) (.val 1)),
-          resVar := outFFVar,
+          resTerm := (FFTerm.var outFFVar),
           nextId := cfg.nextId
   }
 
@@ -78,7 +78,7 @@ def sEvalBor {c : ZKConfig}
                     (.and (.eq v1 (.val 0)) (.eq v2 (.val 0)))
                     (.val 0)
                     (.val 1)),
-          resVar := outFFVar,
+          resTerm := (FFTerm.var outFFVar),
           nextId := cfg.nextId
   }
 
@@ -100,7 +100,7 @@ def sEvalBAnd {c : ZKConfig}
                     (.or (.eq v1 (.val 0)) (.eq v2 (.val 0)))
                     (.val 0)
                     (.val 1)),
-          resVar := outFFVar,
+          resTerm := (FFTerm.var outFFVar),
           nextId := cfg.nextId
   }
 
@@ -120,7 +120,7 @@ def sEvalBNeg {c : ZKConfig}
                     (.eq v (.val 0))
                     (.val 1)
                     (.val 0)),
-          resVar := outFFVar,
+          resTerm := (FFTerm.var outFFVar),
           nextId := cfg.nextId
   }
 
@@ -151,7 +151,7 @@ def sEvalLtUnSignedConstLeft {c : ZKConfig}
           inSymEnv := senv,
           f := f,
           nextId := cfg.nextId,
-          resVar := outFFVar
+          resTerm := (FFTerm.var outFFVar)
         }
 
 /-
@@ -176,7 +176,7 @@ def sEvalLtUnSignedConstRight {c : ZKConfig}
           inSymEnv := senv,
           f := f,
           nextId := cfg.nextId,
-          resVar := outFFVar
+          resTerm := (FFTerm.var outFFVar)
         }
 
 /- Compare x < y bitwise. We compare the bits of x and y from the
@@ -185,7 +185,7 @@ def sEvalLtUnSignedConstRight {c : ZKConfig}
 def sEvalLtUnSignedBitCmp {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
-  : Except String (ExprSpec c) := do
+  : Except String (CompSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
   let bits1Spec := bitify cfg md v1 -- bitify v1
@@ -203,9 +203,11 @@ def sEvalLtUnSignedBitCmp {c : ZKConfig}
   let f := .and bits1Spec.f (.and bits2Spec.f (.eq (FFTerm.var outFFVar) ite))
   return {
           inSymEnv := senv,
-          f := f
-          resVar := outFFVar,
+          f := f,
+          resTerm := (FFTerm.var outFFVar),
           nextId := bits2Spec.nextId,
+          lbits := bits1Spec.bits,
+          rbits := bits2Spec.bits,
           newFFVars := newFFVars,
           newBoolVars := ∅
   }
@@ -222,7 +224,18 @@ def sEvalLtUnSigned {c : ZKConfig}
   | Except.error _ =>
     match sEvalLtUnSignedConstRight cfg md senv s1 s2 outFFVar with
     | Except.ok spec => return spec
-    | Except.error _ => sEvalLtUnSignedBitCmp cfg md senv s1 s2 outFFVar
+    | Except.error _ =>
+      match sEvalLtUnSignedBitCmp cfg md senv s1 s2 outFFVar with
+      | Except.ok compSpec =>
+        return {
+          inSymEnv := senv,
+          f := compSpec.f,
+          resTerm := (FFTerm.var outFFVar),
+          nextId := compSpec.nextId,
+          newFFVars := compSpec.newFFVars,
+          newBoolVars := compSpec.newBoolVars
+        }
+      | Except.error err => throw err
 
 /- x <= y is be encoded as ~(y < x), which is 1 minus the result
    variable of (y < x).
@@ -242,8 +255,8 @@ def sEvalLeUnSigned {c : ZKConfig}
           -- ltSpec.f /\ outFFVar = 1-outFFVarLt
           f := (.and ltSpec.f (.eq (FFTerm.var outFFVar)
                                    (FFTerm.sub (.val 1) (FFTerm.var outFFVarLt)))),
-          nextId := ltSpec.nextId
-          resVar := outFFVar,
+          nextId := ltSpec.nextId,
+          resTerm := (FFTerm.var outFFVar),
           newFFVars := ltSpec.newFFVars.insert outFFVarLt,
           newBoolVars := ltSpec.newBoolVars
   }
@@ -291,12 +304,14 @@ def sEvalLtSignedConstLeft {c : ZKConfig}
                             (.ite (.range v1 c.midpoint (c.p-1)) (.val 1) (.val 0))) -- any negative
            else
              FFFormula.eq (FFTerm.var outFFVar) -- [0,v-1] or [midpoint, p-1]
-                          (.ite (.or (.range v1 0 (v2-1)) (.range v1 c.midpoint (c.p-1))) (.val 1) (.val 0))
+                          (.ite (.or (.range v1 0 (v2-1)) (.range v1 c.midpoint (c.p-1)))
+                                (.val 1)
+                                (.val 0))
   return {
           inSymEnv := senv,
           f := f,
           nextId := cfg.nextId,
-          resVar := outFFVar
+          resTerm := (FFTerm.var outFFVar)
         }
 
 /- Special case of signed x < y when the lower bound is a constant.
@@ -331,7 +346,7 @@ def sEvalLtSignedConstRight {c : ZKConfig}
           inSymEnv := senv,
           f := f,
           nextId := cfg.nextId,
-          resVar := outFFVar
+          resTerm := (FFTerm.var outFFVar)
         }
 
 /- Encoding signed x < y using the unsigned version.
@@ -375,7 +390,7 @@ def sEvalLtSignedBitCmp {c : ZKConfig}
   return {
           inSymEnv := senv,
           f := .and isS1Pos.f (.and isS2Pos.f (.and ltSpec.f f)),
-          resVar := outFFVar
+          resTerm := (FFTerm.var outFFVar),
           nextId := ltSpec.nextId,
           newFFVars := isS1Pos.newFFVars ∪ isS2Pos.newFFVars ∪ ltSpec.newFFVars ∪
                        {ffVarIsS1Pos, ffVarIsS2Pos, ffVarLt},
@@ -412,8 +427,8 @@ def sEvalLeSigned {c : ZKConfig}
           -- ltSpec.f /\ outFFVar = 1-outFFVarLt
           f := (.and ltSpec.f (.eq (FFTerm.var outFFVar)
                                    (FFTerm.sub (.val 1) (FFTerm.var outFFVarLt)))),
-          nextId := ltSpec.nextId
-          resVar := outFFVar,
+          nextId := ltSpec.nextId,
+          resTerm := (FFTerm.var outFFVar),
           newFFVars := ltSpec.newFFVars.insert outFFVarLt,
           newBoolVars := ltSpec.newBoolVars
   }
