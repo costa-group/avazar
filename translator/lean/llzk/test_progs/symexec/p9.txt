@@ -1,10 +1,17 @@
-func foo(x:ff) : y:ff, z:arr<3> {
+func const_idx_test(x:ff) : y:ff, z:arr<3> {
   array.new 3 z
   y = felt.mul 2 x
   array.read z[0] w
   y = felt.add y w
   array.write x z[1]
 }
+
+
+func nonconst_idx_read(a:arr<3>, i:ff) : y:ff {
+  array.read a[i] x
+  y = felt.add x i
+}
+
 
 func main() {
 }

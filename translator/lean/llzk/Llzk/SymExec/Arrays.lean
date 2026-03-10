@@ -63,11 +63,37 @@ def seArrayReadConstIdx {c : ZKConfig}
          s!"seArrayReadConstIdx: index {idxVal.val} out of bounds for array of size {arr.size}"
   | Except.ok _ => Except.error s!"seArrayReadConstIdx: variable '{a}' is not an array"
 
+
 def seArrayReadNonConstIdx {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
   (out : VarID) (a : VarID) (idx : SimpleExpr c)
   : Except String (CmdsSpec c) := do
-  throw s!"seArrayRead operations with non-constant index not implemented yet"
+  match getVar symEnv a with
+  | Except.error err => Except.error ("seArrayReadNonConstIdx: failed to get array variable: " ++ err)
+  | Except.ok (SymValue.ffArray arr) =>
+    let arrayElements := arr.toList
+    let idxTerm ← simpleExprToTerm symEnv idx -- it is not a value
+    let outFFVar := FFVar.mk (cfg.nextId) { src_info := md.src_info, orig_name := "a_nc_access" }
+    let rec loop (l : List (SymFFVar c)) (i : Nat) : FFFormula c :=
+      match l with
+      | [] => FFFormula.false
+      | elem :: rest =>
+        let elemTerm := symVarToTerm elem
+        let idxEq := FFFormula.eq idxTerm (.val i)
+        let caseFormula := (FFFormula.eq (FFTerm.var outFFVar) elemTerm)
+        let restFormula := loop rest (i + 1)
+        .ite idxEq caseFormula restFormula
+    let f := loop arrayElements 0
+    let newSymEnv := setVar symEnv out (SymValue.ffVar (SymFFVar.var outFFVar))
+    return { inSymEnv := symEnv,
+             outSymEnv := newSymEnv,
+             f := f,
+             nextId := cfg.nextId + 1,
+             newFFVars := { outFFVar },
+             newBoolVars := emptyBoolVarSet
+    }
+  | Except.ok _ => Except.error s!"seArrayReadConstIdx: variable '{a}' is not an array"
+
 
 
 /- Symbolic execution of array read -/
