@@ -22,11 +22,11 @@ def bitifyConst {c : ZKConfig}
   let pows := idxs.map (fun i => FFTerm.val (2 ^ i))
   -- sum of bits[i] * 2^i
   let sum := match bits, pows with
-             | b::bs, p::ps => List.foldl (fun acc (bit, pow) => FFTerm.add acc (FFTerm.mul bit pow))
-                      (FFTerm.mul b p)
-                      (List.zip bs ps)
-             | _, _ => FFTerm.val 0 -- they are the same length, we reach this with empty lists
-  let f := FFFormula.eq (FFTerm.val v) sum
+             | b::bs, p::ps => List.foldl (fun acc (bit, pow) => .add acc (.mul bit pow))
+                                          (.mul b p)
+                                          (List.zip bs ps)
+             | _, _ => .val 0 -- they are the same length, we reach this with empty lists
+  let f := .eq (.val v) sum
   {
     nextId := cfg.nextId,
     bits := bits,
@@ -41,20 +41,25 @@ def bitifyNonConst {c : ZKConfig}
   : BitifySpec c :=
   let startId := cfg.nextId
   let idxs := List.range c.k
-  let ffVars := idxs.map (fun i => FFVar.mk (startId + i) { src_info := md.src_info, orig_name := s!"bit{i}"})
+  let ffVars := idxs.map (fun i => FFVar.mk (startId + i)
+                                            { src_info := md.src_info,
+                                              orig_name := s!"bit{i}"
+                                            })
   let bits := ffVars.map (fun v => FFTerm.var v)
   let pows := idxs.map (fun i => FFTerm.val (2 ^ i))
   -- sum of bits[i] * 2^i
   let sum := match bits, pows with
-             | b::bs, p::ps => List.foldl (fun acc (bit, pow) => FFTerm.add acc (FFTerm.mul bit pow))
-                      (FFTerm.mul b p)
-                      (List.zip bs ps)
+             | b::bs, p::ps => List.foldl
+                                   (fun acc (bit, pow) => FFTerm.add acc (FFTerm.mul bit pow))
+                                   (FFTerm.mul b p)
+                                   (List.zip bs ps)
              | _, _ => FFTerm.val 0 --  they are the same length, we reach this with empty lists
   let sumF := FFFormula.eq e sum
   -- generate x*(1-x) = 0 for each bit to ensure it's boolean
-  let f : FFFormula c:= bits.foldl
-    (fun acc bit => FFFormula.and acc (FFFormula.eq (FFTerm.mul bit (FFTerm.sub (FFTerm.val 1) bit)) (FFTerm.val 0)))
-    sumF
+  let f : FFFormula c:=
+    bits.foldl
+      (fun acc bit => FFFormula.and acc (.eq (.mul bit (.sub (.val 1) bit)) (.val 0)))
+      sumF
   {
     nextId := cfg.nextId + c.k,
     bits := bits,

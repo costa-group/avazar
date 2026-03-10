@@ -156,9 +156,10 @@ def sEvalBitWiseSHLAux {c : ZKConfig}
     let pows := idxs.map (fun i => FFTerm.val (2 ^ (i+v2)))
     let shiftedBits := List.zipWith (fun bit pow => FFTerm.mul bit pow) newBits pows
     let sum := match shiftedBits, pows with
-               | b::bs, p::ps => List.foldl (fun acc (bit, pow) => FFTerm.add acc (FFTerm.mul bit pow))
-                        (FFTerm.mul b p)
-                        (List.zip bs ps)
+               | b::bs, p::ps => List.foldl
+                                   (fun acc (bit, pow) => FFTerm.add acc (FFTerm.mul bit pow))
+                                   (FFTerm.mul b p)
+                                   (List.zip bs ps)
                | _, _ => FFTerm.val 0 -- they are the same length, we reach this with empty lists
     let f : FFFormula c := (.and bits1Spec.f (FFFormula.eq (FFTerm.var outFFVar) sum))
     let newFFVars := bits1Spec.newFFVars
@@ -227,7 +228,7 @@ def sEvalBitWiseSHLNonConstShift_Loop {c : ZKConfig}
                                     newBoolVars := accm.newBoolVars ∪ shiftSpec.newBoolVars
                                   }
       sEvalBitWiseSHLNonConstShift_Loop cfg md senv bs ffVs (shiftAmount * 2) newAccm
-  | _, _ => throw "Mismatched bits and ffVars lists, should not happen since they are generated together"
+  | _, _ => throw "Mismatched bits and ffVars lists, should not happen!"
 
 
 def sEvalBitWiseSHLNonConstShift {c : ZKConfig}
@@ -246,7 +247,11 @@ def sEvalBitWiseSHLNonConstShift {c : ZKConfig}
   let shiftSpec := bitify cfg'' md v2 -- bitify the ltVar to get the bits for the shift amount
   let shiftBits := (shiftSpec.bits.reverse.drop (c.k-numOfBits)).reverse
   let nextId := shiftSpec.nextId
-  let ffVars := List.range numOfBits |>.map (fun i => FFVar.mk (nextId + i) { orig_name := s!"shift_bit_{i}", src_info := md.src_info })
+  let ffVars := List.range numOfBits
+                 |>.map (fun i => FFVar.mk (nextId + i)
+                                           { orig_name := s!"shift_bit_{i}",
+                                             src_info := md.src_info
+                                          })
   let nextId' := nextId + numOfBits
   let cfg''' : SymExecConfig c := { cfg'' with nextId := nextId' }
   let newFFVars := ffVars.foldl (fun acc v => acc.insert v) (ltSpec.newFFVars ∪ shiftSpec.newFFVars)
@@ -308,9 +313,10 @@ def sEvalBitWiseSHRAux {c : ZKConfig}
     let pows := idxs.map (fun i => FFTerm.val (2 ^ i))
     let shiftedBits := List.zipWith (fun bit pow => FFTerm.mul bit pow) newBits pows
     let sum := match shiftedBits, pows with
-               | b::bs, p::ps => List.foldl (fun acc (bit, pow) => FFTerm.add acc (FFTerm.mul bit pow))
-                        (FFTerm.mul b p)
-                        (List.zip bs ps)
+               | b::bs, p::ps => List.foldl
+                                    (fun acc (bit, pow) => FFTerm.add acc (FFTerm.mul bit pow))
+                                    (FFTerm.mul b p)
+                                    (List.zip bs ps)
                | _, _ => FFTerm.val 0 -- they are the same length, we reach this with empty lists
     let f : FFFormula c := (.and bits1Spec.f (FFFormula.eq (FFTerm.var outFFVar) sum))
     let newFFVars := bits1Spec.newFFVars
@@ -378,7 +384,7 @@ def sEvalBitWiseSHRNonConstShift_Loop {c : ZKConfig}
                                     newBoolVars := accm.newBoolVars ∪ shiftSpec.newBoolVars
                                   }
       sEvalBitWiseSHRNonConstShift_Loop cfg md senv bs ffVs (shiftAmount * 2) newAccm
-  | _, _ => throw "Mismatched bits and ffVars lists, should not happen since they are generated together"
+  | _, _ => throw "Mismatched bits and ffVars lists, should not happen!"
 
 
 def sEvalBitWiseSHRNonConstShift {c : ZKConfig}
@@ -397,7 +403,11 @@ def sEvalBitWiseSHRNonConstShift {c : ZKConfig}
   let shiftSpec := bitify cfg'' md v2 -- bitify the ltVar to get the bits for the shift amount
   let shiftBits := (shiftSpec.bits.reverse.drop (c.k-numOfBits)).reverse
   let nextId := shiftSpec.nextId
-  let ffVars := List.range numOfBits |>.map (fun i => FFVar.mk (nextId + i) { orig_name := s!"shift_bit_{i}", src_info := md.src_info })
+  let ffVars := List.range numOfBits
+                |>.map (fun i => FFVar.mk (nextId + i)
+                                          { orig_name := s!"shift_bit_{i}",
+                                            src_info := md.src_info
+                                          })
   let nextId' := nextId + numOfBits
   let cfg''' : SymExecConfig c := { cfg'' with nextId := nextId' }
   let newFFVars := ffVars.foldl (fun acc v => acc.insert v) (ltSpec.newFFVars ∪ shiftSpec.newFFVars)
