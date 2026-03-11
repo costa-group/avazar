@@ -13,11 +13,11 @@ open Llzk.SymExec.Basic
 
 /- Bitify a constant FFTerm. It returns the list of bit terms (constants) and the
    corresponding formula (does not include variables, we return it just for uniformity) -/
-def bitifyConst {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD) (v : FF c)
+def bitifyConst_nbits {c : ZKConfig}
+  (cfg : SymExecConfig c) (_md : CmdMD) (v : FF c) (nbits : Nat)
   : BitifySpec c :=
   let w : BitVec c.k := BitVec.ofNat c.k v.val
-  let idxs := List.range c.k
+  let idxs := List.range nbits
   let bits := idxs.map (fun i => if (w.getLsbD i) then FFTerm.val 1 else FFTerm.val 0)
   let pows := idxs.map (fun i => FFTerm.val (2 ^ i))
   -- sum of bits[i] * 2^i
@@ -35,12 +35,18 @@ def bitifyConst {c : ZKConfig}
     f := f
   }
 
+def bitifyConst {c : ZKConfig}
+  (cfg : SymExecConfig c) (_md : CmdMD) (v : FF c)
+  : BitifySpec c :=
+  bitifyConst_nbits cfg _md v c.k
+
+
 /- Bitify a non-constant FFTerm. It returns the list of bit terms and the corresponding formula -/
-def bitifyNonConst {c : ZKConfig}
-  (cfg : SymExecConfig c) (md : CmdMD) (e : FFTerm c)
+def bitifyNonConst_nbits {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD) (e : FFTerm c) (nbits : Nat)
   : BitifySpec c :=
   let startId := cfg.nextId
-  let idxs := List.range c.k
+  let idxs := List.range nbits
   let ffVars := idxs.map (fun i => FFVar.mk (startId + i)
                                             { src_info := md.src_info,
                                               orig_name := s!"bit{i}"
@@ -69,14 +75,23 @@ def bitifyNonConst {c : ZKConfig}
     newFFVars := ffVars.foldl (fun s v => s.insert v) emptyFFVarSet
   }
 
-def
- bitify {c : ZKConfig}
+/- Bitify a non-constant FFTerm. It returns the list of bit terms and the corresponding formula -/
+def bitifyNonConst {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (e : FFTerm c)
   : BitifySpec c :=
+  bitifyNonConst_nbits cfg md e c.k
+
+
+def bitify_nbits {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD) (e : FFTerm c) (nbits : Nat)
+  : BitifySpec c :=
   match e with
-  | .val val => bitifyConst cfg md val
-  | _ => bitifyNonConst cfg md e
+  | .val val => bitifyConst_nbits cfg md val nbits
+  | _ => bitifyNonConst_nbits cfg md e nbits
 
-
+def bitify {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD) (e : FFTerm c)
+  : BitifySpec c :=
+  bitify_nbits cfg md e c.k
 
 end Llzk.SymExec.SymInstr
