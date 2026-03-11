@@ -135,7 +135,60 @@ def seArrayWriteNonConstIdx {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
   (a : VarID) (idx : SimpleExpr c) (value : SimpleExpr c)
   : Except String (CmdsSpec c) := do
-  throw s!"seArrayWrite operations with non-constant index not implemented yet"
+  match getVar symEnv a with
+  | Except.error err => Except.error ("seArrayWriteNonConstIdx: failed to get array variable: " ++ err)
+  | Except.ok (SymValue.ffArray arr) =>
+    let arrayElements := arr.toList
+    let arrayelementsAsTerms := arrayElements.map symVarToTerm
+    let idxTerm ← simpleExprToTerm symEnv idx -- it is not a value
+    let valueTerm ← simpleExprToTerm symEnv value -- the value to store
+    -- create a new symbolic variables for all element of the array
+    let newFFVars := List.range arr.size
+                      |> List.map
+                            (fun i => FFVar.mk (cfg.nextId+i)
+                                               { src_info := md.src_info,
+                                                 orig_name := s!"{a}_nc_write_{i}"
+                                              })
+    let newArrayelements := newFFVars.map (fun v => SymFFVar.var v)
+    let newArr : SymFFArray c := newArrayelements.toArray
+    let newSymEnv := setVar symEnv a (SymValue.ffArray newArr)
+    -- a list wit equalities for all elements
+    -- create a list
+    let rec loop (l: List (FFTerm c)) (i : Nat ) : List (FFTerm c) :=
+      match l with
+      | [] => []
+      | elem :: rest =>
+          if ( i == 0 ) then
+            -- this is the element to update
+            valueTerm :: rest
+          else
+            elem :: (loop rest (i - 1))
+    let indices := List.range arr.size
+    let eqPairs := indices.map
+          (fun i =>
+              let arrElemAux := loop arrayelementsAsTerms i
+              let eqConstraints := List.zip newFFVars arrElemAux
+                          |> List.map (fun (newV, oldV) =>
+                                let newTerm := FFTerm.var newV
+                                let oldTerm := oldV
+                                FFFormula.eq newTerm oldTerm)
+              let f := eqConstraints.foldl (.and) FFFormula.true
+              (i, f))
+     let f := eqPairs.foldl (fun acc (i, eqF) =>
+                let idxEq := FFFormula.eq idxTerm (.val i)
+                .ite idxEq eqF acc
+              ) FFFormula.false
+     return {
+                inSymEnv := symEnv,
+                outSymEnv := newSymEnv,
+                f := f,
+                nextId := cfg.nextId + arr.size,
+                newFFVars := newFFVars.foldl (fun acc v => acc.insert v) emptyFFVarSet
+                newBoolVars := emptyBoolVarSet
+            }
+  | Except.ok _ => Except.error s!"seArrayWriteNonConstIdx: variable '{a}' is not an array"
+
+
 
 def seArrayWrite {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
@@ -143,8 +196,7 @@ def seArrayWrite {c : ZKConfig}
   : Except String (CmdsSpec c) := do
   match seArrayWriteConstIdx cfg md symEnv a idx value with
   | Except.ok spec => return spec
-  | Except.error e =>
-     seArrayWriteNonConstIdx cfg md symEnv a idx value
+  | Except.error _ => seArrayWriteNonConstIdx cfg md symEnv a idx value
 
 /- Symbolic execution of array copy -/
 def seArrayCopy {c : ZKConfig}
