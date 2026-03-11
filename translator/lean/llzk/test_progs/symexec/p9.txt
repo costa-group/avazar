@@ -12,6 +12,11 @@ func nonconst_idx_read(a:arr<3>, i:ff) : y:ff {
   y = felt.add x i
 }
 
+func nonconst_idx_write(a:arr<3>, v:ff, i:ff) : y:arr<3> {
+  array.write v a[i]
+  array.copy a y
+}
+
 
 func main() {
 }
