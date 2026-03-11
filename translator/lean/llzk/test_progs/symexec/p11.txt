@@ -1,4 +1,4 @@
-func foo(x:ff) : y:ff, z:arr<3> {
+func foo(x:ff) -> y:ff, z:arr<3> {
   y = felt.add x x
   array.new 3 z
   i = 0
@@ -9,6 +9,28 @@ func foo(x:ff) : y:ff, z:arr<3> {
     i = felt.add i 1
   }
 }
+
+func foo(x:ff) -> y:ff {
+  w = 10
+  z = felt.sub w 1
+  i = 0
+  repeat w {
+    if ( i == z ) {
+      n = i
+    } else {
+      n = 20
+    }
+    j = 0
+    repeat n {
+      x = felt.add x 1
+      j = felt.add j 1
+    }
+    i = felt.add i 1
+  }
+  y = x
+}
+
+
 
 func main() {
 }
