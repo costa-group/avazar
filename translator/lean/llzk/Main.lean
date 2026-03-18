@@ -33,7 +33,9 @@ def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Str
        outStream.flush
 
 /- Pretty printing of a given program -/
-def prettyPrinting (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Stream) : IO Unit := do
+def prettyPrinting
+     (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Stream)
+     : IO Unit := do
      let fc : FormatConfig := {
        indentSize := 2,
        showLiveness := p.hasFlag "showliveness"
