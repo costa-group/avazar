@@ -69,7 +69,8 @@ def seArrayReadNonConstIdx {c : ZKConfig}
   (out : VarID) (a : VarID) (idx : SimpleExpr c)
   : Except String (CmdsSpec c) := do
   match getVar symEnv a with
-  | Except.error err => Except.error ("seArrayReadNonConstIdx: failed to get array variable: " ++ err)
+  | Except.error err =>
+    Except.error ("seArrayReadNonConstIdx: failed to get array variable: " ++ err)
   | Except.ok (SymValue.ffArray arr) =>
     let arrayElements := arr.toList
     let idxTerm ← simpleExprToTerm symEnv idx -- it is not a value
@@ -136,7 +137,8 @@ def seArrayWriteNonConstIdx {c : ZKConfig}
   (a : VarID) (idx : SimpleExpr c) (value : SimpleExpr c)
   : Except String (CmdsSpec c) := do
   match getVar symEnv a with
-  | Except.error err => Except.error ("seArrayWriteNonConstIdx: failed to get array variable: " ++ err)
+  | Except.error err =>
+    Except.error ("seArrayWriteNonConstIdx: failed to get array variable: " ++ err)
   | Except.ok (SymValue.ffArray arr) =>
     let arrayElements := arr.toList
     let arrayelementsAsTerms := arrayElements.map symVarToTerm
@@ -174,7 +176,7 @@ def seArrayWriteNonConstIdx {c : ZKConfig}
                                 FFFormula.eq newTerm oldTerm)
               let f := eqConstraints.foldl (.and) FFFormula.true
               (i, f))
-     let f := eqPairs.foldl (fun acc (i, eqF) =>
+     let f := eqPairs.reverse.foldl (fun acc (i, eqF) =>
                 let idxEq := FFFormula.eq idxTerm (.val i)
                 .ite idxEq eqF acc
               ) FFFormula.false

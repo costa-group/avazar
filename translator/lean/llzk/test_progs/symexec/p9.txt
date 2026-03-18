@@ -12,9 +12,15 @@ func nonconst_idx_read(a:arr<3>, i:ff) : y:ff {
   y = felt.add x i
 }
 
-func nonconst_idx_write(a:arr<3>, v:ff, i:ff) : y:arr<3> {
+func nonconst_idx_write(a:arr<3>, v:ff, i:ff) : z:ff {
   array.write v a[i]
-  array.copy a y
+  i = 0
+  z = 0
+  repeat 3 {
+    array.read a[i] aux
+    z = felt.add z aux
+    i = felt.add i 1
+  }
 }
 
 
