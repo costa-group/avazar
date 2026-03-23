@@ -16,16 +16,26 @@ class FeltUnary(Operation):
               attr-dict
     """
 
+
+
+    FELT_UNARY = ["felt.bit_not", "felt.const",
+                  "felt.inv", "felt.neg", ]
+
+    
     def __init__(self, variable: SSAVar, op: str,
                  operand: SSAVar, types: List[Type]):
         self.result = variable
         self.op = op
         self.operand = operand
         self.types = types
-
+        
     def dialect(self) -> Dialect:
         return Dialect.felt_d
 
+    def match(line: str) -> bool:
+        op_name = line.split('=')[-1].strip().split()[0]
+        return op_name in FELT_UNARY
+    
     @classmethod
     def parse(cls, line: str) -> 'FeltUnary':
         pattern = re.compile(r"\s*(?P<res>\S+)\s*=\s*(?P<op>\S+)\s*(?P<operand>\S+)\s*(?:\s*:\s*(?P<types>\S.*\S))?\s*")
@@ -54,6 +64,8 @@ class FeltConst(Operation):
     Syntax: operation ::= `felt.const` $value attr-dict
     """
 
+    FELT_CONST = ["felt.const"]
+    
     def __init__(self, variable: SSAVar, constant: int):
         self.result = variable
         self.constant = constant
@@ -61,6 +73,10 @@ class FeltConst(Operation):
     def dialect(self) -> Dialect:
         return Dialect.felt_d
 
+    def match(line: str) -> bool:
+        op_name = line.split('=')[-1].strip().split()[0]
+        return op_name in FELT_CONST
+    
     @classmethod
     def parse(cls, line: str) -> 'FeltConst':
         pattern = re.compile(r"\s*(?P<res>\S+)\s*=\s*felt.const\s*(?P<operand>\S+)\s*")
@@ -85,6 +101,14 @@ class FeltBinary(Operation):
               attr-dict
     """
 
+    FELT_BINARY = ["felt.add", "felt.bit_and",
+               "felt.bit_or", "felt.bit_xor",
+               "felt.div", "felt.mul", "felt.pow",
+               "felt.shl", "felt.shr", "felt.sintdiv",
+               "felt.smod", "felt.sub",
+               "felt.uintdiv", "felt.umod"]
+
+    
     def __init__(self, variable: SSAVar, op: str, lhs: SSAVar,
                  rhs: SSAVar, types: List[Type]):
         self.result = variable
@@ -96,6 +120,10 @@ class FeltBinary(Operation):
     def dialect(self) -> Dialect:
         return Dialect.felt_d
 
+    def match(line: str) -> bool:
+        op_name = line.split('=')[-1].strip().split()[0]
+        return op_name in FELT_BINARY
+    
     @classmethod
     def parse(cls, line: str) -> 'FeltBinary':
         pattern = re.compile(r"\s*(?P<res>\S+)\s*=\s*(?P<op>\S+)\s*(?P<op1>\S+)\s*,\s*(?P<op2>\S+)(?:\s*:\s*(?P<types>\S.*\S))?\s*")
@@ -115,3 +143,12 @@ class FeltBinary(Operation):
     def __repr__(self):
         optional_type = '' if len(self.types) == 0 else f' : {", ".join([repr(type_) for type_ in self.types])}'
         return f"FeltBinary({self.result} = {self.op}({self.lhs}, {self.rhs})){optional_type}"
+
+
+class FeltDialect(Dialect):
+    def __init__(self):
+        super().__init__()
+
+        self.register(FeltConst)
+        self.register(FeltBinary)
+        self.register(FeltUnary)
