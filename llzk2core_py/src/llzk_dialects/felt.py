@@ -147,7 +147,7 @@ class FeltBinary(Operation):
 
 class FeltDialect(Dialect):
     def __init__(self):
-        super().__init__()
+        super().__init__("felt")
 
         self.register(FeltConst)
         self.register(FeltBinary)
