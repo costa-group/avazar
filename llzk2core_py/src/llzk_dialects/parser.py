@@ -12,6 +12,10 @@ class LLZKParser:
     def add_dialect(self, dialect):
         self.dialects[dialect.name] = dialect
 
+    def add_dialects(self, dialects):
+        for dl in dialects:
+            self.add_dialect(dl)
+        
         
     def find_closing_brace(self, start_index: int) -> int:
         """Busca la llave de cierre balanceada en el array de líneas."""
