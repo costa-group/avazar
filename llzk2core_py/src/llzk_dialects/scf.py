@@ -7,10 +7,14 @@ class SCFIf(Operation):
     pass
 
 
-class SCFDialect:
+class SCFDialect(Dialect):
     def __init__(self):
-        self.name = "scf"
+        super().__init__("scf")
+        self.register(SCFWhile)
+        self.register(SCFIf)
+ 
 
+        
     def parse_complex(self, 
                       cursor: int, 
                       lines: List[str], 
