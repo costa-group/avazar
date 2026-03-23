@@ -1,6 +1,8 @@
 from enum import Enum
+from typing import List
 
-class Dialect(Enum):
+
+class Dialect(Enum, ABC):
     array_d = 1
     bool_d = 2
     cast_d = 3
@@ -14,16 +16,35 @@ class Dialect(Enum):
     string_d = 11
     struct_d = 12
 
-FELT_CONST = ["felt.const"]
+    def __init__(self, name: str):
+        self.name = name
+        self.registered_ops: List[Type[Operation]] = []
 
-FELT_UNARY = ["felt.bit_not", "felt.const",
-              "felt.inv", "felt.neg", ]
+    def get_name(self):
+        return self.name
+        
+    def register(self, op: Operation):
+        self.registered_ops.append(op)
+        return op
 
-FELT_BINARY = ["felt.add", "felt.bit_and",
-               "felt.bit_or", "felt.bit_xor",
-               "felt.div", "felt.mul", "felt.pow",
-               "felt.shl", "felt.shr", "felt.sintdiv",
-               "felt.smod", "felt.sub",
-               "felt.uintdiv", "felt.umod"]
+    def parse_line(self, line: str) -> Operation:
+        for op in self.registered_ops:
+            if op.match(line):
+                return op.parse(line)
+        raise ValueError(f"No operation found in dialect '{self.name}' for: {line}")
 
-FELT_OPS = [*FELT_CONST, *FELT_UNARY, *FELT_BINARY]
+    
+    
+# FELT_CONST = ["felt.const"]
+
+# FELT_UNARY = ["felt.bit_not", "felt.const",
+#               "felt.inv", "felt.neg", ]
+
+# FELT_BINARY = ["felt.add", "felt.bit_and",
+#                "felt.bit_or", "felt.bit_xor",
+#                "felt.div", "felt.mul", "felt.pow",
+#                "felt.shl", "felt.shr", "felt.sintdiv",
+#                "felt.smod", "felt.sub",
+#                "felt.uintdiv", "felt.umod"]
+
+# FELT_OPS = [*FELT_CONST, *FELT_UNARY, *FELT_BINARY]
