@@ -76,6 +76,10 @@ class Operation(ABC):
     def dialect(self) -> Dialect:
         pass
 
+    @abstractmethod
+    def match(line: str) -> bool:
+        pass
+    
     @classmethod
     @abstractmethod
     def parse(cls, line: str) -> 'Operation':
