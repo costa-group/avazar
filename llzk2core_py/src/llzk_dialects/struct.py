@@ -43,3 +43,5 @@ class StructDialect(Dialect):
             
         # Para operaciones simples como struct.new, struct.readf, etc.
         return self.parse_line(line), cursor + 1
+
+    
