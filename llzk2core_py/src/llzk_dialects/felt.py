@@ -5,7 +5,7 @@ Module that contains the parser for the dialect 'felt'
 import re
 from typing import List
 from src.llzk_dialects.core import Operation, SSAVar, Type
-from src.llzk_dialects.definitions import Dialect, FELT_UNARY, FELT_BINARY
+from src.llzk_dialects.definitions import Dialect
 
 class FeltUnary(Operation):
     """
@@ -38,7 +38,7 @@ class FeltUnary(Operation):
     
     @classmethod
     def parse(cls, line: str) -> 'FeltUnary':
-        pattern = re.compile(r"\s*(?P<res>\S+)\s*=\s*(?P<op>\S+)\s*(?P<operand>\S+)\s*(?:\s*:\s*(?P<types>\S.*\S))?\s*")
+        pattern = re.compile(r"\s*(?P<res>\S+)\s*=\s*(?P<op>\S+)\s*(?P<operand>\S+)\s*(?:\s*:\s*(?P<types>\S.*\S))?\s*)"
         match = re.fullmatch(pattern, line)
         if not match:
             raise ValueError(f"Failed to parse FeltUnary: {line}")
@@ -79,7 +79,7 @@ class FeltConst(Operation):
     
     @classmethod
     def parse(cls, line: str) -> 'FeltConst':
-        pattern = re.compile(r"\s*(?P<res>\S+)\s*=\s*felt.const\s*(?P<operand>\S+)\s*")
+        pattern = re.compile(r"\s*(?P<res>\S+)\s*=\s*felt\.const\s*(?P<operand>\S+)\s*")
         match = re.fullmatch(pattern, line)
         if not match:
             raise ValueError(f"Failed to parse FeltConst: {line}")
