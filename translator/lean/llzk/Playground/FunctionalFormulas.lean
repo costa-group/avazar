@@ -9,16 +9,26 @@ open Llzk.FFConstraints.Basic
 structure IOFormula (c : ZKConfig) where
   inFFVars : FFVarSet := emptyFFVarSet
   auxFFVars : FFVarSet := emptyFFVarSet
+  inBoolVars : BoolVarSet := emptyBoolVarSet
   auxBoolVars : BoolVarSet := emptyBoolVarSet
   f : FFFormula c := FFFormula.false
-  h : inFFVars ∩ auxFFVars = ∅
-  -- hf stands for a functional formula
-  --  for any ρ (which is used as a valuation for inFFVars), we can obtain assignment ρ' that
-  --  satisfies f such that ρ(x) = ρ'(x) for all x in inFFVars.
-  --  This is a technical condition that is needed for the proofs later.
-  deriving Inhabited
 
+  hff : inFFVars ∩ auxFFVars = ∅
+  hb  : inBoolVars ∩ auxBoolVars = ∅
+  all_ff_vars : inFFVars ∪ auxFFVars = ffvars f
+  all_bool_vars : inBoolVars ∪ auxBoolVars = boolvars f
 
+  -- hf stands for a functional formula:
+  --   for any σ (which is used as a valuation for inFFVars), we can obtain assignment
+  --   σ' that satisfies f such that σ(x) = σ'(x) for all x in inFFVars and inBoolVars.
+  hfunct :  ∀ (σ : Llzk.FFConstraints.Satisfiability.Assignment c) (ms : List (FFMacro c)),
+            -- Llzk.FFConstraints.Satisfiability.evalFormula σ f ms = Except.ok true ->
+              ∃ (σ' : Llzk.FFConstraints.Satisfiability.Assignment c),
+                (∀ x ∈ inFFVars, σ.ff x.id = σ'.ff x.id) ∧
+                (∀ x ∈ inBoolVars, σ.bool x.id = σ'.bool x.id) ∧
+                Llzk.FFConstraints.Satisfiability.evalFormula σ' f ms = Except.ok true
+ -- 'hfunct' basically says that every IOFormula is satisfiable. For every value of the input variables
+ -- it is always possible to find correct values to the aux variables.
 
 /-
 
@@ -34,8 +44,22 @@ Theorem T:
 Any assignment ρ that satisfies f1.f can be extended to an assignment ρ'
 that satisfies f2.f by assigning "arbitrary" values to the variables in
 f2.auxFFVars and f2.auxBoolVars.
-
-
+-/
+theorem formula_combination {c : ZKConfig} (f1 f2 : IOFormula c) (ms : List (FFMacro c)) :
+  (f2.auxFFVars ∩ f1.inFFVars = ∅) →
+  (f2.auxBoolVars ∩ f1.inBoolVars = ∅) →
+  (f1.auxFFVars ∩ f2.auxFFVars = ∅) →
+  (f1.inFFVars ∩ f1.auxFFVars = ∅) →
+  (f2.inFFVars ∩ f2.auxFFVars = ∅) →
+  (∀ σ, Llzk.FFConstraints.Satisfiability.evalFormula σ f1.f ms = Except.ok true →
+          ∃ σ', (∀ x ∈ f1.inFFVars, σ.ff x.id = σ'.ff x.id) ∧
+                (∀ x ∈ f1.inBoolVars, σ.bool x.id = σ'.bool x.id) ∧
+                (∀ x ∈ f1.auxFFVars, σ.ff x.id = σ'.ff x.id) ∧
+                (∀ x ∈ f1.auxBoolVars, σ.bool x.id = σ'.bool x.id) ∧
+                Llzk.FFConstraints.Satisfiability.evalFormula σ' f2.f ms = Except.ok true)
+  := by
+    sorry
+/-
 Other interesting properties about aux variables in IOFormulas (same for bool vars). These should
 follow from the fact that aux variables are "freshly" generated and do not overlap with anything else:
 
