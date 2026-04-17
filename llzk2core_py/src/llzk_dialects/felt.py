@@ -1,116 +1,131 @@
 """
-Module that contains the parser for the dialect 'felt'
-(finite elements)
+Felt dialect — finite field element operations.
+Prefix: felt.
+
+Operations are grouped by arity:
+  FeltConst  — felt.const  (constant literal)
+  FeltUnary  — felt.bit_not, felt.inv, felt.neg
+  FeltBinary — felt.add, felt.bit_and, felt.bit_or, felt.bit_xor, felt.div,
+               felt.mul, felt.pow, felt.shl, felt.shr, felt.sintdiv,
+               felt.smod, felt.sub, felt.uintdiv, felt.umod
 """
+
 import re
 from typing import List
-from src.llzk_dialects.core import Operation, SSAVar, Type
+
+from src.llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from src.llzk_dialects.definitions import Dialect
+
+
+class FeltConst(Operation):
+    """
+    Field element constant.
+
+    Syntax: %result = felt.const $value
+    Example: %c = felt.const 42
+    """
+
+    _OPS = {"felt.const"}
+
+    def __init__(self, variable: SSAVar, constant: int):
+        self.result = variable
+        self.constant = constant
+
+    def dialect(self) -> Dialect:
+        return Dialect("felt")
+
+    @staticmethod
+    def match(line: str) -> bool:
+        return line.split('=')[-1].strip().split()[0] in FeltConst._OPS
+
+    @classmethod
+    def parse(cls, line: str) -> 'FeltConst':
+        pattern = re.compile(
+            r"\s*(?P<res>\S+)\s*=\s*felt\.const\s+(?P<value>\S+)\s*"
+        )
+        m = re.fullmatch(pattern, line)
+        if not m:
+            raise ValueError(f"Failed to parse FeltConst: {line}")
+        return FeltConst(SSAVar.parse(m["res"]), int(m["value"]))
+
+    def to_core(self, ctx: TranslationContext) -> str:
+        # TODO: implement core translation
+        raise NotImplementedError
+
+    def __repr__(self):
+        return f"FeltConst({self.result} = {self.constant})"
+
 
 class FeltUnary(Operation):
     """
-    Unary operations (except for 'felt.const').
+    Unary field element operations.
 
-    Syntax: operation ::= `op` $operand
-              `` custom<InferredOrParsedType>(type($operand), "true")
-              attr-dict
+    Syntax: %result = <op> $operand [: type($operand)]
+    Ops: felt.bit_not, felt.inv, felt.neg
     """
 
+    _OPS = {"felt.bit_not", "felt.inv", "felt.neg"}
 
-
-    FELT_UNARY = ["felt.bit_not", "felt.const",
-                  "felt.inv", "felt.neg", ]
-
-    
     def __init__(self, variable: SSAVar, op: str,
                  operand: SSAVar, types: List[Type]):
         self.result = variable
         self.op = op
         self.operand = operand
         self.types = types
-        
-    def dialect(self) -> Dialect:
-        return Dialect.felt_d
 
+    def dialect(self) -> Dialect:
+        return Dialect("felt")
+
+    @staticmethod
     def match(line: str) -> bool:
-        op_name = line.split('=')[-1].strip().split()[0]
-        return op_name in FELT_UNARY
-    
+        return line.split('=')[-1].strip().split()[0] in FeltUnary._OPS
+
     @classmethod
     def parse(cls, line: str) -> 'FeltUnary':
-        pattern = re.compile(r"\s*(?P<res>\S+)\s*=\s*(?P<op>\S+)\s*(?P<operand>\S+)\s*(?:\s*:\s*(?P<types>\S.*\S))?\s*)"
-        match = re.fullmatch(pattern, line)
-        if not match:
+        pattern = re.compile(
+            r"\s*(?P<res>\S+)\s*=\s*(?P<op>\S+)\s+(?P<operand>\S+)"
+            r"(?:\s*:\s*(?P<types>\S.*\S))?\s*"
+        )
+        m = re.fullmatch(pattern, line)
+        if not m:
             raise ValueError(f"Failed to parse FeltUnary: {line}")
-        else:
-            if match["types"] is not None:
-                print("Types", match["types"])
-                types = [Type.parse(type_.strip()) for type_ in match["types"].split(",")]
-            else:
-                types = []
-            assert match["op"] in FELT_UNARY, f"Unary operation in Felt has not been recognized: {match['op']}. Expression: {line}"
-            return FeltUnary(SSAVar.parse(match["res"]), match["op"],
-                             SSAVar.parse(match["operand"]), types)
+        types = (
+            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            if m["types"] else []
+        )
+        assert m["op"] in FeltUnary._OPS, \
+            f"Unary operation in Felt not recognised: {m['op']}. Expression: {line}"
+        return FeltUnary(SSAVar.parse(m["res"]), m["op"],
+                         SSAVar.parse(m["operand"]), types)
+
+    def to_core(self, ctx: TranslationContext) -> str:
+        # TODO: implement core translation
+        raise NotImplementedError
 
     def __repr__(self):
-        optional_type = '' if len(self.types) == 0 else f' : {", ".join([repr(type_) for type_ in self.types])}'
-        return f"FeltUnary({self.result} = {self.op}({self.operand}){optional_type}"
-
-
-class FeltConst(Operation):
-    """
-    Const Operation.
-
-    Syntax: operation ::= `felt.const` $value attr-dict
-    """
-
-    FELT_CONST = ["felt.const"]
-    
-    def __init__(self, variable: SSAVar, constant: int):
-        self.result = variable
-        self.constant = constant
-
-    def dialect(self) -> Dialect:
-        return Dialect.felt_d
-
-    def match(line: str) -> bool:
-        op_name = line.split('=')[-1].strip().split()[0]
-        return op_name in FELT_CONST
-    
-    @classmethod
-    def parse(cls, line: str) -> 'FeltConst':
-        pattern = re.compile(r"\s*(?P<res>\S+)\s*=\s*felt\.const\s*(?P<operand>\S+)\s*")
-        match = re.fullmatch(pattern, line)
-        if not match:
-            raise ValueError(f"Failed to parse FeltConst: {line}")
-        else:
-            return FeltConst(SSAVar.parse(match["res"]), int(match["operand"]))
-
-    def __repr__(self):
-        return f"FeltConst({self.result} = {self.constant})"
-
+        type_str = ('' if not self.types
+                    else ' : ' + ', '.join(repr(t) for t in self.types))
+        return f"FeltUnary({self.result} = {self.op}({self.operand}){type_str})"
 
 
 class FeltBinary(Operation):
     """
-    Binary operations.
+    Binary field element operations.
 
-    Syntax: operation ::= `op` $lhs `,` $rhs
-              `` custom<InferredOrParsedType>(type($lhs), "true")
-              `` custom<InferredOrParsedType>(type($rhs), "false")
-              attr-dict
+    Syntax: %result = <op> $lhs, $rhs [: type($lhs), type($rhs)]
+    Ops: felt.add, felt.bit_and, felt.bit_or, felt.bit_xor, felt.div,
+         felt.mul, felt.pow, felt.shl, felt.shr, felt.sintdiv,
+         felt.smod, felt.sub, felt.uintdiv, felt.umod
     """
 
-    FELT_BINARY = ["felt.add", "felt.bit_and",
-               "felt.bit_or", "felt.bit_xor",
-               "felt.div", "felt.mul", "felt.pow",
-               "felt.shl", "felt.shr", "felt.sintdiv",
-               "felt.smod", "felt.sub",
-               "felt.uintdiv", "felt.umod"]
+    _OPS = {
+        "felt.add", "felt.bit_and", "felt.bit_or", "felt.bit_xor",
+        "felt.div", "felt.mul", "felt.pow", "felt.shl", "felt.shr",
+        "felt.sintdiv", "felt.smod", "felt.sub", "felt.uintdiv", "felt.umod",
+    }
 
-    
-    def __init__(self, variable: SSAVar, op: str, lhs: SSAVar,
-                 rhs: SSAVar, types: List[Type]):
+    def __init__(self, variable: SSAVar, op: str,
+                 lhs: SSAVar, rhs: SSAVar, types: List[Type]):
         self.result = variable
         self.op = op
         self.lhs = lhs
@@ -118,37 +133,45 @@ class FeltBinary(Operation):
         self.types = types
 
     def dialect(self) -> Dialect:
-        return Dialect.felt_d
+        return Dialect("felt")
 
+    @staticmethod
     def match(line: str) -> bool:
-        op_name = line.split('=')[-1].strip().split()[0]
-        return op_name in FELT_BINARY
-    
+        return line.split('=')[-1].strip().split()[0] in FeltBinary._OPS
+
     @classmethod
     def parse(cls, line: str) -> 'FeltBinary':
-        pattern = re.compile(r"\s*(?P<res>\S+)\s*=\s*(?P<op>\S+)\s*(?P<op1>\S+)\s*,\s*(?P<op2>\S+)(?:\s*:\s*(?P<types>\S.*\S))?\s*")
-        match = re.fullmatch(pattern, line)
-        if not match:
+        pattern = re.compile(
+            r"\s*(?P<res>\S+)\s*=\s*(?P<op>\S+)\s+(?P<lhs>\S+)\s*,\s*(?P<rhs>\S+)"
+            r"(?:\s*:\s*(?P<types>\S.*\S))?\s*"
+        )
+        m = re.fullmatch(pattern, line)
+        if not m:
             raise ValueError(f"Failed to parse FeltBinary: {line}")
-        else:
-            if match["types"] is not None:
-                print("Types", match["types"])
-                types = [Type.parse(type_.strip()) for type_ in match["types"].split(",")]
-            else:
-                types = []
-            assert match["op"] in FELT_BINARY, f"Binary operation in Felt has not been recognized: {match['op']}. Expression: {line}"
-            return FeltBinary(SSAVar.parse(match["res"]), match["op"], SSAVar.parse(match["op1"]),
-                              SSAVar.parse(match["op2"]), types)
+        types = (
+            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            if m["types"] else []
+        )
+        assert m["op"] in FeltBinary._OPS, \
+            f"Binary operation in Felt not recognised: {m['op']}. Expression: {line}"
+        return FeltBinary(SSAVar.parse(m["res"]), m["op"],
+                          SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]), types)
+
+    def to_core(self, ctx: TranslationContext) -> str:
+        # TODO: implement core translation
+        raise NotImplementedError
 
     def __repr__(self):
-        optional_type = '' if len(self.types) == 0 else f' : {", ".join([repr(type_) for type_ in self.types])}'
-        return f"FeltBinary({self.result} = {self.op}({self.lhs}, {self.rhs})){optional_type}"
+        type_str = ('' if not self.types
+                    else ' : ' + ', '.join(repr(t) for t in self.types))
+        return f"FeltBinary({self.result} = {self.op}({self.lhs}, {self.rhs})){type_str}"
 
 
 class FeltDialect(Dialect):
+    """Registry for all felt dialect operations."""
+
     def __init__(self):
         super().__init__("felt")
-
         self.register(FeltConst)
-        self.register(FeltBinary)
         self.register(FeltUnary)
+        self.register(FeltBinary)
