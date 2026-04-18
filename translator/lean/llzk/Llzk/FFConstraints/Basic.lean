@@ -151,6 +151,53 @@ inductive FFFormula (c : ZKConfig) where
 
 end
 
+
+-- FF vars in a FFFormula
+mutual
+
+def ffvarsTerm {c : ZKConfig} : FFTerm c → FFVarSet
+  | .val _ => emptyFFVarSet
+  | .var v => emptyFFVarSet.insert v
+  | .add a b | .sub a b | .mul a b => (ffvarsTerm a).union (ffvarsTerm b)
+  | .neg a => ffvarsTerm a
+  | .ite cond t e => (ffvars cond).union ((ffvarsTerm t).union (ffvarsTerm e))
+
+def ffvars {c : ZKConfig} : FFFormula c -> FFVarSet
+  | .true | .false => emptyFFVarSet
+  | .range t _ _ => ffvarsTerm t
+  | .bool _ => emptyFFVarSet
+  | .eq a b | .lt a b | .gt a b | .le a b | .ge a b => (ffvarsTerm a).union (ffvarsTerm b)
+  | .and a b | .or a b | .imply a b | .iff a b => (ffvars a).union (ffvars b)
+  | .not a => ffvars a
+  | .ite cond t e => (ffvars cond).union ((ffvars t).union (ffvars e))
+  | .call _ _ => emptyFFVarSet -- TODO
+
+end
+
+
+-- Bool vars in a FFFormula
+mutual
+
+def boolvarsTerm {c : ZKConfig} : FFTerm c → BoolVarSet
+  | .val _ => emptyBoolVarSet
+  | .var _ => emptyBoolVarSet
+  | .add a b | .sub a b | .mul a b => (boolvarsTerm a).union (boolvarsTerm b)
+  | .neg a => boolvarsTerm a
+  | .ite cond t e => (boolvars cond).union ((boolvarsTerm t).union (boolvarsTerm e))
+
+def boolvars {c : ZKConfig} : FFFormula c -> BoolVarSet
+  | .true | .false => emptyBoolVarSet
+  | .range t _ _ => boolvarsTerm t
+  | .bool v => emptyBoolVarSet.insert v
+  | .eq a b | .lt a b | .gt a b | .le a b | .ge a b => (boolvarsTerm a).union (boolvarsTerm b)
+  | .and a b | .or a b | .imply a b | .iff a b => (boolvars a).union (boolvars b)
+  | .not a => boolvars a
+  | .ite cond t e => (boolvars cond).union ((boolvars t).union (boolvars e))
+  | .call _ _ => emptyBoolVarSet -- TODO
+
+end
+
+
 /- Trivial definition for size of formula, to be used for proving termination.
    Tried to use the default sizeOf but failed to unfold at some point.
    Revisit this later. -/
