@@ -1,9 +1,9 @@
 import pytest
-from src.llzk_dialects.scf import SCFYield, SCFCondition, SCFIf, SCFFor, SCFWhile
-from src.llzk_dialects.core import SSAVar, Type
-from src.llzk_dialects.felt import FeltConst, FeltBinary
-from src.llzk_dialects.bool import BoolCmp
-from src.llzk_dialects.constrain import ConstrainEq
+from llzk_dialects.scf import SCFYield, SCFCondition, SCFIf, SCFFor, SCFWhile
+from llzk_dialects.core import SSAVar, Type
+from llzk_dialects.felt import FeltConst, FeltBinary
+from llzk_dialects.bool import BoolCmp
+from llzk_dialects.constrain import ConstrainEq
 
 
 class TestSCF:

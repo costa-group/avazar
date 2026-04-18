@@ -1,10 +1,10 @@
 import pytest
-from src.llzk_dialects.poly import (
+from llzk_dialects.poly import (
     PolyApplyMap, PolyReadConst, PolyUnifiableCast,
     PolyParam, PolyYield, PolyExpr, PolyTemplate,
 )
-from src.llzk_dialects.core import SSAVar, GlobalVariable, Type
-from src.llzk_dialects.felt import FeltConst
+from llzk_dialects.core import SSAVar, GlobalVariable, Type
+from llzk_dialects.felt import FeltConst
 
 
 class TestPoly:

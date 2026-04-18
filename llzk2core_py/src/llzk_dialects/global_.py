@@ -13,8 +13,8 @@ Operations:
 import re
 from typing import Optional
 
-from src.llzk_dialects.core import Operation, SSAVar, GlobalVariable, Type, TranslationContext
-from src.llzk_dialects.definitions import Dialect
+from llzk_dialects.core import Operation, SSAVar, GlobalVariable, Type, TranslationContext
+from llzk_dialects.definitions import Dialect
 
 
 class GlobalDef(Operation):

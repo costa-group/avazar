@@ -1,6 +1,6 @@
 import pytest
-from src.llzk_dialects.bool import BoolBinary, BoolNot, BoolCmp, BoolAssert
-from src.llzk_dialects.core import SSAVar
+from llzk_dialects.bool import BoolBinary, BoolNot, BoolCmp, BoolAssert
+from llzk_dialects.core import SSAVar
 
 
 class TestBool:

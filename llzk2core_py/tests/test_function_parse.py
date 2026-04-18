@@ -1,7 +1,7 @@
 import pytest
-from src.llzk_dialects.function import FunctionReturn, FunctionCall, FunctionDef
-from src.llzk_dialects.core import SSAVar, GlobalVariable, Type
-from src.llzk_dialects.felt import FeltConst, FeltBinary
+from llzk_dialects.function import FunctionReturn, FunctionCall, FunctionDef
+from llzk_dialects.core import SSAVar, GlobalVariable, Type
+from llzk_dialects.felt import FeltConst, FeltBinary
 
 
 class TestFunction:

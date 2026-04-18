@@ -1,6 +1,6 @@
 import pytest
-from src.llzk_dialects.constrain import ConstrainEq, ConstrainIn
-from src.llzk_dialects.core import SSAVar, Type
+from llzk_dialects.constrain import ConstrainEq, ConstrainIn
+from llzk_dialects.core import SSAVar, Type
 
 
 class TestConstrain:

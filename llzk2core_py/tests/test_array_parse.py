@@ -1,6 +1,6 @@
 import pytest
-from src.llzk_dialects.array import ArrayNew, ArrayRead, ArrayWrite, ArrayExtract, ArrayInsert, ArrayLen
-from src.llzk_dialects.core import SSAVar, Type
+from llzk_dialects.array import ArrayNew, ArrayRead, ArrayWrite, ArrayExtract, ArrayInsert, ArrayLen
+from llzk_dialects.core import SSAVar, Type
 
 
 class TestArray:

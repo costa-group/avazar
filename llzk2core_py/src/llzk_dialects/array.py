@@ -17,8 +17,8 @@ Operations:
 import re
 from typing import List, Optional
 
-from src.llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
-from src.llzk_dialects.definitions import Dialect
+from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
+from llzk_dialects.definitions import Dialect
 
 
 def _parse_index_list(raw: Optional[str]) -> List[SSAVar]:

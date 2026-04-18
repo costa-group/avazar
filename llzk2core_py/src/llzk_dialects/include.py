@@ -8,8 +8,8 @@ Operations:
 
 import re
 
-from src.llzk_dialects.core import Operation, GlobalVariable, TranslationContext
-from src.llzk_dialects.definitions import Dialect
+from llzk_dialects.core import Operation, GlobalVariable, TranslationContext
+from llzk_dialects.definitions import Dialect
 
 
 class IncludeFrom(Operation):

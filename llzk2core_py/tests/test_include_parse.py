@@ -1,6 +1,6 @@
 import pytest
-from src.llzk_dialects.include import IncludeFrom
-from src.llzk_dialects.core import GlobalVariable
+from llzk_dialects.include import IncludeFrom
+from llzk_dialects.core import GlobalVariable
 
 
 class TestInclude:

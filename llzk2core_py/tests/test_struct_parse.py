@@ -1,7 +1,7 @@
 import pytest
-from src.llzk_dialects.struct import StructMember, StructNew, StructReadm, StructWritem, StructDef
-from src.llzk_dialects.core import SSAVar, GlobalVariable, Type
-from src.llzk_dialects.felt import FeltConst
+from llzk_dialects.struct import StructMember, StructNew, StructReadm, StructWritem, StructDef
+from llzk_dialects.core import SSAVar, GlobalVariable, Type
+from llzk_dialects.felt import FeltConst
 
 
 class TestStruct:
