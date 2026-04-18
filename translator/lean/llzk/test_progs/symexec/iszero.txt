@@ -9,7 +9,7 @@
 # }
 
 
-func izero(in:ff) : out:ff {
+func izero(in:ff) -> out:ff {
   if (in == 0) {
     inv = 0
   } else {
@@ -19,7 +19,7 @@ func izero(in:ff) : out:ff {
   out = felt.sub 1 aux
 }
 
-func main(%x:ff) : %y:ff {
+func main(%x:ff) -> %y:ff {
   call izero(%x) to %y
 }
 

@@ -1,4 +1,4 @@
-func main(%x:ff) : %y:ff {
+func main(%x:ff) -> %y:ff {
   %x = felt.mul 2 %x
   %w = %x # this won't introduce a new variables for w
   %z = felt.add 2 %w

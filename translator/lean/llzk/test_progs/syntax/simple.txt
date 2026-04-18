@@ -1,6 +1,6 @@
 
 # this is a comment
-func foo(%y:ff,%x:arr<10>) : %r:ff {
+func foo(%y:ff,%x:arr<10>) -> %r:ff {
   %acc = %y
   %i = 0 # this is the loop counter
   repeat 10 {
@@ -14,7 +14,7 @@ func foo(%y:ff,%x:arr<10>) : %r:ff {
   %r = %acc
 }
 
-func main(%y:ff) : %ret:ff {
+func main(%y:ff) -> %ret:ff {
   %size = 10
   array.new %size %a
   %i = 0

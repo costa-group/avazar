@@ -1,8 +1,8 @@
-func foo(%x:ff) : %y:ff {
+func foo(%x:ff) -> %y:ff {
   %y = felt.mul 2 %x
 }
 
-func main(%x:ff) : %y:ff {
+func main(%x:ff) -> %y:ff {
   %x = felt.mul 2 %x
   call foo(%x) to %z
   %y = felt.mul 2 %z

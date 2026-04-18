@@ -1,8 +1,8 @@
-func foo(%x:ff) : %y:ff {
+func foo(%x:ff) -> %y:ff {
   %y = felt.mul 2 %x
 }
 
-func main(%x:ff) : %y:ff {
+func main(%x:ff) -> %y:ff {
   %y = 0
   %c = 0 # try replacing 0 by %x 
   if (%c == 2) {

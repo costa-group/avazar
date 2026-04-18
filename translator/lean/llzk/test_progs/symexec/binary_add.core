@@ -1,0 +1,46 @@
+
+
+def BinaryAdd(a: arr<2>, b: arr<2>) -> c_chunks: arr<4>, cout: arr<2> {
+    cin = 0
+    c = 0
+    short_c = 0
+
+    array.new 4 c_chunks_aux
+    array.new 2 cout_aux
+
+    i = 0
+    repeat 2 {
+        array.read a[i] a_i
+        array.read b[i] b_i
+        sum_1 = felt.add a_i b_i
+        c = felt.add sum_1 cin
+
+        short_c = bit.and c 4294967295
+        and_1 = bit.and short_c 65535
+        
+        i_2 = felt.mul i 2
+        array.write and_1 c_chunks_aux[i_2]
+
+        i_2_1 = felt.add i_2 1
+        shr_1 = bit.shr short_c 16
+        array.write shr_1 c_chunks_aux[i_2_1]
+
+        gt_1 = bool.gt c 4294967295
+        if (gt_1 == 1) {
+            array.write 1 cout_aux[i]
+            cin = 1
+        }
+        else {
+            array.write 0 cout_aux[i]
+            cin = 0
+        }
+        i = felt.add i 1
+    }
+
+    array.copy c_chunks_aux c_chunks
+    array.copy cout_aux cout
+}
+
+def main(%a: arr<2>, %b: arr<2>) -> c_chunks: arr<4>, cout: arr<2> {
+    call BinaryAdd(%a, %b) to c_chunks, cout
+}

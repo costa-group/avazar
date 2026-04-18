@@ -1,4 +1,4 @@
-func const_idx_test(x:ff) : y:ff, z:arr<3> {
+func const_idx_test(x:ff) -> y:ff, z:arr<3> {
   array.new 3 z
   y = felt.mul 2 x
   array.read z[0] w
@@ -7,12 +7,12 @@ func const_idx_test(x:ff) : y:ff, z:arr<3> {
 }
 
 
-func nonconst_idx_read(a:arr<3>, i:ff) : y:ff {
+func nonconst_idx_read(a:arr<3>, i:ff) -> y:ff {
   array.read a[i] x
   y = felt.add x i
 }
 
-func nonconst_idx_write(a:arr<3>, v:ff, i:ff) : z:ff {
+func nonconst_idx_write(a:arr<3>, v:ff, i:ff) -> z:ff {
   array.write v a[i]
   i = 0
   z = 0

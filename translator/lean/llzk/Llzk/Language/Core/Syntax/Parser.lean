@@ -448,8 +448,8 @@ mutual
       let _ ← expectSymbol ')'
       let colonTk ← peekToken 0
       let rets ← match colonTk.token with
-          | Token.symbol ':' =>
-              let _ ← advance -- consume ':'
+          | Token.arrow =>
+              let _ ← advance -- consume '->' symbol
               parseParamSeq
           | _ => pure []
       let body ← parseBlock

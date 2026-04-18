@@ -1,4 +1,4 @@
-func foo(x:ff) : y:ff, z:arr<3> {
+func foo(x:ff) -> y:ff, z:arr<3> {
   array.new 3 z
   i = 0
   repeat 3 {

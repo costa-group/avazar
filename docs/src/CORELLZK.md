@@ -101,7 +101,7 @@ param := id ":" type
 params := (param ("," param)*)?
 
 // function definition
-function := "func" id "(" params ")" [":" params] "{" cmd* "}"
+function := "func" id "(" params ")" ["->" params] "{" cmd* "}"
 
 // program
 prog := func*

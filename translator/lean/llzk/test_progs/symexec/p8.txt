@@ -1,4 +1,4 @@
-func foo(x:ff,z:arr<3>) : y:ff, z:arr<3> {
+func foo(x:ff,z:arr<3>) -> y:ff, z:arr<3> {
   y = felt.mul 2 x
 }
 

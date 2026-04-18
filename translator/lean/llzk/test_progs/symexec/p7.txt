@@ -1,8 +1,8 @@
-func foo(%x:ff) : %y:ff {
+func foo(%x:ff) -> %y:ff {
   %y = felt.mul 2 %x
 }
 
-func main(%x:ff,%z:ff) : %y:ff {
+func main(%x:ff,%z:ff) -> %y:ff {
   %c1 = bool.eq %x 10
   %c2 = bool.neq %z 20
   %c3 = bool.or %c1 %c2
