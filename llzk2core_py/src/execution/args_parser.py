@@ -2,7 +2,6 @@
 Methods for parsing the options to execute grey
 """
 import argparse
-import global_params.constants as constants
 
 
 def generate_parser() -> argparse.ArgumentParser:
