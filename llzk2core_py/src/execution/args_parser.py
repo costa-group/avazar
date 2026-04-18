@@ -9,7 +9,8 @@ def generate_parser() -> argparse.ArgumentParser:
 
     input_options = parser.add_argument_group("Input Options")
 
-    input_options.add_argument("-s", "--source", type=str, help="Local source file name.", required=True)
+    input_options.add_argument("-s", "--source", type=str, help="Local source file name.", required=True,
+                               dest="source")
 
     #TODO: add option to execute llzk directly instead of reading the file
     
