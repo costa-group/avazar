@@ -1,4 +1,4 @@
-func %main(%x:ff) : %y:ff {
+func %main(%x:ff) -> %y:ff {
   %b = bool.gt %x 1
   if ( %b == 1) {
     %a = 1

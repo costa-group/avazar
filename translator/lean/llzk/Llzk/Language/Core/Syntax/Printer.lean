@@ -153,7 +153,7 @@ def formatFunction {c : ZKConfig} (f : FuncWithMD c) : String :=
       if (rets == []) then
         s!"func {name}({params}) " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
       else
-        s!"func {name}({params}) : {rets} " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
+        s!"func {name}({params}) -> {rets} " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
 
 -- register ToString instance for Function
 instance {c : ZKConfig} : ToString (FuncWithMD c) where
@@ -255,7 +255,7 @@ def printFunction {c : ZKConfig}
       if (rets == []) then
         h.putStr s!"func {name}({params})"
       else
-        h.putStr s!"func {name}({params}) : {rets}"
+        h.putStr s!"func {name}({params}) -> {rets}"
       h.putStrLn " {"
       printBody fc h body 1
       h.putStrLn "}"

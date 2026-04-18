@@ -14,5 +14,5 @@ def eq (x y : T) : Bool :=
 
 
 def a := Array.mk [1, 2, 3]
-def b := Array.mk [1, 2, 3, 5]
+def b := Array.mk [1, 2, 3]
 #eval a = b
