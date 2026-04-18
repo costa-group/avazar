@@ -1,6 +1,6 @@
 import pytest
-from src.llzk_dialects.string import StringNew
-from src.llzk_dialects.core import SSAVar
+from llzk_dialects.string import StringNew
+from llzk_dialects.core import SSAVar
 
 
 class TestString:

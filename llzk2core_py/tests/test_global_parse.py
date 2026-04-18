@@ -1,6 +1,6 @@
 import pytest
-from src.llzk_dialects.global_ import GlobalDef, GlobalRead, GlobalWrite
-from src.llzk_dialects.core import SSAVar, GlobalVariable, Type
+from llzk_dialects.global_ import GlobalDef, GlobalRead, GlobalWrite
+from llzk_dialects.core import SSAVar, GlobalVariable, Type
 
 
 class TestGlobal:

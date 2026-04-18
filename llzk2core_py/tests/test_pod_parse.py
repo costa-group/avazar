@@ -1,6 +1,6 @@
 import pytest
-from src.llzk_dialects.pod import PodNew, PodRead, PodWrite
-from src.llzk_dialects.core import SSAVar, GlobalVariable, Type
+from llzk_dialects.pod import PodNew, PodRead, PodWrite
+from llzk_dialects.core import SSAVar, GlobalVariable, Type
 
 
 class TestPod:

@@ -12,8 +12,8 @@ Attributes (represented as type annotations, not parsed independently):
 
 import re
 
-from src.llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
-from src.llzk_dialects.definitions import Dialect
+from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
+from llzk_dialects.definitions import Dialect
 
 
 class LLZKNondet(Operation):

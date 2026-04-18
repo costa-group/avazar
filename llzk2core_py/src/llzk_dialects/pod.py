@@ -17,8 +17,8 @@ Operations:
 import re
 from typing import List, Dict
 
-from src.llzk_dialects.core import Operation, SSAVar, GlobalVariable, Type, TranslationContext
-from src.llzk_dialects.definitions import Dialect
+from llzk_dialects.core import Operation, SSAVar, GlobalVariable, Type, TranslationContext
+from llzk_dialects.definitions import Dialect
 
 
 class PodNew(Operation):

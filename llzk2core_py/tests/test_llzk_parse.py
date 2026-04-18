@@ -1,6 +1,6 @@
 import pytest
-from src.llzk_dialects.llzk import LLZKNondet
-from src.llzk_dialects.core import SSAVar, Type
+from llzk_dialects.llzk import LLZKNondet
+from llzk_dialects.core import SSAVar, Type
 
 
 class TestLLZK:

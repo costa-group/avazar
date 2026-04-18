@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Callable, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.llzk_dialects.definitions import Dialect
+    from llzk_dialects.definitions import Dialect
 
 
 class SSAVar:

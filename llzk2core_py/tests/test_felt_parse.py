@@ -1,6 +1,6 @@
 import pytest
-from src.llzk_dialects.felt import FeltUnary, FeltBinary, FeltConst
-from src.llzk_dialects.core import SSAVar, Type
+from llzk_dialects.felt import FeltUnary, FeltBinary, FeltConst
+from llzk_dialects.core import SSAVar, Type
 
 
 class TestFelt:

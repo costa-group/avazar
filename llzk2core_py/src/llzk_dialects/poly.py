@@ -18,11 +18,11 @@ Types:
 import re
 from typing import List, Optional, Tuple
 
-from src.llzk_dialects.core import (
+from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, GlobalVariable, Type,
     TranslationContext, ParseFn,
 )
-from src.llzk_dialects.definitions import Dialect
+from llzk_dialects.definitions import Dialect
 
 
 class PolyApplyMap(Operation):

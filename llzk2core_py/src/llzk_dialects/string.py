@@ -11,8 +11,8 @@ Types:
 
 import re
 
-from src.llzk_dialects.core import Operation, SSAVar, TranslationContext
-from src.llzk_dialects.definitions import Dialect
+from llzk_dialects.core import Operation, SSAVar, TranslationContext
+from llzk_dialects.definitions import Dialect
 
 
 class StringNew(Operation):

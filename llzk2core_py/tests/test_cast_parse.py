@@ -1,6 +1,6 @@
 import pytest
-from src.llzk_dialects.cast import CastToFelt, CastToIndex
-from src.llzk_dialects.core import SSAVar, Type
+from llzk_dialects.cast import CastToFelt, CastToIndex
+from llzk_dialects.core import SSAVar, Type
 
 
 class TestCast:
