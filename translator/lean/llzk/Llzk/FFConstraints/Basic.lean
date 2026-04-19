@@ -95,6 +95,12 @@ instance : Ord FFVar where
 instance : Ord BoolVar where
   compare a b := compare a.id b.id
 
+instance : Std.TransCmp (compare (α := FFVar)) := by
+  sorry
+
+instance : Std.TransCmp (compare (α := BoolVar)) := by
+  sorry
+
 /-  Hashing (Hashable) of FFVar. Needed if we use this in a HashMap or HashSet -/
 instance : Hashable FFVar where
   hash a := mixHash (hash a.id) (hash a.meta_data.orig_name)
