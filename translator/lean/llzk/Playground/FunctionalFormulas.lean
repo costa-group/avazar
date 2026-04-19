@@ -50,40 +50,51 @@ by
 
 
 #check Std.TreeSet.contains_union
+#check Std.TreeSet.isEmpty_inter_iff
 
-theorem ffvar_not_in_auxff' {c : ZKConfig} (S A B C: FFVarSet) :
+
+-- This should be part of the Std library
+theorem elem_in_union_treeset {α : Type} [BEq α] [Ord α] (s1 s2 : Std.TreeSet α) (x : α) :
+  x ∈ s1 ∪ s2 ↔ x ∈ s1 ∨ x ∈ s2 := by
+rw [Std.TreeSet.mem_iff_contains]
+sorry
+
+
+-- This should be part of the Std library
+theorem isEmpty_equal_empty_treeset {α : Type} [BEq α] [Ord α] (s : Std.TreeSet α) :
+  s.isEmpty ↔ s = ∅ := by
+sorry
+
+-- This should be part of the Std library
+theorem inter_comm {α : Type} [BEq α] [Ord α] (s1 s2 : Std.TreeSet α) :
+  s1 ∩ s2 = s2 ∩ s1 := by
+sorry
+
+
+theorem treeset_not_in_aux' {α : Type} [BEq α] [Ord α]
+    [Std.TransCmp (compare (α := α))] (S A B C : Std.TreeSet α) :
   S = A ∪ B ->
   C ∩ A = ∅ ->
   B ∩ C = ∅ ->
   ∀ x ∈ S, x ∉ C := by
-sorry
-/-
 intro hS hCA hBC x hx
 rw [hS] at hx
-simp only [Std.TreeSet.instMembership, Std.TreeSet.contains_union, Bool.or_eq_true] at hx
-rw [Std.TreeSet.contains_union] at hx
+rw [elem_in_union_treeset] at hx
 cases hx with
 | inl hxA =>
-  have : x ∈ C ∩ A := Std.TreeSet.mem_inter.mpr ⟨hxC, hxA⟩
-  rw [hCA] at this
-  exact Std.TreeSet.not_mem_empty x this
+  rw [← isEmpty_equal_empty_treeset] at hCA
+  rw [inter_comm] at hCA
+  rw [Std.TreeSet.isEmpty_inter_iff] at hCA
+  specialize hCA x hxA
+  exact hCA
 | inr hxB =>
-  have : x ∈ B ∩ C := Std.TreeSet.mem_inter.mpr ⟨hxB, hxC⟩
-  rw [hBC] at this
-  exact Std.TreeSet.not_mem_empty x this
--/
+  rw [← isEmpty_equal_empty_treeset] at hBC
+  rw [Std.TreeSet.isEmpty_inter_iff] at hBC
+  specialize hBC x hxB
+  exact hBC
 
-
-
-theorem boolvar_not_in_auxff' {c : ZKConfig} (S A B C: BoolVarSet) :
-  S = A ∪ B ->
-  C ∩ A = ∅ ->
-  B ∩ C = ∅ ->
-  ∀ x ∈ S, x ∉ C := by
-  sorry
 
 /-
-
 P1;P2 and the formulas are f1 and f2
 
 
@@ -113,13 +124,13 @@ theorem formula_combination {c : ZKConfig} (f1 f2 : IOFormula c) (ms : List (FFM
   obtain ⟨σ', h_ff2, h_bool2, h_eval2⟩ := h_f2_func
   have h_ffvars_f1 : ∀ x ∈ ffvars f1.f, σ.ff x.id = σ'.ff x.id := by
     intro x h_x_in_ffvars_f1
-    have h_x_not_in := @ffvar_not_in_auxff' c (ffvars f1.f) (f1.inFFVars) (f1.auxFFVars)
+    have h_x_not_in := treeset_not_in_aux' (ffvars f1.f) (f1.inFFVars) (f1.auxFFVars)
          (f2.auxFFVars) (f1.all_ff_vars.symm) (h_auxFF_disjoint1) (h_auxFF_disjoint2) x h_x_in_ffvars_f1
     specialize h_ff2 x h_x_not_in
     exact h_ff2
   have h_boolvars_f1 : ∀ x ∈ boolvars f1.f, σ.bool x.id = σ'.bool x.id := by
     intro x h_x_in_boolvars_f1
-    have h_x_not_in := @boolvar_not_in_auxff' c (boolvars f1.f) (f1.inBoolVars) (f1.auxBoolVars)
+    have h_x_not_in := treeset_not_in_aux' (boolvars f1.f) (f1.inBoolVars) (f1.auxBoolVars)
          (f2.auxBoolVars) (f1.all_bool_vars.symm) (h_auxBool_disjoint1) (h_auxBool_disjoint2) x h_x_in_boolvars_f1
     specialize h_bool2 x h_x_not_in
     exact h_bool2
