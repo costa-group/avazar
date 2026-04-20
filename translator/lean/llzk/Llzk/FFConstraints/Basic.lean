@@ -111,14 +111,21 @@ instance : Hashable BoolVar where
 
 
 
-
 /- FFVar set -/
 abbrev FFVarSet := Std.TreeSet FFVar compare
 abbrev emptyFFVarSet : FFVarSet := Std.TreeSet.empty
 
+-- FFVarSet has ⊆
+instance : HasSubset FFVarSet where
+  Subset s1 s2 := ∀ x, x ∈ s1 → x ∈ s2
+
 /- BoolVar set -/
 abbrev BoolVarSet := Std.TreeSet BoolVar compare
 abbrev emptyBoolVarSet : BoolVarSet := Std.TreeSet.empty
+
+-- BoolVarSet has ⊆
+instance : HasSubset BoolVarSet where
+  Subset s1 s2 := ∀ x, x ∈ s1 → x ∈ s2
 
 
 mutual

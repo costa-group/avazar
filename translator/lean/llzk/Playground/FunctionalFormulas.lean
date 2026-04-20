@@ -7,8 +7,6 @@ open Llzk.Language.Core.Syntax.AST
 open Llzk.FFConstraints.Basic
 
 
-
-
 structure IOFormula (c : ZKConfig) where
   inFFVars : FFVarSet := emptyFFVarSet
   auxFFVars : FFVarSet := emptyFFVarSet
@@ -36,21 +34,94 @@ structure IOFormula (c : ZKConfig) where
  -- 'hfunct' basically implies that every IOFormula is satisfiable. For every value of the input
  -- variables it is always possible to find correct values to the aux variables.
 
+-- If ∀ x ∈ S, P(x) holds and S' ⊆ S, then ∀ x ∈ S', P(x) holds. For FFVarSet
+theorem subset_ff_property {c : ZKConfig} (P : FFVar → Prop) (S S' : FFVarSet) :
+  (∀ x ∈ S, P x) →
+  S' ⊆ S →
+  (∀ x ∈ S', P x) := by
+intro h_all_S h_subset x h_x_in_S'
+-- apply subset property
+simp [Subset] at h_subset
+have h_x_in_S : x ∈ S := h_subset x h_x_in_S'
+have h_all_S_x := h_all_S x h_x_in_S
+exact h_all_S_x
 
-theorem assignment_satisf_vars {c : ZKConfig} (f : IOFormula c)
+-- If ∀ x ∈ S, P(x) holds and S' ⊆ S, then ∀ x ∈ S', P(x) holds. For BoolVarSet
+theorem subset_bool_property {c : ZKConfig} (P : BoolVar → Prop) (S S' : BoolVarSet) :
+  (∀ x ∈ S, P x) →
+  S' ⊆ S →
+  (∀ x ∈ S', P x) := by
+intro h_all_S h_subset x h_x_in_S'
+-- apply subset property
+simp [Subset] at h_subset
+have h_x_in_S : x ∈ S := h_subset x h_x_in_S'
+have h_all_S_x := h_all_S x h_x_in_S
+exact h_all_S_x
+
+
+mutual
+theorem assignment_satisf_vars_formula {c : ZKConfig} (f : FFFormula c)
 (σ σ' : Llzk.FFConstraints.Satisfiability.Assignment c) (ms : List (FFMacro c)) :
-  (∀ x ∈ ffvars f.f, σ.ff x.id = σ'.ff x.id) →
-  (∀ x ∈ boolvars f.f, σ.bool x.id = σ'.bool x.id) →
-  Llzk.FFConstraints.Satisfiability.evalFormula σ f.f ms =
-  Llzk.FFConstraints.Satisfiability.evalFormula σ' f.f ms :=
+  (∀ x ∈ ffvars f, σ.ff x.id = σ'.ff x.id) →
+  (∀ x ∈ boolvars f, σ.bool x.id = σ'.bool x.id) →
+  Llzk.FFConstraints.Satisfiability.evalFormula σ f ms =
+  Llzk.FFConstraints.Satisfiability.evalFormula σ' f ms :=
 by
   -- by induction on the structure of f.f, requiring a mutual induction with the evaluation
   -- of terms and boolean formulas.
   sorry
 
+theorem assignment_satisf_vars_term {c : ZKConfig} (t : FFTerm c)
+(σ σ' : Llzk.FFConstraints.Satisfiability.Assignment c) (ms : List (FFMacro c)) :
+  (∀ x ∈ ffvarsTerm t, σ.ff x.id = σ'.ff x.id) →
+  (∀ x ∈ boolvarsTerm t, σ.bool x.id = σ'.bool x.id) →
+  Llzk.FFConstraints.Satisfiability.evalTerm σ t ms =
+  Llzk.FFConstraints.Satisfiability.evalTerm σ' t ms :=
+by
+  intros h_ffvars h_boolvars
+  -- case distinction on the structure of t,
+  cases t with
+  | val v =>
+      simp [Llzk.FFConstraints.Satisfiability.evalTerm]
+  | var v =>
+      simp [Llzk.FFConstraints.Satisfiability.evalTerm]
+      have h_v_in_ffvars : v ∈ @ffvarsTerm c (FFTerm.var v) := by
+        simp [ffvarsTerm]
+      specialize h_ffvars v h_v_in_ffvars
+      rw [h_ffvars]
+  | add a b =>
+      simp [Llzk.FFConstraints.Satisfiability.evalTerm]
+      have ffvars_add : ffvarsTerm (a.add b) = (ffvarsTerm a).union (ffvarsTerm b) := by
+        simp [ffvarsTerm]
+      have h_subset_ffvars := @subset_ff_property c
+        (fun x => σ.ff x.id = σ'.ff x.id)
+        (ffvarsTerm a ∪ ffvarsTerm b) (ffvarsTerm a) (h_ffvars)
+      have h_subset_ffvars_term_a : ffvarsTerm a ⊆ ffvarsTerm a ∪ ffvarsTerm b := by
+        sorry
+      simp at h_subset_ffvars
+      have assign_term_a := h_subset_ffvars h_subset_ffvars_term_a
+      have ih := assignment_satisf_vars_term a σ σ' ms assign_term_a
+
+      sorry
+  | sub a b =>
+      simp [Llzk.FFConstraints.Satisfiability.evalTerm]
+      sorry
+  | mul a b =>
+      simp [Llzk.FFConstraints.Satisfiability.evalTerm]
+      sorry
+  | neg a =>
+      simp [Llzk.FFConstraints.Satisfiability.evalTerm]
+      have assignment_a := assignment_satisf_vars_term a σ σ' ms h_ffvars h_boolvars
+      exact assignment_a
+  | ite cond t e =>
+      simp [Llzk.FFConstraints.Satisfiability.evalTerm]
+      sorry
+
+end
 
 #check Std.TreeSet.contains_union
 #check Std.TreeSet.isEmpty_inter_iff
+--#check Std.TreeSet.uni
 
 
 -- This should be part of the Std library
@@ -63,7 +134,7 @@ sorry
 -- This should be part of the Std library
 theorem isEmpty_equal_empty_treeset {α : Type} [BEq α] [Ord α] (s : Std.TreeSet α) :
   s.isEmpty ↔ s = ∅ := by
-sorry
+simp [Std.TreeSet.isEmpty, Std.TreeSet.empty]
 
 -- This should be part of the Std library
 theorem inter_comm {α : Type} [BEq α] [Ord α] (s1 s2 : Std.TreeSet α) :
@@ -134,7 +205,7 @@ theorem formula_combination {c : ZKConfig} (f1 f2 : IOFormula c) (ms : List (FFM
          (f2.auxBoolVars) (f1.all_bool_vars.symm) (h_auxBool_disjoint1) (h_auxBool_disjoint2) x h_x_in_boolvars_f1
     specialize h_bool2 x h_x_not_in
     exact h_bool2
-  have eq_eval_f1 := assignment_satisf_vars f1 σ σ' ms h_ffvars_f1 h_boolvars_f1
+  have eq_eval_f1 := assignment_satisf_vars_formula f1.f σ σ' ms h_ffvars_f1 h_boolvars_f1
   rw [h_eval_f1] at eq_eval_f1
   exact ⟨σ', h_ff2, h_bool2, h_eval2, eq_eval_f1.symm⟩
 
