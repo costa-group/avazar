@@ -24,9 +24,21 @@ class TestPod:
         )
         assert len(op.init_records) == 2
 
+    def test_new_init_complex_type(self):
+        # Init records contain '=' signs — match() must not split on them.
+        line = ('%pod = pod.new { @count = %c2 }  : '
+                '!pod.type<[@count: index, @comp: !struct.type<@S<[]>>, @params: !pod.type<[]>]>')
+        op = PodNew.parse(line)
+        assert op.result == SSAVar("%pod")
+        assert "@count" in op.init_records
+        assert op.init_records["@count"] == SSAVar("%c2")
+        assert "!pod.type" in op.result_type.name
+
     def test_new_match(self):
         assert PodNew.match("%p = pod.new : !pod.type<[]>") is True
         assert PodNew.match("%p = pod.read %p [@x] : !t, !t") is False
+        # Match must work even when init records introduce extra '=' signs.
+        assert PodNew.match("%p = pod.new { @x = %v } : !pod.type<[]>") is True
 
     # ── PodRead ───────────────────────────────────────────────────────────────
 

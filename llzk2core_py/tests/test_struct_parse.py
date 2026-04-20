@@ -28,6 +28,21 @@ class TestStruct:
         with pytest.raises(ValueError):
             StructMember.parse("struct.member @x")  # missing type
 
+    def test_member_pod_type_with_spaces(self):
+        line = ('struct.member @inputs : '
+                '!pod.type<[@in1: !felt.type<"bn128">, @in2: !felt.type<"bn128">]>')
+        op = StructMember.parse(line)
+        assert op.sym_name == GlobalVariable("@inputs")
+        assert '!pod.type' in op.member_type.name
+        assert op.is_column is False
+
+    def test_member_pod_type_with_spaces_and_attr(self):
+        line = ('struct.member @inputs : '
+                '!pod.type<[@in1: !felt.type, @in2: !felt.type]> {column}')
+        op = StructMember.parse(line)
+        assert '!pod.type' in op.member_type.name
+        assert op.is_column is True
+
     def test_member_match(self):
         assert StructMember.match("struct.member @x : !felt.type") is True
         assert StructMember.match("struct.new : !struct.type<@S>") is False

@@ -47,7 +47,8 @@ class PodNew(Operation):
 
     @staticmethod
     def match(line: str) -> bool:
-        return line.split('=')[-1].strip().split()[0] in PodNew._OPS
+        # Split on the first '=' only — init records contain further '=' signs.
+        return line.split('=', 1)[-1].strip().split()[0] in PodNew._OPS
 
     @classmethod
     def parse(cls, line: str) -> 'PodNew':

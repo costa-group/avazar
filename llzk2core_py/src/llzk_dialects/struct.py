@@ -61,7 +61,7 @@ class StructMember(Operation):
     def parse(cls, line: str) -> 'StructMember':
         # struct.member @name : !type [{column, signal}]
         pattern = re.compile(
-            r"\s*struct\.member\s+(?P<name>@\S+)\s*:\s*(?P<type>\S+)"
+            r"\s*struct\.member\s+(?P<name>@\S+)\s*:\s*(?P<type>[^{]+?)"
             r"(?:\s*\{(?P<attrs>[^}]*)\})?\s*"
         )
         m = re.fullmatch(pattern, line)
@@ -70,7 +70,7 @@ class StructMember(Operation):
         attrs = m["attrs"] or ""
         return StructMember(
             GlobalVariable.parse(m["name"]),
-            Type.parse(m["type"]),
+            Type.parse(m["type"].strip()),
             is_column="column" in attrs,
             is_signal="signal" in attrs,
         )
