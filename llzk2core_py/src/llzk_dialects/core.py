@@ -11,6 +11,8 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Dict, List, Callable, Tuple, TYPE_CHECKING
+from llzk_dialects.utils import array_felt_first_dimension
+
 
 if TYPE_CHECKING:
     from llzk_dialects.definitions import Dialect
@@ -89,10 +91,9 @@ class Type:
         """
         Transforms a Type into the corresponding declaration in Core
         """
-        pattern = r"!array\.type<(\d+)\s+x\s+!felt\.type<"
-        match = re.search(pattern, self.name)
-        if match:
-            return f"arr<{match.group(1)}>"
+        array_dim = array_felt_first_dimension(self.name)
+        if array_dim is not None:
+            return f"arr<{array_dim}>"
 
         elif "!felt.type" in self.name:
             return "ff"
