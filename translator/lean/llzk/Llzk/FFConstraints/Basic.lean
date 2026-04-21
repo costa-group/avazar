@@ -1,5 +1,6 @@
 import Llzk.Basic
 import Llzk.Language.Core.Syntax.AST
+import Std.Data.ExtTreeSet.Basic
 
 /- This module defines the syntax of constraint systems over finite fields
    and boolean variables -/
@@ -101,6 +102,13 @@ instance : Std.TransCmp (compare (α := FFVar)) := by
 instance : Std.TransCmp (compare (α := BoolVar)) := by
   sorry
 
+instance : Std.LawfulEqCmp (compare (α := FFVar)) := by
+  sorry
+
+instance : Std.LawfulEqCmp (compare (α := BoolVar)) := by
+  sorry
+
+
 /-  Hashing (Hashable) of FFVar. Needed if we use this in a HashMap or HashSet -/
 instance : Hashable FFVar where
   hash a := mixHash (hash a.id) (hash a.meta_data.orig_name)
@@ -112,16 +120,16 @@ instance : Hashable BoolVar where
 
 
 /- FFVar set -/
-abbrev FFVarSet := Std.TreeSet FFVar compare
-abbrev emptyFFVarSet : FFVarSet := Std.TreeSet.empty
+abbrev FFVarSet := Std.ExtTreeSet FFVar compare
+abbrev emptyFFVarSet : FFVarSet := Std.ExtTreeSet.empty
 
 -- FFVarSet has ⊆
 instance : HasSubset FFVarSet where
   Subset s1 s2 := ∀ x, x ∈ s1 → x ∈ s2
 
 /- BoolVar set -/
-abbrev BoolVarSet := Std.TreeSet BoolVar compare
-abbrev emptyBoolVarSet : BoolVarSet := Std.TreeSet.empty
+abbrev BoolVarSet := Std.ExtTreeSet BoolVar compare
+abbrev emptyBoolVarSet : BoolVarSet := Std.ExtTreeSet.empty
 
 -- BoolVarSet has ⊆
 instance : HasSubset BoolVarSet where
