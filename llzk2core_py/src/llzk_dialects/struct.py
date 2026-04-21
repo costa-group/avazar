@@ -1,103 +1,310 @@
+"""
+Struct dialect — circuit component definitions and member access.
+Prefix: struct.
+
+In LLZK, a 'struct' represents a ZK circuit component. It has named members
+(signals/columns) and two special functions: 'compute' (witness generation)
+and 'constrain' (constraint emission).
+
+Types:
+  StructType — !struct.type<@NameRef<[params]>>
+
+Operations:
+  StructMember — struct.member  (declare a named member field inside a struct.def)
+  StructNew    — struct.new     (instantiate a struct)
+  StructReadm  — struct.readm   (read a member from a struct instance)
+  StructWritem — struct.writem  (write a value to a struct member)
+  StructDef    — struct.def     (BlockOperation: define a circuit component)
+"""
+
 import re
-from typing import List, Dict
-from src.llzk_dialects.core import Operation, SSAVar, Type
-from src.llzk_dialects.definitions import Dialect
+from typing import List, Optional, Tuple
 
-class StructNew(Operation):
-     """
-    Struct creation.
+from llzk_dialects.core import (
+    Operation, BlockOperation, SSAVar, GlobalVariable, Type,
+    TranslationContext, ParseFn,
+)
+from llzk_dialects.definitions import Dialect
 
-    Syntax: operation ::= `struct.new` `:` type($result) attr-dict
-    E.g.: %self = struct.new : !struct.type<@Reg>
-    """
-
-     STRUCT_NEW = ["struct.new"]
-
-     def __init__(self, var: SSAVar, t:str, attr: Dict[str,str]):
-         self.result = var
-         self.type_struct = t
-         self.attr = attr
-                 
-    def dialect(self) -> Dialect:
-        return Dialect.struct_d
-
-    def match(line: str) -> bool:
-        op_name = line.split('=')[-1].strip().split()[0]
-        return op_name in STRUCT_NEW
-    
-    @classmethod
-    def parse(cls, line: str) -> 'StructNew':
-        pattern = re.compile(r"\s*(?P<res>\S+)\s*=\s*struct\.new\s*:\s*(?P<type>\S+)\s*(?P<attrs>\{.*?\})?"
-        match = re.fullmatch(pattern, line)
-        if not match:
-            raise ValueError(f"Failed to parse StructNew: {line}")
-        else:
-            if match["type"] is not None:
-                print("Type", match["type"])
-                type_rex = [Type.parse(t.strip()) for t in match["type"].split(",")]
-            else:
-                type_rex = ""
-
-            if match["attrs"] is not None:
-                attrs = {}
-                for e in match["attrs"].split(","):
-                    items = e.split("=")
-                    k = items[0]
-                    v = items[1]
-                    attrs[k] = v
-            else:
-                attrs = {}
-                             
-            return Struct(SSAVar.parse(match["res"]), type_rex, attrs)
-
-    def __repr__(self):
-        optional_type = '' if len(self.types) == 0 else f' : {", ".join([repr(type_) for type_ in self.types])}'
-        return f"FeltUnary({self.result} = {self.op}({self.operand}){optional_type}"
-
-
-
-
-         
-class StructDef(Operation):
-    pass
-
-class StructRead(Operation):
-    pass
-
-class StructWrite(Operation):
-    pass
 
 class StructMember(Operation):
-    pass
+    """
+    Declare a named member field within a struct.def body.
+
+    Syntax: struct.member @sym_name : $type [attr-dict]
+    Attributes:
+      sym_name (StringAttr)
+      type     (TypeAttr)
+      column   (UnitAttr, optional) — marks the member as a column
+      signal   (UnitAttr, optional) — marks the member as a signal
+    Valid parent: StructDefOp
+    Interfaces: Symbol, SymbolUserOpInterface
+    """
+
+    _OPS = {"struct.member"}
+
+    def __init__(self, sym_name: GlobalVariable, member_type: Type,
+                 is_column: bool = False, is_signal: bool = False):
+        self.sym_name = sym_name
+        self.member_type = member_type
+        self.is_column = is_column
+        self.is_signal = is_signal
+
+    def dialect(self) -> Dialect:
+        return Dialect("struct")
+
+    @staticmethod
+    def match(line: str) -> bool:
+        return line.strip().split()[0] in StructMember._OPS
+
+    @classmethod
+    def parse(cls, line: str) -> 'StructMember':
+        # struct.member @name : !type [{column, signal}]
+        pattern = re.compile(
+            r"\s*struct\.member\s+(?P<name>@\S+)\s*:\s*(?P<type>[^{]+?)"
+            r"(?:\s*\{(?P<attrs>[^}]*)\})?\s*"
+        )
+        m = re.fullmatch(pattern, line)
+        if not m:
+            raise ValueError(f"Failed to parse StructMember: {line}")
+        attrs = m["attrs"] or ""
+        return StructMember(
+            GlobalVariable.parse(m["name"]),
+            Type.parse(m["type"].strip()),
+            is_column="column" in attrs,
+            is_signal="signal" in attrs,
+        )
+
+    def to_core(self, ctx: TranslationContext) -> str:
+        # TODO: implement core translation
+        raise NotImplementedError
+
+    def __repr__(self):
+        flags = []
+        if self.is_column:
+            flags.append("column")
+        if self.is_signal:
+            flags.append("signal")
+        flag_str = f" {{{', '.join(flags)}}}" if flags else ""
+        return f"StructMember({self.sym_name} : {self.member_type}{flag_str})"
+
+
+class StructNew(Operation):
+    """
+    Create a new instance of a struct type.
+
+    Syntax: %result = struct.new : type($result)
+    Result: StructType
+    Traits: WitnessGen
+    """
+
+    _OPS = {"struct.new"}
+
+    def __init__(self, result: SSAVar, result_type: Type):
+        self.result = result
+        self.result_type = result_type
+
+    def dialect(self) -> Dialect:
+        return Dialect("struct")
+
+    @staticmethod
+    def match(line: str) -> bool:
+        return line.split('=')[-1].strip().split()[0] in StructNew._OPS
+
+    @classmethod
+    def parse(cls, line: str) -> 'StructNew':
+        pattern = re.compile(
+            r"\s*(?P<res>\S+)\s*=\s*struct\.new\s*:\s*(?P<type>\S+)\s*"
+        )
+        m = re.fullmatch(pattern, line)
+        if not m:
+            raise ValueError(f"Failed to parse StructNew: {line}")
+        return StructNew(SSAVar.parse(m["res"]), Type.parse(m["type"]))
+
+    def to_core(self, ctx: TranslationContext) -> str:
+        # TODO: implement core translation
+        raise NotImplementedError
+
+    def __repr__(self):
+        return f"StructNew({self.result} = struct.new : {self.result_type})"
+
+
+class StructReadm(Operation):
+    """
+    Read the value of a named member from a struct instance.
+
+    Syntax: %val = struct.readm $component [@member_name] : type($component), type($val)
+    Attributes: member_name (FlatSymbolRefAttr)
+    Operand:    component (StructType)
+    Result:     valid LLZK type
+    """
+
+    _OPS = {"struct.readm"}
+
+    def __init__(self, result: SSAVar, component: SSAVar,
+                 member_name: GlobalVariable, types: List[Type]):
+        self.result = result
+        self.component = component
+        self.member_name = member_name
+        self.types = types
+
+    def dialect(self) -> Dialect:
+        return Dialect("struct")
+
+    @staticmethod
+    def match(line: str) -> bool:
+        return line.split('=')[-1].strip().split()[0] in StructReadm._OPS
+
+    @classmethod
+    def parse(cls, line: str) -> 'StructReadm':
+        pattern = re.compile(
+            r"\s*(?P<res>\S+)\s*=\s*struct\.readm\s+(?P<comp>\S+)"
+            r"\s*\[\s*(?P<mem>@\S+)\s*\]"
+            r"(?:\s*:\s*(?P<types>.+))?\s*"
+        )
+        m = re.fullmatch(pattern, line)
+        if not m:
+            raise ValueError(f"Failed to parse StructReadm: {line}")
+        types = (
+            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            if m["types"] else []
+        )
+        return StructReadm(SSAVar.parse(m["res"]), SSAVar.parse(m["comp"]),
+                           GlobalVariable.parse(m["mem"]), types)
+
+    def to_core(self, ctx: TranslationContext) -> str:
+        # TODO: implement core translation
+        raise NotImplementedError
+
+    def __repr__(self):
+        type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
+        return (f"StructReadm({self.result} = struct.readm "
+                f"{self.component}[{self.member_name}]{type_str})")
+
+
+class StructWritem(Operation):
+    """
+    Write a value to a named member of a struct instance.
+
+    Syntax: struct.writem $component [@member_name] = $val : type($component), type($val)
+    Attributes: member_name (FlatSymbolRefAttr)
+    Operands:   component (StructType), val (valid LLZK type)
+    Traits: WitnessGen
+    """
+
+    _OPS = {"struct.writem"}
+
+    def __init__(self, component: SSAVar, member_name: GlobalVariable,
+                 value: SSAVar, types: List[Type]):
+        self.component = component
+        self.member_name = member_name
+        self.value = value
+        self.types = types
+
+    def dialect(self) -> Dialect:
+        return Dialect("struct")
+
+    @staticmethod
+    def match(line: str) -> bool:
+        return line.strip().split()[0] in StructWritem._OPS
+
+    @classmethod
+    def parse(cls, line: str) -> 'StructWritem':
+        pattern = re.compile(
+            r"\s*struct\.writem\s+(?P<comp>\S+)"
+            r"\s*\[\s*(?P<mem>@\S+)\s*\]"
+            r"\s*=\s*(?P<val>\S+)"
+            r"(?:\s*:\s*(?P<types>.+))?\s*"
+        )
+        m = re.fullmatch(pattern, line)
+        if not m:
+            raise ValueError(f"Failed to parse StructWritem: {line}")
+        types = (
+            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            if m["types"] else []
+        )
+        return StructWritem(SSAVar.parse(m["comp"]),
+                            GlobalVariable.parse(m["mem"]),
+                            SSAVar.parse(m["val"]), types)
+
+    def to_core(self, ctx: TranslationContext) -> str:
+        # TODO: implement core translation
+        raise NotImplementedError
+
+    def __repr__(self):
+        type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
+        return (f"StructWritem(struct.writem {self.component}"
+                f"[{self.member_name}] = {self.value}{type_str})")
+
+
+class StructDef(BlockOperation):
+    """
+    Define a circuit component (struct) with members and functions.
+
+    Syntax:
+      struct.def @StructName {
+        struct.member @field : !type
+        function.def @constrain(...) { ... }
+        function.def @compute(...) { ... }
+      }
+
+    The body is parsed recursively using parse_fn and stored as a list of
+    Operation instances (mix of StructMember and FunctionDef).
+
+    Attributes: sym_name (StringAttr)
+    Traits: SymbolTable, IsolatedFromAbove, SingleBlock
+    Valid parents: ModuleOp, TemplateOp
+    """
+
+    _OPS = {"struct.def"}
+
+    def __init__(self, sym_name: GlobalVariable, body: List[Operation]):
+        self.sym_name = sym_name
+        self.body = body
+
+    def dialect(self) -> Dialect:
+        return Dialect("struct")
+
+    @staticmethod
+    def match(line: str) -> bool:
+        return line.strip().split()[0] in StructDef._OPS
+
+    @classmethod
+    def parse(cls, lines: List[str], cursor: int,
+              parse_fn: ParseFn) -> Tuple['StructDef', int]:
+        header = lines[cursor]
+        # struct.def @Name {
+        pattern = re.compile(r"\s*struct\.def\s+(?P<name>@\S+)\s*\{")
+        m = re.match(pattern, header)
+        if not m:
+            raise ValueError(f"Failed to parse StructDef header: {header}")
+
+        depth = header.count('{') - header.count('}')
+        end = cursor
+        while depth > 0 and end + 1 < len(lines):
+            end += 1
+            depth += lines[end].count('{') - lines[end].count('}')
+
+        body = parse_fn(cursor + 1, end)
+        return StructDef(GlobalVariable.parse(m["name"]), body), end + 1
+
+    def to_core(self, ctx: TranslationContext) -> str:
+        # TODO: implement core translation
+        raise NotImplementedError
+
+    def __repr__(self):
+        body_str = '\n  '.join(repr(op) for op in self.body)
+        return f"StructDef({self.sym_name} {{\n  {body_str}\n}})"
+
 
 class StructDialect(Dialect):
+    """Registry for all struct dialect operations."""
 
     def __init__(self):
         super().__init__("struct")
-        self.register(StructNew)
-        self.register(StructDef)
-        self.register(StructWrite)
         self.register(StructMember)
-
-        
-    def parse_complex(self, cursor, lines, parse_fn, find_brace_fn):
-        line = lines[cursor]
-        
-        if "struct.def" in line:
-            struct_name = line.split("struct.def")[1].split('{')[0].strip()
-            end_struct = find_brace_fn(cursor)
-            
-            # El interior de un struct puede tener campos (líneas simples) 
-            # o funciones (dialecto 'function')
-            content = parse_fn(cursor + 1, end_struct)
-            
-            return {
-                "type": "struct_definition",
-                "name": struct_name,
-                "body": content
-            }, end_struct + 1
-            
-        # Para operaciones simples como struct.new, struct.readf, etc.
-        return self.parse_line(line), cursor + 1
-
-    
+        self.register(StructNew)
+        self.register(StructReadm)
+        self.register(StructWritem)
+        # StructDef is a BlockOperation; dispatched separately by LLZKParser
+        self.register(StructDef)
