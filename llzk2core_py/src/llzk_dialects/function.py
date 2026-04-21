@@ -63,8 +63,9 @@ class FunctionReturn(Operation):
         return FunctionReturn(operands, types)
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        # Returns does nothing, as the returned arguments
+        #  are specified in the signature
+        yield from ()
 
     def __repr__(self):
         if not self.operands:
@@ -162,7 +163,7 @@ class FunctionDef(BlockOperation):
         self.body = body
 
         # In arguments to from function definitions
-        self._in_args = []
+        self._in_args = None
 
     def dialect(self) -> Dialect:
         return Dialect("function")
@@ -208,7 +209,7 @@ class FunctionDef(BlockOperation):
         signature_out = signature_args(out_args)
 
         # We start with the declaration of the function and the args
-        yield f"def {core_name}({signature_in}) -> {signature_out}: {{\n"
+        yield f"def {core_name}({signature_in}) -> {signature_out} {{\n"
 
         for operation in self.body:
             yield from operation.to_core(ctx)
@@ -234,7 +235,8 @@ class FunctionDef(BlockOperation):
             _in_args = []
             for arg in args_with_types:
                 split_args = arg.split(":")
-                _in_args.append((split_args[0].strip(), split_args[1].strip()))
+                # We need to transform the arguments to core
+                _in_args.append((split_args[0].strip(), Type.parse(split_args[1].strip()).to_core()))
             self._in_args = _in_args
         return self._in_args
 

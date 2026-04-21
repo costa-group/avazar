@@ -11,7 +11,7 @@ Operations are grouped by arity:
 """
 
 import re
-from typing import List
+from typing import List, Generator
 
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
@@ -52,9 +52,9 @@ class FeltConst(Operation):
         type_opt = Type.parse(m["type"].strip()) if m["type"] else None
         return FeltConst(SSAVar.parse(m["res"]), int(m["value"]), type_opt)
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Introducing constants is as easy as an assignment
+        yield f"{self.result.name} = {self.constant}"
 
     def __repr__(self):
         type_str = f" : {self.result_type}" if self.result_type else ""
@@ -163,8 +163,8 @@ class FeltBinary(Operation):
                           SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]), types)
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        # Just return the name of the function applied to the arguments
+        yield f"{self.result.name} = {self.op} {self.lhs.name} {self.rhs.name}"
 
     def __repr__(self):
         type_str = ('' if not self.types
