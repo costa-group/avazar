@@ -125,9 +125,9 @@ class StructNew(Operation):
             raise ValueError(f"Failed to parse StructNew: {line}")
         return StructNew(SSAVar.parse(m["res"]), Type.parse(m["type"].strip()))
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Does nothing, we do not care about the creation of the struct itself
+        yield from ()
 
     def __repr__(self):
         return f"StructNew({self.result} = struct.new : {self.result_type})"
@@ -176,9 +176,10 @@ class StructReadm(Operation):
         return StructReadm(SSAVar.parse(m["res"]), SSAVar.parse(m["comp"]),
                            GlobalVariable.parse(m["mem"]), types)
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Members of the struct are handled as plain variables. Hence, reading
+        # a field just translates to an assignment
+        yield f"{self.result.name} = {self.member_name.name}"
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
@@ -231,9 +232,10 @@ class StructWritem(Operation):
                             GlobalVariable.parse(m["mem"]),
                             SSAVar.parse(m["val"]), types)
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Members of the struct are handled as plain variables. Hence, writing
+        # a field just translates to an assignment
+        yield f"{self.member_name.name} = {self.value.name}"
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
@@ -299,6 +301,36 @@ class StructDef(BlockOperation):
         #  * Functions: we just process function @compute.
         # We use isinstance because we need to store the function information in TranslationContext
 
+        compute_op, in_args_with_type, out_args_with_type, _ = self._compute_core_function_info_from_struct()
+
+        # There must be at least one compute
+        assert compute_op is not None, "There is no @compute element in the struct"
+
+        # The name to refer to the current function is @poly_template::@struct_def@compute
+        # To identify subcalls in subcomponents, we store this convention
+        llzk_name = f"{ctx.current_template}::{self.sym_name.name}::@compute"
+
+        # The name we give is just the sym_name
+        core_name = self.sym_name.name
+
+        # Assign the information of the name of the function, in/out args to the context information
+        ctx.llzk_func2core[llzk_name] = core_name
+        ctx.core_func2args[core_name] = in_args_with_type, out_args_with_type
+        ctx.current_core_function = core_name
+
+        # After setting the translation, we just need to render the function
+        # considering the out arguments we have generated
+        yield from compute_op.to_core(ctx)
+
+        # Set again to None to avoid inconsistencies in the future
+        ctx.current_core_function = None
+
+    def _compute_core_function_info_from_struct(self) -> Tuple[Operation, List[Tuple[str, str]], List[Tuple[str, str]], List[Tuple[str, str]]]:
+        """
+        Returns the operation corresponding to @compute, and the input and output arguments
+        and the intermediate signals, following the format (var_name, core_type). For instance, [(%a, ff), (%b, arr<3>)].
+        """
+
         # As part of translating a struct, we store the corresponding information of
         # the core function
         in_args_with_type = []
@@ -328,22 +360,7 @@ class StructDef(BlockOperation):
                 # The complete in args
                 in_args_with_type = operation.in_args
 
-        # There must be at least one compute
-        assert compute_op is not None, "There is no @compute element in the struct"
-
-        # The name to refer to the current function is @poly_template::@struct_def@compute
-        # To identify subcalls in subcomponents, we store this convention
-        llzk_name = f"{ctx.current_template}::{self.sym_name.name}::@compute"
-
-        # The name we give is just the sym_name
-        core_name = self.sym_name.name
-
-        # Assign the information of the name of the function, in/out args to the context information
-        ctx.llzk_func2core[llzk_name] = core_name
-        ctx.core_func2args[core_name] = in_args_with_type, out_args_with_type
-
-        yield "StructDef"
-
+        return compute_op, in_args_with_type, out_args_with_type, in_args_with_type
 
     def __repr__(self):
         body_str = '\n  '.join(repr(op) for op in self.body)

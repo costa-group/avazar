@@ -127,6 +127,9 @@ class TranslationContext:
     # Current poly.template (if inside any)
     current_template: str = None
 
+    # Current function name in core (if any)
+    current_core_function: str = None
+
 
 class Operation(ABC):
     """
