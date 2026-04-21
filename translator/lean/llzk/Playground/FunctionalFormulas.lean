@@ -1,7 +1,7 @@
 import Llzk.Basic
 import Llzk.FFConstraints.Basic
 import Llzk.FFConstraints.Satisfiability
-import Std.Data.TreeSet.Lemmas
+import Std.Data.ExtTreeSet.Lemmas
 
 open Llzk.Language.Core.Syntax.AST
 open Llzk.FFConstraints.Basic
@@ -84,7 +84,7 @@ by
   | val v =>
       simp [Llzk.FFConstraints.Satisfiability.evalTerm]
   | var v =>
-      simp [Llzk.FFConstraints.Satisfiability.evalTerm]
+      simp only [Llzk.FFConstraints.Satisfiability.evalTerm]
       have h_v_in_ffvars : v ∈ @ffvarsTerm c (FFTerm.var v) := by
         simp [ffvarsTerm]
       specialize h_ffvars v h_v_in_ffvars
@@ -98,10 +98,9 @@ by
         (ffvarsTerm a ∪ ffvarsTerm b) (ffvarsTerm a) (h_ffvars)
       have h_subset_ffvars_term_a : ffvarsTerm a ⊆ ffvarsTerm a ∪ ffvarsTerm b := by
         sorry
-      simp at h_subset_ffvars
+      simp only at h_subset_ffvars
       have assign_term_a := h_subset_ffvars h_subset_ffvars_term_a
       have ih := assignment_satisf_vars_term a σ σ' ms assign_term_a
-
       sorry
   | sub a b =>
       simp [Llzk.FFConstraints.Satisfiability.evalTerm]
@@ -110,8 +109,9 @@ by
       simp [Llzk.FFConstraints.Satisfiability.evalTerm]
       sorry
   | neg a =>
-      simp [Llzk.FFConstraints.Satisfiability.evalTerm]
+      simp only [Llzk.FFConstraints.Satisfiability.evalTerm]
       have assignment_a := assignment_satisf_vars_term a σ σ' ms h_ffvars h_boolvars
+      simp only [bind_pure_comp, neg_inj, imp_self, implies_true, map_inj_right_of_nonempty]
       exact assignment_a
   | ite cond t e =>
       simp [Llzk.FFConstraints.Satisfiability.evalTerm]
@@ -119,48 +119,61 @@ by
 
 end
 
-#check Std.TreeSet.contains_union
-#check Std.TreeSet.isEmpty_inter_iff
---#check Std.TreeSet.uni
 
 
 -- This should be part of the Std library
-theorem elem_in_union_treeset {α : Type} [BEq α] [Ord α] (s1 s2 : Std.TreeSet α) (x : α) :
-  x ∈ s1 ∪ s2 ↔ x ∈ s1 ∨ x ∈ s2 := by
-rw [Std.TreeSet.mem_iff_contains]
-sorry
+-- theorem elem_in_union_treeset {α : Type} [BEq α] [Ord α] (s1 s2 : Std.TreeSet α) (x : α) :
+--  x ∈ s1 ∪ s2 → x ∈ s1 ∨ x ∈ s2 := by
 
 
 -- This should be part of the Std library
-theorem isEmpty_equal_empty_treeset {α : Type} [BEq α] [Ord α] (s : Std.TreeSet α) :
-  s.isEmpty ↔ s = ∅ := by
-simp [Std.TreeSet.isEmpty, Std.TreeSet.empty]
+theorem isEmpty_equal_empty_treeset {α : Type} [Ord α]
+    [Std.LawfulEqCmp (compare : α → α → Ordering)]
+    [Std.TransCmp (compare : α → α → Ordering)] (s : Std.ExtTreeSet α) :
+  s.isEmpty = true ↔ s = ∅ := by
+constructor
+· -- case mp
+  intro h
+  rw [← Std.ExtTreeSet.isEmpty_iff]
+  exact h
+· -- case mpr
+  intro h
+  simp only [Std.ExtTreeSet.isEmpty_iff]
+  exact h
+
 
 -- This should be part of the Std library
-theorem inter_comm {α : Type} [BEq α] [Ord α] (s1 s2 : Std.TreeSet α) :
-  s1 ∩ s2 = s2 ∩ s1 := by
-sorry
+theorem inter_comm {α : Type} [BEq α] [Ord α]
+    [Std.LawfulEqCmp (compare : α → α → Ordering)]
+    [Std.TransCmp (compare : α → α → Ordering)] (s1 s2 : Std.ExtTreeSet α) :
+    s1 ∩ s2 = s2 ∩ s1 := by
+rw [Std.ExtTreeSet.ext_mem_iff]
+intro x
+-- Rewrite both sides of the Iff (↔) goal simultaneously
+rw [Std.ExtTreeSet.mem_inter_iff, Std.ExtTreeSet.mem_inter_iff, and_comm]
 
 
 theorem treeset_not_in_aux' {α : Type} [BEq α] [Ord α]
-    [Std.TransCmp (compare (α := α))] (S A B C : Std.TreeSet α) :
+    [Std.TransCmp (compare (α := α))]
+    [Std.LawfulEqCmp (compare : α → α → Ordering)]
+  (S A B C : Std.ExtTreeSet α) :
   S = A ∪ B ->
   C ∩ A = ∅ ->
   B ∩ C = ∅ ->
   ∀ x ∈ S, x ∉ C := by
 intro hS hCA hBC x hx
 rw [hS] at hx
-rw [elem_in_union_treeset] at hx
+rw [Std.ExtTreeSet.mem_union_iff] at hx
 cases hx with
 | inl hxA =>
   rw [← isEmpty_equal_empty_treeset] at hCA
   rw [inter_comm] at hCA
-  rw [Std.TreeSet.isEmpty_inter_iff] at hCA
+  rw [Std.ExtTreeSet.isEmpty_inter_iff] at hCA
   specialize hCA x hxA
   exact hCA
 | inr hxB =>
   rw [← isEmpty_equal_empty_treeset] at hBC
-  rw [Std.TreeSet.isEmpty_inter_iff] at hBC
+  rw [Std.ExtTreeSet.isEmpty_inter_iff] at hBC
   specialize hBC x hxB
   exact hBC
 
