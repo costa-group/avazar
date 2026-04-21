@@ -16,6 +16,7 @@ from llzk_dialects.core import (
     TranslationContext, ParseFn,
 )
 from llzk_dialects.definitions import Dialect
+from llzk_dialects.utils import invocation_args, signature_args
 
 
 class FunctionReturn(Operation):
@@ -200,7 +201,22 @@ class FunctionDef(BlockOperation):
         # Translating a function assumes that the output (and input) information
         # is already stored in the context. This is because CORE does not exactly
         # share the same signature (in particular, out_args are public struct members).
-        yield from ()
+        core_name = ctx.current_core_function
+        in_args, out_args = ctx.core_func2args[core_name]
+
+        signature_in = signature_args(in_args)
+        signature_out = signature_args(out_args)
+
+        # We start with the declaration of the function and the args
+        yield f"def {core_name}({signature_in}) -> {signature_out}: {{\n"
+
+        for operation in self.body:
+            yield from operation.to_core(ctx)
+            yield '\n'
+
+        # Closing the function
+        yield f"}}"
+
 
     @property
     def in_args(self) -> List[Tuple[str, str]]:

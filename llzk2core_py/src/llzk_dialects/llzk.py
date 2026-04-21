@@ -21,6 +21,7 @@ from typing import List, Optional, TYPE_CHECKING, Generator
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
+from llzk_dialects.utils import invocation_args, signature_args, array_felt_first_dimension
 
 if TYPE_CHECKING:
     pass  # avoid circular imports
@@ -92,12 +93,12 @@ class ModuleOp:
         in_args, out_args = ctx.core_func2args[core_function]
 
         # For declaring the main function
-        joined_in_args_with_type = ', '.join(f"{arg}: {type_}" for arg, type_ in in_args)
-        joined_out_args_with_type = ', '.join(f"{arg}: {type_}" for arg, type_ in out_args)
+        joined_in_args_with_type = signature_args(in_args)
+        joined_out_args_with_type = signature_args(out_args)
 
         # For invoking the function
-        joined_in_args = ', '.join(arg for arg, _ in in_args)
-        joined_out_args = ', '.join(arg for arg, _ in out_args)
+        joined_in_args = invocation_args(in_args)
+        joined_out_args = invocation_args(out_args)
 
         yield f"""
             def main({joined_in_args_with_type}) -> {joined_out_args_with_type} {{
@@ -149,8 +150,16 @@ class LLZKNondet(Operation):
         return LLZKNondet(SSAVar.parse(m["res"]), Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        # Initializes value. In our case, it is only relevant for arrays,
+        # but for finite elements, we initialize it to zero
+        # TODO: ask Albert?
+        array_dim = array_felt_first_dimension(self.result_type.name)
+        if array_dim is not None:
+            return f"array.new {array_dim} {self.result.name}"
+        elif "!felt.type" in self.result_type.name:
+            return f"{self.result.name} = 0"
+        else:
+            raise ValueError(f"llzk.nondet transformation for not recognized expression: {self.result_type.name}")
 
     def __repr__(self):
         return f"LLZKNondet({self.result} = llzk.nondet : {self.result_type})"
