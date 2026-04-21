@@ -118,12 +118,12 @@ class StructNew(Operation):
     @classmethod
     def parse(cls, line: str) -> 'StructNew':
         pattern = re.compile(
-            r"\s*(?P<res>\S+)\s*=\s*struct\.new\s*:\s*(?P<type>\S+)\s*"
+            r"\s*(?P<res>\S+)\s*=\s*struct\.new\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse StructNew: {line}")
-        return StructNew(SSAVar.parse(m["res"]), Type.parse(m["type"]))
+        return StructNew(SSAVar.parse(m["res"]), Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation

@@ -40,14 +40,14 @@ class CastToFelt(Operation):
     def parse(cls, line: str) -> 'CastToFelt':
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*cast\.tofelt\s+(?P<val>\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse CastToFelt: {line}")
         return CastToFelt(SSAVar.parse(m["res"]),
                           SSAVar.parse(m["val"]),
-                          Type.parse(m["type"]))
+                          Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -68,9 +68,10 @@ class CastToIndex(Operation):
 
     _OPS = {"cast.toindex"}
 
-    def __init__(self, result: SSAVar, value: SSAVar):
+    def __init__(self, result: SSAVar, value: SSAVar, src_type: Type = None):
         self.result = result
         self.value = value
+        self.src_type = src_type
 
     def dialect(self) -> Dialect:
         return Dialect("cast")
@@ -82,19 +83,22 @@ class CastToIndex(Operation):
     @classmethod
     def parse(cls, line: str) -> 'CastToIndex':
         pattern = re.compile(
-            r"\s*(?P<res>\S+)\s*=\s*cast\.toindex\s+(?P<val>\S+)\s*"
+            r"\s*(?P<res>\S+)\s*=\s*cast\.toindex\s+(?P<val>\S+)"
+            r"(?:\s*:\s*(?P<type>.+))?\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse CastToIndex: {line}")
-        return CastToIndex(SSAVar.parse(m["res"]), SSAVar.parse(m["val"]))
+        type_opt = Type.parse(m["type"].strip()) if m["type"] else None
+        return CastToIndex(SSAVar.parse(m["res"]), SSAVar.parse(m["val"]), type_opt)
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        return f"CastToIndex({self.result} = cast.toindex({self.value}))"
+        type_str = f" : {self.src_type}" if self.src_type else ""
+        return f"CastToIndex({self.result} = cast.toindex({self.value}{type_str}))"
 
 
 class CastDialect(Dialect):

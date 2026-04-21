@@ -27,9 +27,11 @@ class FeltConst(Operation):
 
     _OPS = {"felt.const"}
 
-    def __init__(self, variable: SSAVar, constant: int):
+    def __init__(self, variable: SSAVar, constant: int,
+                 result_type: Type = None):
         self.result = variable
         self.constant = constant
+        self.result_type = result_type
 
     def dialect(self) -> Dialect:
         return Dialect("felt")
@@ -41,19 +43,22 @@ class FeltConst(Operation):
     @classmethod
     def parse(cls, line: str) -> 'FeltConst':
         pattern = re.compile(
-            r"\s*(?P<res>\S+)\s*=\s*felt\.const\s+(?P<value>\S+)\s*"
+            r"\s*(?P<res>\S+)\s*=\s*felt\.const\s+(?P<value>\S+)"
+            r"(?:\s*:\s*(?P<type>.+))?\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse FeltConst: {line}")
-        return FeltConst(SSAVar.parse(m["res"]), int(m["value"]))
+        type_opt = Type.parse(m["type"].strip()) if m["type"] else None
+        return FeltConst(SSAVar.parse(m["res"]), int(m["value"]), type_opt)
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        return f"FeltConst({self.result} = {self.constant})"
+        type_str = f" : {self.result_type}" if self.result_type else ""
+        return f"FeltConst({self.result} = {self.constant}{type_str})"
 
 
 class FeltUnary(Operation):

@@ -105,14 +105,14 @@ class PolyReadConst(Operation):
     def parse(cls, line: str) -> 'PolyReadConst':
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*poly\.read_const\s+(?P<name>@\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse PolyReadConst: {line}")
         return PolyReadConst(SSAVar.parse(m["res"]),
                              GlobalVariable.parse(m["name"]),
-                             Type.parse(m["type"]))
+                             Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -153,13 +153,13 @@ class PolyUnifiableCast(Operation):
         # %r = poly.unifiable_cast %input : !in_type -> !out_type
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*poly\.unifiable_cast\s+(?P<inp>\S+)"
-            r"\s*:\s*(?P<intype>\S+)\s*->\s*(?P<outtype>\S+)\s*"
+            r"\s*:\s*(?P<intype>.+?)\s*->\s*(?P<outtype>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse PolyUnifiableCast: {line}")
         return PolyUnifiableCast(SSAVar.parse(m["res"]), SSAVar.parse(m["inp"]),
-                                 Type.parse(m["intype"]), Type.parse(m["outtype"]))
+                                 Type.parse(m["intype"].strip()), Type.parse(m["outtype"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -196,12 +196,12 @@ class PolyParam(Operation):
     def parse(cls, line: str) -> 'PolyParam':
         pattern = re.compile(
             r"\s*poly\.param\s+(?P<name>@\S+)"
-            r"(?:\s*:\s*(?P<type>\S+))?\s*"
+            r"(?:\s*:\s*(?P<type>.+?))?\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse PolyParam: {line}")
-        type_opt = Type.parse(m["type"]) if m["type"] else None
+        type_opt = Type.parse(m["type"].strip()) if m["type"] else None
         return PolyParam(GlobalVariable.parse(m["name"]), type_opt)
 
     def to_core(self, ctx: TranslationContext) -> str:
@@ -239,12 +239,12 @@ class PolyYield(Operation):
     @classmethod
     def parse(cls, line: str) -> 'PolyYield':
         pattern = re.compile(
-            r"\s*poly\.yield\s+(?P<val>\S+)\s*:\s*(?P<type>\S+)\s*"
+            r"\s*poly\.yield\s+(?P<val>\S+)\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse PolyYield: {line}")
-        return PolyYield(SSAVar.parse(m["val"]), Type.parse(m["type"]))
+        return PolyYield(SSAVar.parse(m["val"]), Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation

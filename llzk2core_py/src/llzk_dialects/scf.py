@@ -166,10 +166,10 @@ class SCFIf(BlockOperation):
     def parse(cls, lines: List[str], cursor: int,
               parse_fn: ParseFn) -> Tuple['SCFIf', int]:
         header = lines[cursor]
-        # [%r0, %r1 =] scf.if %cond [: !type] {
+        # [%r0, %r1 =] scf.if %cond [-> (!type) | : !type] {
         pattern = re.compile(
             r"\s*(?:(?P<res>[^=]+?)\s*=\s*)?scf\.if\s+(?P<cond>\S+)"
-            r"(?:\s*:\s*(?P<types>[^{]+?))?\s*\{"
+            r"(?:\s*(?:->|:)\s*(?P<types>[^{]+?))?\s*\{"
         )
         m = re.match(pattern, header)
         if not m:
@@ -403,22 +403,30 @@ class SCFWhile(BlockOperation):
                         init_args.append((SSAVar.parse(arg.strip()),
                                           SSAVar.parse(init.strip())))
 
-        # Find end of 'before' region
-        depth = header.count('{') - header.count('}')
+        # Find end of 'before' region using char-by-char depth so that '} do {'
+        # is correctly treated as closing the before block (the '}' fires first).
+        depth = sum(1 if c == '{' else (-1 if c == '}' else 0) for c in header)
         before_end = cursor
         while depth > 0 and before_end + 1 < len(lines):
             before_end += 1
-            depth += lines[before_end].count('{') - lines[before_end].count('}')
+            for ch in lines[before_end]:
+                if ch == '{':
+                    depth += 1
+                elif ch == '}':
+                    depth -= 1
+                if depth == 0:
+                    break
 
         before_body = parse_fn(cursor + 1, before_end)
 
-        # Find 'do {' and parse 'after' region
-        after_start = before_end + 1
-        # The 'do {' may be on its own line or on the same line as the closing '}'
-        while after_start < len(lines) and "do" not in lines[after_start]:
+        # Find 'do {' — may be on the same line as the closing '}' (i.e. '} do {').
+        after_start = before_end
+        while after_start < len(lines) and 'do' not in lines[after_start]:
             after_start += 1
 
-        depth = lines[after_start].count('{') - lines[after_start].count('}')
+        # The '{' in 'do {' opens exactly one block; don't recompute from the line
+        # since '} do {' has net-zero braces.
+        depth = 1
         after_end = after_start
         while depth > 0 and after_end + 1 < len(lines):
             after_end += 1
