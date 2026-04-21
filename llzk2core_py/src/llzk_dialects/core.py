@@ -102,6 +102,14 @@ class TranslationContext:
     # Maps SSA variable names (e.g. '%0') to their core representation names.
     var_map: Dict[str, str] = field(default_factory=dict)
 
+    # Maps every llzk function to the corresponding core function
+    llzk_func2core: Dict[str, str] = field(default_factory=dict)
+
+    # Maps every core function to the in args (tuple[0]) and the out args (tuple[1]).
+    # Generated while parsing an object. Every in and out args is of the form
+    # [[%a, arr<2>], [%b, ff]], so that invocations to the functions can be generated easily
+    core_func2args: Dict[str, Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]] = field(default_factory=dict)
+
 
 class Operation(ABC):
     """
