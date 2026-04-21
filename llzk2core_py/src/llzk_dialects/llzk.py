@@ -70,17 +70,25 @@ class ModuleOp:
         """
         # Yield operation by operation
         for operation in self.body:
-            yield operation.to_core(ctx)
-
-        yield self._yield_main_function(ctx)
+            yield from operation.to_core(ctx)
+        yield from self._yield_main_function(ctx)
 
     def _yield_main_function(self, ctx: TranslationContext) -> Generator[str, None, None]:
         """
         Generates the main function at the end of the core program, that serves
         as the entry point
         """
+        # We need to transform the llzk.main argument into the expected format.
+        # For instance, '!struct.type<@BinaryAdd_0::@BinaryAdd_0<[]>>' should be
+        # transformed to the llzk name @BinaryAdd_0::@BinaryAdd_0::@compute
+        possible_components = [component for component in self.main_type.name.split("<") if "::" in component]
+        assert len(possible_components) == 1, "Error identifying the main function: " \
+                                              "there should be exactly one component with ::"
+        llzk_name = possible_components[0] + "::@compute"
+        print(ctx.llzk_func2core)
+
         # Finally, yield the main function from the args we have retrieved
-        core_function = ctx.llzk_func2core[self.main_type.name]
+        core_function = ctx.llzk_func2core[llzk_name]
         in_args, out_args = ctx.core_func2args[core_function]
 
         # For declaring the main function

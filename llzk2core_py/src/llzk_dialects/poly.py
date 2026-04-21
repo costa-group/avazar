@@ -363,9 +363,12 @@ class PolyTemplate(BlockOperation):
         # Otherwise, it raises an Error so that the example can be studied in more detail.
         assert len(self.body) == 1, "PolyTemplate in module poly.py assumes there is only one struct to translate"
 
+        # Assign the current poly template to the context
+        ctx.current_template = self.sym_name.name
+
         # Although it is just one element, we iterate for completeness just in case
         for struct_element in self.body:
-            yield struct_element.to_core(ctx)
+            yield from struct_element.to_core(ctx)
 
 
     def __repr__(self):

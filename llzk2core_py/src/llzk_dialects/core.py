@@ -7,7 +7,7 @@ Hierarchy:
   TranslationContext — context object passed to to_core(); extend this class
                        (not method signatures) when more translation state is needed
 """
-
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Dict, List, Callable, Tuple, TYPE_CHECKING
@@ -89,7 +89,15 @@ class Type:
         """
         Transforms a Type into the corresponding declaration in Core
         """
-        pass
+        pattern = r"!array\.type<(\d+)\s+x\s+!felt\.type<"
+        match = re.search(pattern, self.name)
+        if match:
+            return f"arr<{match.group(1)}>"
+
+        elif "!felt.type" in self.name:
+            return "ff"
+
+        return None
 
     def __eq__(self, other):
         return isinstance(other, Type) and self.name == other.name
@@ -115,6 +123,9 @@ class TranslationContext:
     # Generated while parsing an object. Every in and out args is of the form
     # [[%a, arr<2>], [%b, ff]], so that invocations to the functions can be generated easily
     core_func2args: Dict[str, Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]] = field(default_factory=dict)
+
+    # Current poly.template (if inside any)
+    current_template: str = None
 
 
 class Operation(ABC):

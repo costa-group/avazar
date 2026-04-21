@@ -311,7 +311,7 @@ class StructDef(BlockOperation):
             if isinstance(operation, StructMember):
                 # Only traverse operations that are symbolic
                 is_out = operation.is_out
-                core_repr, core_type = operation.sym_name, operation.member_type.to_core()
+                core_repr, core_type = operation.sym_name.name, operation.member_type.to_core()
 
                 if is_out:
                     out_args_with_type.append((core_repr, core_type))
@@ -319,12 +319,30 @@ class StructDef(BlockOperation):
                     intermediate_signals.append((core_repr, core_type))
 
             # Only consider the @compute function, others are ignored
-            elif isinstance(operation, FunctionDef) and operation.sym_name == "@compute":
+            elif isinstance(operation, FunctionDef) and operation.sym_name.name == "@compute":
                 assert compute_op is None, "There are two @compute functions defined in a struct"
                 # We wait for the translation after all the structMembers have been parsed
                 # (not sure if the order is guaranteed by construction)
                 compute_op = operation
-                in_args_with_type = None
+
+                # The complete in args
+                in_args_with_type = operation.in_args
+
+        # There must be at least one compute
+        assert compute_op is not None, "There is no @compute element in the struct"
+
+        # The name to refer to the current function is @poly_template::@struct_def@compute
+        # To identify subcalls in subcomponents, we store this convention
+        llzk_name = f"{ctx.current_template}::{self.sym_name.name}::@compute"
+
+        # The name we give is just the sym_name
+        core_name = self.sym_name.name
+
+        # Assign the information of the name of the function, in/out args to the context information
+        ctx.llzk_func2core[llzk_name] = core_name
+        ctx.core_func2args[core_name] = in_args_with_type, out_args_with_type
+
+        yield "StructDef"
 
 
     def __repr__(self):

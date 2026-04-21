@@ -16,6 +16,7 @@ from llzk_dialects.poly import PolyDialect
 from llzk_dialects.scf import SCFDialect
 from llzk_dialects.string import StringDialect
 from llzk_dialects.struct import StructDialect
+from llzk_dialects.core import TranslationContext
 
 
 def init_llzk_parser(llzk_plain_str: List[str]):
@@ -49,4 +50,5 @@ def main(args: argparse.Namespace):
     p = init_llzk_parser(llzk_contents)
     res = p.parse()
     for element in res:
-        print("ELEMENT", element)
+        to_core = element.to_core(TranslationContext())
+        print("ELEMENT", *to_core)
