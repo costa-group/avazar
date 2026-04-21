@@ -216,7 +216,7 @@ class FunctionDef(BlockOperation):
             yield '\n'
 
         # Closing the function
-        yield f"}}"
+        yield f"}}\n\n"
 
 
     @property

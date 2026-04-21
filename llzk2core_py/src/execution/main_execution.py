@@ -17,6 +17,7 @@ from llzk_dialects.scf import SCFDialect
 from llzk_dialects.string import StringDialect
 from llzk_dialects.struct import StructDialect
 from llzk_dialects.core import TranslationContext
+from llzk_dialects.utils import indent_stream
 
 
 def init_llzk_parser(llzk_plain_str: List[str]):
@@ -49,6 +50,14 @@ def main(args: argparse.Namespace):
 
     p = init_llzk_parser(llzk_contents)
     res = p.parse()
-    for element in res:
-        to_core = element.to_core(TranslationContext())
-        print("ELEMENT", *to_core)
+
+    # For now, we assume only one top
+    # module element must be parsed
+    assert len(res) == 1, "Multiple modules have been recognized inside the program"
+
+    module_structure = res[0]
+    core_generator = module_structure.to_core(TranslationContext())
+    with open(args.target, 'w') as f:
+        # Indent stream generates the statements in a nice format
+        for line in indent_stream(core_generator):
+            f.write(line)
