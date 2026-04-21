@@ -16,7 +16,7 @@ Types:
 """
 
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Generator
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, GlobalVariable, Type,
@@ -358,9 +358,15 @@ class PolyTemplate(BlockOperation):
         body = parse_fn(cursor + 1, end)
         return PolyTemplate(GlobalVariable.parse(m["name"]), body), end + 1
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Translation to core. Assumes there is only one struct defined inside the body.
+        # Otherwise, it raises an Error so that the example can be studied in more detail.
+        assert len(self.body) == 1, "PolyTemplate in module poly.py assumes there is only one struct to translate"
+
+        # Although it is just one element, we iterate for completeness just in case
+        for struct_element in self.body:
+            yield struct_element.to_core(ctx)
+
 
     def __repr__(self):
         body_str = '\n  '.join(repr(op) for op in self.body)

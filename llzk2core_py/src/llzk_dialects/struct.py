@@ -18,14 +18,14 @@ Operations:
 """
 
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Generator
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, GlobalVariable, Type,
     TranslationContext, ParseFn,
 )
 from llzk_dialects.definitions import Dialect
-
+from llzk_dialects.function import FunctionDef
 
 class StructMember(Operation):
     """
@@ -35,8 +35,9 @@ class StructMember(Operation):
     Attributes:
       sym_name (StringAttr)
       type     (TypeAttr)
-      column   (UnitAttr, optional) — marks the member as a column
-      signal   (UnitAttr, optional) — marks the member as a signal
+      column   (UnitAttr, optional) - marks the member as a column
+      signal   (UnitAttr, optional) - marks the member as a signal
+      llzk.pub (UnitAttr, optional) - marks the member as an out signal
     Valid parent: StructDefOp
     Interfaces: Symbol, SymbolUserOpInterface
     """
@@ -44,11 +45,12 @@ class StructMember(Operation):
     _OPS = {"struct.member"}
 
     def __init__(self, sym_name: GlobalVariable, member_type: Type,
-                 is_column: bool = False, is_signal: bool = False):
+                 is_column: bool = False, is_signal: bool = False, is_out: bool = False):
         self.sym_name = sym_name
         self.member_type = member_type
         self.is_column = is_column
         self.is_signal = is_signal
+        self.is_out = is_out
 
     def dialect(self) -> Dialect:
         return Dialect("struct")
@@ -73,11 +75,13 @@ class StructMember(Operation):
             Type.parse(m["type"].strip()),
             is_column="column" in attrs,
             is_signal="signal" in attrs,
+            is_out="llzk.pub" in attrs
         )
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Basic transformation: just return the variable itself (should not be used
+        # in general on their own)
+        yield self.sym_name
 
     def __repr__(self):
         flags = []
@@ -288,9 +292,40 @@ class StructDef(BlockOperation):
         body = parse_fn(cursor + 1, end)
         return StructDef(GlobalVariable.parse(m["name"]), body), end + 1
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Implementation of the definition of a struct. It can have multiple members defined
+        # and functions. They are handled as follows:
+        #  * Members: members with llzk.pub are assumed out signals, otherwise they are intermediate
+        #  * Functions: we just process function @compute.
+        # We use isinstance because we need to store the function information in TranslationContext
+
+        # As part of translating a struct, we store the corresponding information of
+        # the core function
+        in_args_with_type = []
+        out_args_with_type = []
+        intermediate_signals = []
+        compute_op = None
+
+        # We need to obtain the information from the struct
+        for operation in self.body:
+            if isinstance(operation, StructMember):
+                # Only traverse operations that are symbolic
+                is_out = operation.is_out
+                core_repr, core_type = operation.sym_name, operation.member_type.to_core()
+
+                if is_out:
+                    out_args_with_type.append((core_repr, core_type))
+                else:
+                    intermediate_signals.append((core_repr, core_type))
+
+            # Only consider the @compute function, others are ignored
+            elif isinstance(operation, FunctionDef) and operation.sym_name == "@compute":
+                assert compute_op is None, "There are two @compute functions defined in a struct"
+                # We wait for the translation after all the structMembers have been parsed
+                # (not sure if the order is guaranteed by construction)
+                compute_op = operation
+                in_args_with_type = None
+
 
     def __repr__(self):
         body_str = '\n  '.join(repr(op) for op in self.body)
