@@ -9,7 +9,7 @@ Operations:
 """
 
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Generator
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, GlobalVariable, Type,
@@ -196,9 +196,11 @@ class FunctionDef(BlockOperation):
             end + 1,
         )
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Translating a function assumes that the output (and input) information
+        # is already stored in the context. This is because CORE does not exactly
+        # share the same signature (in particular, out_args are public struct members).
+        yield from ()
 
     @property
     def in_args(self) -> List[Tuple[str, str]]:
