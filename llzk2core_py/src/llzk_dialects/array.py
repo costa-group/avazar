@@ -60,7 +60,7 @@ class ArrayNew(Operation):
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*array\.new"
             r"(?:\s*:\s*\(\s*(?P<elems>[^)]*)\s*\))?"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
@@ -69,7 +69,7 @@ class ArrayNew(Operation):
             [SSAVar.parse(e.strip()) for e in m["elems"].split(",") if e.strip()]
             if m["elems"] else []
         )
-        return ArrayNew(SSAVar.parse(m["res"]), elements, Type.parse(m["type"]))
+        return ArrayNew(SSAVar.parse(m["res"]), elements, Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -219,13 +219,13 @@ class ArrayExtract(Operation):
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*array\.extract\s+(?P<arr>\S+)"
             r"\s*\[\s*(?P<idx>[^\]]*)\s*\]"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse ArrayExtract: {line}")
         return ArrayExtract(SSAVar.parse(m["res"]), SSAVar.parse(m["arr"]),
-                            _parse_index_list(m["idx"]), Type.parse(m["type"]))
+                            _parse_index_list(m["idx"]), Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -320,13 +320,13 @@ class ArrayLen(Operation):
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*array\.len\s+(?P<arr>\S+)"
             r"\s*,\s*(?P<dim>\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse ArrayLen: {line}")
         return ArrayLen(SSAVar.parse(m["res"]), SSAVar.parse(m["arr"]),
-                        SSAVar.parse(m["dim"]), Type.parse(m["type"]))
+                        SSAVar.parse(m["dim"]), Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation

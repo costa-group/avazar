@@ -56,12 +56,12 @@ class ArithConst(Operation):
         # %r = arith.constant <value> : <type>
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*arith\.constant\s+(?P<val>\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse ArithConst: {line}")
-        return ArithConst(SSAVar.parse(m["res"]), m["val"], Type.parse(m["type"]))
+        return ArithConst(SSAVar.parse(m["res"]), m["val"], Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -109,7 +109,7 @@ class ArithBinary(Operation):
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*(?P<op>\S+)"
             r"\s+(?P<lhs>\S+)\s*,\s*(?P<rhs>\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
@@ -118,7 +118,7 @@ class ArithBinary(Operation):
             f"Binary arith operation not recognised: {m['op']}"
         return ArithBinary(SSAVar.parse(m["res"]), m["op"],
                            SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]),
-                           Type.parse(m["type"]))
+                           Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -162,7 +162,7 @@ class ArithCmpi(Operation):
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*arith\.cmpi\s+(?P<pred>\w+)"
             r"\s*,\s*(?P<lhs>\S+)\s*,\s*(?P<rhs>\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
@@ -171,7 +171,7 @@ class ArithCmpi(Operation):
             f"Unknown arith.cmpi predicate: {m['pred']}"
         return ArithCmpi(SSAVar.parse(m["res"]), m["pred"],
                          SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]),
-                         Type.parse(m["type"]))
+                         Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -219,7 +219,7 @@ class ArithCast(Operation):
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*(?P<op>\S+)"
             r"\s+(?P<operand>\S+)"
-            r"\s*:\s*(?P<src>\S+)\s+to\s+(?P<dst>\S+)\s*"
+            r"\s*:\s*(?P<src>.+?)\s+to\s+(?P<dst>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
@@ -228,7 +228,7 @@ class ArithCast(Operation):
             f"Arith cast operation not recognised: {m['op']}"
         return ArithCast(SSAVar.parse(m["res"]), m["op"],
                          SSAVar.parse(m["operand"]),
-                         Type.parse(m["src"]), Type.parse(m["dst"]))
+                         Type.parse(m["src"].strip()), Type.parse(m["dst"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation

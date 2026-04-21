@@ -119,11 +119,12 @@ class BoolCmp(Operation):
     _OPS = {"bool.cmp"}
 
     def __init__(self, result: SSAVar, predicate: str,
-                 lhs: SSAVar, rhs: SSAVar):
+                 lhs: SSAVar, rhs: SSAVar, types: List[Type] = None):
         self.result = result
         self.predicate = predicate
         self.lhs = lhs
         self.rhs = rhs
+        self.types = types or []
 
     def dialect(self) -> Dialect:
         return Dialect("bool")
@@ -134,26 +135,32 @@ class BoolCmp(Operation):
 
     @classmethod
     def parse(cls, line: str) -> 'BoolCmp':
-        # %result = bool.cmp eq(%lhs, %rhs)
+        # %result = bool.cmp eq(%lhs, %rhs) [: type, type]
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*bool\.cmp\s+(?P<pred>\w+)"
-            r"\s*\(\s*(?P<lhs>\S+)\s*,\s*(?P<rhs>\S+)\s*\)\s*"
+            r"\s*\(\s*(?P<lhs>\S+)\s*,\s*(?P<rhs>\S+)\s*\)"
+            r"(?:\s*:\s*(?P<types>.+))?\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse BoolCmp: {line}")
         assert m["pred"] in FELT_CMP_PREDICATES, \
             f"Unknown bool.cmp predicate: {m['pred']}. Expression: {line}"
+        types = (
+            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            if m["types"] else []
+        )
         return BoolCmp(SSAVar.parse(m["res"]), m["pred"],
-                       SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]))
+                       SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]), types)
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
+        type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
         return (f"BoolCmp({self.result} = bool.cmp {self.predicate}"
-                f"({self.lhs}, {self.rhs}))")
+                f"({self.lhs}, {self.rhs}){type_str})")
 
 
 class BoolAssert(Operation):

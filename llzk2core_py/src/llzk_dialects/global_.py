@@ -52,14 +52,14 @@ class GlobalDef(Operation):
         # global.def [const] @name : !type = value
         pattern = re.compile(
             r"\s*global\.def\s+(?P<const>const\s+)?(?P<sym>@\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*=\s*(?P<val>\S+)\s*"
+            r"\s*:\s*(?P<type>[^=]+?)\s*=\s*(?P<val>\S+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse GlobalDef: {line}")
         return GlobalDef(
             GlobalVariable.parse(m["sym"]),
-            Type.parse(m["type"]),
+            Type.parse(m["type"].strip()),
             m["val"],
             is_const=m["const"] is not None,
         )
@@ -102,14 +102,14 @@ class GlobalRead(Operation):
     def parse(cls, line: str) -> 'GlobalRead':
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*global\.read\s+(?P<ref>@\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse GlobalRead: {line}")
         return GlobalRead(SSAVar.parse(m["res"]),
                           GlobalVariable.parse(m["ref"]),
-                          Type.parse(m["type"]))
+                          Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -148,14 +148,14 @@ class GlobalWrite(Operation):
     def parse(cls, line: str) -> 'GlobalWrite':
         pattern = re.compile(
             r"\s*global\.write\s+(?P<ref>@\S+)\s*=\s*(?P<val>\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse GlobalWrite: {line}")
         return GlobalWrite(GlobalVariable.parse(m["ref"]),
                            SSAVar.parse(m["val"]),
-                           Type.parse(m["type"]))
+                           Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
