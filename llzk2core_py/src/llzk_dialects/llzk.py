@@ -86,7 +86,6 @@ class ModuleOp:
         assert len(possible_components) == 1, "Error identifying the main function: " \
                                               "there should be exactly one component with ::"
         llzk_name = possible_components[0] + "::@compute"
-        print(ctx.llzk_func2core)
 
         # Finally, yield the main function from the args we have retrieved
         core_function = ctx.llzk_func2core[llzk_name]
