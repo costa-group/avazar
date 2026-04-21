@@ -85,6 +85,12 @@ class Type:
     def __repr__(self):
         return self.name
 
+    def to_core(self):
+        """
+        Transforms a Type into the corresponding declaration in Core
+        """
+        pass
+
     def __eq__(self, other):
         return isinstance(other, Type) and self.name == other.name
 
