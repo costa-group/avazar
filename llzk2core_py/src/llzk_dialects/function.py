@@ -160,6 +160,9 @@ class FunctionDef(BlockOperation):
         self.signature = signature
         self.body = body
 
+        # In arguments to from function definitions
+        self._in_args = []
+
     def dialect(self) -> Dialect:
         return Dialect("function")
 
@@ -195,6 +198,30 @@ class FunctionDef(BlockOperation):
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
+        raise NotImplementedError
+
+    @property
+    def in_args(self) -> List[Tuple[str, str]]:
+        """
+        Generates the in_args from the signature
+        (e.g "(%arg0: !array.type<2 x !felt.type<"bn128">>, %arg1: !array.type<2 x !felt.type<"bn128">>)
+              -> !struct.type<@BinaryAdd_0::@BinaryAdd_0<[]>> attributes" converts to
+              [(%arg0, !array.type<2 x !felt.type<"bn128">>), (%arg1: !array.type<2 x !felt.type<"bn128">>)]
+              )
+        """
+        if self._in_args is None:
+            arg_inside_parentheses = self.signature.split("->")[0].strip()
+            # Skip the ()
+            args_with_types = arg_inside_parentheses[1:-1].split(', ')
+            _in_args = []
+            for arg in args_with_types:
+                split_args = arg.split(":")
+                _in_args.append((split_args[0].strip(), split_args[1].strip()))
+            self._in_args = _in_args
+        return self._in_args
+
+    @property
+    def out_args(self) -> List[Tuple[str, str]]:
         raise NotImplementedError
 
     def __repr__(self):
