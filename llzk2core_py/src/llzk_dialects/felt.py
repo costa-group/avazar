@@ -104,8 +104,8 @@ class FeltUnary(Operation):
                          SSAVar.parse(m["operand"]), types)
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        # Unary operations are translated into an assignment
+        yield f"{self.result.name} = {self.op} {self.operand.name}"
 
     def __repr__(self):
         type_str = ('' if not self.types
