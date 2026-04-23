@@ -72,6 +72,16 @@ inductive MacroCallParam (c : ZKConfig) where
 -- instance : Ord BoolVar where
 --   compare a b := compare (toString a) (toString b)
 
+instance : Ord SrcInfo where
+  compare a b := if compare a.row b.row = .eq then
+                 compare a.col b.col
+                 else compare a.row b.row
+
+instance : Ord FFVarMetaData where
+  compare a b := if compare a.orig_name b.orig_name = .eq
+                 then compare a.src_info b.src_info
+                 else compare a.orig_name b.orig_name
+
 /-  Equality (BEq) of FFVar -/
 instance : BEq FFVar where
   beq a b := a.id == b.id
@@ -90,7 +100,9 @@ instance : ToString BoolVar where
 
 /-  Ordering (Ord) of FFVar. Needed if we use ordered sets -/
 instance : Ord FFVar where
-  compare a b := compare a.id b.id
+  compare a b := if compare a.id b.id = .eq then
+                 compare a.meta_data b.meta_data
+                 else compare a.id b.id
 
 /-  Ordering (Ord) of BoolVar. Needed if we use ordered sets -/
 instance : Ord BoolVar where
@@ -102,8 +114,10 @@ instance : Std.TransCmp (compare (α := FFVar)) := by
 instance : Std.TransCmp (compare (α := BoolVar)) := by
   sorry
 
-instance : Std.LawfulEqCmp (compare (α := FFVar)) := by
-  sorry
+
+instance : Std.LawfulEqCmp (compare (α := BoolVar)) where
+  eq_iff_eq {a b} := by
+    sorry
 
 instance : Std.LawfulEqCmp (compare (α := BoolVar)) := by
   sorry
