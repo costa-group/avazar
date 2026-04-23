@@ -35,7 +35,7 @@ instance : ToString VarIDSet where
 structure SrcInfo where
   row : ℕ
   col : ℕ
-  deriving Repr, BEq, Inhabited
+  deriving Repr, BEq, Inhabited, Ord
 
 structure LivenessInfo where
   live_in : VarIDSet := emptyVarIDSet
