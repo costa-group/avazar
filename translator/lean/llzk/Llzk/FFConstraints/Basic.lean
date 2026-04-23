@@ -13,24 +13,24 @@ open Llzk.Language.Core.Syntax.AST
 structure FFVarMetaData where
   orig_name : String
   src_info : SrcInfo
-  deriving Repr, BEq, Inhabited
+  deriving Repr, BEq, Inhabited, Ord
 
 structure BoolVarMetaData where
   orig_name : String
   src_info : SrcInfo
-  deriving Repr, BEq, Inhabited
+  deriving Repr, BEq, Inhabited, Ord
 
 /- A finite field variable -/
 structure FFVar where
   id : ℕ
   meta_data: FFVarMetaData
-  deriving Repr, BEq, Inhabited
+  deriving Repr, BEq, Inhabited, Ord
 
 /- A boolean variable -/
 structure BoolVar where
   id : ℕ
   meta_data: BoolVarMetaData
-  deriving Repr, BEq, Inhabited
+  deriving Repr, BEq, Inhabited, Ord
 
 /- A variable, which can be either a finite field variable or a boolean variable -/
 abbrev Var := FFVar ⊕ BoolVar
@@ -72,23 +72,13 @@ inductive MacroCallParam (c : ZKConfig) where
 -- instance : Ord BoolVar where
 --   compare a b := compare (toString a) (toString b)
 
-instance : Ord SrcInfo where
-  compare a b := if compare a.row b.row = .eq then
-                 compare a.col b.col
-                 else compare a.row b.row
-
-instance : Ord FFVarMetaData where
-  compare a b := if compare a.orig_name b.orig_name = .eq
-                 then compare a.src_info b.src_info
-                 else compare a.orig_name b.orig_name
-
 /-  Equality (BEq) of FFVar -/
-instance : BEq FFVar where
-  beq a b := a.id == b.id
+--instance : BEq FFVar where
+--  beq a b := a.id == b.id
 
 /-  Equality (BEq) of BoolVar -/
-instance : BEq BoolVar where
-  beq a b := a.id == b.id
+--instance : BEq BoolVar where
+--  beq a b := a.id == b.id
 
 /- ToString instance for FFVar -/
 instance : ToString FFVar where
@@ -99,25 +89,96 @@ instance : ToString BoolVar where
   toString v := s!"v_{v.id}"
 
 /-  Ordering (Ord) of FFVar. Needed if we use ordered sets -/
-instance : Ord FFVar where
-  compare a b := if compare a.id b.id = .eq then
-                 compare a.meta_data b.meta_data
-                 else compare a.id b.id
+--instance : Ord FFVar where
+--  compare a b := compareLex
 
 /-  Ordering (Ord) of BoolVar. Needed if we use ordered sets -/
-instance : Ord BoolVar where
-  compare a b := compare a.id b.id
+--instance : Ord BoolVar where
+--  compare a b := compare a.id b.id
 
 instance : Std.TransCmp (compare (α := FFVar)) := by
   sorry
 
+
 instance : Std.TransCmp (compare (α := BoolVar)) := by
   sorry
 
+#check compareLex
 
-instance : Std.LawfulEqCmp (compare (α := BoolVar)) where
-  eq_iff_eq {a b} := by
+#check compareOfLessAndEq_eq_eq
+#check instOrdSrcInfo.
+
+instance : Std.LawfulEqCmp (compare (α := FFVar)) where
+  eq_of_compare {a b} := by
+    intros h
+    cases a  with | mk id_a m_a =>
+    cases b  with | mk id_b m_b =>
+    cases m_a with | mk orig_a src_a =>
+    cases m_b with | mk orig_b src_b =>
     sorry
+    --simp [compare, instOrdFFVar.ord, instOrdFFVarMetaData.ord] at h
+    --rw [compareOfLessAndEq_eq_eq] at h
+    --rw [compareOfLessAndEq_eq_eq] at h
+    ---- rw [compareOfLessAndEq_eq_eq] at h
+    --simp [h]
+
+    /-
+
+    cases a with | mk id_a m_a =>
+    cases b with | mk id_b m_b =>
+    cases m_a with | mk orig_a src_a =>
+    cases m_b with | mk orig_b src_b =>
+    simp at h
+    cases hcomp: compare id_a id_b
+
+    · -- case lt
+      have h_lt : id_a < id_b := by sorry
+      simp [h_lt] at h
+
+    · -- case eq
+      have h_eq : id_a = id_b := by sorry
+      simp [h_eq] at h
+      by_cases h_comp_orig : orig_a < orig_b
+      · -- false
+        simp [h_comp_orig] at h
+      · -- true
+        simp [h_comp_orig] at h
+        by_cases h_meta_eq : orig_a = orig_b
+        · -- false
+          simp [h_meta_eq] at h
+          by_cases h_src_row : src_a.row < src_b.row
+          · -- false
+            simp [h_src_row] at h
+          · -- true
+            simp [h_src_row] at h
+            by_cases h_src_eq : src_a.row = src_b.row
+            · -- false
+              simp [h_src_eq] at h
+              by_cases h_src_col : src_a.col < src_b.col
+              · -- false
+                simp [h_src_col] at h
+              · -- true
+                simp [h_src_col] at h
+                simp [h_eq, h_meta_eq]
+                sorry
+            · -- true
+              simp [h_src_eq] at h
+        · -- false
+          by_cases h_meta_eq : orig_a = orig_b
+          · -- false
+            simp [h_meta_eq] at h
+            sorry
+          · -- true
+            sorry
+
+    · -- case gt
+      simp
+      sorry
+      -/
+
+
+
+
 
 instance : Std.LawfulEqCmp (compare (α := BoolVar)) := by
   sorry
