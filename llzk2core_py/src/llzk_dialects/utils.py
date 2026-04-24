@@ -33,6 +33,18 @@ def array_felt_first_dimension(type_: str) -> Optional[int]:
     return None
 
 
+def translate_assignment_core(lhs: str, rhs: str, is_ff: bool) -> str:
+    """
+    Translates an assignment between the lhs and rhs variables to core.
+    Depending on whether the variables are ff or arr<2>, a different statement is issued.
+    Bool "is_ff" marks the corresponding case
+    """
+    if is_ff:
+        return f"{lhs} = {rhs}"
+    else:
+        return f"array.copy {lhs} {rhs}"
+
+
 def indent_stream(source, indent: str = "  "):
     """
     Consumes lines from a generator and yields them properly indented,
