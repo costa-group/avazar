@@ -12,7 +12,7 @@ Operations:
 """
 
 import re
-from typing import List, Optional
+from typing import List, Optional, Generator
 
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
@@ -58,9 +58,8 @@ class BoolBinary(Operation):
         return BoolBinary(SSAVar.parse(m["res"]), m["op"],
                           SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]))
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        yield f"{self.result.to_core()} = {self.op} {self.lhs.to_core()} {self.rhs.to_core()}"
 
     def __repr__(self):
         return f"BoolBinary({self.result} = {self.op}({self.lhs}, {self.rhs}))"
@@ -99,8 +98,7 @@ class BoolNot(Operation):
         return BoolNot(SSAVar.parse(m["res"]), SSAVar.parse(m["operand"]))
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        yield f"{self.result.to_core()} = bool.not {self.operand.to_core()}"
 
     def __repr__(self):
         return f"BoolNot({self.result} = bool.not({self.operand}))"
@@ -117,6 +115,8 @@ class BoolCmp(Operation):
     """
 
     _OPS = {"bool.cmp"}
+    _PRED2CORE = {"eq": "bool.eq", "ne": "bool.neq", "lt": "bool.lt",
+                  "le": "bool.ge", "gt": "bool.gt", "ge": "bool.ge"}
 
     def __init__(self, result: SSAVar, predicate: str,
                  lhs: SSAVar, rhs: SSAVar, types: List[Type] = None):
@@ -153,9 +153,9 @@ class BoolCmp(Operation):
         return BoolCmp(SSAVar.parse(m["res"]), m["pred"],
                        SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]), types)
 
-    def to_core(self, ctx: TranslationContext) -> str:
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # TODO: implement core translation
-        raise NotImplementedError
+        yield f"{self.result.to_core()} = {self._PRED2CORE[self.predicate]} {self.rhs.to_core()} {self.lhs.to_core()}"
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
