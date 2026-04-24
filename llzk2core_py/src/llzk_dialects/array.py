@@ -15,10 +15,11 @@ Operations:
 """
 
 import re
-from typing import List, Optional
+from typing import List, Optional, Generator
 
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
+from llzk_dialects.utils import array_felt_first_dimension
 
 
 def _parse_index_list(raw: Optional[str]) -> List[SSAVar]:
@@ -71,9 +72,11 @@ class ArrayNew(Operation):
         )
         return ArrayNew(SSAVar.parse(m["res"]), elements, Type.parse(m["type"].strip()))
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        if len(self.elements) > 0:
+            raise NotImplementedError("array.new not implemented with initial elements")
+        dim = array_felt_first_dimension(self.result_type.name)
+        yield f"array.new {self.result} {dim}"
 
     def __repr__(self):
         elem_str = f" : ({', '.join(repr(e) for e in self.elements)})" if self.elements else ""
@@ -124,9 +127,12 @@ class ArrayRead(Operation):
         return ArrayRead(SSAVar.parse(m["res"]), SSAVar.parse(m["arr"]),
                          indices, types)
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # We cover the case in which there could be multiple accesses because
+        # there are multiple indices. To do that, we recover a different
+        # component of the result
+        for i, index in enumerate(self.indices):
+            yield f"array.read {self.arr_ref.to_core()}[{index.to_core()}] {self.result.to_core_component(i)}"
 
     def __repr__(self):
         idx_str = ', '.join(repr(i) for i in self.indices)
@@ -180,8 +186,11 @@ class ArrayWrite(Operation):
                           SSAVar.parse(m["rval"]), types)
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        # We cover the case in which there could be multiple accesses because
+        # there are multiple indices. To do that, we recover a different
+        # component of the result
+        for i, index in enumerate(self.indices):
+            yield f"array.write {self.rvalue.to_core_component(i)} {self.arr_ref.to_core()}[{index.to_core()}]"
 
     def __repr__(self):
         idx_str = ', '.join(repr(i) for i in self.indices)
