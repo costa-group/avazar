@@ -18,6 +18,7 @@ from llzk_dialects.core import (
     TranslationContext, ParseFn,
 )
 from llzk_dialects.definitions import Dialect
+from llzk_dialects.utils import translate_assignment_core
 
 
 class SCFYield(Operation):
@@ -73,18 +74,14 @@ class SCFYield(Operation):
                 # Retrieve the component and the yield operand at current
                 # index "yield_res_index"
                 lhs = result.to_core_component(component)
-                rhs = self.operands[yield_res_index]
+                rhs = self.operands[yield_res_index].to_core()
                 type_ = self.types[yield_res_index]
 
                 to_core_type = type_.to_core()
                 assert to_core_type is not None, f"Error recognizing type inside a yield expression: {self}"
                 # Depending on whether the type corresponds to an array
                 # or to a ff, we generate a copy or a direct assignment
-                if to_core_type == "ff":
-                    yield f"{lhs} = {rhs.to_core()}"
-                else:
-                    yield f"array.copy {lhs} {rhs}"
-
+                yield translate_assignment_core(lhs, rhs, to_core_type == "ff")
                 yield_res_index += 1
 
     def __repr__(self):
@@ -398,7 +395,7 @@ class SCFWhile(BlockOperation):
 
     def __init__(self, results: List[SSAVar],
                  init_args: List[Tuple[SSAVar, SSAVar]],
-                 func_type: Optional[str],
+                 func_type: List[Tuple[List[Type], List[Type]]],
                  before_body: List[Operation],
                  after_body: List[Operation]):
         self.results = results
@@ -433,6 +430,10 @@ class SCFWhile(BlockOperation):
             [SSAVar.parse(r.strip()) for r in m["res"].split(",") if r.strip()]
             if m["res"] else []
         )
+
+        types = [[Type.parse(type) for type in region.strip()[1:-1].split(', ')]
+                 for region in m["ftype"].split("->")]
+
         init_args: List[Tuple[SSAVar, SSAVar]] = []
         if m["iargs"]:
             for pair in m["iargs"].split(","):
@@ -477,7 +478,7 @@ class SCFWhile(BlockOperation):
         after_body = parse_fn(after_start + 1, after_end)
 
         return (
-            SCFWhile(results, init_args, m["ftype"] and m["ftype"].strip(),
+            SCFWhile(results, init_args, types,
                      before_body, after_body),
             after_end + 1,
         )
@@ -490,6 +491,27 @@ class SCFWhile(BlockOperation):
 
         for statement in self.after_body:
             yield from statement.to_core(ctx)
+
+    def _translate_first_region(self, ctx: TranslationContext):
+        # The first region of a while in LLZK must correspond
+        # to the evaluation of the condition.
+        # Nevertheless, we must still consider the expressions that lead
+        # to the arguments that the second region receives
+        first_region_args = self.init_args
+        in_types = self.func_type[0]
+
+        # Initialize args
+        pass
+
+    def _translate_second_region(self, region_ops: List[Operation], ctx: TranslationContext) -> Generator[str, None, None]:
+        for statement in branch_ops[:-1]:
+            # Process all the operands as usual, except for the scf.yield
+            yield from statement.to_core(ctx)
+
+        # For the yield operation, we must retrieve the results variables
+        ctx.scf_result = self.results
+        yield from branch_ops[-1].to_core(ctx)
+        ctx.scf_result = []
 
     def __repr__(self):
         res_str = (', '.join(repr(r) for r in self.results) + ' = ') if self.results else ''

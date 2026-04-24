@@ -26,6 +26,7 @@ from llzk_dialects.core import (
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
+from llzk_dialects.utils import translate_assignment_core
 
 class StructMember(Operation):
     """
@@ -235,7 +236,7 @@ class StructWritem(Operation):
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Members of the struct are handled as plain variables. Hence, writing
         # a field just translates to an assignment
-        yield f"{self.member_name.name} = {self.value.name}"
+        yield translate_assignment_core(self.member_name.name, self.value.to_core(), "array" not in self.types[1].name)
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
