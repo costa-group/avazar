@@ -10,7 +10,7 @@ Hierarchy:
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List, Callable, Tuple, TYPE_CHECKING
+from typing import Dict, List, Callable, Tuple, TYPE_CHECKING, Union, Generator
 from llzk_dialects.utils import array_felt_first_dimension
 
 
@@ -39,6 +39,12 @@ class SSAVar:
             return SSAVar(components[0], int(components[1]))
         else:
             raise ValueError(f"SSA variable has more than one ':': {ssa_var}")
+
+    def to_core(self) -> str:
+        # Core needs to introduce a variable for each component.
+        # We assume that only a multicomponent variable
+        # is transformed to core in its declaration
+        return self.name if self.n_components == 1 else ','.join([f"{self.name}#{i}" for i in range(self.n_components)])
 
     def __repr__(self) -> str:
         return self.name if self.n_components == 1 else f"{self.name}:{self.n_components}"
@@ -130,6 +136,9 @@ class TranslationContext:
 
     # Current function name in core (if any)
     current_core_function: str = None
+
+    # Current yield arguments (if any). Useful for "scf.yield" instruction inside a while or an if
+    current_yield: List[str] = None
 
 
 class Operation(ABC):
