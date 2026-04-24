@@ -50,8 +50,8 @@ class CastToFelt(Operation):
                           Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        # Casting does nothing because CORE does not distinguish between felt and int
+        yield from ()
 
     def __repr__(self):
         return f"CastToFelt({self.result} = cast.tofelt({self.value} : {self.src_type}))"
@@ -93,8 +93,8 @@ class CastToIndex(Operation):
         return CastToIndex(SSAVar.parse(m["res"]), SSAVar.parse(m["val"]), type_opt)
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        # Casting does nothing because CORE does not distinguish between felt and int
+        yield from ()
 
     def __repr__(self):
         type_str = f" : {self.src_type}" if self.src_type else ""
