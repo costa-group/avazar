@@ -54,7 +54,7 @@ class FeltConst(Operation):
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Introducing constants is as easy as an assignment
-        yield f"{self.result.name} = {self.constant}"
+        yield f"{self.result.to_core()} = {self.constant}"
 
     def __repr__(self):
         type_str = f" : {self.result_type}" if self.result_type else ""
@@ -105,7 +105,7 @@ class FeltUnary(Operation):
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Unary operations are translated into an assignment
-        yield f"{self.result.name} = {self.op} {self.operand.name}"
+        yield f"{self.result.to_core()} = {self.op} {self.operand.to_core()}"
 
     def __repr__(self):
         type_str = ('' if not self.types
@@ -164,7 +164,7 @@ class FeltBinary(Operation):
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Just return the name of the function applied to the arguments
-        yield f"{self.result.name} = {self.op} {self.lhs.name} {self.rhs.name}"
+        yield f"{self.result.to_core()} = {self.op} {self.lhs.to_core()} {self.rhs.to_core()}"
 
     def __repr__(self):
         type_str = ('' if not self.types
