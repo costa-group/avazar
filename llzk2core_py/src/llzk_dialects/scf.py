@@ -11,7 +11,7 @@ Operations:
 """
 
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Generator
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, Type,
@@ -63,9 +63,29 @@ class SCFYield(Operation):
         )
         return SCFYield(operands, types)
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # It uses "current_yield" inside the context to retrieve
+        # the name of the variable that is used as a result and performs
+        # all the assignments for each component
+        yield_res_index = 0
+        for result in ctx.scf_result:
+            for component in range(result.n_components):
+                # Retrieve the component and the yield operand at current
+                # index "yield_res_index"
+                lhs = result.to_core_component(component)
+                rhs = self.operands[yield_res_index]
+                type_ = self.types[yield_res_index]
+
+                to_core_type = type_.to_core()
+                assert to_core_type is not None, f"Error recognizing type inside a yield expression: {self}"
+                # Depending on whether the type corresponds to an array
+                # or to a ff, we generate a copy or a direct assignment
+                if to_core_type == "ff":
+                    yield f"{lhs} = {rhs.to_core()}"
+                else:
+                    yield f"array.copy {lhs} {rhs}"
+
+                yield_res_index += 1
 
     def __repr__(self):
         if not self.operands:
@@ -121,7 +141,7 @@ class SCFCondition(Operation):
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
-        raise NotImplementedError
+        yield from ()
 
     def __repr__(self):
         args_str = (', '.join(repr(a) for a in self.args) + ' ') if self.args else ''
@@ -232,9 +252,31 @@ class SCFIf(BlockOperation):
             next_cursor,
         )
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # If translation:
+        # * The condition corresponds to a variable. Hence, we transform it to if(var == 1),
+        #   as 1 is for true in CORE.
+        # * Then we translate the body of the if and of the else. The transformation here just
+        #   needs to consider that "scf.yield" assigns the variables yielded to the results
+        #   (which can be multiple)
+        yield f"if ({self.condition.to_core()} == 1) {{"
+        yield from self._translate_branch(self.then_body, ctx)
+        yield "}\n"
+        yield "else {"
+        yield from self._translate_branch(self.else_body, ctx)
+        yield "}"
+
+    def _translate_branch(self, branch_ops: List[Operation], ctx: TranslationContext) -> Generator[str, None, None]:
+        assert isinstance(branch_ops[-1], SCFYield), "Last instruction of SCFIf must be a yield"
+
+        for statement in branch_ops[:-1]:
+            # Process all the operands as usual, except for the scf.yield
+            yield from statement.to_core(ctx)
+
+        # For the yield operation, we must retrieve the results variables
+        ctx.scf_result = self.results
+        yield from branch_ops[-1].to_core(ctx)
+        ctx.scf_result = []
 
     def __repr__(self):
         res_str = (', '.join(repr(r) for r in self.results) + ' = ') if self.results else ''
@@ -442,7 +484,12 @@ class SCFWhile(BlockOperation):
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
-        raise NotImplementedError
+        # DUMMY TEST SO FAR
+        for statement in self.before_body:
+            yield from statement.to_core(ctx)
+
+        for statement in self.after_body:
+            yield from statement.to_core(ctx)
 
     def __repr__(self):
         res_str = (', '.join(repr(r) for r in self.results) + ' = ') if self.results else ''

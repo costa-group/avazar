@@ -42,9 +42,18 @@ class SSAVar:
 
     def to_core(self) -> str:
         # Core needs to introduce a variable for each component.
-        # We assume that only a multicomponent variable
+        # We assume that only a variadic variable (i.e. multiple components)
         # is transformed to core in its declaration
         return self.name if self.n_components == 1 else ','.join([f"{self.name}#{i}" for i in range(self.n_components)])
+
+    def to_core_component(self, i: int) -> str:
+        """
+        Retrieves the core expresion of a given position if it has n components.
+        Otherwise, it works similarly to_core method
+        """
+        assert i < self.n_components, f"SSA var {self}: trying to access a component " \
+                                      f"beyond the number of available components"
+        return self.name if self.n_components == 1 else f"{self.name}#{i}"
 
     def __repr__(self) -> str:
         return self.name if self.n_components == 1 else f"{self.name}:{self.n_components}"
@@ -137,8 +146,8 @@ class TranslationContext:
     # Current function name in core (if any)
     current_core_function: str = None
 
-    # Current yield arguments (if any). Useful for "scf.yield" instruction inside a while or an if
-    current_yield: List[str] = None
+    # Current arguments returned by an if/while/for. Useful for "scf.yield" instruction inside a while or an if
+    scf_result: List[SSAVar] = field(default_factory=list)
 
 
 class Operation(ABC):
