@@ -96,9 +96,77 @@ instance : ToString BoolVar where
 --instance : Ord BoolVar where
 --  compare a b := compare a.id b.id
 
-instance : Std.TransCmp (compare (α := FFVar)) := by
-  sorry
+#check Std.TransCmp
 
+instance : Std.TransCmp (compare (α := FFVar)) where
+  isLE_trans := by
+    intros a b c h_a_b h_b_c
+    simp only [compare, instOrdFFVar.ord] at h_a_b
+    cases h_comp_aid_bid : compareOfLessAndEq a.id b.id with
+    | lt =>
+      simp [h_comp_aid_bid] at h_a_b
+      simp only [compare, instOrdFFVar.ord] at h_b_c
+      cases h_comp_bid_cid : compareOfLessAndEq b.id c.id with
+      | lt =>
+        simp [h_comp_bid_cid] at h_b_c
+        simp only [compare, instOrdFFVar.ord]
+        rw [compareOfLessAndEq_eq_lt] at h_comp_aid_bid
+        rw [compareOfLessAndEq_eq_lt] at h_comp_bid_cid
+        have h_a_c : a.id < c.id := by grind
+        rw [← compareOfLessAndEq_eq_lt] at h_a_c
+        simp [h_a_c]
+      | eq =>
+        simp [h_comp_bid_cid] at h_b_c
+        simp only [compare, instOrdFFVar.ord]
+        rw [compareOfLessAndEq_eq_lt] at h_comp_aid_bid
+        rw [compareOfLessAndEq_eq_eq] at h_comp_bid_cid
+        · have h_a_c : a.id < c.id := by
+            rw [← h_comp_bid_cid]
+            exact h_comp_aid_bid
+          rw [← compareOfLessAndEq_eq_lt] at h_a_c
+          simp [h_a_c]
+        · intros x
+          apply Nat.le_refl
+        · intros x y
+          apply Nat.not_le
+      | gt =>
+        simp [h_comp_bid_cid] at h_b_c
+    | eq =>
+        · simp only [compare, instOrdFFVar.ord] at h_b_c
+          simp only [h_comp_aid_bid, Ordering.then_eq, Ordering.eq_then] at h_a_b
+          rw [compareOfLessAndEq_eq_eq] at h_comp_aid_bid
+          · have h_meta_a_b := (@Ordering.isLE_iff_eq_lt_or_eq_eq
+               (instOrdFFVarMetaData.ord a.meta_data b.meta_data)).mp h_a_b
+            rcases h_meta_a_b with h_lt | h_eq
+            · sorry
+            · sorry
+          · intros x
+            apply Nat.le_refl
+          · intros x y
+            apply Nat.not_le
+    | gt =>
+        rw [h_comp_aid_bid, Ordering.then, Ordering.isLE] at h_a_b
+        · contradiction
+        · intros hh
+          contradiction
+
+  eq_swap {a b} := by
+    simp only [compare, instOrdFFVar.ord, compareOfLessAndEq, instOrdFFVarMetaData.ord]
+    by_cases h_aid_bid : a.id < b.id
+    · simp only [h_aid_bid, ↓reduceIte, Ordering.then_eq, Ordering.lt_then]
+      apply Nat.lt_le_asymm at h_aid_bid
+      rw [Nat.le_iff_lt_or_eq] at h_aid_bid
+      push_neg at h_aid_bid
+      rcases h_aid_bid with ⟨h_aid_lt_bid, h_aid_neq_bid⟩
+      apply Nat.le_lt_asymm at h_aid_lt_bid
+      simp only [h_aid_lt_bid, ↓reduceIte]
+      simp only [h_aid_neq_bid, ↓reduceIte, Ordering.gt_then, Ordering.swap_gt]
+    · simp only [h_aid_bid, ↓reduceIte, Ordering.then_eq]
+      by_cases h_aid_eq_bid : a.id = b.id
+      · simp only [h_aid_eq_bid, ↓reduceIte, Ordering.eq_then, lt_self_iff_false]
+        sorry
+      · simp only [h_aid_eq_bid, ↓reduceIte, Ordering.gt_then]
+        sorry
 
 instance : Std.TransCmp (compare (α := BoolVar)) := by
   sorry
@@ -106,7 +174,10 @@ instance : Std.TransCmp (compare (α := BoolVar)) := by
 #check compareLex
 
 #check compareOfLessAndEq_eq_eq
-#check instOrdSrcInfo.
+#check instOrdSrcInfo.compare
+#check compareOfLessAndEq_eq_eq
+#check compare_eq_iff_eq
+
 
 instance : Std.LawfulEqCmp (compare (α := FFVar)) where
   eq_of_compare {a b} := by
@@ -115,73 +186,56 @@ instance : Std.LawfulEqCmp (compare (α := FFVar)) where
     cases b  with | mk id_b m_b =>
     cases m_a with | mk orig_a src_a =>
     cases m_b with | mk orig_b src_b =>
-    sorry
-    --simp [compare, instOrdFFVar.ord, instOrdFFVarMetaData.ord] at h
-    --rw [compareOfLessAndEq_eq_eq] at h
-    --rw [compareOfLessAndEq_eq_eq] at h
-    ---- rw [compareOfLessAndEq_eq_eq] at h
-    --simp [h]
+    simp only [compare, instOrdFFVar.ord, instOrdFFVarMetaData.ord,
+      Ordering.then_eq, Ordering.then_eq_eq] at h
+    rcases h with ⟨h_id, h_orig, h_src⟩
+    rw [compareOfLessAndEq_eq_eq] at h_id
+    · rw [compareOfLessAndEq_eq_eq] at h_orig
+      · have h_eq : src_a = src_b := by
+          simp only [instOrdSrcInfo.ord, Ordering.then_eq,
+            Ordering.then_eq_eq, Std.LawfulEqCmp.compare_eq_iff_eq] at h_src
+          cases src_a with | mk row_a col_a =>
+          cases src_b with | mk row_b col_b =>
+          simp only at h_src
+          rcases h_src with ⟨h_row, h_col⟩
+          rw [h_row, h_col]
+        rw [h_id, h_orig, h_eq]
+      · apply String.le_refl
+      · apply String.not_le
+    · intros x
+      apply Nat.le_refl
+    · intros x y
+      apply Nat.not_le
 
-    /-
 
-    cases a with | mk id_a m_a =>
-    cases b with | mk id_b m_b =>
+
+instance : Std.LawfulEqCmp (compare (α := BoolVar)) where
+  eq_of_compare {a b} := by
+    intros h
+    cases a  with | mk id_a m_a =>
+    cases b  with | mk id_b m_b =>
     cases m_a with | mk orig_a src_a =>
     cases m_b with | mk orig_b src_b =>
-    simp at h
-    cases hcomp: compare id_a id_b
-
-    · -- case lt
-      have h_lt : id_a < id_b := by sorry
-      simp [h_lt] at h
-
-    · -- case eq
-      have h_eq : id_a = id_b := by sorry
-      simp [h_eq] at h
-      by_cases h_comp_orig : orig_a < orig_b
-      · -- false
-        simp [h_comp_orig] at h
-      · -- true
-        simp [h_comp_orig] at h
-        by_cases h_meta_eq : orig_a = orig_b
-        · -- false
-          simp [h_meta_eq] at h
-          by_cases h_src_row : src_a.row < src_b.row
-          · -- false
-            simp [h_src_row] at h
-          · -- true
-            simp [h_src_row] at h
-            by_cases h_src_eq : src_a.row = src_b.row
-            · -- false
-              simp [h_src_eq] at h
-              by_cases h_src_col : src_a.col < src_b.col
-              · -- false
-                simp [h_src_col] at h
-              · -- true
-                simp [h_src_col] at h
-                simp [h_eq, h_meta_eq]
-                sorry
-            · -- true
-              simp [h_src_eq] at h
-        · -- false
-          by_cases h_meta_eq : orig_a = orig_b
-          · -- false
-            simp [h_meta_eq] at h
-            sorry
-          · -- true
-            sorry
-
-    · -- case gt
-      simp
-      sorry
-      -/
-
-
-
-
-
-instance : Std.LawfulEqCmp (compare (α := BoolVar)) := by
-  sorry
+    simp only [compare, instOrdBoolVar.ord, instOrdBoolVarMetaData.ord,
+      Ordering.then_eq, Ordering.then_eq_eq] at h
+    rcases h with ⟨h_id, h_orig, h_src⟩
+    rw [compareOfLessAndEq_eq_eq] at h_id
+    · rw [compareOfLessAndEq_eq_eq] at h_orig
+      · have h_eq : src_a = src_b := by
+          simp only [instOrdSrcInfo.ord, Ordering.then_eq,
+            Ordering.then_eq_eq, Std.LawfulEqCmp.compare_eq_iff_eq] at h_src
+          cases src_a with | mk row_a col_a =>
+          cases src_b with | mk row_b col_b =>
+          simp only at h_src
+          rcases h_src with ⟨h_row, h_col⟩
+          rw [h_row, h_col]
+        rw [h_id, h_orig, h_eq]
+      · apply String.le_refl
+      · apply String.not_le
+    · intros x
+      apply Nat.le_refl
+    · intros x y
+      apply Nat.not_le
 
 
 /-  Hashing (Hashable) of FFVar. Needed if we use this in a HashMap or HashSet -/
