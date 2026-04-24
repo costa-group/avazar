@@ -148,15 +148,15 @@ class LLZKNondet(Operation):
             raise ValueError(f"Failed to parse LLZKNondet: {line}")
         return LLZKNondet(SSAVar.parse(m["res"]), Type.parse(m["type"].strip()))
 
-    def to_core(self, ctx: TranslationContext) -> str:
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Initializes value. In our case, it is only relevant for arrays,
         # but for finite elements, we initialize it to zero
         # TODO: ask Albert?
         array_dim = array_felt_first_dimension(self.result_type.name)
         if array_dim is not None:
-            return f"array.new {array_dim} {self.result.name}"
+            yield f"array.new {array_dim} {self.result.name}"
         elif "!felt.type" in self.result_type.name:
-            return f"{self.result.name} = 0"
+            yield f"{self.result.name} = 0"
         else:
             raise ValueError(f"llzk.nondet transformation for not recognized expression: {self.result_type.name}")
 
