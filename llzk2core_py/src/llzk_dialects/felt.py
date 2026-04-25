@@ -54,6 +54,7 @@ class FeltConst(Operation):
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Introducing constants is as easy as an assignment
+        ctx.var2const[self.result.name] = self.constant
         yield f"{self.result.to_core()} = {self.constant}"
 
     def __repr__(self):

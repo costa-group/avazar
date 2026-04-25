@@ -15,7 +15,7 @@ Operations:
 """
 
 import re
-from typing import List
+from typing import List, Generator
 
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
@@ -64,8 +64,9 @@ class ArithConst(Operation):
         return ArithConst(SSAVar.parse(m["res"]), m["val"], Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        # Update the constant dict
+        ctx.var2const[self.result.name] = int(self.value)
+        yield f"{self.result.to_core()} = {self.value}"
 
     def __repr__(self):
         return f"ArithConst({self.result} = arith.constant {self.value} : {self.result_type})"
@@ -230,7 +231,7 @@ class ArithCast(Operation):
                          SSAVar.parse(m["operand"]),
                          Type.parse(m["src"].strip()), Type.parse(m["dst"].strip()))
 
-    def to_core(self, ctx: TranslationContext) -> str:
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # TODO: implement core translation
         raise NotImplementedError
 
