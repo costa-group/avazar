@@ -129,8 +129,8 @@ class TranslationContext:
     Existing to_core() implementations are unaffected by new fields they
     don't use.
     """
-    # Maps SSA variable names (e.g. '%0') to their core representation names.
-    var_map: Dict[str, str] = field(default_factory=dict)
+    # Maps SSA variable names (e.g. '%0') to a constant (if they are constant).
+    var2const: Dict[str, int] = field(default_factory=dict)
 
     # Maps every llzk function to the corresponding core function
     llzk_func2core: Dict[str, str] = field(default_factory=dict)

@@ -11,6 +11,7 @@ import re
 
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx
 
 
 class CastToFelt(Operation):
@@ -50,8 +51,8 @@ class CastToFelt(Operation):
                           Type.parse(m["type"].strip()))
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # Casting does nothing because CORE does not distinguish between felt and int
-        yield from ()
+        # Casting does nothing, so it is translated as a direct assignment
+        yield translate_assignment_core_with_ctx(self.result, self.value, self.src_type, ctx)
 
     def __repr__(self):
         return f"CastToFelt({self.result} = cast.tofelt({self.value} : {self.src_type}))"
@@ -89,12 +90,13 @@ class CastToIndex(Operation):
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse CastToIndex: {line}")
-        type_opt = Type.parse(m["type"].strip()) if m["type"] else None
+        # Assign a default type in case it is none
+        type_opt = Type.parse(m["type"].strip()) if m["type"] else Type.parse('!felt.type<"bn128">')
         return CastToIndex(SSAVar.parse(m["res"]), SSAVar.parse(m["val"]), type_opt)
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # Casting does nothing because CORE does not distinguish between felt and int
-        yield from ()
+        # Casting does nothing, so it is translated as a direct assignment
+        yield translate_assignment_core_with_ctx(self.result, self.value, self.src_type, ctx)
 
     def __repr__(self):
         type_str = f" : {self.src_type}" if self.src_type else ""
