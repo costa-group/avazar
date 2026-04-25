@@ -18,7 +18,7 @@ from llzk_dialects.core import (
     TranslationContext, ParseFn,
 )
 from llzk_dialects.definitions import Dialect
-from llzk_dialects.core_utils import translate_assignment_core_with_ctx
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx, infer_n_repetitions_from_expressions
 from llzk_dialects.felt import FeltBinary, FeltConst
 from llzk_dialects.bool import BoolCmp
 from llzk_dialects.utils import translate_assignment_core
@@ -410,12 +410,15 @@ class SCFWhile(BlockOperation):
                  init_args: List[Tuple[SSAVar, SSAVar]],
                  func_type: List[List[Type]],
                  before_body: List[Operation],
+                 after_args: List[Tuple[SSAVar, Type]],
                  after_body: List[Operation]):
         self.results = results
         # init_args: list of (block_arg, initial_value) pairs
         self.init_args: List[Tuple[SSAVar, SSAVar]] = init_args
         self.func_type = func_type
         self.before_body = before_body
+        # after_args: SSA names introduced at the start of the after region
+        self.after_args = after_args
         self.after_body = after_body
 
     def dialect(self) -> Dialect:
@@ -424,6 +427,24 @@ class SCFWhile(BlockOperation):
     @staticmethod
     def match(line: str) -> bool:
         return "scf.while" in line
+
+    @staticmethod
+    def _parse_block_args(line: str) -> List[Tuple[SSAVar, Type]]:
+        """Parse a block argument declaration line like `^bb0(%arg0: !type, %arg1: !type):`."""
+        m = re.match(r'\s*\^bb\d+\(\s*(?P<args>[^)]*)\s*\)\s*:', line)
+        if not m:
+            return []
+        args_str = m.group('args').strip()
+        if not args_str:
+            return []
+        result = []
+        for arg_pair in re.split(r',\s*(?=%)', args_str):
+            arg_pair = arg_pair.strip()
+            colon_idx = arg_pair.index(':')
+            var_str = arg_pair[:colon_idx].strip()
+            type_str = arg_pair[colon_idx + 1:].strip()
+            result.append((SSAVar.parse(var_str), Type.parse(type_str)))
+        return result
 
     @classmethod
     def parse(cls, lines: List[str], cursor: int,
@@ -473,7 +494,13 @@ class SCFWhile(BlockOperation):
                 if depth == 0:
                     break
 
-        before_body = parse_fn(cursor + 1, before_end)
+        # Skip optional ^bb0(...): block arg declaration — redundant with init_args
+        before_body_start = cursor + 1
+        if (before_body_start < before_end and
+                lines[before_body_start].strip().startswith('^bb')):
+            before_body_start += 1
+
+        before_body = parse_fn(before_body_start, before_end)
 
         # Find 'do {' — may be on the same line as the closing '}' (i.e. '} do {').
         after_start = before_end
@@ -488,11 +515,19 @@ class SCFWhile(BlockOperation):
             after_end += 1
             depth += lines[after_end].count('{') - lines[after_end].count('}')
 
-        after_body = parse_fn(after_start + 1, after_end)
+        # Capture optional ^bb0(...): block arg declaration at start of after region
+        after_body_start = after_start + 1
+        after_args: List[Tuple[SSAVar, Type]] = []
+        if (after_body_start < after_end and
+                lines[after_body_start].strip().startswith('^bb')):
+            after_args = cls._parse_block_args(lines[after_body_start])
+            after_body_start += 1
+
+        after_body = parse_fn(after_body_start, after_end)
 
         return (
             SCFWhile(results, init_args, types,
-                     before_body, after_body),
+                     before_body, after_args, after_body),
             after_end + 1,
         )
 
@@ -573,11 +608,25 @@ class SCFWhile(BlockOperation):
                 # This is a plain assignment
                 var2expression[before_in_arg.name] = yiel_val.name
 
+                while_variables.remove(before_in_arg.name)
+
         # We traverse the after region, ignoring the yield
         self._process_while_variables(self.after_body[:-1], while_variables, var2expression)
 
+        # Propagate the names inside the after region with the init args of that same region
+        # They usually share the same name, but i would not assume it is always the case
+        assert len(scf_condition.args) == len(self.after_args), "Condition args and after region args must match"
+        for cond_arg, (arg_var, _) in zip(scf_condition.args, self.after_args):
+            if cond_arg.name != arg_var.name and arg_var.name in while_variables:
+                while_variables.add(cond_arg.name)
+                # This is a plain assignment
+                var2expression[arg_var.name] = cond_arg.name
+                while_variables.remove(arg_var.name)
+
         # Finally, using the information from var2expression, we can process the repeat information
-        print(var2expression, while_variables)
+
+        return infer_n_repetitions_from_expressions(while_variables, var2expression,
+                                                    condition_var, initial_args2const)
 
     def _process_while_variables(self, operations: List[Operation], while_variables: Set[str],
                                  var2expression: Dict[str, Union[str, Operation]]):
@@ -610,9 +659,11 @@ class SCFWhile(BlockOperation):
         res_str = (', '.join(repr(r) for r in self.results) + ' = ') if self.results else ''
         iargs_str = ', '.join(f"{a} = {v}" for a, v in self.init_args)
         before_str = '\n  '.join(repr(op) for op in self.before_body)
+        after_bb_str = ('^bb0(' + ', '.join(f"{v}: {t}" for v, t in self.after_args) + '):\n  '
+                        if self.after_args else '')
         after_str = '\n  '.join(repr(op) for op in self.after_body)
         return (f"SCFWhile({res_str}scf.while ({iargs_str}) {{\n  {before_str}\n}}"
-                f" do {{\n  {after_str}\n}})")
+                f" do {{\n  {after_bb_str}{after_str}\n}})")
 
 
 class SCFDialect(Dialect):

@@ -11,7 +11,7 @@ Operations are grouped by arity:
 """
 
 import re
-from typing import List, Generator
+from typing import Callable, List, Generator
 
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
@@ -59,6 +59,10 @@ class FeltConst(Operation):
     @property
     def operands(self) -> List[SSAVar]:
         return []
+
+    def to_function(self) -> Callable[[], int]:
+        c = self.constant
+        return lambda: c
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Introducing constants is as easy as an assignment
@@ -123,6 +127,18 @@ class FeltUnary(Operation):
     @property
     def operands(self) -> List[SSAVar]:
         return [self.operand]
+
+    _UNARY_FNS: dict = {
+        "felt.neg": lambda x: -x,
+        "felt.bit_not": lambda x: ~x,
+        "felt.inv": lambda x: 1 // x,
+    }
+
+    def to_function(self) -> Callable[[int], int]:
+        fn = self._UNARY_FNS.get(self._op)
+        if fn is None:
+            raise NotImplementedError(f"to_function not implemented for {self._op}")
+        return fn
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Unary operations are translated into an assignment
@@ -194,6 +210,29 @@ class FeltBinary(Operation):
     @property
     def operands(self) -> List[SSAVar]:
         return [self.lhs, self.rhs]
+
+    _BINARY_FNS: dict = {
+        "felt.add":     lambda x, y: x + y,
+        "felt.sub":     lambda x, y: x - y,
+        "felt.mul":     lambda x, y: x * y,
+        "felt.div":     lambda x, y: x // y,
+        "felt.uintdiv": lambda x, y: x // y,
+        "felt.sintdiv": lambda x, y: int(x / y),
+        "felt.pow":     lambda x, y: x ** y,
+        "felt.shl":     lambda x, y: x << y,
+        "felt.shr":     lambda x, y: x >> y,
+        "felt.umod":    lambda x, y: x % y,
+        "felt.smod":    lambda x, y: x % y,
+        "felt.bit_and": lambda x, y: x & y,
+        "felt.bit_or":  lambda x, y: x | y,
+        "felt.bit_xor": lambda x, y: x ^ y,
+    }
+
+    def to_function(self) -> Callable[[int, int], int]:
+        fn = self._BINARY_FNS.get(self._op)
+        if fn is None:
+            raise NotImplementedError(f"to_function not implemented for {self._op}")
+        return fn
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Just return the name of the function applied to the arguments
