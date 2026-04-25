@@ -31,7 +31,7 @@ class FunctionReturn(Operation):
     _OPS = {"function.return"}
 
     def __init__(self, operands: List[SSAVar], types: List[Type]):
-        self.operands = operands
+        self._operands = operands
         self.types = types
 
     def dialect(self) -> Dialect:
@@ -62,15 +62,19 @@ class FunctionReturn(Operation):
         )
         return FunctionReturn(operands, types)
 
+    @property
+    def operands(self) -> List[SSAVar]:
+        return self._operands
+
     def to_core(self, ctx: TranslationContext) -> str:
         # Returns does nothing, as the returned arguments
         #  are specified in the signature
         yield from ()
 
     def __repr__(self):
-        if not self.operands:
+        if not self._operands:
             return "FunctionReturn(function.return)"
-        ops_str = ', '.join(repr(o) for o in self.operands)
+        ops_str = ', '.join(repr(o) for o in self._operands)
         type_str = ' : ' + ', '.join(repr(t) for t in self.types) if self.types else ''
         return f"FunctionReturn(function.return {ops_str}{type_str})"
 
@@ -125,6 +129,10 @@ class FunctionCall(Operation):
         )
         return FunctionCall(results, GlobalVariable.parse(m["callee"]),
                             args, m["ftype"])
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return list(self.args)
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation

@@ -11,7 +11,7 @@ Operations:
 """
 import itertools
 import re
-from typing import List, Optional, Tuple, Generator, Dict
+from typing import List, Optional, Tuple, Generator, Dict, Set, Union
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, Type,
@@ -19,6 +19,8 @@ from llzk_dialects.core import (
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.core_utils import translate_assignment_core_with_ctx
+from llzk_dialects.felt import FeltBinary, FeltConst
+from llzk_dialects.bool import BoolCmp
 from llzk_dialects.utils import translate_assignment_core
 
 
@@ -34,7 +36,7 @@ class SCFYield(Operation):
     _OPS = {"scf.yield"}
 
     def __init__(self, operands: List[SSAVar], types: List[Type]):
-        self.operands = operands
+        self._operands = operands
         self.types = types
 
     def dialect(self) -> Dialect:
@@ -75,7 +77,7 @@ class SCFYield(Operation):
                 # Retrieve the component and the yield operand at current
                 # index "yield_res_index"
                 lhs = result.to_core_component(component)
-                rhs = self.operands[yield_res_index].to_core()
+                rhs = self._operands[yield_res_index].to_core()
                 type_ = self.types[yield_res_index]
 
                 to_core_type = type_.to_core()
@@ -87,10 +89,14 @@ class SCFYield(Operation):
                 yield translate_assignment_core(lhs, rhs, to_core_type == "ff")
                 yield_res_index += 1
 
+    @property
+    def operands(self) -> List[SSAVar]:
+        return self._operands
+
     def __repr__(self):
-        if not self.operands:
+        if not self._operands:
             return "SCFYield(scf.yield)"
-        ops_str = ', '.join(repr(o) for o in self.operands)
+        ops_str = ', '.join(repr(o) for o in self._operands)
         type_str = ' : ' + ', '.join(repr(t) for t in self.types) if self.types else ''
         return f"SCFYield(scf.yield {ops_str}{type_str})"
 
@@ -138,6 +144,10 @@ class SCFCondition(Operation):
             if m["types"] else []
         )
         return SCFCondition(SSAVar.parse(m["cond"]), args, types)
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.condition] + list(self.args)
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -403,7 +413,7 @@ class SCFWhile(BlockOperation):
                  after_body: List[Operation]):
         self.results = results
         # init_args: list of (block_arg, initial_value) pairs
-        self.init_args = init_args
+        self.init_args: List[Tuple[SSAVar, SSAVar]] = init_args
         self.func_type = func_type
         self.before_body = before_body
         self.after_body = after_body
@@ -519,7 +529,7 @@ class SCFWhile(BlockOperation):
 
         # We need to extract how many repetitions are perfomed in the loop
         # Hence, we first determine whic
-        steps = self._extract_step(while_var2const)
+        steps = self._extract_step(initial_while_var)
 
     def _extract_step(self, initial_args2const: Dict[str, int]) -> int:
         """
@@ -541,18 +551,50 @@ class SCFWhile(BlockOperation):
         # * How the arguments vary: whether they are constant, or are modified
 
         # First, the condition variable
-        condition = scf_condition.condition
+        condition_var = scf_condition.condition
 
         # Assume the traversal from the before region in reverse order,
         # and then from the after region in reverse
         # The yield argument gives how the link the variables in both regions
-        # We store the relevant expressions for the given expression we need to compute
-        interesting_variables = {condition.name}
+        # We store the relevant expressions to compute the while expressions
+        while_variables = {condition_var.name}
         var2expression = {}
-        for operation in self.before_body[:-1:-1]:
-            ssa_var_introduced = operation.introduced_var()
-            if ssa_var_introduced is not None and ssa_var_introduced.name in interesting_variables:
+        self._process_while_variables(self.before_body[:-1], while_variables, var2expression)
+
+        # The input variables of the before region
+        # correspond to the yielded variables of the after region
+        yield_op = self.after_body[-1]
+        assert isinstance(yield_op, SCFYield), "Last instruction in the after body must be a yield"
+        for yiel_val, (before_in_arg, _) in zip(yield_op.operands, self.init_args):
+            if before_in_arg.name in while_variables:
+                # Add the yielded value that is linked to the variables to analyze
+                while_variables.add(yiel_val.name)
+
+                # This is a plain assignment
+                var2expression[before_in_arg.name] = yiel_val.name
+
+        # We traverse the after region, ignoring the yield
+        self._process_while_variables(self.after_body[:-1], while_variables, var2expression)
+
+        # Finally, using the information from var2expression, we can process the repeat information
+        print(var2expression, while_variables)
+
+    def _process_while_variables(self, operations: List[Operation], while_variables: Set[str],
+                                 var2expression: Dict[str, Union[str, Operation]]):
+        """
+        Process the while variables (i.e. variables that affect the while condition)
+        in a given set of operations.
+        """
+        # The operations are traversed in reverse order to perform the operation in one pass
+        for operation in operations[::-1]:
+            ssa_var_introduced = operation.result
+            if ssa_var_introduced is not None and ssa_var_introduced.name in while_variables:
                 var2expression[ssa_var_introduced.name] = operation
+                while_variables.update(op.name for op in operation.operands)
+
+                # Removes the expressions after processing them
+                # (there might be collisions between the bef and aft regions)
+                while_variables.remove(ssa_var_introduced.name)
 
     def _translate_second_region(self, region_ops: List[Operation], ctx: TranslationContext) -> Generator[str, None, None]:
         for statement in region_ops[:-1]:

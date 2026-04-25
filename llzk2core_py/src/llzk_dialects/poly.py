@@ -39,8 +39,8 @@ class PolyApplyMap(Operation):
 
     def __init__(self, result: SSAVar, operands: List[SSAVar],
                  num_dims: int, affine_map: str):
-        self.result = result
-        self.operands = operands
+        self._result = result
+        self._operands = operands
         self.num_dims = num_dims
         self.affine_map = affine_map
 
@@ -67,16 +67,21 @@ class PolyApplyMap(Operation):
         return PolyApplyMap(SSAVar.parse(m["res"]), ops,
                             int(m["ndims"]), m["map"].strip())
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return self._operands
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        ops_str = ', '.join(repr(o) for o in self.operands)
-        return (f"PolyApplyMap({self.result} = poly.applymap"
+        ops_str = ', '.join(repr(o) for o in self._operands)
+        return (f"PolyApplyMap({self._result} = poly.applymap"
                 f"({ops_str})[{self.num_dims}] {self.affine_map})")
 
 
@@ -93,7 +98,7 @@ class PolyReadConst(Operation):
 
     def __init__(self, result: SSAVar, const_name: GlobalVariable,
                  result_type: Type):
-        self.result = result
+        self._result = result
         self.const_name = const_name
         self.result_type = result_type
 
@@ -117,15 +122,20 @@ class PolyReadConst(Operation):
                              GlobalVariable.parse(m["name"]),
                              Type.parse(m["type"].strip()))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        return (f"PolyReadConst({self.result} = poly.read_const "
+        return (f"PolyReadConst({self._result} = poly.read_const "
                 f"{self.const_name} : {self.result_type})")
 
 
@@ -142,7 +152,7 @@ class PolyUnifiableCast(Operation):
 
     def __init__(self, result: SSAVar, input_val: SSAVar,
                  input_type: Type, result_type: Type):
-        self.result = result
+        self._result = result
         self.input_val = input_val
         self.input_type = input_type
         self.result_type = result_type
@@ -167,15 +177,20 @@ class PolyUnifiableCast(Operation):
         return PolyUnifiableCast(SSAVar.parse(m["res"]), SSAVar.parse(m["inp"]),
                                  Type.parse(m["intype"].strip()), Type.parse(m["outtype"].strip()))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.input_val]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        return (f"PolyUnifiableCast({self.result} = poly.unifiable_cast "
+        return (f"PolyUnifiableCast({self._result} = poly.unifiable_cast "
                 f"{self.input_val} : {self.input_type} -> {self.result_type})")
 
 
@@ -212,6 +227,10 @@ class PolyParam(Operation):
             raise ValueError(f"Failed to parse PolyParam: {line}")
         type_opt = Type.parse(m["type"].strip()) if m["type"] else None
         return PolyParam(GlobalVariable.parse(m["name"]), type_opt)
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -254,6 +273,10 @@ class PolyYield(Operation):
         if not m:
             raise ValueError(f"Failed to parse PolyYield: {line}")
         return PolyYield(SSAVar.parse(m["val"]), Type.parse(m["type"].strip()))
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.value]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation

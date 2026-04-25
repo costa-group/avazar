@@ -43,7 +43,7 @@ class ArrayNew(Operation):
     _OPS = {"array.new"}
 
     def __init__(self, result: SSAVar, elements: List[SSAVar], result_type: Type):
-        self.result = result
+        self._result = result
         self.elements = elements
         self.result_type = result_type
 
@@ -72,18 +72,23 @@ class ArrayNew(Operation):
         )
         return ArrayNew(SSAVar.parse(m["res"]), elements, Type.parse(m["type"].strip()))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return list(self.elements)
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         if len(self.elements) > 0:
             raise NotImplementedError("array.new not implemented with initial elements")
         dim = array_felt_first_dimension(self.result_type.name)
-        yield f"array.new {self.result} {dim}"
+        yield f"array.new {self._result} {dim}"
 
     def __repr__(self):
         elem_str = f" : ({', '.join(repr(e) for e in self.elements)})" if self.elements else ""
-        return f"ArrayNew({self.result} = array.new{elem_str} : {self.result_type})"
+        return f"ArrayNew({self._result} = array.new{elem_str} : {self.result_type})"
 
 
 class ArrayRead(Operation):
@@ -99,7 +104,7 @@ class ArrayRead(Operation):
 
     def __init__(self, result: SSAVar, arr_ref: SSAVar,
                  indices: List[SSAVar], types: List[Type]):
-        self.result = result
+        self._result = result
         self.arr_ref = arr_ref
         self.indices = indices
         self.types = types
@@ -130,20 +135,25 @@ class ArrayRead(Operation):
         return ArrayRead(SSAVar.parse(m["res"]), SSAVar.parse(m["arr"]),
                          indices, types)
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.arr_ref] + list(self.indices)
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # We cover the case in which there could be multiple accesses because
         # there are multiple indices. To do that, we recover a different
         # component of the result
         for i, index in enumerate(self.indices):
-            yield f"array.read {self.arr_ref.to_core()}[{index.to_core()}] {self.result.to_core_component(i)}"
+            yield f"array.read {self.arr_ref.to_core()}[{index.to_core()}] {self._result.to_core_component(i)}"
 
     def __repr__(self):
         idx_str = ', '.join(repr(i) for i in self.indices)
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
-        return f"ArrayRead({self.result} = array.read {self.arr_ref}[{idx_str}]{type_str})"
+        return f"ArrayRead({self._result} = array.read {self.arr_ref}[{idx_str}]{type_str})"
 
 
 class ArrayWrite(Operation):
@@ -191,6 +201,10 @@ class ArrayWrite(Operation):
         return ArrayWrite(SSAVar.parse(m["arr"]), indices,
                           SSAVar.parse(m["rval"]), types)
 
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.arr_ref] + list(self.indices) + [self.rvalue]
+
     def to_core(self, ctx: TranslationContext) -> str:
         # We cover the case in which there could be multiple accesses because
         # there are multiple indices. To do that, we recover a different
@@ -217,7 +231,7 @@ class ArrayExtract(Operation):
 
     def __init__(self, result: SSAVar, arr_ref: SSAVar,
                  indices: List[SSAVar], arr_type: Type):
-        self.result = result
+        self._result = result
         self.arr_ref = arr_ref
         self.indices = indices
         self.arr_type = arr_type
@@ -242,8 +256,13 @@ class ArrayExtract(Operation):
         return ArrayExtract(SSAVar.parse(m["res"]), SSAVar.parse(m["arr"]),
                             _parse_index_list(m["idx"]), Type.parse(m["type"].strip()))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.arr_ref] + list(self.indices)
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -251,7 +270,7 @@ class ArrayExtract(Operation):
 
     def __repr__(self):
         idx_str = ', '.join(repr(i) for i in self.indices)
-        return (f"ArrayExtract({self.result} = array.extract "
+        return (f"ArrayExtract({self._result} = array.extract "
                 f"{self.arr_ref}[{idx_str}] : {self.arr_type})")
 
 
@@ -298,6 +317,10 @@ class ArrayInsert(Operation):
         return ArrayInsert(SSAVar.parse(m["arr"]), _parse_index_list(m["idx"]),
                            SSAVar.parse(m["rval"]), types)
 
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.arr_ref] + list(self.indices) + [self.rvalue]
+
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
@@ -321,7 +344,7 @@ class ArrayLen(Operation):
 
     def __init__(self, result: SSAVar, arr_ref: SSAVar,
                  dim: SSAVar, arr_type: Type):
-        self.result = result
+        self._result = result
         self.arr_ref = arr_ref
         self.dim = dim
         self.arr_type = arr_type
@@ -346,15 +369,20 @@ class ArrayLen(Operation):
         return ArrayLen(SSAVar.parse(m["res"]), SSAVar.parse(m["arr"]),
                         SSAVar.parse(m["dim"]), Type.parse(m["type"].strip()))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.arr_ref, self.dim]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        return (f"ArrayLen({self.result} = array.len "
+        return (f"ArrayLen({self._result} = array.len "
                 f"{self.arr_ref}, {self.dim} : {self.arr_type})")
 
 

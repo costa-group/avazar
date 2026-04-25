@@ -53,6 +53,10 @@ class ConstrainEq(Operation):
         )
         return ConstrainEq(SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]), types)
 
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.lhs, self.rhs]
+
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
@@ -101,6 +105,10 @@ class ConstrainIn(Operation):
             if m["types"] else []
         )
         return ConstrainIn(SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]), types)
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.lhs, self.rhs]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
