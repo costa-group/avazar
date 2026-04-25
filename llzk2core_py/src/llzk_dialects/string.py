@@ -49,6 +49,9 @@ class StringNew(Operation):
             raise ValueError(f"Failed to parse StringNew: {line}")
         return StringNew(SSAVar.parse(m["res"]), m["val"])
 
+    def introduced_var(self):
+        return self.result
+
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError

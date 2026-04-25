@@ -72,6 +72,9 @@ class PodNew(Operation):
                 init_records[k.strip()] = SSAVar.parse(v.strip())
         return PodNew(SSAVar.parse(m["res"]), init_records, Type.parse(m["type"]))
 
+    def introduced_var(self):
+        return self.result
+
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
@@ -124,6 +127,9 @@ class PodRead(Operation):
         )
         return PodRead(SSAVar.parse(m["res"]), SSAVar.parse(m["ref"]),
                        GlobalVariable.parse(m["rec"]), types)
+
+    def introduced_var(self):
+        return self.result
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation

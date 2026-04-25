@@ -10,7 +10,7 @@ Hierarchy:
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List, Callable, Tuple, TYPE_CHECKING, Union, Generator
+from typing import Dict, List, Callable, Tuple, TYPE_CHECKING, Union, Generator, Optional
 from llzk_dialects.utils import array_felt_first_dimension
 
 
@@ -183,6 +183,10 @@ class Operation(ABC):
         Returns a string (one or more lines) to be written to the output file.
         """
         raise NotImplementedError
+
+    def introduced_var(self) -> Optional['SSAVar']:
+        """Return the single SSA variable this operation defines, or None."""
+        return None
 
 
 # Type alias used by BlockOperation.parse

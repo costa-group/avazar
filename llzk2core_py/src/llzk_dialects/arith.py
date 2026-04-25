@@ -63,6 +63,9 @@ class ArithConst(Operation):
             raise ValueError(f"Failed to parse ArithConst: {line}")
         return ArithConst(SSAVar.parse(m["res"]), m["val"], Type.parse(m["type"].strip()))
 
+    def introduced_var(self):
+        return self.result
+
     def to_core(self, ctx: TranslationContext) -> str:
         # Update the constant dict
         ctx.var2const[self.result.name] = int(self.value)
@@ -121,6 +124,9 @@ class ArithBinary(Operation):
                            SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]),
                            Type.parse(m["type"].strip()))
 
+    def introduced_var(self):
+        return self.result
+
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
@@ -173,6 +179,9 @@ class ArithCmpi(Operation):
         return ArithCmpi(SSAVar.parse(m["res"]), m["pred"],
                          SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]),
                          Type.parse(m["type"].strip()))
+
+    def introduced_var(self):
+        return self.result
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -230,6 +239,9 @@ class ArithCast(Operation):
         return ArithCast(SSAVar.parse(m["res"]), m["op"],
                          SSAVar.parse(m["operand"]),
                          Type.parse(m["src"].strip()), Type.parse(m["dst"].strip()))
+
+    def introduced_var(self):
+        return self.result
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # TODO: implement core translation

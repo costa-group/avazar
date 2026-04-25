@@ -58,6 +58,9 @@ class BoolBinary(Operation):
         return BoolBinary(SSAVar.parse(m["res"]), m["op"],
                           SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]))
 
+    def introduced_var(self):
+        return self.result
+
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         yield f"{self.result.to_core()} = {self.op} {self.lhs.to_core()} {self.rhs.to_core()}"
 
@@ -96,6 +99,9 @@ class BoolNot(Operation):
         if not m:
             raise ValueError(f"Failed to parse BoolNot: {line}")
         return BoolNot(SSAVar.parse(m["res"]), SSAVar.parse(m["operand"]))
+
+    def introduced_var(self):
+        return self.result
 
     def to_core(self, ctx: TranslationContext) -> str:
         yield f"{self.result.to_core()} = bool.not {self.operand.to_core()}"
@@ -152,6 +158,9 @@ class BoolCmp(Operation):
         )
         return BoolCmp(SSAVar.parse(m["res"]), m["pred"],
                        SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]), types)
+
+    def introduced_var(self):
+        return self.result
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # TODO: implement core translation

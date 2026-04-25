@@ -9,15 +9,16 @@ Operations:
   SCFFor       — scf.for       (BlockOperation: counted loop with step)
   SCFWhile     — scf.while     (BlockOperation: pre-condition loop with before/after regions)
 """
-
+import itertools
 import re
-from typing import List, Optional, Tuple, Generator
+from typing import List, Optional, Tuple, Generator, Dict
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, Type,
     TranslationContext, ParseFn,
 )
 from llzk_dialects.definitions import Dialect
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx
 from llzk_dialects.utils import translate_assignment_core
 
 
@@ -81,6 +82,8 @@ class SCFYield(Operation):
                 assert to_core_type is not None, f"Error recognizing type inside a yield expression: {self}"
                 # Depending on whether the type corresponds to an array
                 # or to a ff, we generate a copy or a direct assignment
+                # Here, we don't consider translate_assignment_core_with_ctx because
+                # the variables are not constants (they are unfolded depending on the branch)
                 yield translate_assignment_core(lhs, rhs, to_core_type == "ff")
                 yield_res_index += 1
 
@@ -395,7 +398,7 @@ class SCFWhile(BlockOperation):
 
     def __init__(self, results: List[SSAVar],
                  init_args: List[Tuple[SSAVar, SSAVar]],
-                 func_type: List[Tuple[List[Type], List[Type]]],
+                 func_type: List[List[Type]],
                  before_body: List[Operation],
                  after_body: List[Operation]):
         self.results = results
@@ -486,13 +489,14 @@ class SCFWhile(BlockOperation):
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         # DUMMY TEST SO FAR
+        yield from self._translate_first_region(ctx)
         for statement in self.before_body:
             yield from statement.to_core(ctx)
 
         for statement in self.after_body:
             yield from statement.to_core(ctx)
 
-    def _translate_first_region(self, ctx: TranslationContext):
+    def _translate_first_region(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # The first region of a while in LLZK must correspond
         # to the evaluation of the condition.
         # Nevertheless, we must still consider the expressions that lead
@@ -500,17 +504,64 @@ class SCFWhile(BlockOperation):
         first_region_args = self.init_args
         in_types = self.func_type[0]
 
-        # Initialize args
-        pass
+        # Initialize args before the while. These arguments are
+        # not necessarily constants, so we must use translate_assignment_core
+        # instead of translate_assignment_core_with_ctx
+        initial_while_var = dict()
+
+        for type_, (lhs, rhs) in zip(in_types, first_region_args):
+            yield translate_assignment_core(lhs.to_core(), rhs.to_core(), "array" not in type_.name)
+
+            # Detect which variables are initially constants
+            constant = ctx.var2const.get(rhs.name)
+            if constant is not None:
+                initial_while_var[lhs.name] = constant
+
+        # We need to extract how many repetitions are perfomed in the loop
+        # Hence, we first determine whic
+        steps = self._extract_step(while_var2const)
+
+    def _extract_step(self, initial_args2const: Dict[str, int]) -> int:
+        """
+        Extracts how many iterations are performed in the loop
+        """
+        # We assume the following structure:
+        # * Second Region / First region for the first iteration, as the first region
+        #   contains the condition to evaluate. We traverse in reverse this structure to
+        #   detect which variable in the condition is evaluated, which other variable is constant
+        #   and how many steps are thus performed.
+
+        # First, extract the condition variable (last instruction in the before body)
+        scf_condition = self.before_body[-1]
+        assert isinstance(scf_condition, SCFCondition), "Last operation of the before body must be a SCFCondition"
+
+        # To detect the step, we need to identify three parts
+        # * The condition variable
+        # * The arguments of the condition variable
+        # * How the arguments vary: whether they are constant, or are modified
+
+        # First, the condition variable
+        condition = scf_condition.condition
+
+        # Assume the traversal from the before region in reverse order,
+        # and then from the after region in reverse
+        # The yield argument gives how the link the variables in both regions
+        # We store the relevant expressions for the given expression we need to compute
+        interesting_variables = {condition.name}
+        var2expression = {}
+        for operation in self.before_body[:-1:-1]:
+            ssa_var_introduced = operation.introduced_var()
+            if ssa_var_introduced is not None and ssa_var_introduced.name in interesting_variables:
+                var2expression[ssa_var_introduced.name] = operation
 
     def _translate_second_region(self, region_ops: List[Operation], ctx: TranslationContext) -> Generator[str, None, None]:
-        for statement in branch_ops[:-1]:
+        for statement in region_ops[:-1]:
             # Process all the operands as usual, except for the scf.yield
             yield from statement.to_core(ctx)
 
         # For the yield operation, we must retrieve the results variables
         ctx.scf_result = self.results
-        yield from branch_ops[-1].to_core(ctx)
+        yield from region_ops[-1].to_core(ctx)
         ctx.scf_result = []
 
     def __repr__(self):

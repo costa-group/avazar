@@ -111,6 +111,9 @@ class GlobalRead(Operation):
                           GlobalVariable.parse(m["ref"]),
                           Type.parse(m["type"].strip()))
 
+    def introduced_var(self):
+        return self.result
+
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
