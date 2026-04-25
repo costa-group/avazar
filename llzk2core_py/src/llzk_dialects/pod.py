@@ -37,7 +37,7 @@ class PodNew(Operation):
 
     def __init__(self, result: SSAVar, init_records: Dict[str, SSAVar],
                  result_type: Type):
-        self.result = result
+        self._result = result
         # Maps record name (without @) to its initial SSA value
         self.init_records = init_records
         self.result_type = result_type
@@ -72,8 +72,13 @@ class PodNew(Operation):
                 init_records[k.strip()] = SSAVar.parse(v.strip())
         return PodNew(SSAVar.parse(m["res"]), init_records, Type.parse(m["type"]))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return list(self.init_records.values())
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -82,7 +87,7 @@ class PodNew(Operation):
     def __repr__(self):
         inits = ', '.join(f"{k} = {v}" for k, v in self.init_records.items())
         init_str = f" {{{inits}}}" if inits else ""
-        return f"PodNew({self.result} = pod.new{init_str} : {self.result_type})"
+        return f"PodNew({self._result} = pod.new{init_str} : {self.result_type})"
 
 
 class PodRead(Operation):
@@ -99,7 +104,7 @@ class PodRead(Operation):
 
     def __init__(self, result: SSAVar, pod_ref: SSAVar,
                  record_name: GlobalVariable, types: List[Type]):
-        self.result = result
+        self._result = result
         self.pod_ref = pod_ref
         self.record_name = record_name
         self.types = types
@@ -128,8 +133,13 @@ class PodRead(Operation):
         return PodRead(SSAVar.parse(m["res"]), SSAVar.parse(m["ref"]),
                        GlobalVariable.parse(m["rec"]), types)
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.pod_ref]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -137,7 +147,7 @@ class PodRead(Operation):
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
-        return (f"PodRead({self.result} = pod.read "
+        return (f"PodRead({self._result} = pod.read "
                 f"{self.pod_ref}[{self.record_name}]{type_str})")
 
 
@@ -184,6 +194,10 @@ class PodWrite(Operation):
         )
         return PodWrite(SSAVar.parse(m["ref"]), GlobalVariable.parse(m["rec"]),
                         SSAVar.parse(m["val"]), types)
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.pod_ref, self.value]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation

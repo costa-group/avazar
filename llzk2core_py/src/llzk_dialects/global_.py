@@ -11,7 +11,7 @@ Operations:
 """
 
 import re
-from typing import Optional
+from typing import List, Optional
 
 from llzk_dialects.core import Operation, SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
@@ -64,6 +64,10 @@ class GlobalDef(Operation):
             is_const=m["const"] is not None,
         )
 
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
+
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
@@ -87,7 +91,7 @@ class GlobalRead(Operation):
     _OPS = {"global.read"}
 
     def __init__(self, result: SSAVar, name_ref: GlobalVariable, result_type: Type):
-        self.result = result
+        self._result = result
         self.name_ref = name_ref
         self.result_type = result_type
 
@@ -111,15 +115,20 @@ class GlobalRead(Operation):
                           GlobalVariable.parse(m["ref"]),
                           Type.parse(m["type"].strip()))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        return (f"GlobalRead({self.result} = global.read "
+        return (f"GlobalRead({self._result} = global.read "
                 f"{self.name_ref} : {self.result_type})")
 
 
@@ -159,6 +168,10 @@ class GlobalWrite(Operation):
         return GlobalWrite(GlobalVariable.parse(m["ref"]),
                            SSAVar.parse(m["val"]),
                            Type.parse(m["type"].strip()))
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.value]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation

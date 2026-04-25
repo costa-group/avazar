@@ -39,7 +39,7 @@ class ArithConst(Operation):
     _OPS = {"arith.constant"}
 
     def __init__(self, result: SSAVar, value: str, result_type: Type):
-        self.result = result
+        self._result = result
         # Stored as string to preserve the literal form (e.g. '-1', 'true').
         self.value = value
         self.result_type = result_type
@@ -63,16 +63,21 @@ class ArithConst(Operation):
             raise ValueError(f"Failed to parse ArithConst: {line}")
         return ArithConst(SSAVar.parse(m["res"]), m["val"], Type.parse(m["type"].strip()))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Update the constant dict
-        ctx.var2const[self.result.name] = int(self.value)
-        yield f"{self.result.to_core()} = {self.value}"
+        ctx.var2const[self._result.name] = int(self.value)
+        yield f"{self._result.to_core()} = {self.value}"
 
     def __repr__(self):
-        return f"ArithConst({self.result} = arith.constant {self.value} : {self.result_type})"
+        return f"ArithConst({self._result} = arith.constant {self.value} : {self.result_type})"
 
 
 class ArithBinary(Operation):
@@ -94,8 +99,8 @@ class ArithBinary(Operation):
 
     def __init__(self, result: SSAVar, op: str, lhs: SSAVar, rhs: SSAVar,
                  operand_type: Type):
-        self.result = result
-        self.op = op
+        self._result = result
+        self._op = op
         self.lhs = lhs
         self.rhs = rhs
         self.operand_type = operand_type
@@ -124,15 +129,24 @@ class ArithBinary(Operation):
                            SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]),
                            Type.parse(m["type"].strip()))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def op(self):
+        return self._op
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.lhs, self.rhs]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        return (f"ArithBinary({self.result} = {self.op}"
+        return (f"ArithBinary({self._result} = {self._op}"
                 f"({self.lhs}, {self.rhs}) : {self.operand_type})")
 
 
@@ -150,7 +164,7 @@ class ArithCmpi(Operation):
 
     def __init__(self, result: SSAVar, predicate: str,
                  lhs: SSAVar, rhs: SSAVar, operand_type: Type):
-        self.result = result
+        self._result = result
         self.predicate = predicate
         self.lhs = lhs
         self.rhs = rhs
@@ -180,15 +194,20 @@ class ArithCmpi(Operation):
                          SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]),
                          Type.parse(m["type"].strip()))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.lhs, self.rhs]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        return (f"ArithCmpi({self.result} = arith.cmpi {self.predicate}"
+        return (f"ArithCmpi({self._result} = arith.cmpi {self.predicate}"
                 f"({self.lhs}, {self.rhs}) : {self.operand_type})")
 
 
@@ -210,8 +229,8 @@ class ArithCast(Operation):
 
     def __init__(self, result: SSAVar, op: str, operand: SSAVar,
                  src_type: Type, dst_type: Type):
-        self.result = result
-        self.op = op
+        self._result = result
+        self._op = op
         self.operand = operand
         self.src_type = src_type
         self.dst_type = dst_type
@@ -240,15 +259,24 @@ class ArithCast(Operation):
                          SSAVar.parse(m["operand"]),
                          Type.parse(m["src"].strip()), Type.parse(m["dst"].strip()))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def op(self):
+        return self._op
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.operand]
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        return (f"ArithCast({self.result} = {self.op}"
+        return (f"ArithCast({self._result} = {self._op}"
                 f"({self.operand} : {self.src_type} to {self.dst_type}))")
 
 

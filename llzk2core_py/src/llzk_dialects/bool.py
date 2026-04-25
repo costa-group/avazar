@@ -33,8 +33,8 @@ class BoolBinary(Operation):
     _OPS = {"bool.and", "bool.or", "bool.xor"}
 
     def __init__(self, result: SSAVar, op: str, lhs: SSAVar, rhs: SSAVar):
-        self.result = result
-        self.op = op
+        self._result = result
+        self._op = op
         self.lhs = lhs
         self.rhs = rhs
 
@@ -58,14 +58,23 @@ class BoolBinary(Operation):
         return BoolBinary(SSAVar.parse(m["res"]), m["op"],
                           SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def op(self):
+        return self._op
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.lhs, self.rhs]
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
-        yield f"{self.result.to_core()} = {self.op} {self.lhs.to_core()} {self.rhs.to_core()}"
+        yield f"{self._result.to_core()} = {self._op} {self.lhs.to_core()} {self.rhs.to_core()}"
 
     def __repr__(self):
-        return f"BoolBinary({self.result} = {self.op}({self.lhs}, {self.rhs}))"
+        return f"BoolBinary({self._result} = {self._op}({self.lhs}, {self.rhs}))"
 
 
 class BoolNot(Operation):
@@ -80,7 +89,7 @@ class BoolNot(Operation):
     _OPS = {"bool.not"}
 
     def __init__(self, result: SSAVar, operand: SSAVar):
-        self.result = result
+        self._result = result
         self.operand = operand
 
     def dialect(self) -> Dialect:
@@ -100,14 +109,19 @@ class BoolNot(Operation):
             raise ValueError(f"Failed to parse BoolNot: {line}")
         return BoolNot(SSAVar.parse(m["res"]), SSAVar.parse(m["operand"]))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.operand]
 
     def to_core(self, ctx: TranslationContext) -> str:
-        yield f"{self.result.to_core()} = bool.not {self.operand.to_core()}"
+        yield f"{self._result.to_core()} = bool.not {self.operand.to_core()}"
 
     def __repr__(self):
-        return f"BoolNot({self.result} = bool.not({self.operand}))"
+        return f"BoolNot({self._result} = bool.not({self.operand}))"
 
 
 class BoolCmp(Operation):
@@ -126,7 +140,7 @@ class BoolCmp(Operation):
 
     def __init__(self, result: SSAVar, predicate: str,
                  lhs: SSAVar, rhs: SSAVar, types: List[Type] = None):
-        self.result = result
+        self._result = result
         self.predicate = predicate
         self.lhs = lhs
         self.rhs = rhs
@@ -159,16 +173,21 @@ class BoolCmp(Operation):
         return BoolCmp(SSAVar.parse(m["res"]), m["pred"],
                        SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]), types)
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.lhs, self.rhs]
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # TODO: implement core translation
-        yield f"{self.result.to_core()} = {self._PRED2CORE[self.predicate]} {self.rhs.to_core()} {self.lhs.to_core()}"
+        yield f"{self._result.to_core()} = {self._PRED2CORE[self.predicate]} {self.rhs.to_core()} {self.lhs.to_core()}"
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
-        return (f"BoolCmp({self.result} = bool.cmp {self.predicate}"
+        return (f"BoolCmp({self._result} = bool.cmp {self.predicate}"
                 f"({self.lhs}, {self.rhs}){type_str})")
 
 
@@ -207,6 +226,10 @@ class BoolAssert(Operation):
         if not m:
             raise ValueError(f"Failed to parse BoolAssert: {line}")
         return BoolAssert(SSAVar.parse(m["cond"]), m["msg"])
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.condition]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation

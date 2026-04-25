@@ -8,6 +8,7 @@ Operations:
 """
 
 import re
+from typing import List
 
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
@@ -26,7 +27,7 @@ class CastToFelt(Operation):
     _OPS = {"cast.tofelt"}
 
     def __init__(self, result: SSAVar, value: SSAVar, src_type: Type):
-        self.result = result
+        self._result = result
         self.value = value
         self.src_type = src_type
 
@@ -50,15 +51,20 @@ class CastToFelt(Operation):
                           SSAVar.parse(m["val"]),
                           Type.parse(m["type"].strip()))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.value]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Casting does nothing, so it is translated as a direct assignment
-        yield translate_assignment_core_with_ctx(self.result, self.value, self.src_type, ctx)
+        yield translate_assignment_core_with_ctx(self._result, self.value, self.src_type, ctx)
 
     def __repr__(self):
-        return f"CastToFelt({self.result} = cast.tofelt({self.value} : {self.src_type}))"
+        return f"CastToFelt({self._result} = cast.tofelt({self.value} : {self.src_type}))"
 
 
 class CastToIndex(Operation):
@@ -73,7 +79,7 @@ class CastToIndex(Operation):
     _OPS = {"cast.toindex"}
 
     def __init__(self, result: SSAVar, value: SSAVar, src_type: Type = None):
-        self.result = result
+        self._result = result
         self.value = value
         self.src_type = src_type
 
@@ -97,16 +103,21 @@ class CastToIndex(Operation):
         type_opt = Type.parse(m["type"].strip()) if m["type"] else Type.parse('!felt.type<"bn128">')
         return CastToIndex(SSAVar.parse(m["res"]), SSAVar.parse(m["val"]), type_opt)
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.value]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Casting does nothing, so it is translated as a direct assignment
-        yield translate_assignment_core_with_ctx(self.result, self.value, self.src_type, ctx)
+        yield translate_assignment_core_with_ctx(self._result, self.value, self.src_type, ctx)
 
     def __repr__(self):
         type_str = f" : {self.src_type}" if self.src_type else ""
-        return f"CastToIndex({self.result} = cast.toindex({self.value}{type_str}))"
+        return f"CastToIndex({self._result} = cast.toindex({self.value}{type_str}))"
 
 
 class CastDialect(Dialect):

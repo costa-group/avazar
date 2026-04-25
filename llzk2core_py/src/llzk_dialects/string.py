@@ -10,6 +10,7 @@ Types:
 """
 
 import re
+from typing import List
 
 from llzk_dialects.core import Operation, SSAVar, TranslationContext
 from llzk_dialects.definitions import Dialect
@@ -28,7 +29,7 @@ class StringNew(Operation):
     _OPS = {"string.new"}
 
     def __init__(self, result: SSAVar, value: str):
-        self.result = result
+        self._result = result
         # value stores the raw quoted string, e.g. '"hello"'
         self.value = value
 
@@ -49,15 +50,20 @@ class StringNew(Operation):
             raise ValueError(f"Failed to parse StringNew: {line}")
         return StringNew(SSAVar.parse(m["res"]), m["val"])
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        return f"StringNew({self.result} = string.new({self.value}))"
+        return f"StringNew({self._result} = string.new({self.value}))"
 
 
 class StringDialect(Dialect):

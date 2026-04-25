@@ -29,7 +29,7 @@ class FeltConst(Operation):
 
     def __init__(self, variable: SSAVar, constant: int,
                  result_type: Type = None):
-        self.result = variable
+        self._result = variable
         self.constant = constant
         self.result_type = result_type
 
@@ -52,17 +52,22 @@ class FeltConst(Operation):
         type_opt = Type.parse(m["type"].strip()) if m["type"] else None
         return FeltConst(SSAVar.parse(m["res"]), int(m["value"]), type_opt)
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Introducing constants is as easy as an assignment
-        ctx.var2const[self.result.name] = self.constant
-        yield f"{self.result.to_core()} = {self.constant}"
+        ctx.var2const[self._result.name] = self.constant
+        yield f"{self._result.to_core()} = {self.constant}"
 
     def __repr__(self):
         type_str = f" : {self.result_type}" if self.result_type else ""
-        return f"FeltConst({self.result} = {self.constant}{type_str})"
+        return f"FeltConst({self._result} = {self.constant}{type_str})"
 
 
 class FeltUnary(Operation):
@@ -77,8 +82,8 @@ class FeltUnary(Operation):
 
     def __init__(self, variable: SSAVar, op: str,
                  operand: SSAVar, types: List[Type]):
-        self.result = variable
-        self.op = op
+        self._result = variable
+        self._op = op
         self.operand = operand
         self.types = types
 
@@ -107,17 +112,26 @@ class FeltUnary(Operation):
         return FeltUnary(SSAVar.parse(m["res"]), m["op"],
                          SSAVar.parse(m["operand"]), types)
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def op(self):
+        return self._op
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.operand]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Unary operations are translated into an assignment
-        yield f"{self.result.to_core()} = {self.op} {self.operand.to_core()}"
+        yield f"{self._result.to_core()} = {self._op} {self.operand.to_core()}"
 
     def __repr__(self):
         type_str = ('' if not self.types
                     else ' : ' + ', '.join(repr(t) for t in self.types))
-        return f"FeltUnary({self.result} = {self.op}({self.operand}){type_str})"
+        return f"FeltUnary({self._result} = {self._op}({self.operand}){type_str})"
 
 
 class FeltBinary(Operation):
@@ -138,8 +152,8 @@ class FeltBinary(Operation):
 
     def __init__(self, variable: SSAVar, op: str,
                  lhs: SSAVar, rhs: SSAVar, types: List[Type]):
-        self.result = variable
-        self.op = op
+        self._result = variable
+        self._op = op
         self.lhs = lhs
         self.rhs = rhs
         self.types = types
@@ -169,17 +183,26 @@ class FeltBinary(Operation):
         return FeltBinary(SSAVar.parse(m["res"]), m["op"],
                           SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]), types)
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def op(self):
+        return self._op
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.lhs, self.rhs]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Just return the name of the function applied to the arguments
-        yield f"{self.result.to_core()} = {self.op} {self.lhs.to_core()} {self.rhs.to_core()}"
+        yield f"{self._result.to_core()} = {self._op} {self.lhs.to_core()} {self.rhs.to_core()}"
 
     def __repr__(self):
         type_str = ('' if not self.types
                     else ' : ' + ', '.join(repr(t) for t in self.types))
-        return f"FeltBinary({self.result} = {self.op}({self.lhs}, {self.rhs})){type_str}"
+        return f"FeltBinary({self._result} = {self._op}({self.lhs}, {self.rhs})){type_str}"
 
 
 class FeltDialect(Dialect):

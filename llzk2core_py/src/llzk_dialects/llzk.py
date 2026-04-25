@@ -128,7 +128,7 @@ class LLZKNondet(Operation):
     _OPS = {"llzk.nondet"}
 
     def __init__(self, result: SSAVar, result_type: Type):
-        self.result = result
+        self._result = result
         self.result_type = result_type
 
     def dialect(self) -> Dialect:
@@ -148,8 +148,13 @@ class LLZKNondet(Operation):
             raise ValueError(f"Failed to parse LLZKNondet: {line}")
         return LLZKNondet(SSAVar.parse(m["res"]), Type.parse(m["type"].strip()))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Initializes value. In our case, it is only relevant for arrays,
@@ -157,14 +162,14 @@ class LLZKNondet(Operation):
         # TODO: ask Albert?
         array_dim = array_felt_first_dimension(self.result_type.name)
         if array_dim is not None:
-            yield f"array.new {array_dim} {self.result.name}"
+            yield f"array.new {array_dim} {self._result.name}"
         elif "!felt.type" in self.result_type.name:
-            yield f"{self.result.name} = 0"
+            yield f"{self._result.name} = 0"
         else:
             raise ValueError(f"llzk.nondet transformation for not recognized expression: {self.result_type.name}")
 
     def __repr__(self):
-        return f"LLZKNondet({self.result} = llzk.nondet : {self.result_type})"
+        return f"LLZKNondet({self._result} = llzk.nondet : {self.result_type})"
 
 
 class LLZKDialect(Dialect):

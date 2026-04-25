@@ -79,6 +79,10 @@ class StructMember(Operation):
             is_out="llzk.pub" in attrs
         )
 
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
+
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Basic transformation: just return the variable itself (should not be used
         # in general on their own)
@@ -106,7 +110,7 @@ class StructNew(Operation):
     _OPS = {"struct.new"}
 
     def __init__(self, result: SSAVar, result_type: Type):
-        self.result = result
+        self._result = result
         self.result_type = result_type
 
     def dialect(self) -> Dialect:
@@ -126,15 +130,20 @@ class StructNew(Operation):
             raise ValueError(f"Failed to parse StructNew: {line}")
         return StructNew(SSAVar.parse(m["res"]), Type.parse(m["type"].strip()))
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Does nothing, we do not care about the creation of the struct itself
         yield from ()
 
     def __repr__(self):
-        return f"StructNew({self.result} = struct.new : {self.result_type})"
+        return f"StructNew({self._result} = struct.new : {self.result_type})"
 
 
 class StructReadm(Operation):
@@ -151,7 +160,7 @@ class StructReadm(Operation):
 
     def __init__(self, result: SSAVar, component: SSAVar,
                  member_name: GlobalVariable, types: List[Type]):
-        self.result = result
+        self._result = result
         self.component = component
         self.member_name = member_name
         self.types = types
@@ -180,17 +189,22 @@ class StructReadm(Operation):
         return StructReadm(SSAVar.parse(m["res"]), SSAVar.parse(m["comp"]),
                            GlobalVariable.parse(m["mem"]), types)
 
-    def introduced_var(self):
-        return self.result
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.component]
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Members of the struct are handled as plain variables. Hence, reading
         # a field just translates to an assignment
-        yield f"{self.result.name} = {self.member_name.name}"
+        yield f"{self._result.name} = {self.member_name.name}"
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
-        return (f"StructReadm({self.result} = struct.readm "
+        return (f"StructReadm({self._result} = struct.readm "
                 f"{self.component}[{self.member_name}]{type_str})")
 
 
@@ -238,6 +252,10 @@ class StructWritem(Operation):
         return StructWritem(SSAVar.parse(m["comp"]),
                             GlobalVariable.parse(m["mem"]),
                             SSAVar.parse(m["val"]), types)
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.component, self.value]
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Members of the struct are handled as plain variables. Hence, writing

@@ -184,9 +184,20 @@ class Operation(ABC):
         """
         raise NotImplementedError
 
-    def introduced_var(self) -> Optional['SSAVar']:
-        """Return the single SSA variable this operation defines, or None."""
+    @property
+    def result(self) -> Optional['SSAVar']:
+        """The single SSA variable this operation defines, or None."""
         return None
+
+    @property
+    def op(self) -> str:
+        """The operation name string (e.g. 'felt.add', 'arith.constant')."""
+        return next(iter(self._OPS))
+
+    @property
+    def operands(self) -> List['SSAVar']:
+        """The input SSA variable operands of this operation."""
+        return []
 
 
 # Type alias used by BlockOperation.parse
