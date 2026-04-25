@@ -52,6 +52,9 @@ class FeltConst(Operation):
         type_opt = Type.parse(m["type"].strip()) if m["type"] else None
         return FeltConst(SSAVar.parse(m["res"]), int(m["value"]), type_opt)
 
+    def introduced_var(self):
+        return self.result
+
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Introducing constants is as easy as an assignment
         ctx.var2const[self.result.name] = self.constant
@@ -103,6 +106,9 @@ class FeltUnary(Operation):
             f"Unary operation in Felt not recognised: {m['op']}. Expression: {line}"
         return FeltUnary(SSAVar.parse(m["res"]), m["op"],
                          SSAVar.parse(m["operand"]), types)
+
+    def introduced_var(self):
+        return self.result
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Unary operations are translated into an assignment
@@ -162,6 +168,9 @@ class FeltBinary(Operation):
             f"Binary operation in Felt not recognised: {m['op']}. Expression: {line}"
         return FeltBinary(SSAVar.parse(m["res"]), m["op"],
                           SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]), types)
+
+    def introduced_var(self):
+        return self.result
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Just return the name of the function applied to the arguments

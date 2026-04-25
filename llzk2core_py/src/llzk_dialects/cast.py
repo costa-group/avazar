@@ -50,6 +50,9 @@ class CastToFelt(Operation):
                           SSAVar.parse(m["val"]),
                           Type.parse(m["type"].strip()))
 
+    def introduced_var(self):
+        return self.result
+
     def to_core(self, ctx: TranslationContext) -> str:
         # Casting does nothing, so it is translated as a direct assignment
         yield translate_assignment_core_with_ctx(self.result, self.value, self.src_type, ctx)
@@ -93,6 +96,9 @@ class CastToIndex(Operation):
         # Assign a default type in case it is none
         type_opt = Type.parse(m["type"].strip()) if m["type"] else Type.parse('!felt.type<"bn128">')
         return CastToIndex(SSAVar.parse(m["res"]), SSAVar.parse(m["val"]), type_opt)
+
+    def introduced_var(self):
+        return self.result
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Casting does nothing, so it is translated as a direct assignment

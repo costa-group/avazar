@@ -148,6 +148,9 @@ class LLZKNondet(Operation):
             raise ValueError(f"Failed to parse LLZKNondet: {line}")
         return LLZKNondet(SSAVar.parse(m["res"]), Type.parse(m["type"].strip()))
 
+    def introduced_var(self):
+        return self.result
+
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Initializes value. In our case, it is only relevant for arrays,
         # but for finite elements, we initialize it to zero

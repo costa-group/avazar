@@ -67,6 +67,9 @@ class PolyApplyMap(Operation):
         return PolyApplyMap(SSAVar.parse(m["res"]), ops,
                             int(m["ndims"]), m["map"].strip())
 
+    def introduced_var(self):
+        return self.result
+
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
@@ -114,6 +117,9 @@ class PolyReadConst(Operation):
                              GlobalVariable.parse(m["name"]),
                              Type.parse(m["type"].strip()))
 
+    def introduced_var(self):
+        return self.result
+
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
@@ -160,6 +166,9 @@ class PolyUnifiableCast(Operation):
             raise ValueError(f"Failed to parse PolyUnifiableCast: {line}")
         return PolyUnifiableCast(SSAVar.parse(m["res"]), SSAVar.parse(m["inp"]),
                                  Type.parse(m["intype"].strip()), Type.parse(m["outtype"].strip()))
+
+    def introduced_var(self):
+        return self.result
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation

@@ -126,6 +126,9 @@ class StructNew(Operation):
             raise ValueError(f"Failed to parse StructNew: {line}")
         return StructNew(SSAVar.parse(m["res"]), Type.parse(m["type"].strip()))
 
+    def introduced_var(self):
+        return self.result
+
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Does nothing, we do not care about the creation of the struct itself
         yield from ()
@@ -176,6 +179,9 @@ class StructReadm(Operation):
         )
         return StructReadm(SSAVar.parse(m["res"]), SSAVar.parse(m["comp"]),
                            GlobalVariable.parse(m["mem"]), types)
+
+    def introduced_var(self):
+        return self.result
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Members of the struct are handled as plain variables. Hence, reading

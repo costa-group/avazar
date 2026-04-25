@@ -72,6 +72,9 @@ class ArrayNew(Operation):
         )
         return ArrayNew(SSAVar.parse(m["res"]), elements, Type.parse(m["type"].strip()))
 
+    def introduced_var(self):
+        return self.result
+
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         if len(self.elements) > 0:
             raise NotImplementedError("array.new not implemented with initial elements")
@@ -126,6 +129,9 @@ class ArrayRead(Operation):
         )
         return ArrayRead(SSAVar.parse(m["res"]), SSAVar.parse(m["arr"]),
                          indices, types)
+
+    def introduced_var(self):
+        return self.result
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # We cover the case in which there could be multiple accesses because
@@ -236,6 +242,9 @@ class ArrayExtract(Operation):
         return ArrayExtract(SSAVar.parse(m["res"]), SSAVar.parse(m["arr"]),
                             _parse_index_list(m["idx"]), Type.parse(m["type"].strip()))
 
+    def introduced_var(self):
+        return self.result
+
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
@@ -336,6 +345,9 @@ class ArrayLen(Operation):
             raise ValueError(f"Failed to parse ArrayLen: {line}")
         return ArrayLen(SSAVar.parse(m["res"]), SSAVar.parse(m["arr"]),
                         SSAVar.parse(m["dim"]), Type.parse(m["type"].strip()))
+
+    def introduced_var(self):
+        return self.result
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
