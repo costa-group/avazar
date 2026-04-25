@@ -42,7 +42,7 @@ def translate_assignment_core(lhs: str, rhs: str, is_ff: bool) -> str:
     if is_ff:
         return f"{lhs} = {rhs}"
     else:
-        return f"array.copy {lhs} {rhs}"
+        return f"array.copy {rhs} {lhs}"
 
 
 def indent_stream(source, indent: str = "  "):
