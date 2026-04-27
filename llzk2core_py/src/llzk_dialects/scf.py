@@ -606,13 +606,21 @@ class SCFWhile(BlockOperation):
         first_region_args = self.init_args
         in_types = self.func_type[0]
 
+        # We store the initial values associated to the arguments in the
+        # before region (as they initialize the while)
+        initial_values = dict()
+
         for type_, (lhs, rhs) in zip(in_types, first_region_args):
             yield translate_assignment_core(lhs.to_core(), rhs.to_core(),
                                             "array" not in type_.name)
 
+            constant = ctx.var2const.get(rhs.name)
+            if constant is not None:
+                initial_values[lhs.name] = constant
+
         # Then, we determine the number of steps in the while loop and
         # assign it to repeat
-        steps = self._extract_step()
+        steps = self._extract_step(initial_values)
         yield f"repeat {steps} {{"
 
         # The order of the regions to synthesize is reversed, as the before body
@@ -640,7 +648,7 @@ class SCFWhile(BlockOperation):
 
         yield f"}}"
 
-    def _extract_step(self) -> int:
+    def _extract_step(self, initial_values: Dict[str, int]) -> int:
         """
         Extracts how many iterations are performed in the loop
         """
@@ -699,7 +707,7 @@ class SCFWhile(BlockOperation):
 
         # Finally, using the information from var2expression, we can process the repeat information
         return infer_n_repetitions_from_expressions(while_variables, var2expression,
-                                                    condition_var.name)
+                                                    condition_var.name, initial_values)
 
     def _process_while_variables(self, operations: List[Operation], while_variables: Set[str],
                                  var2expression: Dict[str, Union[str, Operation]]):
