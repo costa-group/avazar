@@ -26,7 +26,8 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
 
 def infer_n_repetitions_from_expressions(ground_variables: Set[str],
                                          var2expression: Dict[str, Union[str, Operation]],
-                                         condition_var_core: str) -> int:
+                                         condition_var_core: str,
+                                         initial_values: Dict[str, int]) -> int:
     """
     Using the information retrieved from all involved expressions in the condition
     (ground_variables, var2expression and condition_var) and the initial assignments
@@ -57,7 +58,7 @@ def infer_n_repetitions_from_expressions(ground_variables: Set[str],
 
     if isinstance(var2expression[lhs.name], FeltConst):
         variable = rhs
-        initial_value = var2expression[lhs.name].constant
+        initial_value = initial_values[lhs.name]
 
         if op == "lt":
             compare_func = lambda x: var2expression[lhs.name].constant < x
@@ -69,7 +70,7 @@ def infer_n_repetitions_from_expressions(ground_variables: Set[str],
         assert isinstance(var2expression[rhs.name], FeltConst), \
             "One of the variables must be constant"
         variable = lhs
-        initial_value = var2expression[rhs.name].constant
+        initial_value = initial_values[lhs.name]
 
         if op == "lt":
             compare_func = lambda x: x < var2expression[rhs.name].constant
