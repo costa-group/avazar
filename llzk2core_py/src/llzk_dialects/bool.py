@@ -32,11 +32,13 @@ class BoolBinary(Operation):
 
     _OPS = {"bool.and", "bool.or", "bool.xor"}
 
-    def __init__(self, result: SSAVar, op: str, lhs: SSAVar, rhs: SSAVar):
+    def __init__(self, result: SSAVar, op: str, lhs: SSAVar, rhs: SSAVar,
+                 types: List[Type] = None):
         self._result = result
         self._op = op
         self.lhs = lhs
         self.rhs = rhs
+        self.types = types or []
 
     def dialect(self) -> Dialect:
         return Dialect("bool")
@@ -48,15 +50,20 @@ class BoolBinary(Operation):
     @classmethod
     def parse(cls, line: str) -> 'BoolBinary':
         pattern = re.compile(
-            r"\s*(?P<res>\S+)\s*=\s*(?P<op>\S+)\s+(?P<lhs>\S+)\s*,\s*(?P<rhs>\S+)\s*"
+            r"\s*(?P<res>\S+)\s*=\s*(?P<op>\S+)\s+(?P<lhs>\S+)\s*,\s*(?P<rhs>\S+)"
+            r"(?:\s*:\s*(?P<types>\S.*\S))?\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse BoolBinary: {line}")
         assert m["op"] in BoolBinary._OPS, \
             f"Binary bool operation not recognised: {m['op']}. Expression: {line}"
+        types = (
+            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            if m["types"] else []
+        )
         return BoolBinary(SSAVar.parse(m["res"]), m["op"],
-                          SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]))
+                          SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]), types)
 
     @property
     def result(self):
