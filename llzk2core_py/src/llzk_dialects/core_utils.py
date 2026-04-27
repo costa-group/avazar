@@ -26,7 +26,7 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
 
 def infer_n_repetitions_from_expressions(ground_variables: Set[str],
                                          var2expression: Dict[str, Union[str, Operation]],
-                                         condition_var: SSAVar,
+                                         condition_var_core: str,
                                          initial_args2const: Dict[str, int]) -> int:
     """
     Using the information retrieved from all involved expressions in the condition
@@ -39,8 +39,8 @@ def infer_n_repetitions_from_expressions(ground_variables: Set[str],
     assert len(ground_variables) == 1, "The while must depend on a linear expression"
     ground_var = [var for var in ground_variables][0]
 
-    initial_comparison = var2expression[condition_var.name]
-    assert isinstance(initial_comparison, BoolCmp), "For now, only BoolCmp whiles are handled"
+    initial_comparison = var2expression[condition_var_core]
+    assert isinstance(initial_comparison, BoolCmp), f"For now, only BoolCmp whiles are handled: {initial_comparison}"
 
     # For now, we only handle lt, le, gt and ge
     # TODO: cover more cases if needed
@@ -77,13 +77,14 @@ def infer_n_repetitions_from_expressions(ground_variables: Set[str],
             compare_func = lambda x: x <= var2expression[rhs.name].constant
 
     # We can deduce the update function and the original variable
-    update_func = construct_function_from_expressions(variable, var2expression, ground_var, set())
+    update_func = construct_function_from_expressions(variable, var2expression, set())
     initial_value = initial_args2const[variable.name]
     return count_iterations(initial_value, compare_func, update_func)
 
+
 def construct_function_from_expressions(current_expr: SSAVar,
                                         var2expression: Dict[str, Union[str, Operation]],
-                                        ground_var: SSAVar, traversed: Set[str]) -> Callable:
+                                        traversed: Set[str]) -> Callable:
     """
     Construct a Python callable f(x) -> int that computes current_expr
     in terms of ground_var.
@@ -101,11 +102,12 @@ def construct_function_from_expressions(current_expr: SSAVar,
 
     if isinstance(expression, str):
         return construct_function_from_expressions(
-            SSAVar(expression), var2expression, ground_var, traversed
+            SSAVar(expression), var2expression, traversed
         )
+
     raw_fn = expression.to_function()
     operand_fns = [
-        construct_function_from_expressions(op, var2expression, ground_var, traversed)
+        construct_function_from_expressions(op, var2expression, traversed)
         for op in expression.operands
     ]
 
