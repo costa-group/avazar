@@ -199,6 +199,14 @@ class Operation(ABC):
         """The input SSA variable operands of this operation."""
         return []
 
+    def update_variables(self, rename: Dict[str, str]) -> None:
+        """Rename SSA variables in-place according to rename. Mutates SSAVar.name directly."""
+        if self.result is not None and self.result.name in rename:
+            self.result.name = rename[self.result.name]
+        for operand in self.operands:
+            if operand.name in rename:
+                operand.name = rename[operand.name]
+
 
 # Type alias used by BlockOperation.parse
 ParseFn = Callable[[int, int], List[Operation]]
@@ -225,3 +233,9 @@ class BlockOperation(Operation, ABC):
     def parse(cls, lines: List[str], cursor: int,
               parse_fn: ParseFn) -> Tuple['BlockOperation', int]:
         raise NotImplementedError
+
+    def update_variables(self, rename: Dict[str, str]) -> None:
+        """Rename variables in this op and recurse into self.body."""
+        super().update_variables(rename)
+        for op in self.body:
+            op.update_variables(rename)
