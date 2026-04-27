@@ -84,6 +84,8 @@ class FeltUnary(Operation):
 
     _OPS = {"felt.bit_not", "felt.inv", "felt.neg"}
 
+    _OPS2CORE = {"felt.bit_not": "bit.not"}
+
     def __init__(self, variable: SSAVar, op: str,
                  operand: SSAVar, types: List[Type]):
         self._result = variable
@@ -142,7 +144,7 @@ class FeltUnary(Operation):
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Unary operations are translated into an assignment
-        yield f"{self._result.to_core()} = {self._op} {self.operand.to_core()}"
+        yield f"{self._result.to_core()} = {self._OPS2CORE.get(self._op, self._op)} {self.operand.to_core()}"
 
     def __repr__(self):
         type_str = ('' if not self.types
@@ -164,6 +166,12 @@ class FeltBinary(Operation):
         "felt.add", "felt.bit_and", "felt.bit_or", "felt.bit_xor",
         "felt.div", "felt.mul", "felt.pow", "felt.shl", "felt.shr",
         "felt.sintdiv", "felt.smod", "felt.sub", "felt.uintdiv", "felt.umod",
+    }
+
+    _OPS2CORE = {
+        "felt.shr": "bit.shr", "felt.shl": "bit.shl",
+        "felt.bit_and": "bit.and", "felt.bit_or": "bit.or",
+        "felt.bit_xor": "bit.xor"
     }
 
     def __init__(self, variable: SSAVar, op: str,
@@ -236,7 +244,7 @@ class FeltBinary(Operation):
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Just return the name of the function applied to the arguments
-        yield f"{self._result.to_core()} = {self._op} {self.lhs.to_core()} {self.rhs.to_core()}"
+        yield f"{self._result.to_core()} = {self._OPS2CORE.get(self._op, self._op)} {self.lhs.to_core()} {self.rhs.to_core()}"
 
     def __repr__(self):
         type_str = ('' if not self.types
