@@ -150,8 +150,27 @@ class SCFCondition(Operation):
         return [self.condition] + list(self.args)
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        yield from ()
+        # Follows the same idea as the yield operation
+        cond_res_index = 0
+        for result in ctx.scf_result:
+            for component in range(result.n_components):
+                # Retrieve the component and the yield operand at current
+                # index "yield_res_index"
+                lhs = result.to_core_component(component)
+                rhs = self.args[cond_res_index].to_core()
+                type_ = self.types[cond_res_index]
+
+                to_core_type = type_.to_core()
+                assert to_core_type is not None, f"Error recognizing type inside a cond expression: {self}"
+
+                # Depending on whether the type corresponds to an array
+                # or to a ff, we generate a copy or a direct assignment
+                # Here, we don't consider translate_assignment_core_with_ctx because
+                # the variables are not constants (they are unfolded depending on the branch)
+
+                yield translate_assignment_core(lhs, rhs, to_core_type == "ff")
+                cond_res_index += 1
+
 
     def __repr__(self):
         args_str = (', '.join(repr(a) for a in self.args) + ' ') if self.args else ''
@@ -288,6 +307,18 @@ class SCFIf(BlockOperation):
         yield from branch_ops[-1].to_core(ctx)
         ctx.scf_result = []
 
+    def update_variables(self, rename: Dict[str, str]) -> None:
+        if self.condition.name in rename:
+            self.condition.name = rename[self.condition.name]
+        for r in self.results:
+            if r.name in rename:
+                r.name = rename[r.name]
+        for op in self.then_body:
+            op.update_variables(rename)
+        if self.else_body:
+            for op in self.else_body:
+                op.update_variables(rename)
+
     def __repr__(self):
         res_str = (', '.join(repr(r) for r in self.results) + ' = ') if self.results else ''
         then_str = '\n  '.join(repr(op) for op in self.then_body)
@@ -373,6 +404,23 @@ class SCFFor(BlockOperation):
                    SSAVar.parse(m["step"]), iter_args, body),
             end + 1,
         )
+
+    def update_variables(self, rename: Dict[str, str]) -> None:
+        for r in self.results:
+            if r.name in rename:
+                r.name = rename[r.name]
+        if self.iv.name in rename:
+            self.iv.name = rename[self.iv.name]
+        for var in (self.lb, self.ub, self.step):
+            if var.name in rename:
+                var.name = rename[var.name]
+        for block_arg, init_val in self.iter_args:
+            if block_arg.name in rename:
+                block_arg.name = rename[block_arg.name]
+            if init_val.name in rename:
+                init_val.name = rename[init_val.name]
+        for op in self.body:
+            op.update_variables(rename)
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -525,6 +573,27 @@ class SCFWhile(BlockOperation):
 
         after_body = parse_fn(after_body_start, after_end)
 
+        # Rename results in each region with _bef/_aft suffixes to eliminate
+        # collisions between the two regions.  after_args names are the declared
+        # entry-point variables of the after region — exclude them so they keep
+        # their original names (they are passed in from scf.condition, not
+        # computed inside the body).
+        after_arg_names: Set[str] = {v.name for v, _ in after_args}
+
+        before_rename: Dict[str, str] = {
+            name: name + "_bef"
+            for name in _collect_result_names(before_body)
+        }
+        for op in before_body:
+            op.update_variables(before_rename)
+
+        after_rename: Dict[str, str] = {
+            name: name + "_aft"
+            for name in _collect_result_names(after_body) - after_arg_names
+        }
+        for op in after_body:
+            op.update_variables(after_rename)
+
         return (
             SCFWhile(results, init_args, types,
                      before_body, after_args, after_body),
@@ -533,40 +602,45 @@ class SCFWhile(BlockOperation):
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
-        # DUMMY TEST SO FAR
-        yield from self._translate_first_region(ctx)
-        for statement in self.before_body:
-            yield from statement.to_core(ctx)
-
-        for statement in self.after_body:
-            yield from statement.to_core(ctx)
-
-    def _translate_first_region(self, ctx: TranslationContext) -> Generator[str, None, None]:
-        # The first region of a while in LLZK must correspond
-        # to the evaluation of the condition.
-        # Nevertheless, we must still consider the expressions that lead
-        # to the arguments that the second region receives
+        # We first initialize the variables outside the loop
         first_region_args = self.init_args
         in_types = self.func_type[0]
 
-        # Initialize args before the while. These arguments are
-        # not necessarily constants, so we must use translate_assignment_core
-        # instead of translate_assignment_core_with_ctx
-        initial_while_var = dict()
-
         for type_, (lhs, rhs) in zip(in_types, first_region_args):
-            yield translate_assignment_core(lhs.to_core(), rhs.to_core(), "array" not in type_.name)
+            yield translate_assignment_core(lhs.to_core(), rhs.to_core(),
+                                            "array" not in type_.name)
 
-            # Detect which variables are initially constants
-            constant = ctx.var2const.get(rhs.name)
-            if constant is not None:
-                initial_while_var[lhs.name] = constant
+        # Then, we determine the number of steps in the while loop and
+        # assign it to repeat
+        steps = self._extract_step()
+        yield f"repeat {steps} {{"
 
-        # We need to extract how many repetitions are perfomed in the loop
-        # Hence, we first determine whic
-        steps = self._extract_step(initial_while_var)
+        # The order of the regions to synthesize is reversed, as the before body
+        # checks the condition at the end of the loop. Ignore the final yield
+        for statement in self.after_body[:-1]:
+            yield from statement.to_core(ctx)
 
-    def _extract_step(self, initial_args2const: Dict[str, int]) -> int:
+        # Then assign the yielded values to the arguments
+        yield_op = self.after_body[-1]
+        for yield_val, (before_in_arg, type_) in zip(yield_op.operands, self.init_args):
+            if yield_val.name != before_in_arg.name:
+                yield translate_assignment_core_with_ctx(before_in_arg, yield_val, type_, ctx)
+
+        # The before body comes afterwards
+        for statement in self.before_body[:-1]:
+            yield from statement.to_core(ctx)
+
+        # Finally, assigned the returned values to the variables outside the while
+        scf_condition = self.before_body[-1]
+
+        # We need to assign the current results of the while operation
+        ctx.scf_result = self.results
+        yield from scf_condition.to_core(ctx)
+        ctx.scf_result = []
+
+        yield f"}}"
+
+    def _extract_step(self) -> int:
         """
         Extracts how many iterations are performed in the loop
         """
@@ -624,9 +698,8 @@ class SCFWhile(BlockOperation):
                 while_variables.remove(arg_var.name)
 
         # Finally, using the information from var2expression, we can process the repeat information
-
         return infer_n_repetitions_from_expressions(while_variables, var2expression,
-                                                    condition_var, initial_args2const)
+                                                    condition_var.name)
 
     def _process_while_variables(self, operations: List[Operation], while_variables: Set[str],
                                  var2expression: Dict[str, Union[str, Operation]]):
@@ -655,6 +728,18 @@ class SCFWhile(BlockOperation):
         yield from region_ops[-1].to_core(ctx)
         ctx.scf_result = []
 
+    def update_variables(self, rename: Dict[str, str]) -> None:
+        for r in self.results:
+            if r.name in rename:
+                r.name = rename[r.name]
+        for _block_arg, init_val in self.init_args:
+            if init_val.name in rename:
+                init_val.name = rename[init_val.name]
+        for op in self.before_body:
+            op.update_variables(rename)
+        for op in self.after_body:
+            op.update_variables(rename)
+
     def __repr__(self):
         res_str = (', '.join(repr(r) for r in self.results) + ' = ') if self.results else ''
         iargs_str = ', '.join(f"{a} = {v}" for a, v in self.init_args)
@@ -664,6 +749,30 @@ class SCFWhile(BlockOperation):
         after_str = '\n  '.join(repr(op) for op in self.after_body)
         return (f"SCFWhile({res_str}scf.while ({iargs_str}) {{\n  {before_str}\n}}"
                 f" do {{\n  {after_bb_str}{after_str}\n}})")
+
+
+def _collect_result_names(ops: List[Operation]) -> Set[str]:
+    """Recursively collect all SSA result names introduced within a list of operations."""
+    names: Set[str] = set()
+    for op in ops:
+        if op.result is not None:
+            names.add(op.result.name)
+        if isinstance(op, SCFIf):
+            names.update(r.name for r in op.results)
+            names.update(_collect_result_names(op.then_body))
+            if op.else_body:
+                names.update(_collect_result_names(op.else_body))
+        elif isinstance(op, SCFFor):
+            names.update(r.name for r in op.results)
+            names.add(op.iv.name)
+            names.update(_collect_result_names(op.body))
+        elif isinstance(op, SCFWhile):
+            names.update(r.name for r in op.results)
+            names.update(_collect_result_names(op.before_body))
+            names.update(_collect_result_names(op.after_body))
+        elif hasattr(op, 'body'):
+            names.update(_collect_result_names(op.body))
+    return names
 
 
 class SCFDialect(Dialect):
