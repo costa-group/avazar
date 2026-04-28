@@ -97,6 +97,20 @@ class ArithBinary(Operation):
         "arith.maxsi", "arith.maxui", "arith.minsi", "arith.minui",
     }
 
+    _OPS2CORE = {
+        "arith.addi": "felt.add",
+        "arith.subi": "felt.sub",
+        "arith.muli": "felt.mul",
+        "arith.divsi": "arith.divui",
+        "arith.divui": "arith.divui",
+        "arith.andi": "bit.and",
+        "arith.ori": "bit.or",
+        "arith.xori": "bit.xor",
+        "arith.shli": "bit.shl",
+        "arith.shrsi": "bit.shr",
+        "arith.shrui": "bit.shr",
+    }
+
     def __init__(self, result: SSAVar, op: str, lhs: SSAVar, rhs: SSAVar,
                  operand_type: Type):
         self._result = result
@@ -141,9 +155,11 @@ class ArithBinary(Operation):
     def operands(self) -> List[SSAVar]:
         return [self.lhs, self.rhs]
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        core_op = self._OPS2CORE.get(self._op)
+        if core_op is None:
+            raise NotImplementedError(f"Operation {self._op} not currently implemented")
+        yield f"{self._result.to_core()} = {core_op} {self.lhs.to_core()} {self.rhs.to_core()}"
 
     def __repr__(self):
         return (f"ArithBinary({self._result} = {self._op}"
@@ -161,6 +177,9 @@ class ArithCmpi(Operation):
     """
 
     _OPS = {"arith.cmpi"}
+
+    _PRED2CORE = {"eq": "bool.eq", "ne": "bool.neq", "lt": "bool.lt",
+                  "le": "bool.ge", "gt": "bool.gt", "ge": "bool.ge"}
 
     def __init__(self, result: SSAVar, predicate: str,
                  lhs: SSAVar, rhs: SSAVar, operand_type: Type):
@@ -203,8 +222,10 @@ class ArithCmpi(Operation):
         return [self.lhs, self.rhs]
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        core_op = self._PRED2CORE.get(self.predicate)
+        if core_op is None:
+            raise NotImplementedError(f"Predicate {self.predicate} not currently implemented in {self}")
+        yield f"{self._result.to_core()} = {core_op} {self.lhs.to_core()} {self.rhs.to_core()}"
 
     def __repr__(self):
         return (f"ArithCmpi({self._result} = arith.cmpi {self.predicate}"
