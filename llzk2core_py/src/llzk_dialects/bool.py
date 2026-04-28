@@ -239,8 +239,8 @@ class BoolAssert(Operation):
         return [self.condition]
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        # Ignore llzk asserts
+        yield from ()
 
     def __repr__(self):
         msg_str = f', {self.msg}' if self.msg else ''
