@@ -296,13 +296,16 @@ class SCFIf(BlockOperation):
         yield "}"
 
     def _translate_branch(self, branch_ops: List[Operation], ctx: TranslationContext) -> Generator[str, None, None]:
-        assert isinstance(branch_ops[-1], SCFYield), f"Last instruction of SCFIf must be a yield and it is {branch_ops[-1]}"
 
         for statement in branch_ops[:-1]:
             # Process all the operands as usual, except for the scf.yield
             yield from statement.to_core(ctx)
 
+        # Last instruction is either a yield that must be translated or no results are returned
+        assert len(self.results) == 0 or isinstance(branch_ops[-1], SCFYield), f"Last instruction of SCFIf must be a yield and it is {branch_ops[-1]}"
+
         # For the yield operation, we must retrieve the results variables
+        # If it is not a yield, ctx.scf_result does not affect the translation
         ctx.scf_result = self.results
         yield from branch_ops[-1].to_core(ctx)
         ctx.scf_result = []
