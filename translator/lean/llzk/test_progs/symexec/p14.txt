@@ -1,0 +1,8 @@
+func shr_const_test(x:ff) -> z:ff {
+  w = 3
+  z = bit.and x w
+}
+
+
+func main() {
+}
