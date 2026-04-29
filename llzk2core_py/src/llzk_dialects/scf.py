@@ -304,11 +304,12 @@ class SCFIf(BlockOperation):
         # Last instruction is either a yield that must be translated or no results are returned
         assert len(self.results) == 0 or isinstance(branch_ops[-1], SCFYield), f"Last instruction of SCFIf must be a yield and it is {branch_ops[-1]}"
 
-        # For the yield operation, we must retrieve the results variables
-        # If it is not a yield, ctx.scf_result does not affect the translation
-        ctx.scf_result = self.results
-        yield from branch_ops[-1].to_core(ctx)
-        ctx.scf_result = []
+        if len(branch_ops) > 0:
+            # For the yield operation, we must retrieve the results variables
+            # If it is not a yield, ctx.scf_result does not affect the translation
+            ctx.scf_result = self.results
+            yield from branch_ops[-1].to_core(ctx)
+            ctx.scf_result = []
 
     def update_variables(self, rename: Dict[str, str]) -> None:
         if self.condition.name in rename:
