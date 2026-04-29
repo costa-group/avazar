@@ -1,6 +1,5 @@
 import Llzk.Basic
 import Llzk.Language.Core.Syntax.AST
-import Std.Data.ExtTreeSet.Basic
 
 /- This module defines the syntax of constraint systems over finite fields
    and boolean variables -/
@@ -13,24 +12,24 @@ open Llzk.Language.Core.Syntax.AST
 structure FFVarMetaData where
   orig_name : String
   src_info : SrcInfo
-  deriving Repr, BEq, Inhabited, Ord
+  deriving Repr, BEq, Inhabited
 
 structure BoolVarMetaData where
   orig_name : String
   src_info : SrcInfo
-  deriving Repr, BEq, Inhabited, Ord
+  deriving Repr, BEq, Inhabited
 
 /- A finite field variable -/
 structure FFVar where
   id : ℕ
   meta_data: FFVarMetaData
-  deriving Repr, BEq, Inhabited, Ord
+  deriving Repr, BEq, Inhabited
 
 /- A boolean variable -/
 structure BoolVar where
   id : ℕ
   meta_data: BoolVarMetaData
-  deriving Repr, BEq, Inhabited, Ord
+  deriving Repr, BEq, Inhabited
 
 /- A variable, which can be either a finite field variable or a boolean variable -/
 abbrev Var := FFVar ⊕ BoolVar
@@ -73,12 +72,12 @@ inductive MacroCallParam (c : ZKConfig) where
 --   compare a b := compare (toString a) (toString b)
 
 /-  Equality (BEq) of FFVar -/
---instance : BEq FFVar where
---  beq a b := a.id == b.id
+instance : BEq FFVar where
+  beq a b := a.id == b.id
 
 /-  Equality (BEq) of BoolVar -/
---instance : BEq BoolVar where
---  beq a b := a.id == b.id
+instance : BEq BoolVar where
+  beq a b := a.id == b.id
 
 /- ToString instance for FFVar -/
 instance : ToString FFVar where
@@ -89,154 +88,12 @@ instance : ToString BoolVar where
   toString v := s!"v_{v.id}"
 
 /-  Ordering (Ord) of FFVar. Needed if we use ordered sets -/
---instance : Ord FFVar where
---  compare a b := compareLex
+instance : Ord FFVar where
+  compare a b := compare a.id b.id
 
 /-  Ordering (Ord) of BoolVar. Needed if we use ordered sets -/
---instance : Ord BoolVar where
---  compare a b := compare a.id b.id
-
-#check Std.TransCmp
-
-instance : Std.TransCmp (compare (α := FFVar)) where
-  isLE_trans := by
-    intros a b c h_a_b h_b_c
-    simp only [compare, instOrdFFVar.ord] at h_a_b
-    cases h_comp_aid_bid : compareOfLessAndEq a.id b.id with
-    | lt =>
-      simp [h_comp_aid_bid] at h_a_b
-      simp only [compare, instOrdFFVar.ord] at h_b_c
-      cases h_comp_bid_cid : compareOfLessAndEq b.id c.id with
-      | lt =>
-        simp [h_comp_bid_cid] at h_b_c
-        simp only [compare, instOrdFFVar.ord]
-        rw [compareOfLessAndEq_eq_lt] at h_comp_aid_bid
-        rw [compareOfLessAndEq_eq_lt] at h_comp_bid_cid
-        have h_a_c : a.id < c.id := by grind
-        rw [← compareOfLessAndEq_eq_lt] at h_a_c
-        simp [h_a_c]
-      | eq =>
-        simp [h_comp_bid_cid] at h_b_c
-        simp only [compare, instOrdFFVar.ord]
-        rw [compareOfLessAndEq_eq_lt] at h_comp_aid_bid
-        rw [compareOfLessAndEq_eq_eq] at h_comp_bid_cid
-        · have h_a_c : a.id < c.id := by
-            rw [← h_comp_bid_cid]
-            exact h_comp_aid_bid
-          rw [← compareOfLessAndEq_eq_lt] at h_a_c
-          simp [h_a_c]
-        · intros x
-          apply Nat.le_refl
-        · intros x y
-          apply Nat.not_le
-      | gt =>
-        simp [h_comp_bid_cid] at h_b_c
-    | eq =>
-        · simp only [compare, instOrdFFVar.ord] at h_b_c
-          simp only [h_comp_aid_bid, Ordering.then_eq, Ordering.eq_then] at h_a_b
-          rw [compareOfLessAndEq_eq_eq] at h_comp_aid_bid
-          · have h_meta_a_b := (@Ordering.isLE_iff_eq_lt_or_eq_eq
-               (instOrdFFVarMetaData.ord a.meta_data b.meta_data)).mp h_a_b
-            rcases h_meta_a_b with h_lt | h_eq
-            · sorry
-            · sorry
-          · intros x
-            apply Nat.le_refl
-          · intros x y
-            apply Nat.not_le
-    | gt =>
-        rw [h_comp_aid_bid, Ordering.then, Ordering.isLE] at h_a_b
-        · contradiction
-        · intros hh
-          contradiction
-
-  eq_swap {a b} := by
-    simp only [compare, instOrdFFVar.ord, compareOfLessAndEq, instOrdFFVarMetaData.ord]
-    by_cases h_aid_bid : a.id < b.id
-    · simp only [h_aid_bid, ↓reduceIte, Ordering.then_eq, Ordering.lt_then]
-      apply Nat.lt_le_asymm at h_aid_bid
-      rw [Nat.le_iff_lt_or_eq] at h_aid_bid
-      push_neg at h_aid_bid
-      rcases h_aid_bid with ⟨h_aid_lt_bid, h_aid_neq_bid⟩
-      apply Nat.le_lt_asymm at h_aid_lt_bid
-      simp only [h_aid_lt_bid, ↓reduceIte]
-      simp only [h_aid_neq_bid, ↓reduceIte, Ordering.gt_then, Ordering.swap_gt]
-    · simp only [h_aid_bid, ↓reduceIte, Ordering.then_eq]
-      by_cases h_aid_eq_bid : a.id = b.id
-      · simp only [h_aid_eq_bid, ↓reduceIte, Ordering.eq_then, lt_self_iff_false]
-        sorry
-      · simp only [h_aid_eq_bid, ↓reduceIte, Ordering.gt_then]
-        sorry
-
-instance : Std.TransCmp (compare (α := BoolVar)) := by
-  sorry
-
-#check compareLex
-
-#check compareOfLessAndEq_eq_eq
-#check instOrdSrcInfo.compare
-#check compareOfLessAndEq_eq_eq
-#check compare_eq_iff_eq
-
-
-instance : Std.LawfulEqCmp (compare (α := FFVar)) where
-  eq_of_compare {a b} := by
-    intros h
-    cases a  with | mk id_a m_a =>
-    cases b  with | mk id_b m_b =>
-    cases m_a with | mk orig_a src_a =>
-    cases m_b with | mk orig_b src_b =>
-    simp only [compare, instOrdFFVar.ord, instOrdFFVarMetaData.ord,
-      Ordering.then_eq, Ordering.then_eq_eq] at h
-    rcases h with ⟨h_id, h_orig, h_src⟩
-    rw [compareOfLessAndEq_eq_eq] at h_id
-    · rw [compareOfLessAndEq_eq_eq] at h_orig
-      · have h_eq : src_a = src_b := by
-          simp only [instOrdSrcInfo.ord, Ordering.then_eq,
-            Ordering.then_eq_eq, Std.LawfulEqCmp.compare_eq_iff_eq] at h_src
-          cases src_a with | mk row_a col_a =>
-          cases src_b with | mk row_b col_b =>
-          simp only at h_src
-          rcases h_src with ⟨h_row, h_col⟩
-          rw [h_row, h_col]
-        rw [h_id, h_orig, h_eq]
-      · apply String.le_refl
-      · apply String.not_le
-    · intros x
-      apply Nat.le_refl
-    · intros x y
-      apply Nat.not_le
-
-
-
-instance : Std.LawfulEqCmp (compare (α := BoolVar)) where
-  eq_of_compare {a b} := by
-    intros h
-    cases a  with | mk id_a m_a =>
-    cases b  with | mk id_b m_b =>
-    cases m_a with | mk orig_a src_a =>
-    cases m_b with | mk orig_b src_b =>
-    simp only [compare, instOrdBoolVar.ord, instOrdBoolVarMetaData.ord,
-      Ordering.then_eq, Ordering.then_eq_eq] at h
-    rcases h with ⟨h_id, h_orig, h_src⟩
-    rw [compareOfLessAndEq_eq_eq] at h_id
-    · rw [compareOfLessAndEq_eq_eq] at h_orig
-      · have h_eq : src_a = src_b := by
-          simp only [instOrdSrcInfo.ord, Ordering.then_eq,
-            Ordering.then_eq_eq, Std.LawfulEqCmp.compare_eq_iff_eq] at h_src
-          cases src_a with | mk row_a col_a =>
-          cases src_b with | mk row_b col_b =>
-          simp only at h_src
-          rcases h_src with ⟨h_row, h_col⟩
-          rw [h_row, h_col]
-        rw [h_id, h_orig, h_eq]
-      · apply String.le_refl
-      · apply String.not_le
-    · intros x
-      apply Nat.le_refl
-    · intros x y
-      apply Nat.not_le
-
+instance : Ord BoolVar where
+  compare a b := compare a.id b.id
 
 /-  Hashing (Hashable) of FFVar. Needed if we use this in a HashMap or HashSet -/
 instance : Hashable FFVar where
@@ -248,21 +105,14 @@ instance : Hashable BoolVar where
 
 
 
-/- FFVar set -/
-abbrev FFVarSet := Std.ExtTreeSet FFVar compare
-abbrev emptyFFVarSet : FFVarSet := Std.ExtTreeSet.empty
 
--- FFVarSet has ⊆
-instance : HasSubset FFVarSet where
-  Subset s1 s2 := ∀ x, x ∈ s1 → x ∈ s2
+/- FFVar set -/
+abbrev FFVarSet := Std.TreeSet FFVar compare
+abbrev emptyFFVarSet : FFVarSet := Std.TreeSet.empty
 
 /- BoolVar set -/
-abbrev BoolVarSet := Std.ExtTreeSet BoolVar compare
-abbrev emptyBoolVarSet : BoolVarSet := Std.ExtTreeSet.empty
-
--- BoolVarSet has ⊆
-instance : HasSubset BoolVarSet where
-  Subset s1 s2 := ∀ x, x ∈ s1 → x ∈ s2
+abbrev BoolVarSet := Std.TreeSet BoolVar compare
+abbrev emptyBoolVarSet : BoolVarSet := Std.TreeSet.empty
 
 
 mutual
@@ -300,53 +150,6 @@ inductive FFFormula (c : ZKConfig) where
   deriving Repr, BEq, Inhabited
 
 end
-
-
--- FF vars in a FFFormula
-mutual
-
-def ffvarsTerm {c : ZKConfig} : FFTerm c → FFVarSet
-  | .val _ => emptyFFVarSet
-  | .var v => emptyFFVarSet.insert v
-  | .add a b | .sub a b | .mul a b => (ffvarsTerm a).union (ffvarsTerm b)
-  | .neg a => ffvarsTerm a
-  | .ite cond t e => (ffvars cond).union ((ffvarsTerm t).union (ffvarsTerm e))
-
-def ffvars {c : ZKConfig} : FFFormula c -> FFVarSet
-  | .true | .false => emptyFFVarSet
-  | .range t _ _ => ffvarsTerm t
-  | .bool _ => emptyFFVarSet
-  | .eq a b | .lt a b | .gt a b | .le a b | .ge a b => (ffvarsTerm a).union (ffvarsTerm b)
-  | .and a b | .or a b | .imply a b | .iff a b => (ffvars a).union (ffvars b)
-  | .not a => ffvars a
-  | .ite cond t e => (ffvars cond).union ((ffvars t).union (ffvars e))
-  | .call _ _ => emptyFFVarSet -- TODO
-
-end
-
-
--- Bool vars in a FFFormula
-mutual
-
-def boolvarsTerm {c : ZKConfig} : FFTerm c → BoolVarSet
-  | .val _ => emptyBoolVarSet
-  | .var _ => emptyBoolVarSet
-  | .add a b | .sub a b | .mul a b => (boolvarsTerm a).union (boolvarsTerm b)
-  | .neg a => boolvarsTerm a
-  | .ite cond t e => (boolvars cond).union ((boolvarsTerm t).union (boolvarsTerm e))
-
-def boolvars {c : ZKConfig} : FFFormula c -> BoolVarSet
-  | .true | .false => emptyBoolVarSet
-  | .range t _ _ => boolvarsTerm t
-  | .bool v => emptyBoolVarSet.insert v
-  | .eq a b | .lt a b | .gt a b | .le a b | .ge a b => (boolvarsTerm a).union (boolvarsTerm b)
-  | .and a b | .or a b | .imply a b | .iff a b => (boolvars a).union (boolvars b)
-  | .not a => boolvars a
-  | .ite cond t e => (boolvars cond).union ((boolvars t).union (boolvars e))
-  | .call _ _ => emptyBoolVarSet -- TODO
-
-end
-
 
 /- Trivial definition for size of formula, to be used for proving termination.
    Tried to use the default sizeOf but failed to unfold at some point.
