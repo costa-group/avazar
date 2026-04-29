@@ -205,12 +205,85 @@ unrolled during processing.</p>
 <h2 id="informal-definition"><a class="header" href="#informal-definition">Informal Definition</a></h2>
 <p>We assume a prime number <code>P</code> and an architecture width of <code>k</code> bits,
 such that <code>P &lt; 2^k</code>.  For any number <code>x</code>, its <strong>FF-value</strong> (Finite
-Field value) is an integer in the range <code>[0, P-1]</code>, calculated as <code>x mod P</code>.</p>
+Field value) is an integer in the range <code>[0, P-1]</code>, calculated as <code>x mod P</code>. We first give the grammar, and then explain each part
+separately.</p>
+<pre><code class="language-text">// numbers
+N := a natural number
+Z := an integer (will be interpreted as a finite field value)
+
+// identifiers: sequence of _,a-z,A-Z,0-9,%,@,# or . (dot) that 
+// does not start with # or a digit
+id  := [_,a-z,A-Z,%,@,.] [_,a-z,A-Z,0-9,%,@,#,.]* 
+
+// zero or more id separated by comma
+ids := (id (&quot;,&quot; id)*)?
+
+// simple expression
+sexp := id | Z
+
+// zero or more simple expressions separated by comma
+sexps := (sexp (&quot;,&quot; sexp)*)?
+
+// finite field operations
+felt_bin_op := &quot;felt.add&quot; | &quot;felt.sub&quot; | &quot;felt.mul&quot; | &quot;felt.div&quot;
+felt_unary_op := &quot;felt.neg&quot;
+
+// bitwise operations
+bit_bin_op := &quot;bit.shl&quot; | &quot;bit.shr&quot; | &quot;bit.and&quot; | &quot;bit.or&quot; | &quot;bit.xor&quot;
+bit_unary_op := bit.not
+
+// boolean operations -- use 0/1 for false and true
+bool_bin_op := &quot;bool.eq&quot; | &quot;bool.neq&quot; | &quot;bool.lt&quot; | &quot;bool.gt&quot; | &quot;bool.le&quot; | &quot;bool.ge&quot; | &quot;bool.and&quot; | &quot;bool.or&quot;
+bool_unary_op := &quot;bool.not&quot;
+
+// binary, unary and no-operand operations
+bin_op := felt_bin_op | bit_bin_op | bool_bin_op
+unary_op := felt_unary_op | bit_unary_op | bool_unary_op
+
+// expressions
+exp := bin_op sexp sexp | unary_op sexp | sexp
+
+// assignment
+assignment := id &quot;=&quot; exp
+
+// if statement
+if  := &quot;if&quot; &quot;(&quot; sexp &quot;==&quot; sexp &quot;)&quot; &quot;{&quot; cmd* &quot;}&quot; [else &quot;{&quot; cmd* &quot;}&quot;]
+
+// bounded loops
+for := &quot;repeat&quot; sexpr &quot;{&quot; cmd* &quot;}&quot;
+
+// array operations
+narray := &quot;array.new&quot; sexp id
+rarray := &quot;array.read&quot; id &quot;[&quot; sexp &quot;]&quot; id
+warray := &quot;array.write&quot; sexp id &quot;[&quot; sexp &quot;]&quot;
+carray := &quot;array.copy&quot; id id
+
+// function call
+fcall  := &quot;call&quot; id &quot;(&quot; sexps &quot;)&quot; [&quot;to&quot; ids]
+
+// command
+cmd := assignment | if | for | wconst | narray | rarray | warray | carray | fcall
+
+// types
+type := ff | arr&lt;N&gt;
+
+// parameter
+param := id &quot;:&quot; type
+
+// zero or more parameters separated by comma
+params := (param (&quot;,&quot; param)*)?
+
+// function definition
+function := &quot;func&quot; id &quot;(&quot; params &quot;)&quot; [&quot;-&gt;&quot; params] &quot;{&quot; cmd* &quot;}&quot;
+
+// program
+prog := func*
+</code></pre>
 <h3 id="types"><a class="header" href="#types">Types</a></h3>
 <p>There are two primary types:</p>
 <ol>
 <li><code>ff</code>: A scalar variable over the finite field.</li>
-<li><code>a&lt;N&gt;</code>: An array of <code>N</code> finite field elements (<code>N</code> is a constant).</li>
+<li><code>arr&lt;N&gt;</code>: An array of <code>N</code> finite field elements (<code>N</code> is a constant).</li>
 </ol>
 <p>Types must be declared for function input and output parameters. Local
 variable types are inferred dynamically upon assignment and checked
@@ -219,57 +292,47 @@ upon usage.</p>
 <p>[!NOTE]</p>
 <p>Machine integers and booleans are simulated using the <code>ff</code> type.</p>
 </blockquote>
-<p><strong>Conventions:</strong></p>
-<ul>
-<li><code>x</code>, <code>y</code>, <code>z</code>: Variables of type <code>ff</code>.</li>
-<li><code>v</code>, <code>v1</code>, <code>v2</code>: Concrete values.</li>
-<li><code>#i</code>, <code>#j</code>: <strong>Constant variables</strong> (e.g., loop indices).</li>
-</ul>
-<p>A <strong>Simple Expression</strong> (<code>s</code>, <code>s1</code>, <code>s2</code>) is an atomic unit that can
-be a variable, a value, or a constant variable. A <strong>Constant Simple
-Expression</strong> is one that is not a variable (it can be only a value or
-a constant variable).</p>
 <h3 id="structure"><a class="header" href="#structure">Structure</a></h3>
 <p>A program consists of a set of functions. One function is designated
-as <code>main</code>, serving as the entry point for generating the SMT formula.</p>
+as <code>%main</code>, serving as the entry point for generating the SMT formula.</p>
 <h4 id="functions"><a class="header" href="#functions">Functions</a></h4>
 <p>A function definition follows this syntax:</p>
-<pre><code class="language-text">def fname(X1:t, ..., Xn:t) -&gt; Y1:t, ..., Yk:t {
+<pre><code class="language-text">def id(id1:t, ...,idn:t) -&gt; id1:t, ..., idk:t {
   body
 }
 
 </code></pre>
 <ul>
-<li><strong>Parameters:</strong> Formal parameters (<code>X</code>) and return parameters (<code>Y</code>)
-follow the format <code>name:type</code>.</li>
-<li><strong>Uniqueness:</strong> All parameter names (<code>Xi</code>) and return names (<code>Yi</code>)
-must be distinct.</li>
-<li><strong>Body:</strong> <code>body</code> is a sequence of instructions.</li>
+<li><strong>Parameters:</strong> Formal and return parameters
+follow the format <code>%name:type</code>.</li>
+<li><strong>Uniqueness:</strong> All parameter names are distinct. All return names
+are distinct.</li>
+<li><strong>Body:</strong> <code>body</code> is a sequence of commands.</li>
 </ul>
 <h4 id="expressions"><a class="header" href="#expressions">Expressions</a></h4>
 <p>In what follow we explain the supported expressions by category.</p>
 <h5 id="arithmetic"><a class="header" href="#arithmetic">Arithmetic</a></h5>
 <p>Semantics correspond to standard operations in the finite field .</p>
 <ol>
-<li><code>s1</code> (Identity)</li>
-<li><code>-s1</code> (Negation)</li>
-<li><code>s1 + s2</code></li>
-<li><code>s1 - s2</code></li>
-<li><code>s1 * s2</code></li>
-<li><code>s1 / s2</code> (Multiplication by modular inverse)</li>
+<li><code>sexp</code> (Identity)</li>
+<li><code>felt.neg sexp</code> (Negation)</li>
+<li><code>felt.add sexp1 sexp2</code> (Addition)</li>
+<li><code>felt.sub sexp1 sexp2</code> (Subtraction)</li>
+<li><code>felt.mul sexp1 sexp2</code> (Multiplication)</li>
+<li><code>felt.div sexp1 sexp2</code> (Multiplication by modular inverse)</li>
 </ol>
 <h5 id="bitwise"><a class="header" href="#bitwise">Bitwise</a></h5>
-<p>Semantics: The operands <code>si</code> are converted to <code>k</code>-bit vectors
+<p>Semantics: The operands <code>sexpi</code> are converted to <code>k</code>-bit vectors
 (standard unsigned integer representation), the operation is applied,
 and the result is converted back to a finite field element (modulo
 <code>P</code>).</p>
 <ol>
-<li><code>s1 &lt;&lt; s2</code> (Left shift)</li>
-<li><code>s1 &gt;&gt; s2</code> (Right shift)</li>
-<li><code>s1 &amp; s2</code> (Bitwise AND)</li>
-<li><code>s1 | s2</code> (Bitwise OR)</li>
-<li><code>s1 ^ s2</code> (Bitwise XOR)</li>
-<li><code>~s1</code> (Bitwise NOT)</li>
+<li><code>bit.shl sexp1 sexp2</code> (Left shift)</li>
+<li><code>bit.shr sexp1 sexp2</code> (Right shift)</li>
+<li><code>bit.and sexp1 sexp2</code> (Bitwise AND)</li>
+<li><code>bit.or sexp1 sexp2</code> (Bitwise OR)</li>
+<li><code>bit.xor sexp1 sexp2</code> (Bitwise XOR)</li>
+<li><code>bit.not sexp1</code> (Bitwise NOT)</li>
 </ol>
 <blockquote>
 <p>[!NOTE]</p>
@@ -287,100 +350,71 @@ order is defined as <code>mid+1, ..., P-1, 0, ..., mid</code>, where
 write it a bit formally.</p>
 </blockquote>
 <ol>
-<li><code>True</code>: evaluates to <code>1</code>.</li>
-<li><code>False</code>: evaluates to <code>0</code>.</li>
-<li><code>s1=s2</code>: Equality. <code>(s1=s2 -&gt; result=1) and (~(s1=s2) -&gt; result=0)</code>.</li>
-<li><code>s1!=s2</code>: Inequality. <code>(s1=s2 -&gt; result=0) and (~(s1=s2) -&gt; result=1)</code>.</li>
-<li><code>s1 &gt; s2</code>: Signed greater than. <code>s1&gt;s2 -&gt; result=1) and (~(s1&gt;s2) -&gt; result=0)</code>.</li>
-<li><code>s1 &lt; s2</code>: Signed less than. <code>(s1&lt;s2 -&gt; result=1) and (~(s1&lt;s2) -&gt; result=0)</code>.</li>
-<li><code>s1 &gt;= s2</code>: Signed greater or equal. <code>(s1&gt;=s2 -&gt; result=1) and (~(s1&gt;=s2) -&gt; result=0)</code>.</li>
-<li><code>s1 &lt;= s2</code>: Signed less or equal. <code>(s1&lt;=s2 -&gt; result=1) and (~(s1&lt;=s2) -&gt; result=0)</code>.</li>
-<li><code>!s</code>: Logical NOT. <code>(s=0 -&gt; result=1) and (~(s=0) -&gt; result=0)</code>.</li>
-<li><code>s1 || s2</code>: Logical OR. <code>((s1=0 and s2=0) -&gt; result=0) and ((~(s1=0) or ~(s2=0)) -&gt; result=1)</code>.</li>
-<li><code>s1 &amp;&amp; s2</code>: Logical AND. <code>(~(s1=0) and ~(s2=0)) -&gt; result=1) and (((s1=0) or (s2=0)) -&gt; result=0)</code>.</li>
+<li><code>bool.eq sexp1 sexp2</code>: Equality. <code>(sexp1=sexp2 -&gt; result=1) and (~(sexp1=sexp2) -&gt; result=0)</code>.</li>
+<li><code>bool.neq sexp1 sexp2</code>: Inequality. <code>(sexp1=sexp2 -&gt; result=0) and (~(sexp1=sexp2) -&gt; result=1)</code>.</li>
+<li><code>bool.gt sexp1 sexp2</code>: Signed greater than. <code>sexp1&gt;sexp2 -&gt; result=1) and (~(sexp1&gt;sexp2) -&gt; result=0)</code>.</li>
+<li><code>bool.lt sexp1 sexp2</code>: Signed less than. <code>(sexp1&lt;sexp2 -&gt; result=1) and (~(sexp1&lt;sexp2) -&gt; result=0)</code>.</li>
+<li><code>bool.ge sexp1 sexp2</code>: Signed greater or equal. <code>(sexp1&gt;=sexp2 -&gt; result=1) and (~(sexp1&gt;=sexp2) -&gt; result=0)</code>.</li>
+<li><code>bool.le sexp1 sexp2</code>: Signed less or equal. <code>(sexp1&lt;=sexp2 -&gt; result=1) and (~(sexp1&lt;=sexp2) -&gt; result=0)</code>.</li>
+<li><code>bool.not sexp</code>: Logical NOT. <code>(sexp=0 -&gt; result=1) and (~(sexp=0) -&gt; result=0)</code>.</li>
+<li><code>bool.or sexp1 sexp2</code>: Logical OR. <code>((sexp1=0 and sexp2=0) -&gt; result=0) and ((~(sexp1=0) or ~(sexp2=0)) -&gt; result=1)</code>.</li>
+<li><code>bool.and sexp1 sexp2</code>: Logical AND. <code>(~(sexp1=0) and ~(sexp2=0)) -&gt; result=1) and (((sexp1=0) or (sexp2=0)) -&gt; result=0)</code>.</li>
 </ol>
-<h4 id="instructions"><a class="header" href="#instructions">Instructions</a></h4>
-<p>Next we describe the possible instructions supported in the language.</p>
-<p>Recall that a simple expression <code>s</code> is constant, if it does not
-involve variables (it can involve constant variables). We say that an
-expression <code>exp</code> is a <strong>constant expression</strong> if all its simple
-expressions are constant.</p>
+<h4 id="commands"><a class="header" href="#commands">Commands</a></h4>
+<p>Next we describe the possible commands supported in the language.</p>
 <h5 id="assignment"><a class="header" href="#assignment">Assignment</a></h5>
-<pre><code class="language-text">x := exp
+<pre><code class="language-text">id = exp
 </code></pre>
-<p>Assigns the result of <code>exp</code> to <code>x</code>. <code>exp</code> cannot be a compound
-expression (nested operations are not supported directly; intermediate
-variables must be used).</p>
+<p>Assigns the result of <code>exp</code> to <code>id</code>.</p>
 <h5 id="arrays"><a class="header" href="#arrays">Arrays</a></h5>
 <ol>
-<li><code>x := new_array N</code>: Allocates an array of <code>N</code> elements (type
-<code>ff</code>). <code>N</code> must be a constant.</li>
-<li><code>x := y[s]</code>: Reads <code>y</code> at index <code>s</code> into <code>x</code>.</li>
-<li><code>x[s1] := s2</code>: Updates <code>x</code> at index <code>s1</code> with value <code>s2</code>.</li>
-<li><code>x := cpy_array y</code>: Copies array <code>y</code> into <code>x</code>. The previous value
-of <code>x</code> is overwritten. <code>y</code> must be an array.</li>
+<li><code>array.new sexp id</code>: Allocates an array of <code>sexp</code> elements (type
+<code>ff</code>), and stores it in variable <code>id</code>. <code>sexp</code> must be a constant simple expression.</li>
+<li><code>array.read id1[sexp] id2</code>: Reads the array <code>id1</code> at index <code>sexp</code> into variable <code>id2</code>.</li>
+<li><code>array.write sexp1 id[sexp2]</code>: Updates array <code>id</code> at index <code>exp2</code> with value of<code>sexp1</code>.</li>
+<li><code>array.copy id1 id2</code>: Copies array <code>id1</code> into <code>id2</code>. The previous value
+of <code>id2</code> is overwritten. <code>id1</code> must be an array.</li>
 </ol>
 <blockquote>
 <p>[!IMPORTANT]</p>
-<p>Efficient translation of array access/update <code>x[s]</code> to SMT formulas
-is only possible if the index <code>s</code> is a <strong>Constant Simple
-Expression</strong>.</p>
+<p>The size of an array must be computable at symbolic
+execution time, i.e., does not depend on input parameters.</p>
+</blockquote>
+<blockquote>
+<p>[!IMPORTANT]</p>
+<p>Efficient translation of array access/update <code>id[sexp]</code> to SMT formulas
+is only possible if the index <code>sexp</code> is computable at symbolic execution
+time.</p>
 </blockquote>
 <h5 id="conditionals"><a class="header" href="#conditionals">Conditionals</a></h5>
-<ol>
-<li><code>if s1=s2 { body } else { body }</code></li>
-<li><code>if s1!=s2 { body } else { body }</code></li>
-</ol>
+<p><code>if sexp1==sexp2 { body } else { body }</code></p>
+<p>The <code>else</code> part is optional.</p>
 <blockquote>
 <p>[!NOTE]</p>
-<p>Only equality checks are supported in guards. Other comparisons
-(e.g., <code>&gt;</code>) must be computed beforehand or encoded, as they do not
-simplify the SMT translation.</p>
+<p>Types of all live variables at exit of both branches must coincide.</p>
 </blockquote>
 <h5 id="bounded-loops"><a class="header" href="#bounded-loops">Bounded Loops</a></h5>
-<pre><code class="language-text">for(i, START, N, STEP) { body }
+<pre><code class="language-text">repeat sexp  { body }
 </code></pre>
-<p><code>START</code>, <code>N</code> (iteration count), and <code>STEP</code> must be <strong>Constant
-Expressions</strong>.</p>
+<p>Repeats <code>body</code> for <code>sexp</code> times. There is no loop counter, should be
+taken care of independently (i.e., initializing a variable before the
+loop and increment it inside <code>body</code>).</p>
+<blockquote>
+<p>[!IMPORTANT]</p>
+<p>'sexp' must be computable at symbolic execution time, i.e., does
+not depend on input parameters, otherwise we cannot unfold the loop.</p>
+</blockquote>
 <p><strong>Semantics:</strong></p>
 <ol>
-<li>Evaluate <code>START</code>, <code>N</code>, and <code>STEP</code> to concrete values.</li>
-<li>Initialize loop counter <code>i = START</code>.</li>
-<li>Execute <code>body</code> <code>N</code> times. After each iteration, update <code>i := i + STEP</code>.</li>
+<li>Evaluate <code>sexp</code> to a value <code>N</code>.</li>
+<li>Repeat <code>body</code> for <code>N</code> times.</li>
 </ol>
-<p>Inside the loop body, the loop index is a <strong>constant variable</strong>
-accessed via <code>#i</code>.</p>
-<blockquote>
-<p>[!NOTE]</p>
-<p>This construct relies on loop unrolling. In every unrolled
-iteration, <code>#i</code> can be used to refer to the concrete index for that
-step. Nested loops must use distinct index names.</p>
-</blockquote>
-<blockquote>
-<p>[!note]</p>
-<p>Should we allow <code>-(STEP)</code>? What to do if <code>i</code> goes negative in such
-case? Just treat it as a finite field negative (i.e., <code>-1</code> goes back
-to <code>P-1</code>)?</p>
-</blockquote>
-<h5 id="constant-definition"><a class="header" href="#constant-definition">Constant Definition</a></h5>
-<pre><code class="language-text">with_const i = exp { body }
-</code></pre>
-<p>Defines a scope where <code>i</code> is a constant variable with the value of
-<code>exp</code> (which must be a constant expression). Inside <code>body</code>, this value
-is accessed as <code>#i</code>. Re-declaration of <code>i</code> within the body is
-forbidden. This also applies to loop indices sine they are constant
-variables.</p>
-<blockquote>
-<p>[!note]</p>
-<p>This construct is useful for simulating <code>y:=x[#i+1]</code> using
-<code>with_const j=#i+1 { y:=[#j] }</code>, becuase array accesses use only
-simple expressions (so <code>y:=x[#i+1]</code> is not allowed).</p>
-</blockquote>
 <h5 id="function-calls"><a class="header" href="#function-calls">Function Calls</a></h5>
-<pre><code class="language-text">x1, ..., xk = fname(s1, ..., sn)
+<pre><code class="language-text">call id(sexp1, ..., sexpn) to id1,...,idk
 </code></pre>
-<p>Executes <code>fname</code>. The return values (which may include arrays) are
-assigned to <code>x1, ..., xk</code>.</p>
+<p>Executes function with name <code>id</code>. The return values (which
+may include arrays) are assigned to <code>id1, ..., idk</code>. The <code>to</code>
+keyword is optional if the functions does not return values.</p>
 <h3 id="ssa-support"><a class="header" href="#ssa-support">SSA Support</a></h3>
 <p>The language does not natively support Static Single Assignment
 (SSA). It is structured code. However, the translator can simulate SSA
