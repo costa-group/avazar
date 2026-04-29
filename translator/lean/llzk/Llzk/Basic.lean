@@ -5,10 +5,12 @@ import Mathlib.Data.Nat.Prime.Basic
    some corresponding requirements
 -/
 structure ZKConfig where
-  k : ℕ  -- number of bits
+  k : ℕ  -- bit-width of p
   p : ℕ  -- the prime number
+  midpoint : ℕ := p / 2 + 1 -- the midpoint of the field, used for signed representation
   p_prime : p.Prime -- stating that p is a prime.
-  p_fits : p < 2^k -- p must fit in k bits
+  p_fits : p ≥ 2^(k-1) && p < 2^k -- k is indeed the bit-width of p
+  midpoint_ok : midpoint = p / 2 + 1 := by rfl -- ensure midpoint is correctly defined
 
 /- Register that c.p is a prime number -/
 instance (c : ZKConfig) : Fact c.p.Prime := ⟨c.p_prime⟩
@@ -28,14 +30,18 @@ instance (c : ZKConfig) : NeZero c.k := ⟨by
 /- The finite field F_p induced by the configuration -/
 abbrev FF (c : ZKConfig) := ZMod c.p
 
+/- toString of FF values -/
+instance {c : ZKConfig} : ToString (FF c) where
+  toString x := s!"{x.val}"
+
 /- This function should be used to generate an instance of ZKConfig
    at runtime, in case we want to provide external c.p and c.k.
 
-   Warnning: it might be slow to check primality at runtime.
+   Warning: it might be slow at runtime.
 -/
 def mkZKConfig (k_input : Nat) (p_input : Nat) : Except String ZKConfig :=
   if h_prime : Nat.Prime p_input then -- Check if p is Prime
-    if h_fits : p_input < 2^k_input then -- Check if p fits in k bits
+    if h_fits : p_input ≥ 2^(k_input-1) && p_input < 2^k_input then -- Check if p fits in k bits
       return {
         k := k_input
         p := p_input
@@ -61,23 +67,37 @@ def goldilocks64 : ZKConfig := {
   k := 64
   p := goldilocks_p
   p_prime := goldilocks_is_prime
-  p_fits := by decide
+  p_fits := by rfl
 }
 
 /- We need to add a fact that myConfig.p is a prime so Lean can
    find it automatically.
 -/
-instance : Fact goldilocks64.p.Prime := ⟨goldilocks64.p_prime⟩ -- ⟨⟩ are for fact
+instance : Fact goldilocks64.p.Prime := ⟨goldilocks64.p_prime⟩
 
 
 def F11 : ZKConfig := {
   k := 4
   p := 11
   p_prime := by decide
-  p_fits := by decide
+  p_fits := by rfl
 }
 
 /- We need to add a fact that myConfig.p is a prime so Lean can
    find it automatically.
 -/
-instance : Fact F11.p.Prime := ⟨F11.p_prime⟩ -- ⟨⟩ are for fact
+instance : Fact F11.p.Prime := ⟨F11.p_prime⟩
+
+
+
+def F5 : ZKConfig := {
+  k := 3
+  p := 5
+  p_prime := by decide
+  p_fits := by rfl
+}
+
+/- We need to add a fact that myConfig.p is a prime so Lean can
+   find it automatically.
+-/
+instance : Fact F5.p.Prime := ⟨F5.p_prime⟩

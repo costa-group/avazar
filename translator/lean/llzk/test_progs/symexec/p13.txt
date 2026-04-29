@@ -1,0 +1,20 @@
+func shr_const_test(x:ff) -> z:ff {
+  w = 3
+  z = bit.shr x w
+}
+
+func shl_const_test(x:ff) -> z:ff {
+  w = 3
+  z = bit.shl x w
+}
+
+func shr_nonconst_test(x:ff,y:ff) -> z:ff {
+  z = bit.shr x y
+}
+
+func shl_nonconst_test(x:ff,y:ff) -> z:ff {
+  z = bit.shl x y
+}
+
+func main() {
+}

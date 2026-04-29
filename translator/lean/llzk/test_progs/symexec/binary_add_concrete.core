@@ -1,0 +1,70 @@
+def @BinaryAdd_0(%arg0: arr<2>, %arg1: arr<2>) -> @c_chunks: arr<4>, @cout: arr<2> {
+  array.new 4 %nondet
+  array.new 2 %nondet_0
+  %felt_const_2 = 2
+  %felt_const_0 = 0
+  %felt_const_0_1 = 0
+  %felt_const_0_2 = 0
+  %felt_const_0_3 = 0
+  %arg2 = %felt_const_0_1
+  %arg3 = %felt_const_0_3
+  %arg4 = %felt_const_0
+  %arg5 = %felt_const_0_2
+  repeat 2 {
+    %1_aft = %arg3
+    array.read %arg0[%1_aft] %2_aft
+    %3_aft = %arg3
+    array.read %arg1[%3_aft] %4_aft
+    %5_aft = felt.add %2_aft %4_aft
+    %6_aft = felt.add %5_aft %arg4
+    %felt_const_4294967295_aft = 4294967295
+    %7_aft = bit.and %6_aft %felt_const_4294967295_aft
+    %felt_const_65535_aft = 65535
+    %8_aft = bit.and %7_aft %felt_const_65535_aft
+    %felt_const_2_4_aft = 2
+    %9_aft = felt.mul %felt_const_2_4_aft %arg3
+    %10_aft = %9_aft
+    array.write %8_aft %nondet[%10_aft]
+    %felt_const_16_aft = 9
+    %11_aft = bit.shr %7_aft %felt_const_16_aft
+    %felt_const_2_5_aft = 2
+    %12_aft = felt.mul %felt_const_2_5_aft %arg3
+    %felt_const_1_aft = 1
+    %13_aft = felt.add %12_aft %felt_const_1_aft
+    %14_aft = %13_aft
+    array.write %11_aft %nondet[%14_aft]
+    %felt_const_4294967295_6_aft = 4294967295
+    %15_aft = bool.gt %felt_const_4294967295_6_aft %6_aft
+    if (%15_aft == 1) {
+      %felt_const_1_8_aft = 1
+      %18_aft = %arg3
+      array.write %felt_const_1_8_aft %nondet_0[%18_aft]
+      %felt_const_1_9_aft = 1
+      %16_aft = %felt_const_1_9_aft
+    }
+    else {
+      %felt_const_0_8_aft = 0
+      %18_aft = %arg3
+      array.write %felt_const_0_8_aft %nondet_0[%18_aft]
+      %felt_const_0_9_aft = 0
+      %16_aft = %felt_const_0_9_aft
+    }
+    %felt_const_1_7_aft = 1
+    %17_aft = felt.add %arg3 %felt_const_1_7_aft
+    %arg2 = %6_aft
+    %arg3 = %17_aft
+    %arg4 = %16_aft
+    %arg5 = %7_aft
+    %felt_const_2_4_bef = 2
+    %1_bef = bool.lt %felt_const_2_4_bef %arg3
+    %0#0 = %arg2
+    %0#1 = %arg3
+    %0#2 = %arg4
+    %0#3 = %arg5
+  }
+  array.copy %nondet @c_chunks
+  array.copy %nondet_0 @cout
+}
+def main(%arg0: arr<2>, %arg1: arr<2>) -> @c_chunks: arr<4>, @cout: arr<2> {
+  call @BinaryAdd_0(%arg0, %arg1) to @c_chunks, @cout
+}
