@@ -1,4 +1,4 @@
-func foo_lt(x:ff,y:ff) : z:ff {
+func foo_lt(x:ff,y:ff) -> z:ff {
   c = bool.lt x y
   if (c == 1) {
     z = felt.add x y
@@ -7,7 +7,7 @@ func foo_lt(x:ff,y:ff) : z:ff {
   }
 }
 
-func foo_le(x:ff,y:ff) : z:ff {
+func foo_le(x:ff,y:ff) -> z:ff {
   c = bool.le x y
   if (c == 1) {
     z = felt.add x y
@@ -16,7 +16,7 @@ func foo_le(x:ff,y:ff) : z:ff {
   }
 }
 
-func foo_gt(x:ff,y:ff) : z:ff {
+func foo_gt(x:ff,y:ff) -> z:ff {
   c = bool.gt x y
   if (c == 1) {
     z = felt.add x y
@@ -25,7 +25,7 @@ func foo_gt(x:ff,y:ff) : z:ff {
   }
 }
 
-func foo_ge(x:ff,y:ff) : z:ff {
+func foo_ge(x:ff,y:ff) -> z:ff {
   c = bool.ge x y
   if (c == 1) {
     z = felt.add x y
