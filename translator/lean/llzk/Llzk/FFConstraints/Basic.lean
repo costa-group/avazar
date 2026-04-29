@@ -81,13 +81,8 @@ inductive MacroCallParam (c : ZKConfig) where
 --  beq a b := a.id == b.id
 
 /- ToString instance for FFVar -/
---instance : ToString FFVar where
---  toString v := s!"v_{v.id}"
-
 instance : ToString FFVar where
-  toString v :=
-    s!"v_{v.id}_{v.meta_data.orig_name}_L{v.meta_data.src_info.row}_C{v.meta_data.src_info.col}"
-
+  toString v := s!"v_{v.id}"
 
 /- ToString instance for BoolVar -/
 instance : ToString BoolVar where
