@@ -36,8 +36,8 @@ def infer_n_repetitions_from_expressions(ground_variables: Set[str],
     """
     if len(ground_variables) > 1:
         raise NotImplementedError("While condition relies on two expressions to be computed")
-    assert len(ground_variables) == 1, "The while must depend on a linear expression"
-    ground_var = [var for var in ground_variables][0]
+
+    assert len(ground_variables) <= 1, "The while must depend on a linear expression"
 
     initial_comparison = var2expression[condition_var_core]
     assert isinstance(initial_comparison, BoolCmp), f"For now, only BoolCmp whiles are handled: {initial_comparison}"

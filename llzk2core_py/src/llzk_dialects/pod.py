@@ -127,7 +127,12 @@ class PodNew(Operation):
     def to_core(self, ctx: TranslationContext) -> str:
         # Every variable inside the pod is initialized to
         # a new variable of the form "{pod_name}_{variable}"
-        print(self.result_type)
+        # We store the result with the names of every operation
+        # and the result type
+        ctx.ssa2pod_var[self._result.name] = {record: (f"{self._result.name}_{record}", initial_value)
+                                              for record, initial_value in self.result_type.items()}
+
+        # We return the variables that are assigned to a concrete value
         yield from (
             translate_assignment_core_with_ctx(
                 SSAVar.parse(f"{self._result.name}_{record}"),
@@ -204,8 +209,16 @@ class PodRead(Operation):
         return [self.pod_ref]
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        yield from ()
+        variable_name, var_type = ctx.ssa2pod_var[self.pod_ref.name][self.record_name.name]
+
+        assert self.result_type is None or self.result_type == var_type, "Pod.read must match the type inside the dict ssa2pod_var"
+
+        yield translate_assignment_core_with_ctx(
+            self._result,
+            SSAVar.parse(variable_name),
+            var_type,
+            ctx
+        )
 
     def __repr__(self):
         fields = ', '.join(f"{k}: {v}" for k, v in self.pod_type.items())
@@ -272,8 +285,16 @@ class PodWrite(Operation):
         return [self.pod_ref, self.value]
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        yield from ()
+        variable_name, var_type = ctx.ssa2pod_var[self.pod_ref.name][self.record_name.name]
+
+        assert self.value_type is None or self.value_type == var_type, "Pod.write must match the type inside the dict ssa2pod_var"
+
+        yield translate_assignment_core_with_ctx(
+            SSAVar.parse(variable_name),
+            self.value,
+            var_type,
+            ctx
+        )
 
     def __repr__(self):
         fields = ', '.join(f"{k}: {v}" for k, v in self.pod_type.items())
