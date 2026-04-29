@@ -135,8 +135,13 @@ class FunctionCall(Operation):
         return list(self.args)
 
     def to_core(self, ctx: TranslationContext) -> str:
+        # A function.call returns a !struct.type variable with the results
+        # The output is stored in another pod variable with the results
+
+        args = ','.join(arg.to_core() for arg in self.args)
+
         # TODO: implement core translation
-        raise NotImplementedError
+        yield f"call {ctx.llzk_func2core[self.callee.name]}({args}) to {','.join(result.to_core() for result in self.results)}"
 
     def __repr__(self):
         res_str = (', '.join(repr(r) for r in self.results) + ' = ') if self.results else ''

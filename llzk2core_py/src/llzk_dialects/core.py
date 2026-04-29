@@ -149,6 +149,10 @@ class TranslationContext:
     # Current arguments returned by an if/while/for. Useful for "scf.yield" instruction inside a while or an if
     scf_result: List[SSAVar] = field(default_factory=list)
 
+    # Pod variables that have been traversed so far, with the name of their fields
+    # and how they are translated
+    ssa2pod_var: Dict[str, Dict[str, Tuple[str, Type]]] = field(default_factory=dict)
+
 
 class Operation(ABC):
     """
