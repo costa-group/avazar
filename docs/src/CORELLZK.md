@@ -52,7 +52,7 @@ sexp := id | Z
 sexps := (sexp ("," sexp)*)?
 
 // finite field operations
-felt_bin_op := "felt.add" | "felt.mul" | "felt.div"
+felt_bin_op := "felt.add" | "felt.sub" | "felt.mul" | "felt.div"
 felt_unary_op := "felt.neg"
 
 // bitwise operations
@@ -155,7 +155,7 @@ Semantics correspond to standard operations in the finite field .
 1. `sexp` (Identity)
 2. `felt.neg sexp` (Negation)
 3. `felt.add sexp1 sexp2` (Addition)
-4. `felt.add sexp1 sexp2` (Subtraction)
+4. `felt.sub sexp1 sexp2` (Subtraction)
 5. `felt.mul sexp1 sexp2` (Multiplication)
 6. `felt.div sexp1 sexp2` (Multiplication by modular inverse)
 

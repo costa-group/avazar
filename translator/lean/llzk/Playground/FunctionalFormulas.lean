@@ -45,6 +45,11 @@ simp [Subset] at h_subset
 have h_x_in_S : x ∈ S := h_subset x h_x_in_S'
 have h_all_S_x := h_all_S x h_x_in_S
 exact h_all_S_x
+/- Alternative proof using "grind"
+intro h_all_S h_subset x h_x_in_S'
+have : x ∈ S := h_subset x h_x_in_S'
+grind
+-/
 
 -- If ∀ x ∈ S, P(x) holds and S' ⊆ S, then ∀ x ∈ S', P(x) holds. For BoolVarSet
 theorem subset_bool_property {c : ZKConfig} (P : BoolVar → Prop) (S S' : BoolVarSet) :
@@ -128,7 +133,6 @@ end
 
 -- This should be part of the Std library
 theorem isEmpty_equal_empty_treeset {α : Type} [Ord α]
-    [Std.LawfulEqCmp (compare : α → α → Ordering)]
     [Std.TransCmp (compare : α → α → Ordering)] (s : Std.ExtTreeSet α) :
   s.isEmpty = true ↔ s = ∅ := by
 constructor
@@ -144,8 +148,9 @@ constructor
 
 -- This should be part of the Std library
 theorem inter_comm {α : Type} [BEq α] [Ord α]
+    [Std.TransCmp (compare : α → α → Ordering)]
     [Std.LawfulEqCmp (compare : α → α → Ordering)]
-    [Std.TransCmp (compare : α → α → Ordering)] (s1 s2 : Std.ExtTreeSet α) :
+    (s1 s2 : Std.ExtTreeSet α) :
     s1 ∩ s2 = s2 ∩ s1 := by
 rw [Std.ExtTreeSet.ext_mem_iff]
 intro x
