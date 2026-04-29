@@ -16,7 +16,7 @@ open Llzk.Language.Core.Semantics.Basic
 open Llzk.SymExec.Basic
 
 
-def sEvalBitWiseAND {c : ZKConfig}
+def sEvalBitWiseAND_general {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
   : Except String (ExprSpec c) := do
@@ -45,6 +45,53 @@ def sEvalBitWiseAND {c : ZKConfig}
     nextId := bits3Spec.nextId,
     newFFVars := newFFVars
   }
+
+
+def sEvalBitWiseAND_rconst {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  : Except String (ExprSpec c) := do
+  let v2 ← simpleExprToFF senv s2
+  let v1 ← simpleExprToTerm senv s1
+  let nbits := v2.val.log2 + 1
+  let bits1Spec := bitify cfg md v1 -- bitify v1 with c.k bits
+  let cfg' := { cfg with nextId := bits1Spec.nextId }
+  let bits2Spec := bitify_nbits cfg' md (FFTerm.val v2) nbits -- bitify v2 with nbits
+  let cfg'' := { cfg' with nextId := bits2Spec.nextId }
+  let bits3Spec := bitify_nbits cfg'' md (FFTerm.var outFFVar) nbits -- bitify outVar with nbits
+  -- generate $r_i = a_i * b_i$ for each bit
+  let f : FFFormula c :=
+    List.foldl
+      (fun acc (b1, b2, out) =>
+        (.and acc
+              (FFFormula.eq
+                  out
+                  (FFTerm.mul b1 b2))))
+    (.and bits1Spec.f (.and bits2Spec.f bits3Spec.f))
+    (List.zipWith3 (fun b1 b2 out => (b1, b2, out)) bits1Spec.bits bits2Spec.bits bits3Spec.bits)
+  let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars ∪ bits3Spec.newFFVars
+  return {
+    inSymEnv := senv,
+    f := f,
+    resTerm := (FFTerm.var outFFVar),
+    nextId := bits3Spec.nextId,
+    newFFVars := newFFVars
+  }
+
+def sEvalBitWiseAND {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  : Except String (ExprSpec c) := do
+  match sEvalBitWiseAND_rconst cfg md senv s1 s2 outFFVar with
+  | Except.ok spec => return spec
+  | Except.error _ =>
+    match sEvalBitWiseAND_rconst cfg md senv s2 s1 outFFVar with
+    | Except.ok spec => return spec
+    | Except.error _ =>
+      sEvalBitWiseAND_general cfg md senv s1 s2 outFFVar
+
+
+
 
 def sEvalBitWiseOR {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
