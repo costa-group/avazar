@@ -21,7 +21,9 @@ from typing import List, Optional, TYPE_CHECKING, Generator
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
-from llzk_dialects.utils import invocation_args, signature_args, array_felt_first_dimension
+from llzk_dialects.utils import array_felt_first_dimension
+from llzk_dialects.core_utils import signature_args, invocation_args
+
 
 if TYPE_CHECKING:
     pass  # avoid circular imports
