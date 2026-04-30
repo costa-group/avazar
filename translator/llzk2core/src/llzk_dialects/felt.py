@@ -11,7 +11,7 @@ Operations are grouped by arity:
 """
 
 import re
-from typing import List
+from typing import Callable, List, Generator
 
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
@@ -27,9 +27,11 @@ class FeltConst(Operation):
 
     _OPS = {"felt.const"}
 
-    def __init__(self, variable: SSAVar, constant: int):
-        self.result = variable
+    def __init__(self, variable: SSAVar, constant: int,
+                 result_type: Type = None):
+        self._result = variable
         self.constant = constant
+        self.result_type = result_type
 
     def dialect(self) -> Dialect:
         return Dialect("felt")
@@ -41,19 +43,35 @@ class FeltConst(Operation):
     @classmethod
     def parse(cls, line: str) -> 'FeltConst':
         pattern = re.compile(
-            r"\s*(?P<res>\S+)\s*=\s*felt\.const\s+(?P<value>\S+)\s*"
+            r"\s*(?P<res>\S+)\s*=\s*felt\.const\s+(?P<value>\S+)"
+            r"(?:\s*:\s*(?P<type>.+))?\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse FeltConst: {line}")
-        return FeltConst(SSAVar.parse(m["res"]), int(m["value"]))
+        type_opt = Type.parse(m["type"].strip()) if m["type"] else None
+        return FeltConst(SSAVar.parse(m["res"]), int(m["value"]), type_opt)
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
+
+    def to_function(self) -> Callable[[], int]:
+        c = self.constant
+        return lambda: c
+
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Introducing constants is as easy as an assignment
+        ctx.var2const[self._result.name] = self.constant
+        yield f"{self._result.to_core()} = {self.constant}"
 
     def __repr__(self):
-        return f"FeltConst({self.result} = {self.constant})"
+        type_str = f" : {self.result_type}" if self.result_type else ""
+        return f"FeltConst({self._result} = {self.constant}{type_str})"
 
 
 class FeltUnary(Operation):
@@ -66,10 +84,12 @@ class FeltUnary(Operation):
 
     _OPS = {"felt.bit_not", "felt.inv", "felt.neg"}
 
+    _OPS2CORE = {"felt.bit_not": "bit.not"}
+
     def __init__(self, variable: SSAVar, op: str,
                  operand: SSAVar, types: List[Type]):
-        self.result = variable
-        self.op = op
+        self._result = variable
+        self._op = op
         self.operand = operand
         self.types = types
 
@@ -98,14 +118,38 @@ class FeltUnary(Operation):
         return FeltUnary(SSAVar.parse(m["res"]), m["op"],
                          SSAVar.parse(m["operand"]), types)
 
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def op(self):
+        return self._op
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.operand]
+
+    _UNARY_FNS: dict = {
+        "felt.neg": lambda x: -x,
+        "felt.bit_not": lambda x: ~x,
+        "felt.inv": lambda x: 1 // x,
+    }
+
+    def to_function(self) -> Callable[[int], int]:
+        fn = self._UNARY_FNS.get(self._op)
+        if fn is None:
+            raise NotImplementedError(f"to_function not implemented for {self._op}")
+        return fn
+
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        # Unary operations are translated into an assignment
+        yield f"{self._result.to_core()} = {self._OPS2CORE.get(self._op, self._op)} {self.operand.to_core()}"
 
     def __repr__(self):
         type_str = ('' if not self.types
                     else ' : ' + ', '.join(repr(t) for t in self.types))
-        return f"FeltUnary({self.result} = {self.op}({self.operand}){type_str})"
+        return f"FeltUnary({self._result} = {self._op}({self.operand}){type_str})"
 
 
 class FeltBinary(Operation):
@@ -124,10 +168,16 @@ class FeltBinary(Operation):
         "felt.sintdiv", "felt.smod", "felt.sub", "felt.uintdiv", "felt.umod",
     }
 
+    _OPS2CORE = {
+        "felt.shr": "bit.shr", "felt.shl": "bit.shl",
+        "felt.bit_and": "bit.and", "felt.bit_or": "bit.or",
+        "felt.bit_xor": "bit.xor"
+    }
+
     def __init__(self, variable: SSAVar, op: str,
                  lhs: SSAVar, rhs: SSAVar, types: List[Type]):
-        self.result = variable
-        self.op = op
+        self._result = variable
+        self._op = op
         self.lhs = lhs
         self.rhs = rhs
         self.types = types
@@ -157,14 +207,49 @@ class FeltBinary(Operation):
         return FeltBinary(SSAVar.parse(m["res"]), m["op"],
                           SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]), types)
 
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def op(self):
+        return self._op
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.lhs, self.rhs]
+
+    _BINARY_FNS: dict = {
+        "felt.add":     lambda x, y: x + y,
+        "felt.sub":     lambda x, y: x - y,
+        "felt.mul":     lambda x, y: x * y,
+        "felt.div":     lambda x, y: x // y,
+        "felt.uintdiv": lambda x, y: x // y,
+        "felt.sintdiv": lambda x, y: int(x / y),
+        "felt.pow":     lambda x, y: x ** y,
+        "felt.shl":     lambda x, y: x << y,
+        "felt.shr":     lambda x, y: x >> y,
+        "felt.umod":    lambda x, y: x % y,
+        "felt.smod":    lambda x, y: x % y,
+        "felt.bit_and": lambda x, y: x & y,
+        "felt.bit_or":  lambda x, y: x | y,
+        "felt.bit_xor": lambda x, y: x ^ y,
+    }
+
+    def to_function(self) -> Callable[[int, int], int]:
+        fn = self._BINARY_FNS.get(self._op)
+        if fn is None:
+            raise NotImplementedError(f"to_function not implemented for {self._op}")
+        return fn
+
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        # Just return the name of the function applied to the arguments
+        yield f"{self._result.to_core()} = {self._OPS2CORE.get(self._op, self._op)} {self.lhs.to_core()} {self.rhs.to_core()}"
 
     def __repr__(self):
         type_str = ('' if not self.types
                     else ' : ' + ', '.join(repr(t) for t in self.types))
-        return f"FeltBinary({self.result} = {self.op}({self.lhs}, {self.rhs})){type_str}"
+        return f"FeltBinary({self._result} = {self._op}({self.lhs}, {self.rhs})){type_str}"
 
 
 class FeltDialect(Dialect):

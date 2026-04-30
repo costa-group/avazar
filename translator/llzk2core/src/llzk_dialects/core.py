@@ -7,10 +7,12 @@ Hierarchy:
   TranslationContext — context object passed to to_core(); extend this class
                        (not method signatures) when more translation state is needed
 """
-
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List, Callable, Tuple, TYPE_CHECKING
+from typing import Dict, List, Callable, Tuple, TYPE_CHECKING, Union, Generator, Optional
+from llzk_dialects.utils import array_felt_first_dimension
+
 
 if TYPE_CHECKING:
     from llzk_dialects.definitions import Dialect
@@ -37,6 +39,21 @@ class SSAVar:
             return SSAVar(components[0], int(components[1]))
         else:
             raise ValueError(f"SSA variable has more than one ':': {ssa_var}")
+
+    def to_core(self) -> str:
+        # Core needs to introduce a variable for each component.
+        # We assume that only a variadic variable (i.e. multiple components)
+        # is transformed to core in its declaration
+        return self.name if self.n_components == 1 else ','.join([f"{self.name}#{i}" for i in range(self.n_components)])
+
+    def to_core_component(self, i: int) -> str:
+        """
+        Retrieves the core expresion of a given position if it has n components.
+        Otherwise, it works similarly to_core method
+        """
+        assert i < self.n_components, f"SSA var {self}: trying to access a component " \
+                                      f"beyond the number of available components"
+        return self.name if self.n_components == 1 else f"{self.name}#{i}"
 
     def __repr__(self) -> str:
         return self.name if self.n_components == 1 else f"{self.name}:{self.n_components}"
@@ -85,6 +102,19 @@ class Type:
     def __repr__(self):
         return self.name
 
+    def to_core(self):
+        """
+        Transforms a Type into the corresponding declaration in Core
+        """
+        array_dim = array_felt_first_dimension(self.name)
+        if array_dim is not None:
+            return f"arr<{array_dim}>"
+
+        elif "!felt.type" in self.name:
+            return "ff"
+
+        return None
+
     def __eq__(self, other):
         return isinstance(other, Type) and self.name == other.name
 
@@ -99,8 +129,29 @@ class TranslationContext:
     Existing to_core() implementations are unaffected by new fields they
     don't use.
     """
-    # Maps SSA variable names (e.g. '%0') to their core representation names.
-    var_map: Dict[str, str] = field(default_factory=dict)
+    # Maps SSA variable names (e.g. '%0') to a constant (if they are constant).
+    var2const: Dict[str, int] = field(default_factory=dict)
+
+    # Maps every llzk function to the corresponding core function
+    llzk_func2core: Dict[str, str] = field(default_factory=dict)
+
+    # Maps every core function to the in args (tuple[0]) and the out args (tuple[1]).
+    # Generated while parsing an object. Every in and out args is of the form
+    # [[%a, !array.type<...>], [%b, <!felt.type<...>]], so that invocations to the functions can be generated easily
+    core_func2args: Dict[str, Tuple[List[Tuple[str, Type]], List[Tuple[str, Type]]]] = field(default_factory=dict)
+
+    # Current poly.template (if inside any)
+    current_template: str = None
+
+    # Current function name in core (if any)
+    current_core_function: str = None
+
+    # Current arguments returned by an if/while/for. Useful for "scf.yield" instruction inside a while or an if
+    scf_result: List[SSAVar] = field(default_factory=list)
+
+    # Pod variables that have been traversed so far, with the name of their fields
+    # and how they are translated
+    ssa2pod_var: Dict[str, Dict[str, Tuple[str, Type]]] = field(default_factory=dict)
 
 
 class Operation(ABC):
@@ -137,6 +188,29 @@ class Operation(ABC):
         """
         raise NotImplementedError
 
+    @property
+    def result(self) -> Optional['SSAVar']:
+        """The single SSA variable this operation defines, or None."""
+        return None
+
+    @property
+    def op(self) -> str:
+        """The operation name string (e.g. 'felt.add', 'arith.constant')."""
+        return next(iter(self._OPS))
+
+    @property
+    def operands(self) -> List['SSAVar']:
+        """The input SSA variable operands of this operation."""
+        return []
+
+    def update_variables(self, rename: Dict[str, str]) -> None:
+        """Rename SSA variables in-place according to rename. Mutates SSAVar.name directly."""
+        if self.result is not None and self.result.name in rename:
+            self.result.name = rename[self.result.name]
+        for operand in self.operands:
+            if operand.name in rename:
+                operand.name = rename[operand.name]
+
 
 # Type alias used by BlockOperation.parse
 ParseFn = Callable[[int, int], List[Operation]]
@@ -163,3 +237,9 @@ class BlockOperation(Operation, ABC):
     def parse(cls, lines: List[str], cursor: int,
               parse_fn: ParseFn) -> Tuple['BlockOperation', int]:
         raise NotImplementedError
+
+    def update_variables(self, rename: Dict[str, str]) -> None:
+        """Rename variables in this op and recurse into self.body."""
+        super().update_variables(rename)
+        for op in self.body:
+            op.update_variables(rename)

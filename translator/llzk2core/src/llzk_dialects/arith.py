@@ -15,7 +15,7 @@ Operations:
 """
 
 import re
-from typing import List
+from typing import List, Generator
 
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
@@ -39,7 +39,7 @@ class ArithConst(Operation):
     _OPS = {"arith.constant"}
 
     def __init__(self, result: SSAVar, value: str, result_type: Type):
-        self.result = result
+        self._result = result
         # Stored as string to preserve the literal form (e.g. '-1', 'true').
         self.value = value
         self.result_type = result_type
@@ -56,19 +56,28 @@ class ArithConst(Operation):
         # %r = arith.constant <value> : <type>
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*arith\.constant\s+(?P<val>\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse ArithConst: {line}")
-        return ArithConst(SSAVar.parse(m["res"]), m["val"], Type.parse(m["type"]))
+        return ArithConst(SSAVar.parse(m["res"]), m["val"], Type.parse(m["type"].strip()))
+
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        # Update the constant dict
+        ctx.var2const[self._result.name] = int(self.value)
+        yield f"{self._result.to_core()} = {self.value}"
 
     def __repr__(self):
-        return f"ArithConst({self.result} = arith.constant {self.value} : {self.result_type})"
+        return f"ArithConst({self._result} = arith.constant {self.value} : {self.result_type})"
 
 
 class ArithBinary(Operation):
@@ -88,10 +97,24 @@ class ArithBinary(Operation):
         "arith.maxsi", "arith.maxui", "arith.minsi", "arith.minui",
     }
 
+    _OPS2CORE = {
+        "arith.addi": "felt.add",
+        "arith.subi": "felt.sub",
+        "arith.muli": "felt.mul",
+        "arith.divsi": "arith.divui",
+        "arith.divui": "arith.divui",
+        "arith.andi": "bit.and",
+        "arith.ori": "bit.or",
+        "arith.xori": "bit.xor",
+        "arith.shli": "bit.shl",
+        "arith.shrsi": "bit.shr",
+        "arith.shrui": "bit.shr",
+    }
+
     def __init__(self, result: SSAVar, op: str, lhs: SSAVar, rhs: SSAVar,
                  operand_type: Type):
-        self.result = result
-        self.op = op
+        self._result = result
+        self._op = op
         self.lhs = lhs
         self.rhs = rhs
         self.operand_type = operand_type
@@ -109,7 +132,7 @@ class ArithBinary(Operation):
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*(?P<op>\S+)"
             r"\s+(?P<lhs>\S+)\s*,\s*(?P<rhs>\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
@@ -118,14 +141,28 @@ class ArithBinary(Operation):
             f"Binary arith operation not recognised: {m['op']}"
         return ArithBinary(SSAVar.parse(m["res"]), m["op"],
                            SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]),
-                           Type.parse(m["type"]))
+                           Type.parse(m["type"].strip()))
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def op(self):
+        return self._op
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.lhs, self.rhs]
+
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        core_op = self._OPS2CORE.get(self._op)
+        if core_op is None:
+            raise NotImplementedError(f"Operation {self._op} not currently implemented")
+        yield f"{self._result.to_core()} = {core_op} {self.lhs.to_core()} {self.rhs.to_core()}"
 
     def __repr__(self):
-        return (f"ArithBinary({self.result} = {self.op}"
+        return (f"ArithBinary({self._result} = {self._op}"
                 f"({self.lhs}, {self.rhs}) : {self.operand_type})")
 
 
@@ -141,9 +178,12 @@ class ArithCmpi(Operation):
 
     _OPS = {"arith.cmpi"}
 
+    _PRED2CORE = {"eq": "bool.eq", "ne": "bool.neq", "lt": "bool.lt",
+                  "le": "bool.ge", "gt": "bool.gt", "ge": "bool.ge"}
+
     def __init__(self, result: SSAVar, predicate: str,
                  lhs: SSAVar, rhs: SSAVar, operand_type: Type):
-        self.result = result
+        self._result = result
         self.predicate = predicate
         self.lhs = lhs
         self.rhs = rhs
@@ -162,7 +202,7 @@ class ArithCmpi(Operation):
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*arith\.cmpi\s+(?P<pred>\w+)"
             r"\s*,\s*(?P<lhs>\S+)\s*,\s*(?P<rhs>\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
@@ -171,14 +211,24 @@ class ArithCmpi(Operation):
             f"Unknown arith.cmpi predicate: {m['pred']}"
         return ArithCmpi(SSAVar.parse(m["res"]), m["pred"],
                          SSAVar.parse(m["lhs"]), SSAVar.parse(m["rhs"]),
-                         Type.parse(m["type"]))
+                         Type.parse(m["type"].strip()))
+
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.lhs, self.rhs]
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        core_op = self._PRED2CORE.get(self.predicate)
+        if core_op is None:
+            raise NotImplementedError(f"Predicate {self.predicate} not currently implemented in {self}")
+        yield f"{self._result.to_core()} = {core_op} {self.lhs.to_core()} {self.rhs.to_core()}"
 
     def __repr__(self):
-        return (f"ArithCmpi({self.result} = arith.cmpi {self.predicate}"
+        return (f"ArithCmpi({self._result} = arith.cmpi {self.predicate}"
                 f"({self.lhs}, {self.rhs}) : {self.operand_type})")
 
 
@@ -200,8 +250,8 @@ class ArithCast(Operation):
 
     def __init__(self, result: SSAVar, op: str, operand: SSAVar,
                  src_type: Type, dst_type: Type):
-        self.result = result
-        self.op = op
+        self._result = result
+        self._op = op
         self.operand = operand
         self.src_type = src_type
         self.dst_type = dst_type
@@ -219,7 +269,7 @@ class ArithCast(Operation):
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*(?P<op>\S+)"
             r"\s+(?P<operand>\S+)"
-            r"\s*:\s*(?P<src>\S+)\s+to\s+(?P<dst>\S+)\s*"
+            r"\s*:\s*(?P<src>.+?)\s+to\s+(?P<dst>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
@@ -228,14 +278,26 @@ class ArithCast(Operation):
             f"Arith cast operation not recognised: {m['op']}"
         return ArithCast(SSAVar.parse(m["res"]), m["op"],
                          SSAVar.parse(m["operand"]),
-                         Type.parse(m["src"]), Type.parse(m["dst"]))
+                         Type.parse(m["src"].strip()), Type.parse(m["dst"].strip()))
 
-    def to_core(self, ctx: TranslationContext) -> str:
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def op(self):
+        return self._op
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.operand]
+
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        return (f"ArithCast({self.result} = {self.op}"
+        return (f"ArithCast({self._result} = {self._op}"
                 f"({self.operand} : {self.src_type} to {self.dst_type}))")
 
 
