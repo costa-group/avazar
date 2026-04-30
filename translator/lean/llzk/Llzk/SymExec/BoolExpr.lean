@@ -72,12 +72,14 @@ def sEvalBor {c : ZKConfig}
   let v2 ← simpleExprToTerm senv s2
   return {
           inSymEnv := senv,
-          f := FFFormula.eq
-                 (FFTerm.var outFFVar)
-                 (FFTerm.ite
+          f := .and
+                (FFFormula.eq
+                  (FFTerm.var outFFVar)
+                  (FFTerm.ite
                     (.and (.eq v1 (.val 0)) (.eq v2 (.val 0)))
                     (.val 0)
-                    (.val 1)),
+                    (.val 1)))
+                (FFFormula.range (FFTerm.var outFFVar) 0 1), -- force the result to be boolean
           resTerm := (FFTerm.var outFFVar),
           nextId := cfg.nextId
   }
@@ -94,12 +96,14 @@ def sEvalBAnd {c : ZKConfig}
   let v2 ← simpleExprToTerm senv s2
   return {
           inSymEnv := senv,
-          f := FFFormula.eq
-                 (FFTerm.var outFFVar)
-                 (FFTerm.ite
+          f := .and
+                (FFFormula.eq
+                  (FFTerm.var outFFVar)
+                  (FFTerm.ite
                     (.or (.eq v1 (.val 0)) (.eq v2 (.val 0)))
                     (.val 0)
-                    (.val 1)),
+                    (.val 1)))
+                (FFFormula.range (FFTerm.var outFFVar) 0 1), -- force the result to be boolean
           resTerm := (FFTerm.var outFFVar),
           nextId := cfg.nextId
   }
@@ -115,11 +119,13 @@ def sEvalBNeg {c : ZKConfig}
   let v ← simpleExprToTerm senv s
   return {
           inSymEnv := senv,
-          f := FFFormula.eq (FFTerm.var outFFVar)
+          f := .and
+                (FFFormula.eq (FFTerm.var outFFVar)
                  (FFTerm.ite
                     (.eq v (.val 0))
                     (.val 1)
-                    (.val 0)),
+                    (.val 0)))
+                (FFFormula.range (FFTerm.var outFFVar) 0 1), -- force the result to be boolean
           resTerm := (FFTerm.var outFFVar),
           nextId := cfg.nextId
   }
@@ -299,7 +305,7 @@ def sEvalLtSignedConstLeft {c : ZKConfig}
                                 (.val 0))
   return {
           inSymEnv := senv,
-          f := f,
+          f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force boolean
           nextId := cfg.nextId,
           resTerm := (FFTerm.var outFFVar)
         }
@@ -334,7 +340,7 @@ def sEvalLtSignedConstRight {c : ZKConfig}
                                 (.val 0))
   return {
           inSymEnv := senv,
-          f := f,
+          f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force boolean
           nextId := cfg.nextId,
           resTerm := (FFTerm.var outFFVar)
         }
@@ -372,11 +378,14 @@ def sEvalLtSignedBitCmp {c : ZKConfig}
   let cfg''' := { cfg'' with nextId := isS2Pos.nextId }
   let ltSpec ← sEvalLtUnSignedBitCmp cfg''' md senv s1 s2 ffVarLt
   -- if A=B then C else 1-A
-  let f := FFFormula.eq (FFTerm.var outFFVar)
-           (FFTerm.ite
-             (.eq (FFTerm.var ffVarIsS1Pos) (FFTerm.var ffVarIsS2Pos))
-             (FFTerm.var ffVarLt)
-             (FFTerm.sub (.val 1) (FFTerm.var ffVarIsS1Pos)))
+  let f := (.and
+              (FFFormula.eq
+                (FFTerm.var outFFVar)
+                (FFTerm.ite
+                  (.eq (FFTerm.var ffVarIsS1Pos) (FFTerm.var ffVarIsS2Pos))
+                  (FFTerm.var ffVarLt)
+                  (FFTerm.sub (.val 1) (FFTerm.var ffVarIsS1Pos))))
+              (FFFormula.range (FFTerm.var outFFVar) 0 1)) -- force boolean
   return {
           inSymEnv := senv,
           f := .and isS1Pos.f (.and isS2Pos.f (.and ltSpec.f f)),
@@ -415,8 +424,10 @@ def sEvalLeSigned {c : ZKConfig}
   return {
           inSymEnv := senv,
           -- ltSpec.f /\ outFFVar = 1-outFFVarLt
-          f := (.and ltSpec.f (.eq (FFTerm.var outFFVar)
-                                   (FFTerm.sub (.val 1) (FFTerm.var outFFVarLt)))),
+          f := (.and ltSpec.f
+                     (.and (.eq (FFTerm.var outFFVar)
+                                   (FFTerm.sub (.val 1) (FFTerm.var outFFVarLt)))
+                           (FFFormula.range (FFTerm.var outFFVar) 0 1))),
           nextId := ltSpec.nextId,
           resTerm := (FFTerm.var outFFVar),
           newFFVars := ltSpec.newFFVars.insert outFFVarLt,
