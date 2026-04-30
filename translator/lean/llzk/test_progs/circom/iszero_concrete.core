@@ -1,0 +1,23 @@
+def @IsZero_0(%arg0: ff) -> @out: ff {
+  %felt_const_0 = 0
+  %0 = bool.neq %felt_const_0 %arg0
+  if (%0 == 1) {
+    %felt_const_1_0 = 1
+    %5 = felt.div %felt_const_1_0 %arg0
+    @inv = %5
+    %1 = %5
+  }
+  else {
+    %felt_const_0_0 = 0
+    @inv = %felt_const_0_0
+    %1 = %felt_const_0_0
+  }
+  %2 = felt.neg %arg0
+  %3 = felt.mul %2 %1
+  %felt_const_1 = 1
+  %4 = felt.add %3 %felt_const_1
+  @out = %4
+}
+def main(%arg0: ff) -> @out: ff {
+  call @IsZero_0(%arg0) to @out
+}

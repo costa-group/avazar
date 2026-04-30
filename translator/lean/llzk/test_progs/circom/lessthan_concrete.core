@@ -1,0 +1,55 @@
+def @LessThan_0(%arg0: arr<2>) -> @out: ff {
+  array.new 11 %nondet
+  %felt_const_10 = 10
+  %felt_const_1 = 1
+  %felt_const_0 = 0
+  %0 = bool.neq %felt_const_0 %felt_const_1
+  %felt_const_0_0 = 0
+  %1 = %felt_const_0_0
+  array.read %arg0[%1] %2
+  %felt_const_1024 = 1024
+  %3 = felt.add %2 %felt_const_1024
+  %felt_const_1_1 = 1
+  %4 = %felt_const_1_1
+  array.read %arg0[%4] %5
+  %6 = felt.sub %3 %5
+  @n2b_in = %6
+  %felt_const_0_2 = 0
+  %felt_const_1_3 = 1
+  %felt_const_0_4 = 0
+  %arg1 = %felt_const_1_3
+  %arg2 = %felt_const_0_4
+  %arg3 = %felt_const_0_2
+  repeat 11 {
+    %11_aft = bit.shr %6 %arg2
+    %felt_const_1_7_aft = 1
+    %12_aft = bit.and %11_aft %felt_const_1_7_aft
+    %13_aft = %arg2
+    array.write %12_aft %nondet[%13_aft]
+    %14_aft = %arg2
+    array.read %nondet[%14_aft] %15_aft
+    %16_aft = felt.mul %15_aft %felt_const_1_3
+    %17_aft = felt.add %arg3 %16_aft
+    %18_aft = felt.add %arg1 %arg1
+    %felt_const_1_8_aft = 1
+    %19_aft = felt.add %arg2 %felt_const_1_8_aft
+    %arg1 = %18_aft
+    %arg2 = %19_aft
+    %arg3 = %17_aft
+    %felt_const_11_bef = 11
+    %11_bef = bool.lt %felt_const_11_bef %arg2
+    %7#0 = %arg1
+    %7#1 = %arg2
+    %7#2 = %arg3
+  }
+  %felt_const_1_5 = 1
+  %felt_const_10_6 = 10
+  %8 = %felt_const_10_6
+  array.read %nondet[%8] %9
+  %10 = felt.sub %felt_const_1_5 %9
+  @out = %10
+  array.copy %nondet @n2b_out
+}
+def main(%arg0: arr<2>) -> @out: ff {
+  call @LessThan_0(%arg0) to @out
+}
