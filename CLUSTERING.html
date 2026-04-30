@@ -3,8 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Page not found - AVAZAR Project</title>
-        <base href="/">
+        <title>Clustering Tool - AVAZAR Project</title>
 
 
         <!-- Custom HTML head -->
@@ -89,7 +88,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="CORELLZK.html"><strong aria-hidden="true">1.</strong> Core Language</a></li><li class="chapter-item expanded "><a href="CLUSTERING.html"><strong aria-hidden="true">2.</strong> Clustering Tool</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="CORELLZK.html"><strong aria-hidden="true">1.</strong> Core Language</a></li><li class="chapter-item expanded "><a href="CLUSTERING.html" class="active"><strong aria-hidden="true">2.</strong> Clustering Tool</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -174,13 +173,132 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="document-not-found-404"><a class="header" href="#document-not-found-404">Document not found (404)</a></h1>
-<p>This URL is invalid, sorry. Please use the navigation bar or search to continue.</p>
+                        <h1 id="the-clustering-tool"><a class="header" href="#the-clustering-tool">The Clustering Tool</a></h1>
+<p>This document explains the <code>clustering</code> command-line tool, what it does, and the arguments it accepts.</p>
+<h2 id="what-the-tool-does"><a class="header" href="#what-the-tool-does">What the tool does</a></h2>
+<p>The <code>clustering</code> binary reads an input circuit file (<code>.r1cs</code>), runs decomposition/clustering logic, and writes a JSON output file with the clustered structure.</p>
+<h2 id="output-json-format"><a class="header" href="#output-json-format">Output JSON format</a></h2>
+<p>The output has three main parts:</p>
+<ul>
+<li><code>timing</code>: performance metrics for each processing stage.</li>
+<li><code>nodes</code>: the circuit decomposed into DAG nodes (subcircuits).</li>
+<li><code>equivalency_local</code> and <code>equivalency_structural</code>: optional partitions of node IDs into equivalence classes.</li>
+</ul>
+<p>Think of <code>nodes</code> as &quot;what the decomposition produced&quot; and <code>equivalency</code> fields as &quot;which produced nodes are considered similar under a specific notion of similarity&quot;.</p>
+<h3 id="1-timing"><a class="header" href="#1-timing">1) <code>timing</code></a></h3>
+<p><code>timing</code> reports duration (in seconds) for each high-level stage:</p>
+<h3 id="2-nodes"><a class="header" href="#2-nodes">2) <code>nodes</code></a></h3>
+<p><code>nodes</code> is the core structural output. Each entry represents one DAG node (a grouped subcircuit).</p>
+<p>Node fields:</p>
+<ul>
+<li>
+<p><code>node_id</code> (<code>usize</code>): Identifier for the node inside this output.</p>
+</li>
+<li>
+<p><code>constraints</code> (<code>usize[]</code>): IDs of original constraints contained in this node.</p>
+</li>
+<li>
+<p><code>input_signals</code> (<code>usize[]</code>): Signal IDs consumed by the node from outside that node.</p>
+</li>
+<li>
+<p><code>output_signals</code> (<code>usize[]</code>): Signal IDs produced by the node for downstream use.</p>
+</li>
+<li>
+<p><code>signals</code> (<code>usize[]</code>): Signal IDs associated with the node (internal and boundary).</p>
+</li>
+<li>
+<p><code>is_custom</code> (<code>bool</code>): Marker for custom/special node type in the decomposition pipeline.</p>
+</li>
+<li>
+<p><code>successors</code> (<code>usize[]</code>): IDs of nodes that depend on this node's outputs.</p>
+</li>
+<li>
+<p><code>predecessors</code> (<code>usize[]</code>): IDs of nodes this node's inputs depends on.</p>
+</li>
+</ul>
+<h3 id="3-equivalence-fields-and-notions"><a class="header" href="#3-equivalence-fields-and-notions">3) Equivalence fields and notions</a></h3>
+<p>Both equivalence fields encode a partition of node IDs into classes.</p>
+<ul>
+<li>Data shape: <code>Vec&lt;Vec&lt;usize&gt;&gt;</code></li>
+<li>Each inner vector is one equivalence class.</li>
+<li>Node IDs inside one class are equivalent under that mode's criterion.</li>
+</ul>
+<p>Example:</p>
+<ul>
+<li><code>[[0, 4], [1], [2, 3]]</code> means:
+<ul>
+<li>Nodes <code>0</code> and <code>4</code> are equivalent.</li>
+<li>Node <code>1</code> has no partner (singleton class).</li>
+<li>Nodes <code>2</code> and <code>3</code> are equivalent.</li>
+</ul>
+</li>
+</ul>
+<h4 id="local-equivalence-equivalency_local"><a class="header" href="#local-equivalence-equivalency_local">Local equivalence (<code>equivalency_local</code>)</a></h4>
+<p>Subcircuits in the same equivalence class are equivalent up to renaming, scaling, shuffling.</p>
+<h4 id="structural-equivalence-equivalency_structural"><a class="header" href="#structural-equivalence-equivalency_structural">Structural equivalence (<code>equivalency_structural</code>)</a></h4>
+<p>Subcircuits in the same equivalence class are locally equivalent as previous, and there exists an automorphism of the circuit hierarchy that preserves local equivalence and maps one to the other.</p>
+<h2 id="basic-usage"><a class="header" href="#basic-usage">Basic usage</a></h2>
+<pre><code class="language-bash">clustering [OPTIONS] &lt;FILEPATH&gt;
+</code></pre>
+<p>An example of use case is:</p>
+<pre><code class="language-bash">./clustering file_name.r1cs -e total -x 50 -o .
+</code></pre>
+<h2 id="arguments-and-options"><a class="header" href="#arguments-and-options">Arguments and options</a></h2>
+<h3 id="required-argument"><a class="header" href="#required-argument">Required argument</a></h3>
+<ul>
+<li><code>FILEPATH</code>
+<ul>
+<li>Type: <code>String</code></li>
+<li>Description: input circuit file path.</li>
+</ul>
+</li>
+</ul>
+<h3 id="optional-flags"><a class="header" href="#optional-flags">Optional flags</a></h3>
+<ul>
+<li>
+<p><code>-o &lt;OUT_DIRECTORY&gt;</code></p>
+<ul>
+<li>Type: <code>String</code></li>
+<li>Default: <code>.</code></li>
+<li>Description: output directory where the resulting JSON file is written.</li>
+</ul>
+</li>
+<li>
+<p><code>-x, --target-size &lt;TARGET_SIZE&gt;</code></p>
+<ul>
+<li>Type: <code>f64</code></li>
+<li>Description: target cluster size for modularity-based clustering.</li>
+</ul>
+</li>
+<li>
+<p><code>-e, --equivalence &lt;EQUIVALENCE_MODE&gt;</code></p>
+<ul>
+<li>Type: enum</li>
+<li>Default: <code>structural</code></li>
+<li>Accepted values:
+<ul>
+<li><code>total</code>: to compute both structural and local equivalence.</li>
+<li><code>structural</code>: to compute structural equivalence.</li>
+<li><code>local</code>: to compute local equivalence</li>
+<li><code>none</code>: to diactivate the computation of any kind of equivalence.</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h3 id="built-in-clap-flags"><a class="header" href="#built-in-clap-flags">Built-in Clap flags</a></h3>
+<ul>
+<li><code>-h, --help</code>: print help.</li>
+<li><code>-V, --version</code>: print version.</li>
+</ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="CORELLZK.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
 
 
                         <div style="clear: both"></div>
@@ -189,6 +307,9 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="CORELLZK.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
 
             </nav>
 
