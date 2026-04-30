@@ -1,11 +1,28 @@
 """
 Module for useful methods applies to the classes in core.py
 """
-from typing import List, Set, Dict, Union, Optional, Callable
+import re
+from typing import List, Set, Dict, Union, Optional, Callable, Tuple
 from llzk_dialects.core import SSAVar, TranslationContext, Type, Operation
 from llzk_dialects.utils import translate_assignment_core
 from llzk_dialects.bool import BoolCmp
 from llzk_dialects.felt import FeltConst, FeltBinary
+
+
+def signature_args(args: List[Tuple[str, Type]]) -> str:
+    """
+    Given a list of args and their types, returns a string for declaring
+    the signature of a function in CORE, with the format: "arg1: type1, arg2: type2, ..."
+    """
+    return', '.join(f"{arg}: {type_.to_core()}" for arg, type_ in args)
+
+
+def invocation_args(args: List[Tuple[str, Type]]) -> str:
+    """
+    Given a list of args and their types, returns a string for invoking
+    a function in CORE, with the format: "arg1, arg2, ..."
+    """
+    return ', '.join(arg for arg, _ in args)
 
 
 def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ctx: TranslationContext) -> str:
@@ -13,7 +30,22 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
     Generates a str with the translation of an assignment in core. Moreover,
     it updates the context if rhs corresponds to a variable that evaluates to a constant
     """
-    is_ff = "array" not in type_.name
+
+    if "!struct" in type_.name:
+        # Extract the name of the template::struct to invoke the corresponding function
+        pattern = r'!struct\.type<([^><]+)'
+        match = re.search(pattern, type_.name)
+        llzk_func = f"{match.group(1)}::@compute"
+        core_func = ctx.llzk_func2core[llzk_func]
+        _, output_args = ctx.core_func2args[core_func]
+
+        # Convert recursively the functions
+        return '\n'.join(translate_assignment_core_with_ctx(SSAVar(lhs.name + "_" + out_var),
+                                                            SSAVar(rhs.name + "_" + out_var),
+                                                            out_type, ctx)
+                         for out_var, out_type in output_args)
+
+    is_ff = "array" not in type_.name and "!struct"
 
     if is_ff:
         # Only check constants in case it is a ff

@@ -137,8 +137,8 @@ class TranslationContext:
 
     # Maps every core function to the in args (tuple[0]) and the out args (tuple[1]).
     # Generated while parsing an object. Every in and out args is of the form
-    # [[%a, arr<2>], [%b, ff]], so that invocations to the functions can be generated easily
-    core_func2args: Dict[str, Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]] = field(default_factory=dict)
+    # [[%a, !array.type<...>], [%b, <!felt.type<...>]], so that invocations to the functions can be generated easily
+    core_func2args: Dict[str, Tuple[List[Tuple[str, Type]], List[Tuple[str, Type]]]] = field(default_factory=dict)
 
     # Current poly.template (if inside any)
     current_template: str = None

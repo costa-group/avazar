@@ -26,7 +26,9 @@ from llzk_dialects.core import (
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
-from llzk_dialects.utils import translate_assignment_core
+from llzk_dialects.utils import translate_assignment_core, array_felt_first_dimension
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx
+
 
 class StructMember(Operation):
     """
@@ -199,8 +201,21 @@ class StructReadm(Operation):
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Members of the struct are handled as plain variables. Hence, reading
-        # a field just translates to an assignment
-        yield f"{self._result.name} = {self.member_name.name}"
+        # a field just translates to an assignment. However, the variable might be
+        # either a field inside the current struct of or another struct (as a subcomponent).
+        # Hence, we separate both cases
+
+        # Defined by the current struct. The type matches the current struct
+        if f"{ctx.current_template}::" in self.types[0].name:
+            # The name is directly the var name
+            assigned_var = SSAVar(self.member_name.name)
+        else:
+            # The variable corresponds to the component name (a SSAVar) after adding the
+            # member currently being accessed
+            assigned_var = SSAVar(self.component.name + "_" + self.member_name.name)
+
+        yield translate_assignment_core_with_ctx(self._result, assigned_var,
+                                                 self.types[-1], ctx)
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
@@ -260,7 +275,22 @@ class StructWritem(Operation):
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Members of the struct are handled as plain variables. Hence, writing
         # a field just translates to an assignment
-        yield translate_assignment_core(self.member_name.name, self.value.to_core(), "array" not in self.types[1].name)
+
+        # Writing a pod and a struct is ignored for now,
+        # because this refers to variables that do not affect the compute
+        # TODO: better fix using the context and storing the variables in a dict
+        if "!struct" not in self.types[-1].name and "!pod" not in self.types[-1].name:
+
+            # Defined by the current struct. The type matches the current struct
+            if f"{ctx.current_template}::" in self.types[0].name:
+                # The name is directly the var name
+                assigned_var = SSAVar(self.member_name.name)
+            else:
+                # The variable corresponds to the component name (a SSAVar) after adding the
+                # member currently being accessed
+                assigned_var = SSAVar(self.component.name + "_" + self.member_name.name)
+
+            yield translate_assignment_core_with_ctx(assigned_var, self.value, self.types[-1], ctx)
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
@@ -350,7 +380,7 @@ class StructDef(BlockOperation):
         # Set again to None to avoid inconsistencies in the future
         ctx.current_core_function = None
 
-    def _compute_core_function_info_from_struct(self) -> Tuple[Operation, List[Tuple[str, str]], List[Tuple[str, str]], List[Tuple[str, str]]]:
+    def _compute_core_function_info_from_struct(self) -> Tuple[Operation, List[Tuple[str, Type]], List[Tuple[str, Type]], List[Tuple[str, Type]]]:
         """
         Returns the operation corresponding to @compute, and the input and output arguments
         and the intermediate signals, following the format (var_name, core_type). For instance, [(%a, ff), (%b, arr<3>)].
@@ -368,7 +398,7 @@ class StructDef(BlockOperation):
             if isinstance(operation, StructMember):
                 # Only traverse operations that are symbolic
                 is_out = operation.is_out
-                core_repr, core_type = operation.sym_name.name, operation.member_type.to_core()
+                core_repr, core_type = operation.sym_name.name, operation.member_type
 
                 if is_out:
                     out_args_with_type.append((core_repr, core_type))
@@ -385,7 +415,7 @@ class StructDef(BlockOperation):
                 # The complete in args
                 in_args_with_type = operation.in_args
 
-        return compute_op, in_args_with_type, out_args_with_type, in_args_with_type
+        return compute_op, in_args_with_type, out_args_with_type, intermediate_signals
 
     def __repr__(self):
         body_str = '\n  '.join(repr(op) for op in self.body)
