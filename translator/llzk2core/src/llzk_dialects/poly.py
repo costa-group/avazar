@@ -16,7 +16,7 @@ Types:
 """
 
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Generator
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, GlobalVariable, Type,
@@ -39,8 +39,8 @@ class PolyApplyMap(Operation):
 
     def __init__(self, result: SSAVar, operands: List[SSAVar],
                  num_dims: int, affine_map: str):
-        self.result = result
-        self.operands = operands
+        self._result = result
+        self._operands = operands
         self.num_dims = num_dims
         self.affine_map = affine_map
 
@@ -67,13 +67,21 @@ class PolyApplyMap(Operation):
         return PolyApplyMap(SSAVar.parse(m["res"]), ops,
                             int(m["ndims"]), m["map"].strip())
 
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return self._operands
+
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        ops_str = ', '.join(repr(o) for o in self.operands)
-        return (f"PolyApplyMap({self.result} = poly.applymap"
+        ops_str = ', '.join(repr(o) for o in self._operands)
+        return (f"PolyApplyMap({self._result} = poly.applymap"
                 f"({ops_str})[{self.num_dims}] {self.affine_map})")
 
 
@@ -90,7 +98,7 @@ class PolyReadConst(Operation):
 
     def __init__(self, result: SSAVar, const_name: GlobalVariable,
                  result_type: Type):
-        self.result = result
+        self._result = result
         self.const_name = const_name
         self.result_type = result_type
 
@@ -105,21 +113,29 @@ class PolyReadConst(Operation):
     def parse(cls, line: str) -> 'PolyReadConst':
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*poly\.read_const\s+(?P<name>@\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse PolyReadConst: {line}")
         return PolyReadConst(SSAVar.parse(m["res"]),
                              GlobalVariable.parse(m["name"]),
-                             Type.parse(m["type"]))
+                             Type.parse(m["type"].strip()))
+
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        return (f"PolyReadConst({self.result} = poly.read_const "
+        return (f"PolyReadConst({self._result} = poly.read_const "
                 f"{self.const_name} : {self.result_type})")
 
 
@@ -136,7 +152,7 @@ class PolyUnifiableCast(Operation):
 
     def __init__(self, result: SSAVar, input_val: SSAVar,
                  input_type: Type, result_type: Type):
-        self.result = result
+        self._result = result
         self.input_val = input_val
         self.input_type = input_type
         self.result_type = result_type
@@ -153,20 +169,28 @@ class PolyUnifiableCast(Operation):
         # %r = poly.unifiable_cast %input : !in_type -> !out_type
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*poly\.unifiable_cast\s+(?P<inp>\S+)"
-            r"\s*:\s*(?P<intype>\S+)\s*->\s*(?P<outtype>\S+)\s*"
+            r"\s*:\s*(?P<intype>.+?)\s*->\s*(?P<outtype>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse PolyUnifiableCast: {line}")
         return PolyUnifiableCast(SSAVar.parse(m["res"]), SSAVar.parse(m["inp"]),
-                                 Type.parse(m["intype"]), Type.parse(m["outtype"]))
+                                 Type.parse(m["intype"].strip()), Type.parse(m["outtype"].strip()))
+
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.input_val]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        return (f"PolyUnifiableCast({self.result} = poly.unifiable_cast "
+        return (f"PolyUnifiableCast({self._result} = poly.unifiable_cast "
                 f"{self.input_val} : {self.input_type} -> {self.result_type})")
 
 
@@ -196,13 +220,17 @@ class PolyParam(Operation):
     def parse(cls, line: str) -> 'PolyParam':
         pattern = re.compile(
             r"\s*poly\.param\s+(?P<name>@\S+)"
-            r"(?:\s*:\s*(?P<type>\S+))?\s*"
+            r"(?:\s*:\s*(?P<type>.+?))?\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse PolyParam: {line}")
-        type_opt = Type.parse(m["type"]) if m["type"] else None
+        type_opt = Type.parse(m["type"].strip()) if m["type"] else None
         return PolyParam(GlobalVariable.parse(m["name"]), type_opt)
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -239,12 +267,16 @@ class PolyYield(Operation):
     @classmethod
     def parse(cls, line: str) -> 'PolyYield':
         pattern = re.compile(
-            r"\s*poly\.yield\s+(?P<val>\S+)\s*:\s*(?P<type>\S+)\s*"
+            r"\s*poly\.yield\s+(?P<val>\S+)\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse PolyYield: {line}")
-        return PolyYield(SSAVar.parse(m["val"]), Type.parse(m["type"]))
+        return PolyYield(SSAVar.parse(m["val"]), Type.parse(m["type"].strip()))
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.value]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -358,9 +390,18 @@ class PolyTemplate(BlockOperation):
         body = parse_fn(cursor + 1, end)
         return PolyTemplate(GlobalVariable.parse(m["name"]), body), end + 1
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Translation to core. Assumes there is only one struct defined inside the body.
+        # Otherwise, it raises an Error so that the example can be studied in more detail.
+        assert len(self.body) == 1, "PolyTemplate in module poly.py assumes there is only one struct to translate"
+
+        # Assign the current poly template to the context
+        ctx.current_template = self.sym_name.name
+
+        # Although it is just one element, we iterate for completeness just in case
+        for struct_element in self.body:
+            yield from struct_element.to_core(ctx)
+
 
     def __repr__(self):
         body_str = '\n  '.join(repr(op) for op in self.body)

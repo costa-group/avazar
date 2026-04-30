@@ -18,13 +18,16 @@ Operations:
 """
 
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Generator
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, GlobalVariable, Type,
     TranslationContext, ParseFn,
 )
 from llzk_dialects.definitions import Dialect
+from llzk_dialects.function import FunctionDef
+from llzk_dialects.utils import translate_assignment_core, array_felt_first_dimension
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx
 
 
 class StructMember(Operation):
@@ -35,8 +38,9 @@ class StructMember(Operation):
     Attributes:
       sym_name (StringAttr)
       type     (TypeAttr)
-      column   (UnitAttr, optional) — marks the member as a column
-      signal   (UnitAttr, optional) — marks the member as a signal
+      column   (UnitAttr, optional) - marks the member as a column
+      signal   (UnitAttr, optional) - marks the member as a signal
+      llzk.pub (UnitAttr, optional) - marks the member as an out signal
     Valid parent: StructDefOp
     Interfaces: Symbol, SymbolUserOpInterface
     """
@@ -44,11 +48,12 @@ class StructMember(Operation):
     _OPS = {"struct.member"}
 
     def __init__(self, sym_name: GlobalVariable, member_type: Type,
-                 is_column: bool = False, is_signal: bool = False):
+                 is_column: bool = False, is_signal: bool = False, is_out: bool = False):
         self.sym_name = sym_name
         self.member_type = member_type
         self.is_column = is_column
         self.is_signal = is_signal
+        self.is_out = is_out
 
     def dialect(self) -> Dialect:
         return Dialect("struct")
@@ -73,11 +78,17 @@ class StructMember(Operation):
             Type.parse(m["type"].strip()),
             is_column="column" in attrs,
             is_signal="signal" in attrs,
+            is_out="llzk.pub" in attrs
         )
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
+
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Basic transformation: just return the variable itself (should not be used
+        # in general on their own)
+        yield self.sym_name
 
     def __repr__(self):
         flags = []
@@ -101,7 +112,7 @@ class StructNew(Operation):
     _OPS = {"struct.new"}
 
     def __init__(self, result: SSAVar, result_type: Type):
-        self.result = result
+        self._result = result
         self.result_type = result_type
 
     def dialect(self) -> Dialect:
@@ -114,19 +125,27 @@ class StructNew(Operation):
     @classmethod
     def parse(cls, line: str) -> 'StructNew':
         pattern = re.compile(
-            r"\s*(?P<res>\S+)\s*=\s*struct\.new\s*:\s*(?P<type>\S+)\s*"
+            r"\s*(?P<res>\S+)\s*=\s*struct\.new\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse StructNew: {line}")
-        return StructNew(SSAVar.parse(m["res"]), Type.parse(m["type"]))
+        return StructNew(SSAVar.parse(m["res"]), Type.parse(m["type"].strip()))
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
+
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Does nothing, we do not care about the creation of the struct itself
+        yield from ()
 
     def __repr__(self):
-        return f"StructNew({self.result} = struct.new : {self.result_type})"
+        return f"StructNew({self._result} = struct.new : {self.result_type})"
 
 
 class StructReadm(Operation):
@@ -143,7 +162,7 @@ class StructReadm(Operation):
 
     def __init__(self, result: SSAVar, component: SSAVar,
                  member_name: GlobalVariable, types: List[Type]):
-        self.result = result
+        self._result = result
         self.component = component
         self.member_name = member_name
         self.types = types
@@ -172,13 +191,35 @@ class StructReadm(Operation):
         return StructReadm(SSAVar.parse(m["res"]), SSAVar.parse(m["comp"]),
                            GlobalVariable.parse(m["mem"]), types)
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.component]
+
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Members of the struct are handled as plain variables. Hence, reading
+        # a field just translates to an assignment. However, the variable might be
+        # either a field inside the current struct of or another struct (as a subcomponent).
+        # Hence, we separate both cases
+
+        # Defined by the current struct. The type matches the current struct
+        if f"{ctx.current_template}::" in self.types[0].name:
+            # The name is directly the var name
+            assigned_var = SSAVar(self.member_name.name)
+        else:
+            # The variable corresponds to the component name (a SSAVar) after adding the
+            # member currently being accessed
+            assigned_var = SSAVar(self.component.name + "_" + self.member_name.name)
+
+        yield translate_assignment_core_with_ctx(self._result, assigned_var,
+                                                 self.types[-1], ctx)
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
-        return (f"StructReadm({self.result} = struct.readm "
+        return (f"StructReadm({self._result} = struct.readm "
                 f"{self.component}[{self.member_name}]{type_str})")
 
 
@@ -227,9 +268,29 @@ class StructWritem(Operation):
                             GlobalVariable.parse(m["mem"]),
                             SSAVar.parse(m["val"]), types)
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.component, self.value]
+
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Members of the struct are handled as plain variables. Hence, writing
+        # a field just translates to an assignment
+
+        # Writing a pod and a struct is ignored for now,
+        # because this refers to variables that do not affect the compute
+        # TODO: better fix using the context and storing the variables in a dict
+        if "!struct" not in self.types[-1].name and "!pod" not in self.types[-1].name:
+
+            # Defined by the current struct. The type matches the current struct
+            if f"{ctx.current_template}::" in self.types[0].name:
+                # The name is directly the var name
+                assigned_var = SSAVar(self.member_name.name)
+            else:
+                # The variable corresponds to the component name (a SSAVar) after adding the
+                # member currently being accessed
+                assigned_var = SSAVar(self.component.name + "_" + self.member_name.name)
+
+            yield translate_assignment_core_with_ctx(assigned_var, self.value, self.types[-1], ctx)
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
@@ -288,9 +349,73 @@ class StructDef(BlockOperation):
         body = parse_fn(cursor + 1, end)
         return StructDef(GlobalVariable.parse(m["name"]), body), end + 1
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Implementation of the definition of a struct. It can have multiple members defined
+        # and functions. They are handled as follows:
+        #  * Members: members with llzk.pub are assumed out signals, otherwise they are intermediate
+        #  * Functions: we just process function @compute.
+        # We use isinstance because we need to store the function information in TranslationContext
+
+        compute_op, in_args_with_type, out_args_with_type, _ = self._compute_core_function_info_from_struct()
+
+        # There must be at least one compute
+        assert compute_op is not None, "There is no @compute element in the struct"
+
+        # The name to refer to the current function is @poly_template::@struct_def@compute
+        # To identify subcalls in subcomponents, we store this convention
+        llzk_name = f"{ctx.current_template}::{self.sym_name.name}::@compute"
+
+        # The name we give is just the sym_name
+        core_name = self.sym_name.name
+
+        # Assign the information of the name of the function, in/out args to the context information
+        ctx.llzk_func2core[llzk_name] = core_name
+        ctx.core_func2args[core_name] = in_args_with_type, out_args_with_type
+        ctx.current_core_function = core_name
+
+        # After setting the translation, we just need to render the function
+        # considering the out arguments we have generated
+        yield from compute_op.to_core(ctx)
+
+        # Set again to None to avoid inconsistencies in the future
+        ctx.current_core_function = None
+
+    def _compute_core_function_info_from_struct(self) -> Tuple[Operation, List[Tuple[str, Type]], List[Tuple[str, Type]], List[Tuple[str, Type]]]:
+        """
+        Returns the operation corresponding to @compute, and the input and output arguments
+        and the intermediate signals, following the format (var_name, core_type). For instance, [(%a, ff), (%b, arr<3>)].
+        """
+
+        # As part of translating a struct, we store the corresponding information of
+        # the core function
+        in_args_with_type = []
+        out_args_with_type = []
+        intermediate_signals = []
+        compute_op = None
+
+        # We need to obtain the information from the struct
+        for operation in self.body:
+            if isinstance(operation, StructMember):
+                # Only traverse operations that are symbolic
+                is_out = operation.is_out
+                core_repr, core_type = operation.sym_name.name, operation.member_type
+
+                if is_out:
+                    out_args_with_type.append((core_repr, core_type))
+                else:
+                    intermediate_signals.append((core_repr, core_type))
+
+            # Only consider the @compute function, others are ignored
+            elif isinstance(operation, FunctionDef) and operation.sym_name.name == "@compute":
+                assert compute_op is None, "There are two @compute functions defined in a struct"
+                # We wait for the translation after all the structMembers have been parsed
+                # (not sure if the order is guaranteed by construction)
+                compute_op = operation
+
+                # The complete in args
+                in_args_with_type = operation.in_args
+
+        return compute_op, in_args_with_type, out_args_with_type, intermediate_signals
 
     def __repr__(self):
         body_str = '\n  '.join(repr(op) for op in self.body)

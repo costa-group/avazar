@@ -15,10 +15,52 @@ Operations:
 """
 
 import re
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from llzk_dialects.core import Operation, SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx
+
+
+def _split_top_level_commas(s: str) -> List[str]:
+    """Split s on commas that are not inside <>, [], or ()."""
+    depth = 0
+    parts: List[str] = []
+    current: List[str] = []
+    for ch in s:
+        if ch in '<[(':
+            depth += 1
+            current.append(ch)
+        elif ch in '>])':
+            depth -= 1
+            current.append(ch)
+        elif ch == ',' and depth == 0:
+            parts.append(''.join(current))
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        parts.append(''.join(current))
+    return parts
+
+
+def _parse_pod_fields(pod_type_str: str) -> Dict[str, Type]:
+    """
+    Parse the field list inside !pod.type<[@name: type, ...]> into a dict.
+    Returns an empty dict for !pod.type<[]> or when no bracket is found.
+    """
+    m = re.search(r'\[(?P<fields>.*)\]', pod_type_str, re.DOTALL)
+    if not m:
+        return {}
+    fields_str = m.group('fields').strip()
+    if not fields_str:
+        return {}
+    result: Dict[str, Type] = {}
+    for part in _split_top_level_commas(fields_str):
+        part = part.strip()
+        name, type_str = part.split(':', 1)
+        result[name.strip()] = Type.parse(type_str.strip())
+    return result
 
 
 class PodNew(Operation):
@@ -36,10 +78,11 @@ class PodNew(Operation):
     _OPS = {"pod.new"}
 
     def __init__(self, result: SSAVar, init_records: Dict[str, SSAVar],
-                 result_type: Type):
-        self.result = result
-        # Maps record name (without @) to its initial SSA value
+                 result_type: Dict[str, Type]):
+        self._result = result
+        # Maps record name (with @) to its initial SSA value
         self.init_records = init_records
+        # Maps field name (with @) to its Type
         self.result_type = result_type
 
     def dialect(self) -> Dialect:
@@ -70,16 +113,41 @@ class PodNew(Operation):
                     continue
                 k, v = item.split("=", 1)
                 init_records[k.strip()] = SSAVar.parse(v.strip())
-        return PodNew(SSAVar.parse(m["res"]), init_records, Type.parse(m["type"]))
+        return PodNew(SSAVar.parse(m["res"]), init_records,
+                      _parse_pod_fields(m["type"]))
+
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return list(self.init_records.values())
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        # Every variable inside the pod is initialized to
+        # a new variable of the form "{pod_name}_{variable}"
+        # We store the result with the names of every operation
+        # and the result type
+        ctx.ssa2pod_var[self._result.name] = {record: (f"{self._result.name}_{record}", initial_value)
+                                              for record, initial_value in self.result_type.items()}
+
+        # We return the variables that are assigned to a concrete value
+        yield from (
+            translate_assignment_core_with_ctx(
+                SSAVar.parse(f"{self._result.name}_{record}"),
+                initial_value,
+                self.result_type.get(record, Type("!felt.type")),
+                ctx,
+            )
+            for record, initial_value in self.init_records.items()
+        )
 
     def __repr__(self):
         inits = ', '.join(f"{k} = {v}" for k, v in self.init_records.items())
         init_str = f" {{{inits}}}" if inits else ""
-        return f"PodNew({self.result} = pod.new{init_str} : {self.result_type})"
+        fields = ', '.join(f"{k}: {v}" for k, v in self.result_type.items())
+        return f"PodNew({self._result} = pod.new{init_str} : <[{fields}]>)"
 
 
 class PodRead(Operation):
@@ -95,11 +163,16 @@ class PodRead(Operation):
     _OPS = {"pod.read"}
 
     def __init__(self, result: SSAVar, pod_ref: SSAVar,
-                 record_name: GlobalVariable, types: List[Type]):
-        self.result = result
+                 record_name: GlobalVariable,
+                 pod_type: Dict[str, Type],
+                 result_type: Optional[Type]):
+        self._result = result
         self.pod_ref = pod_ref
         self.record_name = record_name
-        self.types = types
+        # Maps field name (with @) to its Type; empty dict when no annotation
+        self.pod_type = pod_type
+        # Type of the read result; None when no annotation
+        self.result_type = result_type
 
     def dialect(self) -> Dialect:
         return Dialect("pod")
@@ -118,20 +191,41 @@ class PodRead(Operation):
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse PodRead: {line}")
-        types = (
-            [Type.parse(t.strip()) for t in m["types"].split(",")]
-            if m["types"] else []
-        )
+        pod_type: Dict[str, Type] = {}
+        result_type: Optional[Type] = None
+        if m["types"]:
+            parts = _split_top_level_commas(m["types"])
+            pod_type = _parse_pod_fields(parts[0].strip())
+            result_type = Type.parse(parts[1].strip()) if len(parts) > 1 else None
         return PodRead(SSAVar.parse(m["res"]), SSAVar.parse(m["ref"]),
-                       GlobalVariable.parse(m["rec"]), types)
+                       GlobalVariable.parse(m["rec"]), pod_type, result_type)
+
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.pod_ref]
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        variable_name, var_type = ctx.ssa2pod_var[self.pod_ref.name][self.record_name.name]
+
+        assert self.result_type is None or self.result_type == var_type, "Pod.read must match the type inside the dict ssa2pod_var"
+
+        yield translate_assignment_core_with_ctx(
+            self._result,
+            SSAVar.parse(variable_name),
+            var_type,
+            ctx
+        )
 
     def __repr__(self):
-        type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
-        return (f"PodRead({self.result} = pod.read "
+        fields = ', '.join(f"{k}: {v}" for k, v in self.pod_type.items())
+        type_str = f" : <[{fields}]>" if self.pod_type else ""
+        if self.result_type is not None:
+            type_str += f", {self.result_type}"
+        return (f"PodRead({self._result} = pod.read "
                 f"{self.pod_ref}[{self.record_name}]{type_str})")
 
 
@@ -148,11 +242,16 @@ class PodWrite(Operation):
     _OPS = {"pod.write"}
 
     def __init__(self, pod_ref: SSAVar, record_name: GlobalVariable,
-                 value: SSAVar, types: List[Type]):
+                 value: SSAVar,
+                 pod_type: Dict[str, Type],
+                 value_type: Optional[Type]):
         self.pod_ref = pod_ref
         self.record_name = record_name
         self.value = value
-        self.types = types
+        # Maps field name (with @) to its Type; empty dict when no annotation
+        self.pod_type = pod_type
+        # Type of the written value; None when no annotation
+        self.value_type = value_type
 
     def dialect(self) -> Dialect:
         return Dialect("pod")
@@ -172,19 +271,36 @@ class PodWrite(Operation):
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse PodWrite: {line}")
-        types = (
-            [Type.parse(t.strip()) for t in m["types"].split(",")]
-            if m["types"] else []
-        )
+        pod_type: Dict[str, Type] = {}
+        value_type: Optional[Type] = None
+        if m["types"]:
+            parts = _split_top_level_commas(m["types"])
+            pod_type = _parse_pod_fields(parts[0].strip())
+            value_type = Type.parse(parts[1].strip()) if len(parts) > 1 else None
         return PodWrite(SSAVar.parse(m["ref"]), GlobalVariable.parse(m["rec"]),
-                        SSAVar.parse(m["val"]), types)
+                        SSAVar.parse(m["val"]), pod_type, value_type)
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.pod_ref, self.value]
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        variable_name, var_type = ctx.ssa2pod_var[self.pod_ref.name][self.record_name.name]
+
+        assert self.value_type is None or self.value_type == var_type, "Pod.write must match the type inside the dict ssa2pod_var"
+
+        yield translate_assignment_core_with_ctx(
+            SSAVar.parse(variable_name),
+            self.value,
+            var_type,
+            ctx
+        )
 
     def __repr__(self):
-        type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
+        fields = ', '.join(f"{k}: {v}" for k, v in self.pod_type.items())
+        type_str = f" : <[{fields}]>" if self.pod_type else ""
+        if self.value_type is not None:
+            type_str += f", {self.value_type}"
         return (f"PodWrite(pod.write {self.pod_ref}"
                 f"[{self.record_name}] = {self.value}{type_str})")
 
