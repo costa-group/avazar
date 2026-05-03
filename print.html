@@ -89,7 +89,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="CORELLZK.html"><strong aria-hidden="true">1.</strong> Core Language</a></li><li class="chapter-item expanded "><a href="CLUSTERING.html"><strong aria-hidden="true">2.</strong> Clustering Tool</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="CORELLZK.html"><strong aria-hidden="true">1.</strong> Core Language</a></li><li class="chapter-item expanded "><a href="CLUSTERING.html"><strong aria-hidden="true">2.</strong> Clustering Tool</a></li><li class="chapter-item expanded "><a href="AVAZAR_TOOL.html"><strong aria-hidden="true">3.</strong> Avazar Tool</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -539,6 +539,138 @@ by inserting phi-functions at control flow merge points (e.g., after
 <li><code>-h, --help</code>: print help.</li>
 <li><code>-V, --version</code>: print version.</li>
 </ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="avazar-tool"><a class="header" href="#avazar-tool">avazar Tool</a></h1>
+<p>This document explains the <code>avazar</code> command-line tool, what it does, and the arguments it accepts.</p>
+<h2 id="what-the-tool-does-1"><a class="header" href="#what-the-tool-does-1">What the tool does</a></h2>
+<p><code>avazar</code> is a general modular verifier for ZK circuits. It reads an R1CS constraint system, optionally a pre-computed decomposition structure, and verifies the circuit node by node using an SMT solver according to the selected mode. It reports which nodes are verified, failed, or unknown.</p>
+<h2 id="basic-usage-1"><a class="header" href="#basic-usage-1">Basic usage</a></h2>
+<pre><code class="language-bash">zkgenver [OPTIONS] &lt;INPUT&gt;
+</code></pre>
+<p>An example:</p>
+<pre><code class="language-bash">zkgenver ./circuit.r1cs --solver civer --equivalence structural --clustering_size 200
+</code></pre>
+<h2 id="modes"><a class="header" href="#modes">Modes</a></h2>
+<p>The tool has three operating modes:</p>
+<ul>
+<li>
+<p><code>determinism</code> (default)</p>
+<ul>
+<li>If no mode flag is provided, the tool runs in determinism mode by default. It checks if the inputs are fixed, the outputs are unique. </li>
+</ul>
+</li>
+<li>
+<p><code>--check_correctness &lt;correctness.json&gt;</code> </p>
+<ul>
+<li>Activates correctness-checking mode.</li>
+<li>Verifies whether the input R1CS file is consistent with the given SMT-LIB (<code>.smt2</code>) formula. The <code>correctness.json</code> file must contain several fields:
+<ul>
+<li><code>input_signals</code> and <code>output_signals</code>, two lists of signals which must match the input/output structure of the R1CS file.</li>
+<li><code>signals</code>, listing the auxiliar variables that appear in the SMT formula.</li>
+<li><code>constraints</code>, specifying the SMT formula to be checked.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><code>--check_equivalence &lt;another_file.r1cs&gt;</code></p>
+<ul>
+<li>Activates equivalence check mode.</li>
+<li>Checks equivalence between the input and the given R1CS files. Both files must have the same input/output structure. Otherwise, they cannot be equivalent.</li>
+</ul>
+</li>
+</ul>
+<h2 id="arguments-and-options-1"><a class="header" href="#arguments-and-options-1">Arguments and options</a></h2>
+<h3 id="required-argument-1"><a class="header" href="#required-argument-1">Required argument</a></h3>
+<ul>
+<li><code>INPUT</code>
+<ul>
+<li>Type: path (<code>String</code>)</li>
+<li>Default: <code>./circuit.circom</code></li>
+<li>Description: path to the R1CS constraint system to be verified.</li>
+</ul>
+</li>
+</ul>
+<h3 id="optional-flags-1"><a class="header" href="#optional-flags-1">Optional flags</a></h3>
+<ul>
+<li>
+<p><code>--input_structure &lt;PATH&gt;</code></p>
+<ul>
+<li>Type: path</li>
+<li>Description: path to a pre-computed decomposition structure JSON (as produced by the <code>clustering</code> tool). If not given, avazar clusters the circuit internally using <code>--clustering_size</code>.</li>
+</ul>
+</li>
+<li>
+<p><code>--original_structure &lt;PATH&gt;</code></p>
+<ul>
+<li>Type: path</li>
+<li>Description: original structural metadata of the circuit (E.g., in circom, template-level component info). Used to produce more meaningful error messages. Optional.</li>
+</ul>
+</li>
+<li>
+<p><code>--timeout &lt;MILLISECONDS&gt;</code></p>
+<ul>
+<li>Type: <code>u64</code></li>
+<li>Default: <code>5000</code></li>
+<li>Description: timeout in milliseconds for each call to the underlying solver.</li>
+</ul>
+</li>
+<li>
+<p><code>--solver &lt;SOLVER&gt;</code></p>
+<ul>
+<li>Type: string</li>
+<li>Default: <code>civer</code></li>
+<li>Accepted values: <code>civer</code>, <code>ffsol</code>, <code>cvc5</code>, <code>z3</code></li>
+<li>Description: </li>
+</ul>
+</li>
+<li>
+<p><code>--equivalence &lt;MODE&gt;</code></p>
+<ul>
+<li>Type: string</li>
+<li>Default: <code>structural</code></li>
+<li>Accepted values: <code>none</code>, <code>local</code>, <code>structural</code></li>
+<li>See <a href="AVAZAR_TOOL.html#equivalence-modes">Equivalence modes</a> below.</li>
+</ul>
+</li>
+<li>
+<p><code>-p, --prime &lt;N&gt;</code></p>
+<ul>
+<li>Type: <code>BigInt</code></li>
+<li>Default: <code>21888242871839275222246405745257275088548364400416034343698204186575808495617</code> (BN254 scalar field prime)</li>
+<li>Description: prime field modulus used during verification.</li>
+</ul>
+</li>
+<li>
+<p><code>-c, --clustering_size &lt;N&gt;</code></p>
+<ul>
+<li>Type: <code>usize</code></li>
+<li>Default: <code>200</code></li>
+<li>Description: maximum size of nodes considered for internal re-clustering. Nodes larger than this threshold are split further. Set to <code>0</code> to disable internal clustering entirely.</li>
+</ul>
+</li>
+<li>
+<p><code>-t, --target_size &lt;N&gt;</code></p>
+<ul>
+<li>Type: <code>usize</code></li>
+<li>Default: <code>0</code></li>
+<li>Description: target size for nodes in the internal clustering. Set to <code>0</code> to disable (default). Takes effect only when <code>--input_structure</code> is not provided.</li>
+</ul>
+</li>
+</ul>
+<h2 id="equivalence-modes"><a class="header" href="#equivalence-modes">Equivalence modes</a></h2>
+<p>avazar avoids redundant solver calls by exploiting equivalence between DAG nodes:</p>
+<ul>
+<li>
+<p><strong><code>none</code></strong>: every node is sent to the solver independently, regardless of similarity.</p>
+</li>
+<li>
+<p><strong><code>local</code></strong>: nodes grouped by local equivalence (same local fingerprint/signature) share a result. If one representative in the class is verified, the others are assumed verified too.</p>
+</li>
+<li>
+<p><strong><code>structural</code></strong>: like <code>local</code>, but uses stricter structural equivalence that also accounts for the node's context in the DAG. Two nodes must agree in both content and structural position to be grouped. Consequently, two nodes can be local equivalent, but no structural equivalent.</p>
+</li>
+</ul>
+<p>The equivalence classes come either from the optional <code>--input_structure</code> file or are computed internally if that file is not provided.</p>
 
                     </main>
 
