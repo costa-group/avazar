@@ -182,8 +182,8 @@ and the result is converted back to a finite field element (modulo
 ##### Boolean
 
 Comparisons interpret field elements as signed integers. The
-order is defined as `mid+1, ..., P-1, 0, ..., mid`, where
-`mid = (P-1)/2`.
+order is defined as `mid, ..., P-1, 0, ..., mid-1`, where
+`mid = P/2+1`.
 
 > [!NOTE]
 >
