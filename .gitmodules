@@ -1,6 +1,3 @@
 [submodule "avazar_tool"]
 	path = avazar_tool
 	url = https://github.com/costa-group/avazar_tool.git
-[submodule "ffsol_solver"]
-	path = ffsol_solver
-	url = https://mygitlab.cs.upc.edu/polynomial-equations/poly-eqs.git
