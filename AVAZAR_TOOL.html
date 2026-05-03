@@ -178,10 +178,10 @@
 <h2 id="what-the-tool-does"><a class="header" href="#what-the-tool-does">What the tool does</a></h2>
 <p><code>avazar</code> is a general modular verifier for ZK circuits. It reads an R1CS constraint system, optionally a pre-computed decomposition structure, and verifies the circuit node by node using an SMT solver according to the selected mode. It reports which nodes are verified, failed, or unknown.</p>
 <h2 id="basic-usage"><a class="header" href="#basic-usage">Basic usage</a></h2>
-<pre><code class="language-bash">zkgenver [OPTIONS] &lt;INPUT&gt;
+<pre><code class="language-bash">avazar [OPTIONS] &lt;INPUT&gt;
 </code></pre>
 <p>An example:</p>
-<pre><code class="language-bash">zkgenver ./circuit.r1cs --solver civer --equivalence structural --clustering_size 200
+<pre><code class="language-bash">avazar ./circuit.r1cs --solver civer --equivalence structural --clustering_size 200
 </code></pre>
 <h2 id="modes"><a class="header" href="#modes">Modes</a></h2>
 <p>The tool has three operating modes:</p>
