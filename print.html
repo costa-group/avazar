@@ -343,8 +343,8 @@ compute <code>x mod P</code>?</p>
 </blockquote>
 <h5 id="boolean"><a class="header" href="#boolean">Boolean</a></h5>
 <p>Comparisons interpret field elements as signed integers. The
-order is defined as <code>mid+1, ..., P-1, 0, ..., mid</code>, where
-<code>mid = (P-1)/2</code>.</p>
+order is defined as <code>mid, ..., P-1, 0, ..., mid-1</code>, where
+<code>mid = P/2+1</code>.</p>
 <blockquote>
 <p>[!NOTE]</p>
 <p>The semantics on the right is not an encoding to SMT, it is just to
