@@ -9,12 +9,12 @@ This document explains the `avazar` command-line tool, what it does, and the arg
 ## Basic usage
 
 ```bash
-zkgenver [OPTIONS] <INPUT>
+avazar [OPTIONS] <INPUT>
 ```
 
 An example:
 ```bash
-zkgenver ./circuit.r1cs --solver civer --equivalence structural --clustering_size 200
+avazar ./circuit.r1cs --solver civer --equivalence structural --clustering_size 200
 ```
 
 ## Modes
