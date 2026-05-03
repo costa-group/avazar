@@ -11,7 +11,7 @@ Operations:
 """
 
 import re
-from typing import Optional
+from typing import List, Optional
 
 from llzk_dialects.core import Operation, SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
@@ -52,17 +52,21 @@ class GlobalDef(Operation):
         # global.def [const] @name : !type = value
         pattern = re.compile(
             r"\s*global\.def\s+(?P<const>const\s+)?(?P<sym>@\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*=\s*(?P<val>\S+)\s*"
+            r"\s*:\s*(?P<type>[^=]+?)\s*=\s*(?P<val>\S+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse GlobalDef: {line}")
         return GlobalDef(
             GlobalVariable.parse(m["sym"]),
-            Type.parse(m["type"]),
+            Type.parse(m["type"].strip()),
             m["val"],
             is_const=m["const"] is not None,
         )
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
@@ -87,7 +91,7 @@ class GlobalRead(Operation):
     _OPS = {"global.read"}
 
     def __init__(self, result: SSAVar, name_ref: GlobalVariable, result_type: Type):
-        self.result = result
+        self._result = result
         self.name_ref = name_ref
         self.result_type = result_type
 
@@ -102,21 +106,29 @@ class GlobalRead(Operation):
     def parse(cls, line: str) -> 'GlobalRead':
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*global\.read\s+(?P<ref>@\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse GlobalRead: {line}")
         return GlobalRead(SSAVar.parse(m["res"]),
                           GlobalVariable.parse(m["ref"]),
-                          Type.parse(m["type"]))
+                          Type.parse(m["type"].strip()))
+
+    @property
+    def result(self):
+        return self._result
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return []
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation
         raise NotImplementedError
 
     def __repr__(self):
-        return (f"GlobalRead({self.result} = global.read "
+        return (f"GlobalRead({self._result} = global.read "
                 f"{self.name_ref} : {self.result_type})")
 
 
@@ -148,14 +160,18 @@ class GlobalWrite(Operation):
     def parse(cls, line: str) -> 'GlobalWrite':
         pattern = re.compile(
             r"\s*global\.write\s+(?P<ref>@\S+)\s*=\s*(?P<val>\S+)"
-            r"\s*:\s*(?P<type>\S+)\s*"
+            r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse GlobalWrite: {line}")
         return GlobalWrite(GlobalVariable.parse(m["ref"]),
                            SSAVar.parse(m["val"]),
-                           Type.parse(m["type"]))
+                           Type.parse(m["type"].strip()))
+
+    @property
+    def operands(self) -> List[SSAVar]:
+        return [self.value]
 
     def to_core(self, ctx: TranslationContext) -> str:
         # TODO: implement core translation

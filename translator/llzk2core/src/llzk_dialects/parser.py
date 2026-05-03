@@ -96,7 +96,7 @@ class LLZKParser:
         while cursor < end:
             line = self.lines[cursor]
 
-            if line in ('}', '} else {', 'do {') or line.startswith('^bb'):
+            if line in ('}', '} else {', 'do {', '} do {') or line.startswith('^bb'):
                 cursor += 1
                 continue
 
