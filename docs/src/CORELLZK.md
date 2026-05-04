@@ -135,7 +135,6 @@ A function definition follows this syntax:
 def id(id1:t, ...,idn:t) -> id1:t, ..., idk:t {
   body
 }
-
 ```
 
 * **Parameters:** Formal and return parameters
