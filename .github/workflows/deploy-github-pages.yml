@@ -16,15 +16,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup mdBook
-        uses: peaceiris/actions-mdbook@v2
+      - name: Install mdbook and plugins
+        uses: taiki-e/install-action@v2
         with:
-          mdbook-version: 'latest'
-
-      - name: Setup mdbook-katex
-        uses: magicgh/mdbook-katex-action@v1
-        with:
-          version: 'latest'
+          tool: mdbook,mdbook-katex
 
       - name: Build Site
         run: mdbook build docs
