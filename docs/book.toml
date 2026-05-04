@@ -3,5 +3,4 @@ title = "AVAZAR Project"
 authors = ["alexcere","genaim","miguelis","alrubio","clararod9","emartinm"]
 language = "en"
 
-[output.html]
-mathjax-support = true
+[preprocessor.katex]
