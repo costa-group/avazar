@@ -32,9 +32,9 @@ For simplicity, when we have a simple expression `sexp`, which can be a variable
 
 ## Encoding of expressions
 
-Encoding of an expression, in the context of a symbolic environment $T$, generates formula of the form $(F,L)$ where $F$ is the formula and $L$ is a set local constraint variables used in $F$. I.e., variables in $L$ do not come from $T$ but rather they are intermediate fresh variables that were generate during the encoding of the expression.
+Encoding of an expression, in the context of a symbolic environment $T$, generates a formula $F$ that encodes the result of evaluating the expression.
 
-Encoding of expressions does not modify the symbolic environment $T$, it simply uses the constraint variables of $T$ and binds the result to a given output variable $V_o$ (which is not part of $L$, it will be generated when encoding an assignment). Note that all variables that appear in an expression do not correspond to arrays, otherwise the program is ill-typed (array accesses are handled using dedicated instructions).
+Encoding of expressions does not modify the symbolic environment $T$, it simply uses the constraint variables of $T$ and binds the result to a given output variable $V_o$. Note that all variables that appear in an expression do not correspond to arrays, otherwise the program is ill-typed (array accesses are handled using dedicated instructions).
 
 Next we describe the encodings of the different expressions as they are defined in the [core-LLZK language](CORELLZK.md).
 
@@ -43,32 +43,26 @@ Next we describe the encodings of the different expressions as they are defined 
 #### `sexp` (Identity)
 
 - $F$ is $V_o = T[\mathtt{sexp}]$
-- $L=\emptyset$
 
 #### `felt.neg sexp` (Negation)
 
 - $F$ is $V_o = -T[\mathtt{sexp}]$
-- $L=\emptyset$
 
 #### `felt.add sexp1 sexp2` (Addition)
 
 - $F$ is $V_o = T[\mathtt{sexp1}]+T[\mathtt{sex2}]$
-- $L=\emptyset$
 
 #### `felt.sub sexp1 sexp2` (Subtraction)
 
 - $F$ is $V_o = T[\mathtt{sexp1}]-T[\mathtt{sex2}]$
-- $L=\emptyset$
 
 #### `felt.mul sexp1 sexp2` (Multiplication)
 
 - $F$ is $V_o = T[\mathtt{sexp1}] \cdot T[\mathtt{sexp2}]$
-- $L=\emptyset$
 
 #### `felt.div sexp1 sexp2` (Multiplication by modular inverse)
 
 - $F$ is $V_o \cdot T[\mathtt{sexp2}] = T[\mathtt{sexp1}]$
-- $L=\emptyset$
 
 ### Bitwise
 
@@ -79,13 +73,11 @@ Encoding of bitwise operations heavily relies on the binary expansion of a given
 
 #### `bit.and sexp1 sexp2` (Bitwise AND)
 
-Let $(F_1,L_1)$, $(F_2,L_2)$, and $(F_3,L_3)$ be the encodings corresponding to $\mathtt{bitify}(T[\mathtt{sexp1}],k)$, $\mathtt{bitify}(T[\mathtt{sexp2}],k)$, and $\mathtt{bitify}(V_o,k)$. Let $X_{b_i}$ denote the $i$-th bit of $T[\mathtt{sexp1}]$ and $Y_{b_i}$ the $i$-th bit of $T[\mathtt{sexp2}]$, produced by the respective $\mathtt{bitify}$ calls.
+Let $F_1$, $F_2$, and $L_3$ be the encodings corresponding to $\mathtt{bitify}(T[\mathtt{sexp1}],k)$, $\mathtt{bitify}(T[\mathtt{sexp2}],k)$, and $\mathtt{bitify}(V_o,k)$. Let $X_{b_i}$ denote the $i$-th bit of $T[\mathtt{sexp1}]$ and $Y_{b_i}$ the $i$-th bit of $T[\mathtt{sexp2}]$, produced by the respective $\mathtt{bitify}$ calls.
 
 The encoding $F$ is
 
 $$F_1 \land F_2 \land F_3 \land (\bigwedge_{i=0}^{k-1} V_{o_{b_i}} = X_{b_i}\cdot Y_{b_i})$$
-
-The local variables are $L=L_1\cup L_2\cup L_3$.
 
 As an optimization, when `sexp1` is a constant that fits in $m$ bits, the encoding of $T[\mathtt{sexp1}]$ and $V_o$ can be done with respect to $m$ bits instead of $k$ bits, and then use $F$ as
 
@@ -95,33 +87,27 @@ This is valid because all bits $V_{o_{b_i}}$ with $i \ge m$ are $0$. Here we sav
 
 #### `bit.or sexp1 sexp2` (Bitwise OR)
 
-Let $(F_1,L_1)$, $(F_2,L_2)$, and $(F_3,L_3)$ be the formulas corresponding to $\mathtt{bitify}(T[\mathtt{sexp1}],k)$, $\mathtt{bitify}(T[\mathtt{sexp2}],k)$, and $\mathtt{bitify}(V_o,k)$. Let $X_{b_i}$ denote the $i$-th bit of $T[\mathtt{sexp1}]$ and $Y_{b_i}$ the $i$-th bit of $T[\mathtt{sexp2}]$, produced by the respective $\mathtt{bitify}$ calls.
+Let $F_1$, $F_2$, and $F_3$ be the formulas corresponding to $\mathtt{bitify}(T[\mathtt{sexp1}],k)$, $\mathtt{bitify}(T[\mathtt{sexp2}],k)$, and $\mathtt{bitify}(V_o,k)$. Let $X_{b_i}$ denote the $i$-th bit of $T[\mathtt{sexp1}]$ and $Y_{b_i}$ the $i$-th bit of $T[\mathtt{sexp2}]$, produced by the respective $\mathtt{bitify}$ calls.
 
 The encoding $F$ is
 
 $$F_1 \land F_2 \land F_3 \land (\bigwedge_{i=0}^{k-1} V_{o_{b_i}} = X_{b_i} + Y_{b_i} - X_{b_i} \cdot Y_{b_i})$$
 
-The local variables are $L=L_1\cup L_2\cup L_3$.
-
 #### `bit.xor sexp1 sexp2` (Bitwise XOR)
 
-Let $(F_1,L_1)$, $(F_2,L_2)$, and $(F_3,L_3)$ be the formulas corresponding to $\mathtt{bitify}(T[\mathtt{sexp1}],k)$, $\mathtt{bitify}(T[\mathtt{sexp2}],k)$, and $\mathtt{bitify}(V_o,k)$. Let $X_{b_i}$ denote the $i$-th bit of $T[\mathtt{sexp1}]$ and $Y_{b_i}$ the $i$-th bit of $T[\mathtt{sexp2}]$, produced by the respective $\mathtt{bitify}$ calls.
+Let $F_1$, $F_2$, and $F_3$ be the formulas corresponding to $\mathtt{bitify}(T[\mathtt{sexp1}],k)$, $\mathtt{bitify}(T[\mathtt{sexp2}],k)$, and $\mathtt{bitify}(V_o,k)$. Let $X_{b_i}$ denote the $i$-th bit of $T[\mathtt{sexp1}]$ and $Y_{b_i}$ the $i$-th bit of $T[\mathtt{sexp2}]$, produced by the respective $\mathtt{bitify}$ calls.
 
 The encoding $F$ is
 
 $$F_1 \land F_2 \land F_3 \land (\bigwedge_{i=0}^{k-1} V_{o_{b_i}} = X_{b_i} + Y_{b_i} -  2 \cdot X_{b_i} \cdot Y_{b_i})$$
 
-The local variables are $L=L_1\cup L_2\cup L_3$.
-
 #### `bit.not sexp` (Bitwise NOT)
 
-Let $(F_1,L_1)$ and $(F_2,L_2)$ be the formulas corresponding to $\mathtt{bitify}(T[\mathtt{sexp}],k)$ and $\mathtt{bitify}(V_o,k)$. Let $X_{b_i}$ denote the $i$-th bit of $T[\mathtt{sexp}]$, produced by the respective $\mathtt{bitify}$ call.
+Let $F_1$ and $F_2$ be the formulas corresponding to $\mathtt{bitify}(T[\mathtt{sexp}],k)$ and $\mathtt{bitify}(V_o,k)$. Let $X_{b_i}$ denote the $i$-th bit of $T[\mathtt{sexp}]$, produced by the respective $\mathtt{bitify}$ call.
 
 The encoding $F$ is
 
 $$F_1 \land F_2 \land (\bigwedge_{i=0}^{k-1} V_{o_{b_i}} = 1-X_{b_i})$$
-
-The local variables are $L=L_1\cup L_2$.
 
 #### `bit.shl sexp1 sexp2` (Left shift)
 
@@ -129,11 +115,9 @@ The encoding of left-shift considers two cases: the first handles the case when 
 
 ##### The case when `sexp2` is a constant
 
-Let $(F_1,L_1)$ and $(F_2,L_2)$ be the formulas corresponding to $\mathtt{bitify}(T[\mathtt{sexp1}],k)$ and $\mathtt{bitify}(V_o,k)$. Let $X_{b_i}$ denote the $i$-th bit of $T[\mathtt{sexp1}]$, produced by the respective $\mathtt{bitify}$ call. Let the value of `sexp2` be $m$. The encoding $F$ is
+Let $F_1$ and $F_2$ be the formulas corresponding to $\mathtt{bitify}(T[\mathtt{sexp1}],k)$ and $\mathtt{bitify}(V_o,k)$. Let $X_{b_i}$ denote the $i$-th bit of $T[\mathtt{sexp1}]$, produced by the respective $\mathtt{bitify}$ call. Let the value of `sexp2` be $m$. The encoding $F$ is
 
 $$F_1 \land F_2 \land (\bigwedge_{i=0}^{m-1} V_{o_{b_i}} = 0) \land (\bigwedge_{i=m}^{k-1} V_{o_{b_i}} = X_{b_{i-m}})$$
-
-The local variables are $L=L_1\cup L_2$.
 
 ##### The general case
 
@@ -146,11 +130,9 @@ The encoding of right-shift considers two cases: the first handles the case when
 
 ##### The case when `sexp2` is a constant
 
-Let $(F_1,L_1)$ and $(F_2,L_2)$ be the formulas corresponding to $\mathtt{bitify}(T[\mathtt{sexp1}],k)$ and $\mathtt{bitify}(V_o,k)$. Let $X_{b_i}$ denote the $i$-th bit of $T[\mathtt{sexp1}]$, produced by the respective $\mathtt{bitify}$ call. Let the value of `sexp2` be $m$. The encoding $F$ is
+Let $F_1$ and $F_2$ be the formulas corresponding to $\mathtt{bitify}(T[\mathtt{sexp1}],k)$ and $\mathtt{bitify}(V_o,k)$. Let $X_{b_i}$ denote the $i$-th bit of $T[\mathtt{sexp1}]$, produced by the respective $\mathtt{bitify}$ call. Let the value of `sexp2` be $m$. The encoding $F$ is
 
 $$F_1 \land F_2 \land (\bigwedge_{i=0}^{k-m-1} V_{o_{b_i}} = X_{b_{i+m}}) \land (\bigwedge_{i=k-m}^{k-1} V_{o_{b_i}} = 0)$$
-
-The local variables are $L=L_1\cup L_2$.
 
 ##### The general case
 
@@ -168,15 +150,11 @@ The formula $F$ is as follows:
 
 $$V_o = \mathtt{ite}(T[\mathtt{sexp1}]=T[\mathtt{sexp2}],1,0) \wedge V_o \cdot (1-V_o)=0$$
 
-The set of local variables is $L=\emptyset$.
-
 #### `bool.neq sexp1 sexp2` (Inequality)
 
 The formula $F$ is as follows:
 
 $$V_o = \mathtt{ite}(T[\mathtt{sexp1}]=T[\mathtt{sexp2}],0,1) \wedge V_o \cdot (1-V_o)=0$$
-
-The set of local variables is $L=\emptyset$.
 
 #### `bool.and sexp1 sexp2` (Logical AND)
 
@@ -184,23 +162,17 @@ The formula $F$ is as follows:
 
 $$V_o = \mathtt{ite}(T[\mathtt{sexp1}]=0 \vee T[\mathtt{sexp2}]=0,0,1) \wedge V_o \cdot (1-V_o)=0$$
 
-The set of local variables is $L=\emptyset$.
-
 #### `bool.or sexp1 sexp2`(Logical OR)
 
 The formula $F$ is as follows:
 
 $$V_o = \mathtt{ite}(T[\mathtt{sexp1}]=0 \land T[\mathtt{sexp2}]=0,0,1) \wedge V_o \cdot (1-V_o)=0$$
 
-The set of local variables is $L=\emptyset$.
-
 #### `bool.not sexp` (Logical NOT)
 
 The formula $F$ is as follows:
 
 $$V_o = \mathtt{ite}(T[\mathtt{sexp}]=0,1,0) \wedge V_o \cdot (1-V_o)=0$$
-
-The set of local variables is $L=\emptyset$.
 
 #### `bool.lt sexp1 sexp2` (Signed less than)
 
@@ -228,8 +200,6 @@ where $F'$ is:
 
 - if $v \ge mid$, then $F'$ is $\mathtt{range}(T[\mathtt{sexp2}], v+1, p-1) \vee \mathtt{range}(T[\mathtt{sexp2}], 0, \mathit{mid}-1)$, because $v$ is negative, so $T[\mathtt{sexp2}]$ can be any positive of negative larger than $v$.
 
-The set of local variables is $L=\emptyset$.
-
 ##### The case when `sexp2` is a constant
 
 Let $v$ be the value of `sexp2`, so we want to encode the signed comparison $\mathtt{sexp1}<v$. The encoding is divided into several case, in all of them the formula $F$ is
@@ -246,11 +216,9 @@ where $F'$ is defined separately for each case:
 
 - if $0 < v < \mathit{mid}$, then $F'$ is $\mathtt{range}(T[\mathtt{sexp1}], 0, v-1) \vee \mathtt{range}(T[\mathtt{sexp1}], \mathit{mid}, p-1)$, because $v$ is positive so $T[\mathtt{sexp1}]$ can be negative or non-negative smaller than $v$.
 
-The set of local variables is $L=\emptyset$.
-
 ##### The general case
 
-We assume that both `sexp1` and `sexp2` are not constant values, so we want to encode the signed comparison $\mathtt{sexp1}<\mathtt{sexp2}$. Let $(F_1,L_1)$ and $(F_2,L_2)$ be the formulas corresponding to $\mathtt{bitify}(T[\mathtt{sexp1}],k)$ and $\mathtt{bitify}(T[\mathtt{sexp2}],k)$. Let $X_{b_i}$ denote the $i$-th bit of $T[\mathtt{sexp1}]$ and $Y_{b_i}$ the $i$-th bit of $T[\mathtt{sexp2}]$, produced by the respective $\mathtt{bitify}$ calls.
+We assume that both `sexp1` and `sexp2` are not constant values, so we want to encode the signed comparison $\mathtt{sexp1}<\mathtt{sexp2}$. Let $F_1$ and $F_2$ be the formulas corresponding to $\mathtt{bitify}(T[\mathtt{sexp1}],k)$ and $\mathtt{bitify}(T[\mathtt{sexp2}],k)$. Let $X_{b_i}$ denote the $i$-th bit of $T[\mathtt{sexp1}]$ and $Y_{b_i}$ the $i$-th bit of $T[\mathtt{sexp2}]$, produced by the respective $\mathtt{bitify}$ calls.
 
 The idea is to compare the bits from the most to the least significant, until we find $i$ such that $X_{b_i}=0 \land Y_{b_i}=1$, in which case the comparison is *true*, otherwise it is *false*. This can be done by defining $F$ as
 
@@ -260,8 +228,6 @@ where $G_i$ is recursively defined as:
 
 - $G_0 = 0$
 - $G_i = \mathtt{ite}(X_{b_i}=0 \land Y_{b_i}=1,1,G_{i-1})$
-
-The set of local variables is $L=L_1\cup L_2$.
 
 #### `bool.gt sexp1 sexp2` (Signed greater than)
 
@@ -273,15 +239,13 @@ It is computed as the negation of `bool.lt sexp2 sexp1`. Suppose $(F_1,L_1)$ is 
 
 $$F_1 \land V_o = 1-V_o' \land V_o\cdot(1-V_o)=0$$
 
-The set of local variables is $L=L_1\cup \{V_o'\}$.
-
 #### `bool.ge sexp1 sexp2` (Signed greater or equal)
 
 This is done by using the encoding of `bool.le sexp2 sexp1`.
 
 ## Encoding of commands
 
-Next we describe how commands and lists of commands are encoded. Any encoding of a command receives as input a command $C$ and a symbolic environment $T$, and produces $(T,F,T',L)$ where $F$ and $L$ are the corresponding formula and the local auxiliary variables, and $T'$ is a new symbolic environment that results from $T$ by modifying the values of some variables (due to the symbolic execution of $C$).
+Next we describe how commands and lists of commands are encoded. Any encoding of a command receives as input a command $C$ and a symbolic environment $T$, and produces $(T,F,T')$ where $F$ is the corresponding formula, and $T'$ is a new symbolic environment that results from $T$ by modifying the values of some variables (due to the symbolic execution of $C$).
 
 Executing a list of commands $[C_1,\ldots,C_n]$ is done recursively as follows:
 
@@ -292,7 +256,7 @@ The symbolic execution of a function $f$ is supposed to generate a macro that we
 
 $$\mathtt{f}(I,O,L) = F$$
 
-where $I$ and $O$ are a sequences of constraint variables obtained from the input and output parameters of function $f$, $L$ is a sequence of local variables used in the formula $F$ (these are not only the auxiliary ones generated when encoding expressions, but any variable used in $F$ that does not appear in $I$ and $O$). We will explain how this encoding is generated later, but for now we just need to explain it briefly since we will assume it when encoding function calls.
+where $I$ and $O$ are a sequences of constraint variables obtained from the input and output parameters of function $f$, $L$ is a sequence of local variables used in the formula $F$ (these are  all variables used in $F$ that do not appear in $I$ and $O$). We will explain how this encoding is generated later, but for now we just need to explain it briefly since we will assume it when encoding function calls.
 
 Next we describe the encodings of the different commands as they are defined in the [core-LLZK language](CORELLZK.md).
 
@@ -300,7 +264,7 @@ Next we describe the encodings of the different commands as they are defined in 
 
 The encoding of an assignment starts by trying to concretely evaluate `exp`, and if all variables used in `exp` have constant values in $T$, the evaluation succeeds and results in a value $v$. We then generate $T'=T[\mathit{id} \mapsto v]$, and the encoding is $(T,\mathit{true},T',\emptyset)$.
 
-If `exp` cannot be concretely evaluated, we symbolically evaluate `exp` using $T$ and a fresh output variable $V_o$ and obtain the encoding $(F,L)$. Then we generate $T'=T[\mathit{id} \mapsto V_o]$, and the encoding is $(T,F,T',L)$.
+If `exp` cannot be concretely evaluated, we symbolically evaluate `exp` using $T$ and a fresh output variable $V_o$ and obtain the encoding $F$. Then we generate $T'=T[\mathit{id} \mapsto V_o]$, and the encoding is $(T,F,T')$.
 
 ### Arrays
 
@@ -308,17 +272,17 @@ If `exp` cannot be concretely evaluated, we symbolically evaluate `exp` using $T
 
 Creating an array is done using the command `array.new sexp id`.
 
-To symbolically execute this command, we first evaluate `sexp` to a concrete value $n$ that represents the size of the array (the size of an array must be know during symbolic execution). Then we generate a new  symbolic array environment $T_{\mathit{id}}$ such that $T_{\mathit{id}}[i]=0$. and set $T'=T[id\mapsto T_{\mathit{id}}]$ The encoding is then $(T,\mathit{true},T',\emptyset)$.
+To symbolically execute this command, we first evaluate `sexp` to a concrete value $n$ that represents the size of the array (the size of an array must be known during symbolic execution). Then we generate a new symbolic array environment $T_{\mathit{id}}$ such that $T_{\mathit{id}}[i]=0$, and set $T'=T[id\mapsto T_{\mathit{id}}]$. The encoding is then $(T,\mathit{true},T',\emptyset)$.
 
 #### Accessing an array element
 
 Accessing an array element is done using the command `array.read id1[sexp] id2`, which retrieves the value at position `sexp` from array `id1`, and stores it in variable `id2`.
 
-To symbolically execute this command, we first let $T_{\mathit{id}}=T[\mathit{id1}]$ which the symbolic map of the array `id1`. Then we handle two cases separately, the first when the index $T[\mathit{id2}]$ is constant, and the other when it is not.
+To symbolically execute this command, we first let $T_{\mathit{id}}=T[\mathit{id1}]$, which is the symbolic map of the array `id1`. Then we handle two cases separately: the first when the index $T[\mathit{id2}]$ is constant, and the other when it is not.
 
 ##### The case of a constant index
 
-If $T[\mathit{id2}]$ evaluates to a constant index $v$, we generate $T'=T[\mathit{id2}\mapsto T_{\mathit{id1}}[v]]$, and the encoding is then $(T,\mathit{true},T',\emptyset)$.
+If $T[\mathit{id2}]$ evaluates to a constant index $v$, we generate $T'=T[\mathit{id2}\mapsto T_{\mathit{id1}}[v]]$, and the encoding is then $(T,\mathit{true},T')$.
 
 ##### The case of a non-constant index
 
@@ -329,19 +293,19 @@ Considering all possible values for the index can be done using $G_n$ where:
 - $G_0 = T_{\mathit{id1}}[0]$
 - $G_i = \mathtt{ite}(V_{id2}=i,T_{\mathit{id1}}[i],G_{i-1})$
 
-Note that it simulates and if-then-else to identify when index was accessed.
+Note that this simulates an if-then-else to identify which index was accessed.
 
-Next we generate a new variable $V_{id2}$ representing the new value of $\mathit{id2}$, generate the output symbolic environment $T'=T[\mathit{id2} \mapsto V_{\mathit{id2}}]$, and let the encoding be $(T,V_o = G_{n-1},T',\emptyset)$.
+Next we generate a new variable $V_{id2}$ representing the new value of $\mathit{id2}$, generate the output symbolic environment $T'=T[\mathit{id2} \mapsto V_{\mathit{id2}}]$, and let the encoding be $(T,V_o = G_{n-1},T')$.
 
 #### Updating an array element
 
 Updating an array element is done using the command `array.write sexp1 id[sexp2]`, which updates the value at position `sexp2` to the value of `sexp1`.
 
-To symbolically execute this command, we first let $T_{\mathit{id}}=T[\mathit{id}]$ which is the symbolic map of the array `id`. Then we handle two cases separately, the first when the index $T[\mathit{sexp2}]$ is constant, and the other when it is not.
+To symbolically execute this command, we first let $T_{\mathit{id}}=T[\mathit{id}]$, which is the symbolic map of the array `id`. Then we handle two cases separately: the first when the index $T[\mathit{sexp2}]$ is constant, and the other when it is not.
 
 ##### The case of a constant index
 
-If $T[\mathit{sexp2}]$ evaluates to a constant index $v$, we generate $T'_{\mathit{id}}=T_{\mathit{id}}[v\mapsto T[\mathit{sexp1}]]$, then $T'=T[\mathit{id}\mapsto T_{\mathit{id}}']$, and finally the encoding is $(T,\mathit{true},T',\emptyset)$.
+If $T[\mathit{sexp2}]$ evaluates to a constant index $v$, we generate $T'_{\mathit{id}}=T_{\mathit{id}}[v\mapsto T[\mathit{sexp1}]]$, then $T'=T[\mathit{id}\mapsto T_{\mathit{id}}']$, and finally the encoding is $(T,\mathit{true},T')$.
 
 ##### The case of a non-constant index
 
@@ -353,13 +317,19 @@ We denote by $U_i$ a formula that simulates an update to the $i$-th position of 
 
 $$V_{\mathit{id}_{i}} = T[\mathit{sexp1}] \land (\bigwedge_{j \neq i \in [0..n-1]} V_{\mathit{id}_{j}}= T_{\mathit{id}}[j]).$$
 
-Then to consider all possible cases we can use and if-then-else structure as in the following recursive definition:
+Then, to consider all possible cases, we can use an if-then-else structure as in the following recursive definition:
 
 - $G_0 = U_0$
 - $G_i = \mathtt{ite}(V_{\mathit{sexp2}}=i,U_i,G_{i-1})$
 
-The encoding is then $(T,G_{n-1},T',\emptyset)$.
+The encoding is then $(T,G_{n-1},T')$.
 
 #### Copying an array
 
-Copying an array from one variable to another is done using the command `array.copy id1 id2`. The encoding simply update the value of `id2` (in $T$) to that of `id1`. Let $T'=T[\mathit{id2} \mapsto T[\mathit{id1}]]$, then the encoding is $(T,\mathit{true},T',\emptyset)$.
+Copying an array from one variable to another is done using the command `array.copy id1 id2`. The encoding simply updates the value of `id2` (in $T$) to that of `id1`. Let $T'=T[\mathit{id2} \mapsto T[\mathit{id1}]]$, then the encoding is $(T,\mathit{true},T')$.
+
+### Conditionals
+
+A conditional statement is of the form `if sexp1==sexp2 { tb } else { te }`, where `tb` and `te` are sequences of commands. The encoding is done by combining the encodings of `tb` and `te`.
+
+Let $(T,F_1,T_1,L_1)$ and $(T,F_2,T_2,L_2)$ be the encodings of `tb` and `te` respectively. The encoding starts by creating a new environment $T'$ that merges $T_1$ and $T_2$ for the variables that are live immediately after the if-statement (liveness analysis is incorporated). For each such variable $x$: if $T_1[x]$ and $T_2[x]$ agree, then $T'[x]=T_1[x]$; otherwise we introduce a fresh variable $V_x$, add $V_x=T_1[x]$ to $F_1$ and $V_x=T_2[x]$ to $F_2$, and set $T'[x]=V_x$. Assuming that at the end of this process we obtain $T'$, $F_1'$, and $F_2'$, the encoding is $(T,\, F_1'\vee F_2',\, T')$.
