@@ -301,3 +301,65 @@ Next we describe the encodings of the different commands as they are defined in 
 The encoding of an assignment starts by trying to concretely evaluate `exp`, and if all variables used in `exp` have constant values in $T$, the evaluation succeeds and results in a value $v$. We then generate $T'=T[\mathit{id} \mapsto v]$, and the encoding is $(T,\mathit{true},T',\emptyset)$.
 
 If `exp` cannot be concretely evaluated, we symbolically evaluate `exp` using $T$ and a fresh output variable $V_o$ and obtain the encoding $(F,L)$. Then we generate $T'=T[\mathit{id} \mapsto V_o]$, and the encoding is $(T,F,T',L)$.
+
+### Arrays
+
+#### Creating a new array
+
+Creating an array is done using the command `array.new sexp id`.
+
+To symbolically execute this command, we first evaluate `sexp` to a concrete value $n$ that represents the size of the array (the size of an array must be know during symbolic execution). Then we generate a new  symbolic array environment $T_{\mathit{id}}$ such that $T_{\mathit{id}}[i]=0$. and set $T'=T[id\mapsto T_{\mathit{id}}]$ The encoding is then $(T,\mathit{true},T',\emptyset)$.
+
+#### Accessing an array element
+
+Accessing an array element is done using the command `array.read id1[sexp] id2`, which retrieves the value at position `sexp` from array `id1`, and stores it in variable `id2`.
+
+To symbolically execute this command, we first let $T_{\mathit{id}}=T[\mathit{id1}]$ which the symbolic map of the array `id1`. Then we handle two cases separately, the first when the index $T[\mathit{id2}]$ is constant, and the other when it is not.
+
+##### The case of a constant index
+
+If $T[\mathit{id2}]$ evaluates to a constant index $v$, we generate $T'=T[\mathit{id2}\mapsto T_{\mathit{id1}}[v]]$, and the encoding is then $(T,\mathit{true},T',\emptyset)$.
+
+##### The case of a non-constant index
+
+If $T[\mathit{id2}]$ evaluates to a variable $V_{id2}$, we have to consider all possible values for the index. We let $n$ be the size of the array, which is supposed to be known during symbolic execution (it is part of the environment $T[\mathit{id1}]$).
+
+Considering all possible values for the index can be done using $G_n$ where:
+
+- $G_0 = T_{\mathit{id1}}[0]$
+- $G_i = \mathtt{ite}(V_{id2}=i,T_{\mathit{id1}}[i],G_{i-1})$
+
+Note that it simulates and if-then-else to identify when index was accessed.
+
+Next we generate a new variable $V_{id2}$ representing the new value of $\mathit{id2}$, generate the output symbolic environment $T'=T[\mathit{id2} \mapsto V_{\mathit{id2}}]$, and let the encoding be $(T,V_o = G_{n-1},T',\emptyset)$.
+
+#### Updating an array element
+
+Updating an array element is done using the command `array.write sexp1 id[sexp2]`, which updates the value at position `sexp2` to the value of `sexp1`.
+
+To symbolically execute this command, we first let $T_{\mathit{id}}=T[\mathit{id}]$ which is the symbolic map of the array `id`. Then we handle two cases separately, the first when the index $T[\mathit{sexp2}]$ is constant, and the other when it is not.
+
+##### The case of a constant index
+
+If $T[\mathit{sexp2}]$ evaluates to a constant index $v$, we generate $T'_{\mathit{id}}=T_{\mathit{id}}[v\mapsto T[\mathit{sexp1}]]$, then $T'=T[\mathit{id}\mapsto T_{\mathit{id}}']$, and finally the encoding is $(T,\mathit{true},T',\emptyset)$.
+
+##### The case of a non-constant index
+
+If $T[\mathit{sexp2}]$ evaluates to a variable $V_{\mathit{sexp2}}$, we have to consider all values for the index. We let $n$ be the size of the array, which is supposed to be known during symbolic execution.
+
+Let $T_{\mathit{id}}$ be the array environment of variable `id`, i.e., the value of $T[\mathit{id}]$. We first generate new fresh variables for all positions of the array, to represent the values after the update. Let us name them $V_{\mathit{id}_0},\ldots,V_{\mathit{id}_{n-1}}$. Let $T'_{\mathit{id}}$ be a new array environment such that $T'_{\mathit{id}}[i]=V_{\mathit{id}_i}$.
+
+We denote by $U_i$ a formula that simulates an update to the $i$-th position of the array, i.e., assigns $T[\mathit{sexp1}]$ to $V_{\mathit{id}_{i}}$, and the rest of position keep their old values. This can be modeled as follows:
+
+$$V_{\mathit{id}_{i}} = T[\mathit{sexp1}] \land (\bigwedge_{j \neq i \in [0..n-1]} V_{\mathit{id}_{j}}= T_{\mathit{id}}[j]).$$
+
+Then to consider all possible cases we can use and if-then-else structure as in the following recursive definition:
+
+- $G_0 = U_0$
+- $G_i = \mathtt{ite}(V_{\mathit{sexp2}}=i,U_i,G_{i-1})$
+
+The encoding is then $(T,G_{n-1},T',\emptyset)$.
+
+#### Copying an array
+
+Copying an array from one variable to another is done using the command `array.copy id1 id2`. The encoding simply update the value of `id2` (in $T$) to that of `id1`. Let $T'=T[\mathit{id2} \mapsto T[\mathit{id1}]]$, then the encoding is $(T,\mathit{true},T',\emptyset)$.
