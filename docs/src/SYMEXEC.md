@@ -16,25 +16,25 @@ In what follows we will describe the encoding of the different instructions of t
 
 ## Assigning constraint variables to program variables
 
-The first thing we need to model is how to relate program variables to their corresponding constraint variables. For this we will use a mapping $T$ such that $T[x]$, where $x$ is a program variable, returns one of the following values:
+The first thing we need to model is how to relate program variables to their corresponding constraint variables. For this we will use a mapping $T$ (that we refer to an a *symbolic environment*) such that $T[x]$, where $x$ is a program variable, returns one of the following values:
 
 - A concrete finite-field value.
 - A constraints variable.
-- An array-mapping $T'$ such that $T'[i]$ represents the symbolic value of the $i$-th position of the array $x$ (the value can be either a concrete finite-field value or a constraints variable).
+- An symbolic environment $T'$ such that $T'[i]$ represents the symbolic value of the $i$-th position of the array $x$ (the value can be either a concrete finite-field value or a constraints variable, it cannot be array again).
 
 *Why we need the concrete finite-field value?*
 
  This is one of the powerful features of the translation, since it will execute the instructions when all variables have concrete values and thus avoid generating new constraint variables and corresponding formula. It also handles aliasing, i.e., if we have an instruction like `x = y`, then we will not generate a new variable for `x` and add a formula stating the equality, but rather will assign to `x` the current value of `y` and avoid generating a new formula.
 
-We will use the syntax $T' = T[x\mapsto X_i]$ for a symbolic variable mapping that is obtained from $T$ by setting $T[x]$ to $X_i$, replacing its current value if any.
+We will use the syntax $T' = T[x\mapsto X_i]$ for a symbolic environment that is obtained from $T$ by setting $T[x]$ to $X_i$, replacing its current value if any.
 
 For simplicity, when we have a simple expression `sexp`, which can be a variable or a value, then abusing notation we assume that $T[\mathit{sexp}]$ returns `sexp` itself when it is a finite-field value.
 
 ## Encoding of expressions
 
-Encoding of an expression, in the context of a symbolic variable map $T$, generates formula of the form $(F,L)$ where $F$ is the formula and $L$ is a set local constraint variables used in $F$. I.e., variables in $L$ do not come from $T$ but rather they are intermediate fresh variables that were generate during the encoding of the expression.
+Encoding of an expression, in the context of a symbolic environment $T$, generates formula of the form $(F,L)$ where $F$ is the formula and $L$ is a set local constraint variables used in $F$. I.e., variables in $L$ do not come from $T$ but rather they are intermediate fresh variables that were generate during the encoding of the expression.
 
-Encoding of expressions does not modify the symbolic variables map $T$, it simply uses the constraint variables of $T$ and binds the result to a given output variable $V_o$ (which is not part of $L$, it will be generated when encoding an assignment). Note that all variables that appear in an expression do not correspond to arrays, otherwise the program is ill-typed (array accesses are handled using dedicated instructions).
+Encoding of expressions does not modify the symbolic environment $T$, it simply uses the constraint variables of $T$ and binds the result to a given output variable $V_o$ (which is not part of $L$, it will be generated when encoding an assignment). Note that all variables that appear in an expression do not correspond to arrays, otherwise the program is ill-typed (array accesses are handled using dedicated instructions).
 
 Next we describe the encodings of the different expressions as they are defined in the [core-LLZK language](CORELLZK.md).
 
@@ -278,3 +278,26 @@ The set of local variables is $L=L_1\cup \{V_o'\}$.
 #### `bool.ge sexp1 sexp2` (Signed greater or equal)
 
 This is done by using the encoding of `bool.le sexp2 sexp1`.
+
+## Encoding of commands
+
+Next we describe how commands and lists of commands are encoded. Any encoding of a command receives as input a command $C$ and a symbolic environment $T$, and produces $(T,F,T',L)$ where $F$ and $L$ are the corresponding formula and the local auxiliary variables, and $T'$ is a new symbolic environment that results from $T$ by modifying the values of some variables (due to the symbolic execution of $C$).
+
+Executing a list of commands $[C_1,\ldots,C_n]$ is done recursively as follows:
+
+- The symbolic execution of an empty list generates $(T,\mathit{true},T',\emptyset)$
+- The symbolic execution of $[C_1,\ldots,C_n]$ is done in two steps. We first execute $C_1$ using $T$ and obtain $(T,F,T',L)$, then recursively execute  $[C_2,\ldots,C_n]$ using T' and obtain $(T',F',T'',L')$, and then the result is $(T,F\land F',T'',L\cup L')$.
+
+The symbolic execution of a function $f$ is supposed to generate a macro that we denote as
+
+$$\mathtt{f}(I,O,L) = F$$
+
+where $I$ and $O$ are a sequences of constraint variables obtained from the input and output parameters of function $f$, $L$ is a sequence of local variables used in the formula $F$ (these are not only the auxiliary ones generated when encoding expressions, but any variable used in $F$ that does not appear in $I$ and $O$). We will explain how this encoding is generated later, but for now we just need to explain it briefly since we will assume it when encoding function calls.
+
+Next we describe the encodings of the different commands as they are defined in the [core-LLZK language](CORELLZK.md).
+
+### Assignment
+
+The encoding of an assignment starts by trying to concretely evaluate `exp`, and if all variables used in `exp` have constant values in $T$, the evaluation succeeds and results in a value $v$. We then generate $T'=T[\mathit{id} \mapsto v]$, and the encoding is $(T,\mathit{true},T',\emptyset)$.
+
+If `exp` cannot be concretely evaluated, we symbolically evaluate `exp` using $T$ and a fresh output variable $V_o$ and obtain the encoding $(F,L)$. Then we generate $T'=T[\mathit{id} \mapsto V_o]$, and the encoding is $(T,F,T',L)$.
