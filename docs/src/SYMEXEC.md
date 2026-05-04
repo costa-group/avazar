@@ -22,7 +22,7 @@ The first thing we need to model is how to relate program variables to their cor
 - A constraint variable.
 - A symbolic (array) environment $T'$ such that $T'[i]$ represents the symbolic value of the $i$-th position of the array $x$ (the value can be either a concrete finite-field value or a constraint variable; it cannot be an array again).
 
-*Why we need the concrete finite-field value in the symbolic environment $T$?*
+_Why we need the concrete finite-field value in the symbolic environment_ $T$_?_
 
  This is needed in order to achieve one of the powerful features of the translation, which executes the instructions when all variables have concrete values and thus avoid generating new constraint variables and corresponding formulas. It also handles aliasing, i.e., if we have an instruction like `x = y`, then we will not generate a new variable for `x` and add a formula stating the equality, but rather will assign to `x` the current value of `y` and avoid generating a new formula.
 
@@ -216,7 +216,7 @@ where $F'$ is defined separately for each case:
 
 - if $v =_{\mathbb N} 0$, then $F'$ is $\mathtt{range}(T[\mathtt{sexp1}], \mathit{mid}, p-1)$, because $T[\mathtt{sexp1}]$ must be negative.
 
-- if $0 <_{\mathbb N} v <_{\mathbb N} \mathit{mid}$, then $F'$ is $\mathtt{range}(T[\mathtt{sexp1}], 0, v-1) \vee \mathtt{range}(T[\mathtt{sexp1}], \mathit{mid}, p-1)$, because $v$ is positive so $T[\mathtt{sexp1}]$ can be negative or non-negative smaller than $v$.
+- if $0 \lt_{\mathbb N} v \lt_{\mathbb N} \mathit{mid}$, then $F'$ is $\mathtt{range}(T[\mathtt{sexp1}], 0, v-1) \vee \mathtt{range}(T[\mathtt{sexp1}], \mathit{mid}, p-1)$, because $v$ is positive so $T[\mathtt{sexp1}]$ can be negative or non-negative smaller than $v$.
 
 ##### The general case
 
@@ -251,7 +251,7 @@ Next we describe how commands and lists of commands are encoded. Any encoding of
 
 Executing a list of commands $[C_1,\ldots,C_n]$ is done recursively as follows:
 
-- The symbolic execution of an empty list generates $(T,\mathit{true},T')$.
+- The symbolic execution of an empty list generates $(T,\mathit{true},T)$.
 - The symbolic execution of $[C_1,\ldots,C_n]$ is done in two steps. We first execute $C_1$ using $T$ and obtain $(T,F,T')$, then recursively execute $[C_2,\ldots,C_n]$ using $T'$ and obtain $(T',F',T'')$; the overall encoding is then $(T,F\land F',T'')$.
 
 The symbolic execution of a function $\mathtt{foo}$ is supposed to generate a macro that we denote as
@@ -284,7 +284,7 @@ To symbolically execute this command, we first let $T_{\mathit{id}}=T[\mathit{id
 
 ##### The case of a constant index
 
-If $T[\mathit{sexp}]$ evaluates to a constant index $v$, we generate $T'=T[\mathit{id2}\mapsto T_{\mathit{id1}}[v]]$, and the encoding is then $(T,\mathit{true},T')$.
+If $T[\mathit{sexp}]$ evaluates to a constant index $v$, we generate $T^\prime=T[\mathit{id2}\mapsto T\_{\mathit{id1}}[v]]$, and the encoding is then $(T,\mathit{true},T')$.
 
 ##### The case of a non-constant index
 
@@ -307,13 +307,13 @@ To symbolically execute this command, we first let $T_{\mathit{id}}=T[\mathit{id
 
 ##### The case of a constant index
 
-If $T[\mathit{sexp2}]$ evaluates to a constant index $v$, we generate $T'_{\mathit{id}}=T_{\mathit{id}}[v\mapsto T[\mathit{sexp1}]]$, then $T'=T[\mathit{id}\mapsto T_{\mathit{id}}']$, and finally the encoding is $(T,\mathit{true},T')$.
+If $T[\mathit{sexp2}]$ evaluates to a constant index $v$, we generate $T^\prime_{\mathit{id}}=T_{\mathit{id}}[v\mapsto T[\mathit{sexp1}]]$, then $T'=T[\mathit{id}\mapsto T_{\mathit{id}}']$, and finally the encoding is $(T,\mathit{true},T')$.
 
 ##### The case of a non-constant index
 
 If $T[\mathit{sexp2}]$ evaluates to a variable $V_{\mathit{sexp2}}$, we have to consider all values for the index. We let $n$ be the size of the array, which is supposed to be known during symbolic execution.
 
-We first generate new fresh variables for all positions of the array, to represent the values after the update. Let us name them $V_{\mathit{id}_0},\ldots,V_{\mathit{id}_{n-1}}$. Let $T'_{\mathit{id}}$ be a new array environment such that $T'_{\mathit{id}}[i]=V_{\mathit{id}_i}$ for all $i\in[0..n-1]$.
+We first generate new fresh variables for all positions of the array, to represent the values after the update. Let us name them $V\_{\mathit{id}\_0},\ldots,V\_{\mathit{id}\_{n-1}}$. Let $T^\prime\_{\mathit{id}}$ be a new array environment such that $T^\prime_{\mathit{id}}[i]=V_{\mathit{id}_i}$ for all $i\in[0..n-1]$.
 
 We denote by $U_i$ a formula that simulates an update to the $i$-th position of the array, i.e., assigns $T[\mathit{sexp1}]$ to $V_{\mathit{id}_{i}}$, and the rest of position keep their old values. This can be modeled as follows:
 
@@ -334,7 +334,7 @@ Copying an array from one variable to another is done using the command `array.c
 
 A conditional statement is of the form `if sexp1==sexp2 { tb } else { te }`, where `tb` and `te` are sequences of commands. The encoding is done by combining the encodings of `tb` and `te`.
 
-Let $(T,F_1,T_1)$ and $(T,F_2,T_2)$ be the encodings of `tb` and `te` respectively. The encoding starts by creating a new environment $T'$ that merges $T_1$ and $T_2$ for the variables that are live immediately after the if-statement (we infer live variables using liveness analysis). For each such live variable $x$: if $T_1[x]$ and $T_2[x]$ agree, then $T'[x]=T_1[x]$; otherwise we introduce a fresh variable $V_x$, add $V_x=T_1[x]$ to $F_1$ and $V_x=T_2[x]$ to $F_2$, and set $T'[x]=V_x$. Assuming that at the end of this process we obtain $T'$, $F_1'$, and $F_2'$, the encoding is $(T,\, F_1'\vee F_2',\, T')$.
+Let $(T,F_1,T_1)$ and $(T,F_2,T_2)$ be the encodings of `tb` and `te` respectively. The encoding starts by creating a new environment $T'$ that merges $T_1$ and $T_2$ for the variables that are live immediately after the if-statement (we infer live variables using liveness analysis). For each such live variable $x$: if $T_1[x]$ and $T_2[x]$ agree, then $T'[x]=T_1[x]$; otherwise we introduce a fresh variable $V_x$, add $V_x=T_1[x]$ to $F_1$ and $V_x=T_2[x]$ to $F_2$, and set $T'[x]=V_x$. Assuming that at the end of this process we obtain $T'$, $F_1'$, and $F_2'$, the encoding is $(T, F_1'\vee F_2',\, T')$.
 
 As an important optimization, if the condition `sexp1==sexp2` can be concretely evaluated to $v$, i.e., all used variables have concrete values, then we can use the encoding of `tb` or `eb` depending on $v$.
 
@@ -344,7 +344,7 @@ A bounded loop is of the form `repeat sexp { body }`, and executes `body` for `s
 
 Assume that $T[\mathit{sexp}]=n$, i.e., the loop is executed $n$ times. The encoding of the loop is computed using the following recursive definition of $G_i$, which represents the execution of the loop for $i$ iterations:
 
-- $G_0$ is simply $(T,\mathit{true},T')$ since nothing is executed.
+- $G_0$ is simply $(T,\mathit{true},T)$ since nothing is executed.
 - For $G_i$, we first compute the encoding of `body` starting from $T$, which results in $(T,F,T')$; then we compute $G_{i-1}$ with respect to $T'$, which results in $(T',F',T'')$; and the value of $G_i$ is $(T,F\land F',T'')$.
 
 The encoding of the loop is then defined as the result of $G_n$.
@@ -359,15 +359,15 @@ where $I$ is a sequence of constraint variables corresponding to the formal inpu
 
 The function call is encoded as call to the above macro according to the following steps:
 
-- We generate the actual input variables $I_{\mathit{call}}$ by concatenating the values of $T[\mathit{sexp1}],\ldots,T[\mathit{sexpn}]$. If any $T[\mathit{sexp}_i]$ is an array, then all its elements are inserted into $I_{\mathit{call}}$.
+- We generate the actual input variables $I_{\mathit{call}}$ by concatenating the values of $T[\mathit{sexp1}],\ldots,T[\mathit{sexpn}]$. If any $T[\mathit{sexp}\_i]$ is an array, then all its elements are inserted into $I_{\mathit{call}}$.
 
 - We generate $T'$ from $T$ by inserting a fresh variable for each output variable `idi`. For an output variable that is of array type, it is assigned an array of fresh variables.
 
-- We generate the actual output variables $O_{\mathit{call}}$ by concatenating the values of $T'[\mathit{id1}],\ldots,T'[\mathit{idm}]$. If any $T'[\mathit{id}_i]$ is an array, then all its elements are inserted into $O_{\mathit{call}}$.
+- We generate the actual output variables $O_{\mathit{call}}$ by concatenating the values of $T'[\mathit{id1}],\ldots,T'[\mathit{idm}]$. If any $T'[\mathit{id}\_i]$ is an array, then all its elements are inserted into $O_{\mathit{call}}$.
 
 - We generate a sequence of fresh variables $L_{\mathit{call}}$ of the same length as $L$ (these are, in principle, existential variables).
 
-The encoding of the call is then $(T,\,\mathtt{foo}(I_{\mathit{call}},O_{\mathit{call}},L_{\mathit{call}}),\,T')$. Note that we keep it as a call to a macro, which is important when translating the formulas into SMT2 format to allow modular verification.
+The encoding of the call is then $(T,\mathtt{foo}(I_{\mathit{call}},O_{\mathit{call}},L_{\mathit{call}}),\,T')$. Note that we keep it as a call to a macro, which is important when translating the formulas into SMT2 format to allow modular verification.
 
 ## Encoding of functions
 
