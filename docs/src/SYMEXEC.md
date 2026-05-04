@@ -333,3 +333,34 @@ Copying an array from one variable to another is done using the command `array.c
 A conditional statement is of the form `if sexp1==sexp2 { tb } else { te }`, where `tb` and `te` are sequences of commands. The encoding is done by combining the encodings of `tb` and `te`.
 
 Let $(T,F_1,T_1,L_1)$ and $(T,F_2,T_2,L_2)$ be the encodings of `tb` and `te` respectively. The encoding starts by creating a new environment $T'$ that merges $T_1$ and $T_2$ for the variables that are live immediately after the if-statement (liveness analysis is incorporated). For each such variable $x$: if $T_1[x]$ and $T_2[x]$ agree, then $T'[x]=T_1[x]$; otherwise we introduce a fresh variable $V_x$, add $V_x=T_1[x]$ to $F_1$ and $V_x=T_2[x]$ to $F_2$, and set $T'[x]=V_x$. Assuming that at the end of this process we obtain $T'$, $F_1'$, and $F_2'$, the encoding is $(T,\, F_1'\vee F_2',\, T')$.
+
+### Bounded Loops
+
+A bounded loop is of the form `repeat sexp { body }`, and executes `body` for `sexp` iterations. Note that the value of `sexp` must be known statically.
+
+Assume that $T[\mathit{sexp}]=n$, i.e., the loop is executed $n$ times. The encoding of the loop is computed using the following recursive definition of $G_i$, which represents the execution of the loop for $i$ iterations:
+
+- $G_0$ is simply $(T,\mathit{true},T')$ since nothing is executed.
+- For $G_i$, we first compute the encoding of `body` starting from $T$, which results in $(T,F,T')$; then we compute $G_{i-1}$ with respect to $T'$, which results in $(T',F',T'')$; and the value of $G_i$ is $(T,F\land F',T'')$.
+
+The encoding of the loop is then defined as the result of $G_n$.
+
+### Function Calls
+
+A function call is of the form `call id(sexp1, ..., sexpn) to id1,...,idm`, where `sexp1, ..., sexpn` are the input parameters and `id1,...,idm` are the output parameters. Recall that we have assumed that a function is translated into a macro of the form
+
+  $$\mathtt{f}(I,O,L) = F$$
+
+where $I$ is a sequence of constraint variables corresponding to the formal input parameters of $\mathtt{f}$, $O$ is a sequence of constraint variables corresponding to the formal output parameters of $\mathtt{f}$, and $L$ is a sequence of auxiliary variables (those used in $F$ that are not in $I$ or $O$).
+
+The function call is translated into a call to the above macro according to the following steps:
+
+- We generate the actual input variables $I_{\mathit{call}}$ by concatenating the values of $T[\mathit{sexp1}],\ldots,T[\mathit{sexpn}]$. If any $T[\mathit{sexp}_i]$ is an array, then all its elements are inserted into $I_{\mathit{call}}$.
+
+- We generate $T'$ from $T$ by inserting a fresh variable for each output variable `idi`. For an output variable that is of array type, it is assigned an array of fresh variables.
+
+- We generate the actual output variables $O_{\mathit{call}}$ by concatenating the values of $T'[\mathit{id1}],\ldots,T'[\mathit{idm}]$. If any $T'[\mathit{id}_j]$ is an array, then all its elements are inserted into $O_{\mathit{call}}$.
+
+- We generate a sequence of fresh variables $L_{\mathit{call}}$ of the same length as $L$ (these are, in principle, existential variables).
+
+The encoding of the call is then $(T,\,\mathtt{f}(I_{\mathit{call}},O_{\mathit{call}},L_{\mathit{call}}),\,T')$. Note that we keep it as a call to a macro, which is important when translating the formulas into SMT2 format to allow modular verification.
