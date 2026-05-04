@@ -1,4 +1,7 @@
 [book]
 title = "AVAZAR Project"
-authors = ["alexcere"]
+authors = ["alexcere","genaim","miguelis","alrubio","clararod9","emartinm"]
 language = "en"
+
+[output.html]
+mathjax-support = true
