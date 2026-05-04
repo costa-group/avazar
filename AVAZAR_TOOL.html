@@ -30,8 +30,6 @@
 
         <!-- Custom theme stylesheets -->
 
-        <!-- MathJax -->
-        <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
     </head>
     <body class="sidebar-visible no-js">
     <div id="body-container">
@@ -175,7 +173,8 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="avazar-tool"><a class="header" href="#avazar-tool">avazar Tool</a></h1>
+                        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
+<h1 id="avazar-tool"><a class="header" href="#avazar-tool">avazar Tool</a></h1>
 <p>This document explains the <code>avazar</code> command-line tool, what it does, and the arguments it accepts.</p>
 <h2 id="what-the-tool-does"><a class="header" href="#what-the-tool-does">What the tool does</a></h2>
 <p><code>avazar</code> is a general modular verifier for ZK circuits. It reads an R1CS constraint system, optionally a pre-computed decomposition structure, and verifies the circuit node by node using an SMT solver according to the selected mode. It reports which nodes are verified, failed, or unknown.</p>
