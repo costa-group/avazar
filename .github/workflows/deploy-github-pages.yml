@@ -18,14 +18,14 @@ jobs:
 
       - name: Install mdBook
         run: |
-          curl -L https://github.com/rust-lang/mdBook/releases/download/v0.4.36/mdbook-v0.4.36-x86_64-unknown-linux-gnu.tar.gz | tar xz
+          # curl -L https://github.com/rust-lang/mdBook/releases/download/v0.4.36/mdbook-v0.4.36-x86_64-unknown-linux-gnu.tar.gz | tar xz
+          curl -L https://github.com/rust-lang/mdBook/releases/download/v0.5.1/mdbook-v0.5.1-x86_64-unknown-linux-gnu.tar.gz | tar xz
           sudo mv mdbook /usr/local/bin/
 
       - name: Install katex plugins
         uses: taiki-e/install-action@v2
         with:
           tool: mdbook-katex
-
 
       - name: Build Site
         run: mdbook build docs
