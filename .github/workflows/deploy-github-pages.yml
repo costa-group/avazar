@@ -16,10 +16,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install mdbook and plugins
+      - name: Install mdBook
+        run: |
+          curl -L https://github.com/rust-lang/mdBook/releases/download/v0.4.36/mdbook-v0.4.36-x86_64-unknown-linux-gnu.tar.gz | tar xz
+          sudo mv mdbook /usr/local/bin/
+
+      - name: Install katex plugins
         uses: taiki-e/install-action@v2
         with:
-          tool: mdbook,mdbook-katex
+          tool: mdbook-katex
+
 
       - name: Build Site
         run: mdbook build docs
