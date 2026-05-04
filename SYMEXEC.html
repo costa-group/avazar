@@ -3,8 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>AVAZAR Project</title>
-        <meta name="robots" content="noindex">
+        <title>Symbolic Execution of Core-LLZK Programs - AVAZAR Project</title>
 
 
         <!-- Custom HTML head -->
@@ -89,7 +88,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="CORELLZK.html"><strong aria-hidden="true">1.</strong> Core Language</a></li><li class="chapter-item expanded "><a href="SYMEXEC.html"><strong aria-hidden="true">2.</strong> Symbolic Execution of Core-LLZK Programs</a></li><li class="chapter-item expanded "><a href="CLUSTERING.html"><strong aria-hidden="true">3.</strong> Clustering Tool</a></li><li class="chapter-item expanded "><a href="AVAZAR_TOOL.html"><strong aria-hidden="true">4.</strong> Avazar Tool</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="CORELLZK.html"><strong aria-hidden="true">1.</strong> Core Language</a></li><li class="chapter-item expanded "><a href="SYMEXEC.html" class="active"><strong aria-hidden="true">2.</strong> Symbolic Execution of Core-LLZK Programs</a></li><li class="chapter-item expanded "><a href="CLUSTERING.html"><strong aria-hidden="true">3.</strong> Clustering Tool</a></li><li class="chapter-item expanded "><a href="AVAZAR_TOOL.html"><strong aria-hidden="true">4.</strong> Avazar Tool</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -174,253 +173,7 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="core-llzk-specification"><a class="header" href="#core-llzk-specification">Core LLZK Specification</a></h1>
-<p>The purpose of Core LLZK is to provide a language simple enough to
-allow a clean formalization of transforming witness generators to SMT
-formulas, yet rich enough to model LLZK programs.</p>
-<h2 id="scope-and-restrictions"><a class="header" href="#scope-and-restrictions">Scope and Restrictions</a></h2>
-<p>To ensure feasible formalization, LLZK programs must adhere to the
-following restrictions:</p>
-<ul>
-<li>
-<p><strong>Static Array Sizes:</strong> The size of an array cannot depend on input
-values.</p>
-</li>
-<li>
-<p><strong>Type Consistency:</strong> A variable accessed at a specific program
-point must always have the same type, regardless of the control flow
-path taken to reach that point. This ensures, for example, that if
-we access <code>y[i]</code>, the dimensions of <code>y</code> is known statically.</p>
-</li>
-<li>
-<p><strong>No Recursion:</strong> Recursion is forbidden. This is enforced by
-requiring a total order on function definitions (a function may only
-call functions defined prior to itself).</p>
-</li>
-<li>
-<p><strong>Unrolled Loops:</strong> The language does not support dynamic loops. It
-supports <a href="CORELLZK.html#bounded-loops">bounded loops</a>, which are intended to be
-unrolled during processing.</p>
-</li>
-</ul>
-<h2 id="informal-definition"><a class="header" href="#informal-definition">Informal Definition</a></h2>
-<p>We assume a prime number <code>P</code> and an architecture width of <code>k</code> bits,
-such that <code>P &lt; 2^k</code>.  For any number <code>x</code>, its <strong>FF-value</strong> (Finite
-Field value) is an integer in the range <code>[0, P-1]</code>, calculated as <code>x mod P</code>. We first give the grammar, and then explain each part
-separately.</p>
-<pre><code class="language-text">// numbers
-N := a natural number
-Z := an integer (will be interpreted as a finite field value)
-
-// identifiers: sequence of _,a-z,A-Z,0-9,%,@,# or . (dot) that 
-// does not start with # or a digit
-id  := [_,a-z,A-Z,%,@,.] [_,a-z,A-Z,0-9,%,@,#,.]* 
-
-// zero or more id separated by comma
-ids := (id (&quot;,&quot; id)*)?
-
-// simple expression
-sexp := id | Z
-
-// zero or more simple expressions separated by comma
-sexps := (sexp (&quot;,&quot; sexp)*)?
-
-// finite field operations
-felt_bin_op := &quot;felt.add&quot; | &quot;felt.sub&quot; | &quot;felt.mul&quot; | &quot;felt.div&quot;
-felt_unary_op := &quot;felt.neg&quot;
-
-// bitwise operations
-bit_bin_op := &quot;bit.shl&quot; | &quot;bit.shr&quot; | &quot;bit.and&quot; | &quot;bit.or&quot; | &quot;bit.xor&quot;
-bit_unary_op := bit.not
-
-// boolean operations -- use 0/1 for false and true
-bool_bin_op := &quot;bool.eq&quot; | &quot;bool.neq&quot; | &quot;bool.lt&quot; | &quot;bool.gt&quot; | &quot;bool.le&quot; | &quot;bool.ge&quot; | &quot;bool.and&quot; | &quot;bool.or&quot;
-bool_unary_op := &quot;bool.not&quot;
-
-// binary, unary and no-operand operations
-bin_op := felt_bin_op | bit_bin_op | bool_bin_op
-unary_op := felt_unary_op | bit_unary_op | bool_unary_op
-
-// expressions
-exp := bin_op sexp sexp | unary_op sexp | sexp
-
-// assignment
-assignment := id &quot;=&quot; exp
-
-// if statement
-if  := &quot;if&quot; &quot;(&quot; sexp &quot;==&quot; sexp &quot;)&quot; &quot;{&quot; cmd* &quot;}&quot; [else &quot;{&quot; cmd* &quot;}&quot;]
-
-// bounded loops
-for := &quot;repeat&quot; sexpr &quot;{&quot; cmd* &quot;}&quot;
-
-// array operations
-narray := &quot;array.new&quot; sexp id
-rarray := &quot;array.read&quot; id &quot;[&quot; sexp &quot;]&quot; id
-warray := &quot;array.write&quot; sexp id &quot;[&quot; sexp &quot;]&quot;
-carray := &quot;array.copy&quot; id id
-
-// function call
-fcall  := &quot;call&quot; id &quot;(&quot; sexps &quot;)&quot; [&quot;to&quot; ids]
-
-// command
-cmd := assignment | if | for | wconst | narray | rarray | warray | carray | fcall
-
-// types
-type := ff | arr&lt;N&gt;
-
-// parameter
-param := id &quot;:&quot; type
-
-// zero or more parameters separated by comma
-params := (param (&quot;,&quot; param)*)?
-
-// function definition
-function := &quot;func&quot; id &quot;(&quot; params &quot;)&quot; [&quot;-&gt;&quot; params] &quot;{&quot; cmd* &quot;}&quot;
-
-// program
-prog := func*
-</code></pre>
-<h3 id="types"><a class="header" href="#types">Types</a></h3>
-<p>There are two primary types:</p>
-<ol>
-<li><code>ff</code>: A scalar variable over the finite field.</li>
-<li><code>arr&lt;N&gt;</code>: An array of <code>N</code> finite field elements (<code>N</code> is a constant).</li>
-</ol>
-<p>Types must be declared for function input and output parameters. Local
-variable types are inferred dynamically upon assignment and checked
-upon usage.</p>
-<blockquote>
-<p>[!NOTE]</p>
-<p>Machine integers and booleans are simulated using the <code>ff</code> type.</p>
-</blockquote>
-<h3 id="structure"><a class="header" href="#structure">Structure</a></h3>
-<p>A program consists of a set of functions. One function is designated
-as <code>%main</code>, serving as the entry point for generating the SMT formula.</p>
-<h4 id="functions"><a class="header" href="#functions">Functions</a></h4>
-<p>A function definition follows this syntax:</p>
-<pre><code class="language-text">def id(id1:t, ...,idn:t) -&gt; id1:t, ..., idk:t {
-  body
-}
-</code></pre>
-<ul>
-<li><strong>Parameters:</strong> Formal and return parameters
-follow the format <code>%name:type</code>.</li>
-<li><strong>Uniqueness:</strong> All parameter names are distinct. All return names
-are distinct.</li>
-<li><strong>Body:</strong> <code>body</code> is a sequence of commands.</li>
-</ul>
-<h4 id="expressions"><a class="header" href="#expressions">Expressions</a></h4>
-<p>In what follow we explain the supported expressions by category.</p>
-<h5 id="arithmetic"><a class="header" href="#arithmetic">Arithmetic</a></h5>
-<p>Semantics correspond to standard operations in the finite field .</p>
-<ol>
-<li><code>sexp</code> (Identity)</li>
-<li><code>felt.neg sexp</code> (Negation)</li>
-<li><code>felt.add sexp1 sexp2</code> (Addition)</li>
-<li><code>felt.sub sexp1 sexp2</code> (Subtraction)</li>
-<li><code>felt.mul sexp1 sexp2</code> (Multiplication)</li>
-<li><code>felt.div sexp1 sexp2</code> (Multiplication by modular inverse)</li>
-</ol>
-<h5 id="bitwise"><a class="header" href="#bitwise">Bitwise</a></h5>
-<p>Semantics: The operands <code>sexpi</code> are converted to <code>k</code>-bit vectors
-(standard unsigned integer representation), the operation is applied,
-and the result is converted back to a finite field element (modulo
-<code>P</code>).</p>
-<ol>
-<li><code>bit.shl sexp1 sexp2</code> (Left shift)</li>
-<li><code>bit.shr sexp1 sexp2</code> (Right shift)</li>
-<li><code>bit.and sexp1 sexp2</code> (Bitwise AND)</li>
-<li><code>bit.or sexp1 sexp2</code> (Bitwise OR)</li>
-<li><code>bit.xor sexp1 sexp2</code> (Bitwise XOR)</li>
-<li><code>bit.not sexp1</code> (Bitwise NOT)</li>
-</ol>
-<blockquote>
-<p>[!NOTE]</p>
-<p>How conversion from bit-vectors to finite field should be done?
-Calculate the corresponding non-negative integer <code>x</code> and then
-compute <code>x mod P</code>?</p>
-</blockquote>
-<h5 id="boolean"><a class="header" href="#boolean">Boolean</a></h5>
-<p>Comparisons interpret field elements as signed integers. The
-order is defined as <code>mid, ..., P-1, 0, ..., mid-1</code>, where
-<code>mid = P/2+1</code>.</p>
-<blockquote>
-<p>[!NOTE]</p>
-<p>The semantics on the right is not an encoding to SMT, it is just to
-write it a bit formally.</p>
-</blockquote>
-<ol>
-<li><code>bool.eq sexp1 sexp2</code>: Equality. <code>(sexp1=sexp2 -&gt; result=1) and (~(sexp1=sexp2) -&gt; result=0)</code>.</li>
-<li><code>bool.neq sexp1 sexp2</code>: Inequality. <code>(sexp1=sexp2 -&gt; result=0) and (~(sexp1=sexp2) -&gt; result=1)</code>.</li>
-<li><code>bool.gt sexp1 sexp2</code>: Signed greater than. <code>sexp1&gt;sexp2 -&gt; result=1) and (~(sexp1&gt;sexp2) -&gt; result=0)</code>.</li>
-<li><code>bool.lt sexp1 sexp2</code>: Signed less than. <code>(sexp1&lt;sexp2 -&gt; result=1) and (~(sexp1&lt;sexp2) -&gt; result=0)</code>.</li>
-<li><code>bool.ge sexp1 sexp2</code>: Signed greater or equal. <code>(sexp1&gt;=sexp2 -&gt; result=1) and (~(sexp1&gt;=sexp2) -&gt; result=0)</code>.</li>
-<li><code>bool.le sexp1 sexp2</code>: Signed less or equal. <code>(sexp1&lt;=sexp2 -&gt; result=1) and (~(sexp1&lt;=sexp2) -&gt; result=0)</code>.</li>
-<li><code>bool.not sexp</code>: Logical NOT. <code>(sexp=0 -&gt; result=1) and (~(sexp=0) -&gt; result=0)</code>.</li>
-<li><code>bool.or sexp1 sexp2</code>: Logical OR. <code>((sexp1=0 and sexp2=0) -&gt; result=0) and ((~(sexp1=0) or ~(sexp2=0)) -&gt; result=1)</code>.</li>
-<li><code>bool.and sexp1 sexp2</code>: Logical AND. <code>(~(sexp1=0) and ~(sexp2=0)) -&gt; result=1) and (((sexp1=0) or (sexp2=0)) -&gt; result=0)</code>.</li>
-</ol>
-<h4 id="commands"><a class="header" href="#commands">Commands</a></h4>
-<p>Next we describe the possible commands supported in the language.</p>
-<h5 id="assignment"><a class="header" href="#assignment">Assignment</a></h5>
-<pre><code class="language-text">id = exp
-</code></pre>
-<p>Assigns the result of <code>exp</code> to <code>id</code>.</p>
-<h5 id="arrays"><a class="header" href="#arrays">Arrays</a></h5>
-<ol>
-<li><code>array.new sexp id</code>: Allocates an array of <code>sexp</code> elements (type
-<code>ff</code>), and stores it in variable <code>id</code>. <code>sexp</code> must be a constant simple expression.</li>
-<li><code>array.read id1[sexp] id2</code>: Reads the array <code>id1</code> at index <code>sexp</code> into variable <code>id2</code>.</li>
-<li><code>array.write sexp1 id[sexp2]</code>: Updates array <code>id</code> at index <code>exp2</code> with value of<code>sexp1</code>.</li>
-<li><code>array.copy id1 id2</code>: Copies array <code>id1</code> into <code>id2</code>. The previous value
-of <code>id2</code> is overwritten. <code>id1</code> must be an array.</li>
-</ol>
-<blockquote>
-<p>[!IMPORTANT]</p>
-<p>The size of an array must be computable at symbolic
-execution time, i.e., does not depend on input parameters.</p>
-</blockquote>
-<blockquote>
-<p>[!IMPORTANT]</p>
-<p>Efficient translation of array access/update <code>id[sexp]</code> to SMT formulas
-is only possible if the index <code>sexp</code> is computable at symbolic execution
-time.</p>
-</blockquote>
-<h5 id="conditionals"><a class="header" href="#conditionals">Conditionals</a></h5>
-<p><code>if sexp1==sexp2 { body } else { body }</code></p>
-<p>The <code>else</code> part is optional.</p>
-<blockquote>
-<p>[!NOTE]</p>
-<p>Types of all live variables at exit of both branches must coincide.</p>
-</blockquote>
-<h5 id="bounded-loops"><a class="header" href="#bounded-loops">Bounded Loops</a></h5>
-<pre><code class="language-text">repeat sexp  { body }
-</code></pre>
-<p>Repeats <code>body</code> for <code>sexp</code> times. There is no loop counter, should be
-taken care of independently (i.e., initializing a variable before the
-loop and increment it inside <code>body</code>).</p>
-<blockquote>
-<p>[!IMPORTANT]</p>
-<p>'sexp' must be computable at symbolic execution time, i.e., does
-not depend on input parameters, otherwise we cannot unfold the loop.</p>
-</blockquote>
-<p><strong>Semantics:</strong></p>
-<ol>
-<li>Evaluate <code>sexp</code> to a value <code>N</code>.</li>
-<li>Repeat <code>body</code> for <code>N</code> times.</li>
-</ol>
-<h5 id="function-calls"><a class="header" href="#function-calls">Function Calls</a></h5>
-<pre><code class="language-text">call id(sexp1, ..., sexpn) to id1,...,idk
-</code></pre>
-<p>Executes function with name <code>id</code>. The return values (which
-may include arrays) are assigned to <code>id1, ..., idk</code>. The <code>to</code>
-keyword is optional if the functions does not return values.</p>
-<h3 id="ssa-support"><a class="header" href="#ssa-support">SSA Support</a></h3>
-<p>The language does not natively support Static Single Assignment
-(SSA). It is structured code. However, the translator can simulate SSA
-by inserting phi-functions at control flow merge points (e.g., after
-<code>if/else</code> blocks).</p>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="symbolic-execution-of-core-llzk-programs"><a class="header" href="#symbolic-execution-of-core-llzk-programs">Symbolic Execution of Core-LLZK Programs</a></h1>
+                        <h1 id="symbolic-execution-of-core-llzk-programs"><a class="header" href="#symbolic-execution-of-core-llzk-programs">Symbolic Execution of Core-LLZK Programs</a></h1>
 <p>The goal of symbolic execution of core-LLZK is to generate an SMT2 formula that faithfully represents the big-step semantics of the witness program (also referred to simply as the witness or the program). This formula can then be used, for example, to prove that the witness and the corresponding circuit are equivalent — that is, that they compute the same function.</p>
 <p>To illustrate the idea, consider a program that consists of two instructions: <code>y = felt.mul y x</code> followed by <code>z = felt.add y z</code>. Assuming that <code>x</code>, <code>y</code> and <code>z</code> are represented by constraint variables $X_0$, $Y_0$, and $Z_0$, the first instruction is encoded as $Y_1 = Y_0  \cdot X_0$, where $Y_1$ is a fresh variable representing the updated value of <code>y</code>. The second instruction is then encoded as $Z_1 = Y_1 + Z_0$. The formula that represents the program is then</p>
 <p>$$Y_1 = Y_0  \cdot X_0 \land Z_1 = Y_1 + Z_0$$</p>
@@ -445,7 +198,7 @@ by inserting phi-functions at control flow merge points (e.g., after
 <p>Encoding of an expression, in the context of a symbolic environment $T$, generates a formula $F$ that encodes the result of evaluating the expression.</p>
 <p>Encoding of expressions does not modify the symbolic environment $T$, it simply uses the constraint variables of $T$ and binds the result to a given output variable $V_o$. Note that all variables that appear in an expression do not correspond to arrays, otherwise the program is ill-typed (array accesses are handled using dedicated instructions).</p>
 <p>Next we describe the encodings of the different expressions as they are defined in the <a href="CORELLZK.html">core-LLZK language</a>.</p>
-<h3 id="arithmetic-1"><a class="header" href="#arithmetic-1">Arithmetic</a></h3>
+<h3 id="arithmetic"><a class="header" href="#arithmetic">Arithmetic</a></h3>
 <h4 id="sexp-identity"><a class="header" href="#sexp-identity"><code>sexp</code> (Identity)</a></h4>
 <p>The encoding is the formula $V_o = T[\mathtt{sexp}]$</p>
 <h4 id="feltneg-sexp-negation"><a class="header" href="#feltneg-sexp-negation"><code>felt.neg sexp</code> (Negation)</a></h4>
@@ -458,7 +211,7 @@ by inserting phi-functions at control flow merge points (e.g., after
 <p>The encoding is the formula $V_o = T[\mathtt{sexp1}] \cdot T[\mathtt{sexp2}]$</p>
 <h4 id="feltdiv-sexp1-sexp2-multiplication-by-modular-inverse"><a class="header" href="#feltdiv-sexp1-sexp2-multiplication-by-modular-inverse"><code>felt.div sexp1 sexp2</code> (Multiplication by modular inverse)</a></h4>
 <p>The encoding is the formula $V_o \cdot T[\mathtt{sexp2}] = T[\mathtt{sexp1}]$</p>
-<h3 id="bitwise-1"><a class="header" href="#bitwise-1">Bitwise</a></h3>
+<h3 id="bitwise"><a class="header" href="#bitwise">Bitwise</a></h3>
 <p>Encoding of bitwise operations heavily relies on the binary expansion of a given constraint variable $X$ (it also works when $X$ is a finite-field value). This operation is denoted by $\mathtt{bitify}(X,n)$, i.e., the binary expansion of $X$ using $n$ bits. We assume that it generates a formula that is a conjunction of the following constraints:</p>
 <ol>
 <li>$X = \sum_{i=0}^{n-1} 2^i \cdot X_{b_i}$, where $X_{b_0},\ldots,X_{b_{n-1}}$ are fresh finite-field variables representing the bits of $X$.</li>
@@ -499,7 +252,7 @@ $T[\mathtt{sexp2}]$ is 1.</p>
 <p>$$F_1 \land F_2 \land (\bigwedge_{i=0}^{k-m-1} V_{o_{b_i}} = X_{b_{i+m}}) \land (\bigwedge_{i=k-m}^{k-1} V_{o_{b_i}} = 0)$$</p>
 <h5 id="the-general-case-1"><a class="header" href="#the-general-case-1">The general case</a></h5>
 <p>It is based on the same idea as the general case of <code>bit.shl</code>.</p>
-<h3 id="boolean-1"><a class="header" href="#boolean-1">Boolean</a></h3>
+<h3 id="boolean"><a class="header" href="#boolean">Boolean</a></h3>
 <p>We will rely on formulas of the form $\mathtt{ite}(F,V_1,V_2)$, interpreted as: if $F$ holds then $V_1$ otherwise $V_2$. Note that when $F$ is a bit variable this can be expressed arithmetically as $F \cdot V_1 + (1-F) \cdot V_2$, however, keeping the $\mathtt{ite}$ form may provide important explicit information during the verification process (the one that uses the encoding of the witness program).</p>
 <p>Note that Boolean values are simulated using finite-field values, where $0$ represents <em>false</em> and any other value is <em>true</em>.</p>
 <h4 id="booleq-sexp1-sexp2-equality"><a class="header" href="#booleq-sexp1-sexp2-equality"><code>bool.eq sexp1 sexp2</code> (Equality)</a></h4>
@@ -585,10 +338,10 @@ $T[\mathtt{sexp2}]$ is 1.</p>
 <p>$$\mathtt{foo}(I,O,L) = F$$</p>
 <p>where $I$ and $O$ are sequences of constraint variables obtained from the input and output parameters of function $\mathtt{foo}$, and $L$ is a sequence of local variables used in the formula $F$ (i.e., all variables used in $F$ that do not appear in $I$ or $O$). We will explain how this encoding is generated later, but for now a brief description suffices since we will rely on it when encoding function calls.</p>
 <p>Next we describe the encodings of the different commands as they are defined in the <a href="CORELLZK.html">core-LLZK language</a>.</p>
-<h3 id="assignment-1"><a class="header" href="#assignment-1">Assignment</a></h3>
+<h3 id="assignment"><a class="header" href="#assignment">Assignment</a></h3>
 <p>The encoding of an assignment <code>id = exp</code> starts by trying to concretely evaluate <code>exp</code>, and if all variables used in <code>exp</code> have constant values in $T$, the evaluation succeeds and results in a value $v$. We then generate $T'=T[\mathit{id} \mapsto v]$, and the encoding is $(T,\mathit{true},T')$.</p>
 <p>If <code>exp</code> cannot be concretely evaluated, we symbolically evaluate <code>exp</code> using $T$ and a fresh output variable $V_o$ and obtain the encoding $F$. Then we generate $T'=T[\mathit{id} \mapsto V_o]$, and the encoding is $(T,F,T')$.</p>
-<h3 id="arrays-1"><a class="header" href="#arrays-1">Arrays</a></h3>
+<h3 id="arrays"><a class="header" href="#arrays">Arrays</a></h3>
 <h4 id="creating-a-new-array"><a class="header" href="#creating-a-new-array">Creating a new array</a></h4>
 <p>Creating an array is done using the command <code>array.new sexp id</code>.</p>
 <p>To symbolically execute this command, we first evaluate <code>sexp</code> to a concrete value $n$ that represents the size of the array (the size of an array must be known during symbolic execution). Then we generate a new symbolic array environment $T_{\mathit{id}}$ such that $T_{\mathit{id}}[i]=0$ for all $i\in[0..n]$, and set $T'=T[id\mapsto T_{\mathit{id}}]$. The encoding is then $(T,\mathit{true},T')$.</p>
@@ -624,11 +377,11 @@ $T[\mathtt{sexp2}]$ is 1.</p>
 <p>The encoding is then $(T,G_n,T')$.</p>
 <h4 id="copying-an-array"><a class="header" href="#copying-an-array">Copying an array</a></h4>
 <p>Copying an array from one variable to another is done using the command <code>array.copy id1 id2</code>. The encoding simply updates the value of <code>id2</code> (in $T$) to that of <code>id1</code>. Let $T'=T[\mathit{id2} \mapsto T[\mathit{id1}]]$, then the encoding is $(T,\mathit{true},T')$.</p>
-<h3 id="conditionals-1"><a class="header" href="#conditionals-1">Conditionals</a></h3>
+<h3 id="conditionals"><a class="header" href="#conditionals">Conditionals</a></h3>
 <p>A conditional statement is of the form <code>if sexp1==sexp2 { tb } else { te }</code>, where <code>tb</code> and <code>te</code> are sequences of commands. The encoding is done by combining the encodings of <code>tb</code> and <code>te</code>.</p>
 <p>Let $(T,F_1,T_1)$ and $(T,F_2,T_2)$ be the encodings of <code>tb</code> and <code>te</code> respectively. The encoding starts by creating a new environment $T'$ that merges $T_1$ and $T_2$ for the variables that are live immediately after the if-statement (we infer live variables using liveness analysis). For each such live variable $x$: if $T_1[x]$ and $T_2[x]$ agree, then $T'[x]=T_1[x]$; otherwise we introduce a fresh variable $V_x$, add $V_x=T_1[x]$ to $F_1$ and $V_x=T_2[x]$ to $F_2$, and set $T'[x]=V_x$. Assuming that at the end of this process we obtain $T'$, $F_1'$, and $F_2'$, the encoding is $(T, F_1'\vee F_2',, T')$.</p>
 <p>As an important optimization, if the condition <code>sexp1==sexp2</code> can be concretely evaluated to $v$, i.e., all used variables have concrete values, then we can use the encoding of <code>tb</code> or <code>eb</code> depending on $v$.</p>
-<h3 id="bounded-loops-1"><a class="header" href="#bounded-loops-1">Bounded Loops</a></h3>
+<h3 id="bounded-loops"><a class="header" href="#bounded-loops">Bounded Loops</a></h3>
 <p>A bounded loop is of the form <code>repeat sexp { body }</code>, and executes <code>body</code> for <code>sexp</code> iterations. Note that the value of <code>sexp</code> must be known statically.</p>
 <p>Assume that $T[\mathit{sexp}]=n$, i.e., the loop is executed $n$ times. The encoding of the loop is computed using the following recursive definition of $G_i$, which represents the execution of the loop for $i$ iterations:</p>
 <ul>
@@ -636,7 +389,7 @@ $T[\mathtt{sexp2}]$ is 1.</p>
 <li>For $G_i$, we first compute the encoding of <code>body</code> starting from $T$, which results in $(T,F,T')$; then we compute $G_{i-1}$ with respect to $T'$, which results in $(T',F',T'')$; and the value of $G_i$ is $(T,F\land F',T'')$.</li>
 </ul>
 <p>The encoding of the loop is then defined as the result of $G_n$.</p>
-<h3 id="function-calls-1"><a class="header" href="#function-calls-1">Function Calls</a></h3>
+<h3 id="function-calls"><a class="header" href="#function-calls">Function Calls</a></h3>
 <p>A function call is of the form <code>call foo(sexp1, ..., sexpn) to id1,...,idm</code>, where <code>sexp1, ..., sexpn</code> are the input parameters and <code>id1,...,idm</code> are the output parameters. Recall that we have assumed that a function is encoded as a macro of the form</p>
 <p>$$\mathtt{foo}(I,O,L) = F$$</p>
 <p>where $I$ is a sequence of constraint variables corresponding to the formal input parameters of $\mathtt{foo}$, $O$ is a sequence of constraint variables corresponding to the formal output parameters of $\mathtt{foo}$, and $L$ is a sequence of auxiliary variables (those used in $F$ that are not in $I$ or $O$).</p>
@@ -693,262 +446,18 @@ $T[\mathtt{sexp2}]$ is 1.</p>
 <p>and is useful for debugging. Full usage information can be obtained with:</p>
 <pre><code class="language-text">.lake/build/bin/llzk_cli --help
 </code></pre>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="the-clustering-tool"><a class="header" href="#the-clustering-tool">The Clustering Tool</a></h1>
-<p>This document explains the <code>clustering</code> command-line tool, what it does, and the arguments it accepts.</p>
-<h2 id="what-the-tool-does"><a class="header" href="#what-the-tool-does">What the tool does</a></h2>
-<p>The <code>clustering</code> binary reads an input circuit file (<code>.r1cs</code>), runs decomposition/clustering logic, and writes a JSON output file with the clustered structure.</p>
-<h2 id="output-json-format"><a class="header" href="#output-json-format">Output JSON format</a></h2>
-<p>The output has three main parts:</p>
-<ul>
-<li><code>timing</code>: performance metrics for each processing stage.</li>
-<li><code>nodes</code>: the circuit decomposed into DAG nodes (subcircuits).</li>
-<li><code>equivalency_local</code> and <code>equivalency_structural</code>: optional partitions of node IDs into equivalence classes.</li>
-</ul>
-<p>Think of <code>nodes</code> as &quot;what the decomposition produced&quot; and <code>equivalency</code> fields as &quot;which produced nodes are considered similar under a specific notion of similarity&quot;.</p>
-<h3 id="1-timing"><a class="header" href="#1-timing">1) <code>timing</code></a></h3>
-<p><code>timing</code> reports duration (in seconds) for each high-level stage:</p>
-<h3 id="2-nodes"><a class="header" href="#2-nodes">2) <code>nodes</code></a></h3>
-<p><code>nodes</code> is the core structural output. Each entry represents one DAG node (a grouped subcircuit).</p>
-<p>Node fields:</p>
-<ul>
-<li>
-<p><code>node_id</code> (<code>usize</code>): Identifier for the node inside this output.</p>
-</li>
-<li>
-<p><code>constraints</code> (<code>usize[]</code>): IDs of original constraints contained in this node.</p>
-</li>
-<li>
-<p><code>input_signals</code> (<code>usize[]</code>): Signal IDs consumed by the node from outside that node.</p>
-</li>
-<li>
-<p><code>output_signals</code> (<code>usize[]</code>): Signal IDs produced by the node for downstream use.</p>
-</li>
-<li>
-<p><code>signals</code> (<code>usize[]</code>): Signal IDs associated with the node (internal and boundary).</p>
-</li>
-<li>
-<p><code>is_custom</code> (<code>bool</code>): Marker for custom/special node type in the decomposition pipeline.</p>
-</li>
-<li>
-<p><code>successors</code> (<code>usize[]</code>): IDs of nodes that depend on this node's outputs.</p>
-</li>
-<li>
-<p><code>predecessors</code> (<code>usize[]</code>): IDs of nodes this node's inputs depends on.</p>
-</li>
-</ul>
-<h3 id="3-equivalence-fields-and-notions"><a class="header" href="#3-equivalence-fields-and-notions">3) Equivalence fields and notions</a></h3>
-<p>Both equivalence fields encode a partition of node IDs into classes.</p>
-<ul>
-<li>Data shape: <code>Vec&lt;Vec&lt;usize&gt;&gt;</code></li>
-<li>Each inner vector is one equivalence class.</li>
-<li>Node IDs inside one class are equivalent under that mode's criterion.</li>
-</ul>
-<p>Example:</p>
-<ul>
-<li><code>[[0, 4], [1], [2, 3]]</code> means:
-<ul>
-<li>Nodes <code>0</code> and <code>4</code> are equivalent.</li>
-<li>Node <code>1</code> has no partner (singleton class).</li>
-<li>Nodes <code>2</code> and <code>3</code> are equivalent.</li>
-</ul>
-</li>
-</ul>
-<h4 id="local-equivalence-equivalency_local"><a class="header" href="#local-equivalence-equivalency_local">Local equivalence (<code>equivalency_local</code>)</a></h4>
-<p>Subcircuits in the same equivalence class are equivalent up to renaming, scaling, shuffling.</p>
-<h4 id="structural-equivalence-equivalency_structural"><a class="header" href="#structural-equivalence-equivalency_structural">Structural equivalence (<code>equivalency_structural</code>)</a></h4>
-<p>Subcircuits in the same equivalence class are locally equivalent as previous, and there exists an automorphism of the circuit hierarchy that preserves local equivalence and maps one to the other.</p>
-<h2 id="basic-usage"><a class="header" href="#basic-usage">Basic usage</a></h2>
-<pre><code class="language-bash">clustering [OPTIONS] &lt;FILEPATH&gt;
-</code></pre>
-<p>An example of use case is:</p>
-<pre><code class="language-bash">./clustering file_name.r1cs -e total -x 50 -o .
-</code></pre>
-<h2 id="arguments-and-options"><a class="header" href="#arguments-and-options">Arguments and options</a></h2>
-<h3 id="required-argument"><a class="header" href="#required-argument">Required argument</a></h3>
-<ul>
-<li><code>FILEPATH</code>
-<ul>
-<li>Type: <code>String</code></li>
-<li>Description: input circuit file path.</li>
-</ul>
-</li>
-</ul>
-<h3 id="optional-flags"><a class="header" href="#optional-flags">Optional flags</a></h3>
-<ul>
-<li>
-<p><code>-o &lt;OUT_DIRECTORY&gt;</code></p>
-<ul>
-<li>Type: <code>String</code></li>
-<li>Default: <code>.</code></li>
-<li>Description: output directory where the resulting JSON file is written.</li>
-</ul>
-</li>
-<li>
-<p><code>-x, --target-size &lt;TARGET_SIZE&gt;</code></p>
-<ul>
-<li>Type: <code>f64</code></li>
-<li>Description: target cluster size for modularity-based clustering.</li>
-</ul>
-</li>
-<li>
-<p><code>-e, --equivalence &lt;EQUIVALENCE_MODE&gt;</code></p>
-<ul>
-<li>Type: enum</li>
-<li>Default: <code>structural</code></li>
-<li>Accepted values:
-<ul>
-<li><code>total</code>: to compute both structural and local equivalence.</li>
-<li><code>structural</code>: to compute structural equivalence.</li>
-<li><code>local</code>: to compute local equivalence</li>
-<li><code>none</code>: to diactivate the computation of any kind of equivalence.</li>
-</ul>
-</li>
-</ul>
-</li>
-</ul>
-<h3 id="built-in-clap-flags"><a class="header" href="#built-in-clap-flags">Built-in Clap flags</a></h3>
-<ul>
-<li><code>-h, --help</code>: print help.</li>
-<li><code>-V, --version</code>: print version.</li>
-</ul>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="avazar-tool"><a class="header" href="#avazar-tool">avazar Tool</a></h1>
-<p>This document explains the <code>avazar</code> command-line tool, what it does, and the arguments it accepts.</p>
-<h2 id="what-the-tool-does-1"><a class="header" href="#what-the-tool-does-1">What the tool does</a></h2>
-<p><code>avazar</code> is a general modular verifier for ZK circuits. It reads an R1CS constraint system, optionally a pre-computed decomposition structure, and verifies the circuit node by node using an SMT solver according to the selected mode. It reports which nodes are verified, failed, or unknown.</p>
-<h2 id="basic-usage-1"><a class="header" href="#basic-usage-1">Basic usage</a></h2>
-<pre><code class="language-bash">avazar [OPTIONS] &lt;INPUT&gt;
-</code></pre>
-<p>An example:</p>
-<pre><code class="language-bash">avazar ./circuit.r1cs --solver civer --equivalence structural --clustering_size 200
-</code></pre>
-<h2 id="modes"><a class="header" href="#modes">Modes</a></h2>
-<p>The tool has three operating modes:</p>
-<ul>
-<li>
-<p><code>determinism</code> (default)</p>
-<ul>
-<li>If no mode flag is provided, the tool runs in determinism mode by default. It checks if the inputs are fixed, the outputs are unique. </li>
-</ul>
-</li>
-<li>
-<p><code>--check_correctness &lt;correctness.json&gt;</code> </p>
-<ul>
-<li>Activates correctness-checking mode.</li>
-<li>Verifies whether the input R1CS file is consistent with the given SMT-LIB (<code>.smt2</code>) formula. The <code>correctness.json</code> file must contain several fields:
-<ul>
-<li><code>input_signals</code> and <code>output_signals</code>, two lists of signals which must match the input/output structure of the R1CS file.</li>
-<li><code>signals</code>, listing the auxiliar variables that appear in the SMT formula.</li>
-<li><code>constraints</code>, specifying the SMT formula to be checked.</li>
-</ul>
-</li>
-</ul>
-</li>
-<li>
-<p><code>--check_equivalence &lt;another_file.r1cs&gt;</code></p>
-<ul>
-<li>Activates equivalence check mode.</li>
-<li>Checks equivalence between the input and the given R1CS files. Both files must have the same input/output structure. Otherwise, they cannot be equivalent.</li>
-</ul>
-</li>
-</ul>
-<h2 id="arguments-and-options-1"><a class="header" href="#arguments-and-options-1">Arguments and options</a></h2>
-<h3 id="required-argument-1"><a class="header" href="#required-argument-1">Required argument</a></h3>
-<ul>
-<li><code>INPUT</code>
-<ul>
-<li>Type: path (<code>String</code>)</li>
-<li>Default: <code>./circuit.circom</code></li>
-<li>Description: path to the R1CS constraint system to be verified.</li>
-</ul>
-</li>
-</ul>
-<h3 id="optional-flags-1"><a class="header" href="#optional-flags-1">Optional flags</a></h3>
-<ul>
-<li>
-<p><code>--input_structure &lt;PATH&gt;</code></p>
-<ul>
-<li>Type: path</li>
-<li>Description: path to a pre-computed decomposition structure JSON (as produced by the <code>clustering</code> tool). If not given, avazar clusters the circuit internally using <code>--clustering_size</code>.</li>
-</ul>
-</li>
-<li>
-<p><code>--original_structure &lt;PATH&gt;</code></p>
-<ul>
-<li>Type: path</li>
-<li>Description: original structural metadata of the circuit (E.g., in circom, template-level component info). Used to produce more meaningful error messages. Optional.</li>
-</ul>
-</li>
-<li>
-<p><code>--timeout &lt;MILLISECONDS&gt;</code></p>
-<ul>
-<li>Type: <code>u64</code></li>
-<li>Default: <code>5000</code></li>
-<li>Description: timeout in milliseconds for each call to the underlying solver.</li>
-</ul>
-</li>
-<li>
-<p><code>--solver &lt;SOLVER&gt;</code></p>
-<ul>
-<li>Type: string</li>
-<li>Default: <code>civer</code></li>
-<li>Accepted values: <code>civer</code>, <code>ffsol</code>, <code>cvc5</code>, <code>z3</code></li>
-<li>Description: </li>
-</ul>
-</li>
-<li>
-<p><code>--equivalence &lt;MODE&gt;</code></p>
-<ul>
-<li>Type: string</li>
-<li>Default: <code>structural</code></li>
-<li>Accepted values: <code>none</code>, <code>local</code>, <code>structural</code></li>
-<li>See <a href="AVAZAR_TOOL.html#equivalence-modes">Equivalence modes</a> below.</li>
-</ul>
-</li>
-<li>
-<p><code>-p, --prime &lt;N&gt;</code></p>
-<ul>
-<li>Type: <code>BigInt</code></li>
-<li>Default: <code>21888242871839275222246405745257275088548364400416034343698204186575808495617</code> (BN254 scalar field prime)</li>
-<li>Description: prime field modulus used during verification.</li>
-</ul>
-</li>
-<li>
-<p><code>-c, --clustering_size &lt;N&gt;</code></p>
-<ul>
-<li>Type: <code>usize</code></li>
-<li>Default: <code>200</code></li>
-<li>Description: maximum size of nodes considered for internal re-clustering. Nodes larger than this threshold are split further. Set to <code>0</code> to disable internal clustering entirely.</li>
-</ul>
-</li>
-<li>
-<p><code>-t, --target_size &lt;N&gt;</code></p>
-<ul>
-<li>Type: <code>usize</code></li>
-<li>Default: <code>0</code></li>
-<li>Description: target size for nodes in the internal clustering. Set to <code>0</code> to disable (default). Takes effect only when <code>--input_structure</code> is not provided.</li>
-</ul>
-</li>
-</ul>
-<h2 id="equivalence-modes"><a class="header" href="#equivalence-modes">Equivalence modes</a></h2>
-<p>avazar avoids redundant solver calls by exploiting equivalence between DAG nodes:</p>
-<ul>
-<li>
-<p><strong><code>none</code></strong>: every node is sent to the solver independently, regardless of similarity.</p>
-</li>
-<li>
-<p><strong><code>local</code></strong>: nodes grouped by local equivalence (same local fingerprint/signature) share a result. If one representative in the class is verified, the others are assumed verified too.</p>
-</li>
-<li>
-<p><strong><code>structural</code></strong>: like <code>local</code>, but uses stricter structural equivalence that also accounts for the node's context in the DAG. Two nodes must agree in both content and structural position to be grouped. Consequently, two nodes can be local equivalent, but no structural equivalent.</p>
-</li>
-</ul>
-<p>The equivalence classes come either from the optional <code>--input_structure</code> file or are computed internally if that file is not provided.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="CORELLZK.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
 
+                            <a rel="next prefetch" href="CLUSTERING.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
 
                         <div style="clear: both"></div>
                     </nav>
@@ -956,7 +465,13 @@ $T[\mathtt{sexp2}]$ is 1.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="CORELLZK.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
 
+                    <a rel="next prefetch" href="CLUSTERING.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
             </nav>
 
         </div>
@@ -979,11 +494,6 @@ $T[\mathtt{sexp2}]$ is 1.</p>
 
         <!-- Custom JS scripts -->
 
-        <script>
-        window.addEventListener('load', function() {
-            window.setTimeout(window.print, 100);
-        });
-        </script>
 
     </div>
     </body>
