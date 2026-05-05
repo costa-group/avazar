@@ -46,7 +46,7 @@ To translate an LLZK IR file to CORE language, run:
 
 ```bash
 python3 src/llzk2core.py -s SOURCE_FILE [-o TARGET_FILE]
-
+```
 where:
 * SOURCE_FILE: The path to the .llzk source file you want to translate.
 * TARGET_FILE: The name of the output file. If not specified, the output is stored in SOURCE_FILE.core.
