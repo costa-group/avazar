@@ -2,6 +2,17 @@
 
 It contains a translator that goes from [**LLZK**](https://project-llzk.github.io/llzk-lib/main/), an intermediate representation for Zero-Knowledge circuit languages, to [**CORE LLZK**](https://costa-group.github.io/avazar/#core-llzk-specification) representation.
 
+## Usage
+
+To translate an LLZK IR file to CORE language, run:
+
+```bash
+python3 src/llzk2core.py -s SOURCE_FILE [-o TARGET_FILE]
+```
+where:
+* SOURCE_FILE: The path to the .llzk source file you want to translate.
+* TARGET_FILE: The name of the output file. If not specified, the output is stored in SOURCE_FILE.core.
+
 ## Overview
 
 The translator operates as a modular pipeline that processes multiple dialects (inspired by MLIR). It handles everything from basic field arithmetic and data structures to high-level structured control flow (loops, conditionals) and polymorphic templates for ZK circuits.
@@ -39,14 +50,3 @@ The codebase is organized into modular components that separate parsing logic, d
 
 * **Python 3.8+**
 * **No external dependencies:** This project only uses the Python Standard Library (e.g.: `re`, `abc`, `typing`, `argparse`).
-
-## Usage
-
-To translate an LLZK IR file to CORE language, run:
-
-```bash
-python3 src/llzk2core.py -s SOURCE_FILE [-o TARGET_FILE]
-```
-where:
-* SOURCE_FILE: The path to the .llzk source file you want to translate.
-* TARGET_FILE: The name of the output file. If not specified, the output is stored in SOURCE_FILE.core.
