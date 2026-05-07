@@ -1,0 +1,51 @@
+(set-info :smt-lib-version 2.6)
+(set-logic QF_FFA 21888242871839275222246405745257275088548364400416034343698204186575808495617)
+(declare-fun a_0 () Int)
+(declare-fun a_1 () Int)
+(declare-fun b_0 () Int)
+(declare-fun b_1 () Int)
+(declare-fun cout_0 () Int)
+(declare-fun cout_1 () Int)
+(declare-fun c_chunks_0 () Int)
+(declare-fun c_chunks_1 () Int)
+(declare-fun c_chunks_2 () Int)
+(declare-fun c_chunks_3 () Int)
+(declare-fun cout_0p () Int)
+(declare-fun cout_1p () Int)
+(declare-fun c_chunks_0p () Int)
+(declare-fun c_chunks_1p () Int)
+(declare-fun c_chunks_2p () Int)
+(declare-fun c_chunks_3p () Int)
+
+(assert (= 0 (* cout_0 (- cout_0 1))))
+(assert (= 0 (- (+ a_0 b_0) (+ (* cout_0 4294967296) (* c_chunks_1 65536) c_chunks_0))))
+(assert (ff.range c_chunks_0 0 65535))
+(assert (ff.range c_chunks_1 0 65535))
+
+(assert (= 0 (* cout_0p (- cout_0p 1))))
+(assert (= 0 (- (+ a_0 b_0) (+ (* cout_0p 4294967296) (* c_chunks_1p 65536) c_chunks_0p))))
+(assert (ff.range c_chunks_0p 0 65535))
+(assert (ff.range c_chunks_1p 0 65535))
+
+(assert (= 0 (* cout_1 (- cout_1 1))))
+(assert (= 0 (- (+ a_1 b_1 cout_0) (+ (* cout_1 4294967296) (* c_chunks_3 65536) c_chunks_2))))
+(assert (ff.range c_chunks_2 0 65535))
+(assert (ff.range c_chunks_3 0 65535))
+
+(assert (= 0 (* cout_1p (- cout_1p 1))))
+(assert (= 0 (- (+ a_1 b_1 cout_0p) (+ (* cout_1p 4294967296) (* c_chunks_3p 65536) c_chunks_2p))))
+(assert (ff.range c_chunks_2p 0 65535))
+(assert (ff.range c_chunks_3p 0 65535))
+
+
+(assert (or 
+  (not (= cout_0 cout_0p))
+  (not (= cout_1 cout_1p))  
+  (not (= c_chunks_0 c_chunks_0p)) 
+  (not (= c_chunks_1 c_chunks_1p))
+  (not (= c_chunks_2 c_chunks_2p))
+  (not (= c_chunks_3 c_chunks_3p))
+))
+
+(check-sat)
+
