@@ -84,7 +84,7 @@ class ArrayNew(Operation):
         if len(self.elements) > 0:
             raise NotImplementedError("array.new not implemented with initial elements")
         dim = array_felt_first_dimension(self.result_type.name)
-        yield f"array.new {self._result} {dim}"
+        yield f"array.new {dim} {self._result}"
 
     def __repr__(self):
         elem_str = f" : ({', '.join(repr(e) for e in self.elements)})" if self.elements else ""
