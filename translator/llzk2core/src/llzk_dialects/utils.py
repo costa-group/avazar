@@ -5,6 +5,28 @@ import re
 from typing import List, Tuple, Optional
 
 
+def split_top_level_commas(s: str) -> List[str]:
+    """Split s on commas that are not nested inside <>, [], or ()."""
+    depth = 0
+    parts: List[str] = []
+    current: List[str] = []
+    for ch in s:
+        if ch in '<[(':
+            depth += 1
+            current.append(ch)
+        elif ch in '>])':
+            depth -= 1
+            current.append(ch)
+        elif ch == ',' and depth == 0:
+            parts.append(''.join(current))
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        parts.append(''.join(current))
+    return parts
+
+
 def array_felt_first_dimension(type_: str) -> Optional[int]:
     """
     Method that recognizes 2D array expressions of felt and
