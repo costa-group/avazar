@@ -254,7 +254,7 @@ class FunctionDef(BlockOperation):
         if self._in_args is None:
             arg_inside_parentheses = self.signature.split("->")[0].strip()
             # Skip the ()
-            args_with_types = arg_inside_parentheses[1:-1].split(', ')
+            args_with_types = [arg for arg in arg_inside_parentheses[1:-1].split(', ') if arg != ""]
             _in_args = []
             for arg in args_with_types:
                 split_args = arg.split(":")
