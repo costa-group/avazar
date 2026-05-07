@@ -7,5 +7,8 @@ The AVAZAR (Automated Verification Tools for zkEVM Arithmetization) project aims
 
 All this integrated in a general open source automated tool called AVAZAR.
 
+## SMT solver submodule link
+https://mygitlab.cs.upc.edu/polynomial-equations/poly-eqs.git
+
 ## Documentation
 https://costa-group.github.io/avazar/
