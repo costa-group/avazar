@@ -53,6 +53,27 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
         if const is not None:
             ctx.var2const[lhs.name] = const
 
+    # Assign pod vars
+    elif rhs.name in ctx.ssa2pod_var:
+        pod_vars = ctx.ssa2pod_var[rhs.name]
+        new_pod_vars = {}
+        assignments = []
+        for record, (initial_value, type_) in pod_vars.items():
+
+            # Add a new assignment
+            assignments.append(translate_assignment_core_with_ctx(
+                SSAVar.parse(f"{lhs.name}_{record}"),
+                SSAVar.parse(initial_value),
+                type_,
+                ctx,
+            ))
+
+            new_pod_vars[record] = (f"{lhs.name}_{record}", type_)
+
+        ctx.ssa2pod_var[lhs.name] = new_pod_vars
+
+        return '\n'.join(assignments)
+
     return translate_assignment_core(lhs.to_core(), rhs.to_core(), is_ff)
 
 
