@@ -1,0 +1,303 @@
+def @MultiMux2_0(%arg0: arr<4>, %arg1: arr<2>) -> @out: ff {
+  %felt_const_1 = 1
+  %felt_const_1_0 = 1
+  %0 = %felt_const_1_0
+  array.read %arg1[%0] %1
+  %felt_const_0 = 0
+  %2 = %felt_const_0
+  array.read %arg1[%2] %3
+  %4 = felt.mul %1 %3
+  @s10 = %4
+  %felt_const_3 = 3
+  %5 = %felt_const_3
+  array.read %arg0[%5] %6
+  %felt_const_2 = 2
+  %7 = %felt_const_2
+  array.read %arg0[%7] %8
+  %9 = felt.sub %6 %8
+  %felt_const_1_1 = 1
+  %10 = %felt_const_1_1
+  array.read %arg0[%10] %11
+  %12 = felt.sub %9 %11
+  %felt_const_0_2 = 0
+  %13 = %felt_const_0_2
+  array.read %arg0[%13] %14
+  %15 = felt.add %12 %14
+  %16 = felt.mul %15 %4
+  @a10 = %16
+  %felt_const_2_3 = 2
+  %17 = %felt_const_2_3
+  array.read %arg0[%17] %18
+  %felt_const_0_4 = 0
+  %19 = %felt_const_0_4
+  array.read %arg0[%19] %20
+  %21 = felt.sub %18 %20
+  %felt_const_1_5 = 1
+  %22 = %felt_const_1_5
+  array.read %arg1[%22] %23
+  %24 = felt.mul %21 %23
+  @a1 = %24
+  %felt_const_1_6 = 1
+  %25 = %felt_const_1_6
+  array.read %arg0[%25] %26
+  %felt_const_0_7 = 0
+  %27 = %felt_const_0_7
+  array.read %arg0[%27] %28
+  %29 = felt.sub %26 %28
+  %felt_const_0_8 = 0
+  %30 = %felt_const_0_8
+  array.read %arg1[%30] %31
+  %32 = felt.mul %29 %31
+  @a0 = %32
+  %felt_const_0_9 = 0
+  %33 = %felt_const_0_9
+  array.read %arg0[%33] %34
+  @a = %34
+  %35 = felt.add %16 %24
+  %36 = felt.add %35 %32
+  %37 = felt.add %36 %34
+  @out = %37
+}
+def @Mux2_1(%arg0: arr<4>, %arg1: arr<2>) -> @out: ff {
+  %c6 = 6
+  %pod_@count = %c6
+  array.new 4 %pod_0_@c
+  array.new 2 %pod_0_@s
+  %felt_const_0 = 0
+  %felt_const_0_1 = 0
+  array.copy %pod_0_@c %arg2_@c
+  array.copy %pod_0_@s %arg2_@s
+  %arg3 = %felt_const_0_1
+  repeat 4 {
+    %5_aft = %arg3
+    array.read %arg0[%5_aft] %6_aft
+    array.copy %arg2_@c %7_aft
+    %8_aft = %arg3
+    array.write %6_aft %7_aft[%8_aft]
+    array.copy %7_aft %arg2_@c
+    %9_aft = %pod_@count
+    %c1_aft = 1
+    %10_aft = felt.sub %9_aft %c1_aft
+    %pod_@count = %10_aft
+    %c0_aft = 0
+    %11_aft = bool.eq %10_aft %c0_aft
+    if (%11_aft == 1) {
+      array.copy %arg2_@c %13_aft
+      array.copy %arg2_@s %14_aft
+      call @MultiMux2_0(%13_aft,%14_aft) to %15_@out
+      %pod_@comp_@out = %15_@out
+    }
+    else {
+    }
+    %felt_const_1_aft = 1
+    %12_aft = felt.add %arg3 %felt_const_1_aft
+    %arg3 = %12_aft
+    %felt_const_4_bef = 4
+    %5_bef = bool.lt %felt_const_4_bef %arg3
+    array.copy %arg2_@c %0#0_@c
+    array.copy %arg2_@s %0#0_@s
+    %0#1 = %arg3
+  }
+  %felt_const_0_2 = 0
+  array.copy %0#0_@c %arg2_@c
+  array.copy %0#0_@s %arg2_@s
+  %arg3 = %felt_const_0_2
+  repeat 2 {
+    %5_aft = %arg3
+    array.read %arg1[%5_aft] %6_aft
+    array.copy %arg2_@s %7_aft
+    %8_aft = %arg3
+    array.write %6_aft %7_aft[%8_aft]
+    array.copy %7_aft %arg2_@s
+    %9_aft = %pod_@count
+    %c1_aft = 1
+    %10_aft = felt.sub %9_aft %c1_aft
+    %pod_@count = %10_aft
+    %c0_aft = 0
+    %11_aft = bool.eq %10_aft %c0_aft
+    if (%11_aft == 1) {
+      array.copy %arg2_@c %13_aft
+      array.copy %arg2_@s %14_aft
+      call @MultiMux2_0(%13_aft,%14_aft) to %15_@out
+      %pod_@comp_@out = %15_@out
+    }
+    else {
+    }
+    %felt_const_1_aft = 1
+    %12_aft = felt.add %arg3 %felt_const_1_aft
+    %arg3 = %12_aft
+    %felt_const_2_bef = 2
+    %5_bef = bool.lt %felt_const_2_bef %arg3
+    array.copy %arg2_@c %1#0_@c
+    array.copy %arg2_@s %1#0_@s
+    %1#1 = %arg3
+  }
+  %2_@out = %pod_@comp_@out
+  %3 = %2_@out
+  @out = %3
+  array.copy %1#0_@c @mux_inputs_@c
+  array.copy %1#0_@s @mux_inputs_@s
+  %4_@out = %pod_@comp_@out
+}
+def @Num2Bits_2(%arg0: ff) -> @out: arr<2> {
+  array.new 2 %nondet
+  %felt_const_2 = 2
+  %felt_const_0 = 0
+  %felt_const_1 = 1
+  %felt_const_0_0 = 0
+  %arg1 = %felt_const_0_0
+  %arg2 = %felt_const_1
+  %arg3 = %felt_const_0
+  repeat 2 {
+    %1_aft = bit.shr %arg0 %arg1
+    %felt_const_1_1_aft = 1
+    %2_aft = bit.and %1_aft %felt_const_1_1_aft
+    %3_aft = %arg1
+    array.write %2_aft %nondet[%3_aft]
+    %4_aft = %arg1
+    array.read %nondet[%4_aft] %5_aft
+    %6_aft = felt.mul %5_aft %felt_const_1
+    %7_aft = felt.add %arg3 %6_aft
+    %8_aft = felt.add %arg2 %arg2
+    %felt_const_1_2_aft = 1
+    %9_aft = felt.add %arg1 %felt_const_1_2_aft
+    %arg1 = %9_aft
+    %arg2 = %8_aft
+    %arg3 = %7_aft
+    %felt_const_2_1_bef = 2
+    %1_bef = bool.lt %felt_const_2_1_bef %arg1
+    %0#0 = %arg1
+    %0#1 = %arg2
+    %0#2 = %arg3
+  }
+  array.copy %nondet @out
+}
+def @Constants_3() -> @out: arr<4> {
+  array.new 4 %nondet
+  %felt_const_0 = 0
+  %felt_const_37 = 37
+  %felt_const_0_0 = 0
+  %0 = %felt_const_0_0
+  array.write %felt_const_37 %nondet[%0]
+  %felt_const_47 = 47
+  %felt_const_1 = 1
+  %1 = %felt_const_1
+  array.write %felt_const_47 %nondet[%1]
+  %felt_const_53 = 53
+  %felt_const_2 = 2
+  %2 = %felt_const_2
+  array.write %felt_const_53 %nondet[%2]
+  %felt_const_71 = 71
+  %felt_const_3 = 3
+  %3 = %felt_const_3
+  array.write %felt_const_71 %nondet[%3]
+  array.copy %nondet @out
+}
+def @Main_4(%arg0: ff) -> @out: ff {
+  %c1 = 1
+  %pod_@count = %c1
+  call @Constants_3() to %0_@out
+  array.copy %0_@out %pod_2_@comp_@out
+  %c6 = 6
+  %pod_4_@count = %c6
+  array.new 4 %pod_5_@c
+  array.new 2 %pod_5_@s
+  %felt_const_0 = 0
+  %pod_0_@in = %arg0
+  %1 = %pod_@count
+  %c1_6 = 1
+  %2 = felt.sub %1 %c1_6
+  %pod_@count = %2
+  %c0 = 0
+  %3 = bool.eq %2 %c0
+  if (%3 == 1) {
+    %11 = %pod_0_@in
+    call @Num2Bits_2(%11) to %12_@out
+    array.copy %12_@out %pod_@comp_@out
+  }
+  else {
+  }
+  %felt_const_0_7 = 0
+  array.copy %pod_5_@c %arg1_@c
+  array.copy %pod_5_@s %arg1_@s
+  %arg2 = %felt_const_0_7
+  repeat 2 {
+    array.copy %pod_@comp_@out %11_aft_@out
+    array.copy %11_aft_@out %12_aft
+    %13_aft = %arg2
+    array.read %12_aft[%13_aft] %14_aft
+    array.copy %arg1_@s %15_aft
+    %16_aft = %arg2
+    array.write %14_aft %15_aft[%16_aft]
+    array.copy %15_aft %arg1_@s
+    %17_aft = %pod_4_@count
+    %c1_9_aft = 1
+    %18_aft = felt.sub %17_aft %c1_9_aft
+    %pod_4_@count = %18_aft
+    %c0_10_aft = 0
+    %19_aft = bool.eq %18_aft %c0_10_aft
+    if (%19_aft == 1) {
+      array.copy %arg1_@c %21_aft
+      array.copy %arg1_@s %22_aft
+      call @Mux2_1(%21_aft,%22_aft) to %23_@out
+      %pod_4_@comp_@out = %23_@out
+    }
+    else {
+    }
+    %felt_const_1_aft = 1
+    %20_aft = felt.add %arg2 %felt_const_1_aft
+    %arg2 = %20_aft
+    %felt_const_2_bef = 2
+    %11_bef = bool.lt %felt_const_2_bef %arg2
+    array.copy %arg1_@c %4#0_@c
+    array.copy %arg1_@s %4#0_@s
+    %4#1 = %arg2
+  }
+  %felt_const_0_8 = 0
+  array.copy %4#0_@c %arg1_@c
+  array.copy %4#0_@s %arg1_@s
+  %arg2 = %felt_const_0_8
+  repeat 4 {
+    array.copy %pod_2_@comp_@out %11_aft_@out
+    array.copy %11_aft_@out %12_aft
+    %13_aft = %arg2
+    array.read %12_aft[%13_aft] %14_aft
+    array.copy %arg1_@c %15_aft
+    %16_aft = %arg2
+    array.write %14_aft %15_aft[%16_aft]
+    array.copy %15_aft %arg1_@c
+    %17_aft = %pod_4_@count
+    %c1_9_aft = 1
+    %18_aft = felt.sub %17_aft %c1_9_aft
+    %pod_4_@count = %18_aft
+    %c0_10_aft = 0
+    %19_aft = bool.eq %18_aft %c0_10_aft
+    if (%19_aft == 1) {
+      array.copy %arg1_@c %21_aft
+      array.copy %arg1_@s %22_aft
+      call @Mux2_1(%21_aft,%22_aft) to %23_@out
+      %pod_4_@comp_@out = %23_@out
+    }
+    else {
+    }
+    %felt_const_1_aft = 1
+    %20_aft = felt.add %arg2 %felt_const_1_aft
+    %arg2 = %20_aft
+    %felt_const_4_bef = 4
+    %11_bef = bool.lt %felt_const_4_bef %arg2
+    array.copy %arg1_@c %5#0_@c
+    array.copy %arg1_@s %5#0_@s
+    %5#1 = %arg2
+  }
+  %6_@out = %pod_4_@comp_@out
+  %7 = %6_@out
+  @out = %7
+  array.copy %pod_@comp_@out %8_@out
+  array.copy %pod_2_@comp_@out %9_@out
+  array.copy %5#0_@c @mux_inputs_@c
+  array.copy %5#0_@s @mux_inputs_@s
+  %10_@out = %pod_4_@comp_@out
+}
+def main(%arg0: ff) -> @out: ff {
+  call @Main_4(%arg0) to @out
+}
