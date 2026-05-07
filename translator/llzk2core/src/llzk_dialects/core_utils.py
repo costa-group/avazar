@@ -62,8 +62,8 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
 
             # Add a new assignment
             assignments.append(translate_assignment_core_with_ctx(
-                SSAVar.parse(f"{lhs.name}_{record}"),
-                SSAVar.parse(initial_value),
+                SSAVar(f"{lhs.name}_{record}"),
+                SSAVar(initial_value),
                 type_,
                 ctx,
             ))
