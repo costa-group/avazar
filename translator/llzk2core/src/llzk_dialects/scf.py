@@ -62,7 +62,7 @@ class SCFYield(Operation):
             if m["ops"] else []
         )
         types = (
-            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            [Type.parse(t.strip()) for t in split_top_level_commas(m["types"])]
             if m["types"] else []
         )
         return SCFYield(operands, types)
@@ -140,7 +140,7 @@ class SCFCondition(Operation):
             if m["args"] else []
         )
         types = (
-            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            [Type.parse(t.strip()) for t in split_top_level_commas(m["types"])]
             if m["types"] else []
         )
         return SCFCondition(SSAVar.parse(m["cond"]), args, types)
@@ -156,8 +156,8 @@ class SCFCondition(Operation):
             for component in range(result.n_components):
                 # Retrieve the component and the yield operand at current
                 # index "yield_res_index"
-                lhs = result.to_core_component(component)
-                rhs = self.args[cond_res_index].to_core()
+                lhs = SSAVar(result.to_core_component(component))
+                rhs = self.args[cond_res_index]
                 type_ = self.types[cond_res_index]
 
                 to_core_type = type_.to_core()
@@ -168,9 +168,8 @@ class SCFCondition(Operation):
                 # Here, we don't consider translate_assignment_core_with_ctx because
                 # the variables are not constants (they are unfolded depending on the branch)
 
-                yield translate_assignment_core(lhs, rhs, to_core_type == "ff")
+                yield translate_assignment_core_with_ctx(lhs, rhs, type_, ctx)
                 cond_res_index += 1
-
 
     def __repr__(self):
         args_str = (', '.join(repr(a) for a in self.args) + ' ') if self.args else ''
@@ -228,10 +227,13 @@ class SCFIf(BlockOperation):
             [SSAVar.parse(r.strip()) for r in m["res"].split(",") if r.strip()]
             if m["res"] else []
         )
-        result_types = (
-            [Type.parse(t.strip()) for t in m["types"].split(",")]
-            if m["types"] else []
-        )
+        if m["types"]:
+            types_str = m["types"].strip()
+            if types_str.startswith("(") and types_str.endswith(")"):
+                types_str = types_str[1:-1]
+            result_types = [Type.parse(t.strip()) for t in split_top_level_commas(types_str)]
+        else:
+            result_types = []
 
         # Find end of 'then' block by tracking depth character-by-character so
         # that "} else {" is correctly treated as closing then before opening else.
