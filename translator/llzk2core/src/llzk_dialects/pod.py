@@ -20,28 +20,9 @@ from typing import List, Dict, Optional
 from llzk_dialects.core import Operation, SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.core_utils import translate_assignment_core_with_ctx
+from llzk_dialects.utils import array_felt_first_dimension, split_top_level_commas
 
-
-def _split_top_level_commas(s: str) -> List[str]:
-    """Split s on commas that are not inside <>, [], or ()."""
-    depth = 0
-    parts: List[str] = []
-    current: List[str] = []
-    for ch in s:
-        if ch in '<[(':
-            depth += 1
-            current.append(ch)
-        elif ch in '>])':
-            depth -= 1
-            current.append(ch)
-        elif ch == ',' and depth == 0:
-            parts.append(''.join(current))
-            current = []
-        else:
-            current.append(ch)
-    if current:
-        parts.append(''.join(current))
-    return parts
+_split_top_level_commas = split_top_level_commas
 
 
 def _parse_pod_fields(pod_type_str: str) -> Dict[str, Type]:
@@ -142,6 +123,13 @@ class PodNew(Operation):
             )
             for record, initial_value in self.init_records.items()
         )
+
+        # Also, we translate variables
+        for record, type_ in self.result_type.items():
+            first_dim = array_felt_first_dimension(type_.name)
+
+            if first_dim is not None:
+                yield f"array.new {first_dim} {self._result.name}_{record}"
 
     def __repr__(self):
         inits = ', '.join(f"{k} = {v}" for k, v in self.init_records.items())
