@@ -21,7 +21,7 @@ from llzk_dialects.definitions import Dialect
 from llzk_dialects.core_utils import translate_assignment_core_with_ctx, infer_n_repetitions_from_expressions
 from llzk_dialects.felt import FeltBinary, FeltConst
 from llzk_dialects.bool import BoolCmp
-from llzk_dialects.utils import translate_assignment_core
+from llzk_dialects.utils import translate_assignment_core, split_top_level_commas
 
 
 class SCFYield(Operation):
@@ -517,7 +517,7 @@ class SCFWhile(BlockOperation):
             if m["res"] else []
         )
 
-        types = [[Type.parse(type) for type in region.strip()[1:-1].split(', ')]
+        types = [[Type.parse(t.strip()) for t in split_top_level_commas(region.strip()[1:-1])]
                  for region in m["ftype"].split("->")]
 
         init_args: List[Tuple[SSAVar, SSAVar]] = []
@@ -615,8 +615,8 @@ class SCFWhile(BlockOperation):
         initial_values = dict()
 
         for type_, (lhs, rhs) in zip(in_types, first_region_args):
-            yield translate_assignment_core(lhs.to_core(), rhs.to_core(),
-                                            "array" not in type_.name)
+            yield translate_assignment_core_with_ctx(lhs, rhs,
+                                                     type_, ctx)
 
             constant = ctx.var2const.get(rhs.name)
             if constant is not None:
