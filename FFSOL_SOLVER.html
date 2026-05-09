@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Avazar Tool - AVAZAR Project</title>
+        <title>FFSOL Solver - AVAZAR Project</title>
 
 
         <!-- Custom HTML head -->
@@ -176,150 +176,36 @@
                 <div id="content" class="content">
                     <main>
                         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
-<h1 id="avazar-tool"><a class="header" href="#avazar-tool">avazar Tool</a></h1>
-<p>This document explains the <code>avazar</code> command-line tool, what it does, and the arguments it accepts.</p>
+<h1 id="ffsol-tool"><a class="header" href="#ffsol-tool">ffsol Tool</a></h1>
+<p>This document explains the usage of the SMT solver <code>ffsol</code>, specialized in finite field arithmetic.</p>
 <h2 id="what-the-tool-does"><a class="header" href="#what-the-tool-does">What the tool does</a></h2>
-<p><code>avazar</code> is a general modular verifier for ZK circuits. It reads an R1CS constraint system, optionally a pre-computed decomposition structure, and verifies the circuit node by node using an SMT solver according to the selected mode. It reports which nodes are verified, failed, or unknown.</p>
+<p><code>ffsol</code> is a solver designed to process formulas in the SMT-LIB2 (<code>.smt2</code>) format over finite fields. It checks whether a formula is satisfiable (<code>sat</code>), unsatisfiable (<code>unsat</code>), or if the result is unknown (<code>unknown</code>). Additionally, it allows precise configuration of which optimization and deduction subroutines are activated during the solving process. We have adopted the same SMT-LIB2 format for finite fields presented <a href="https://cvc5.github.io/docs/cvc5-1.3.2/theories/finite_field.html">here</a>.</p>
+<h2 id="installation"><a class="header" href="#installation">Installation</a></h2>
+<p>The repository of <code>ffsol</code> can be downloaded from <a href="https://mygitlab.cs.upc.edu/polynomial-equations/poly-eqs.git">here</a>. It provides an installation script, <code>install.sh</code>, which automatically installs all the required libraries and dependencies needed to compile and run the solver.</p>
 <h2 id="basic-usage"><a class="header" href="#basic-usage">Basic usage</a></h2>
-<pre><code class="language-bash">avazar [OPTIONS] &lt;INPUT&gt;
+<pre><code class="language-bash">./ffsol -file &lt;FILE_SMT2&gt;
 </code></pre>
-<p>An example:</p>
-<pre><code class="language-bash">avazar ./circuit.r1cs --solver civer --equivalence structural --clustering_size 200
+<h2 id="usage-examples"><a class="header" href="#usage-examples">Usage Examples</a></h2>
+<h3 id="basic-invocation"><a class="header" href="#basic-invocation">Basic invocation</a></h3>
+<pre><code class="language-bash">./ffsol -file file.smt2
 </code></pre>
-<h2 id="modes"><a class="header" href="#modes">Modes</a></h2>
-<p>The tool has three operating modes:</p>
-<ul>
-<li>
-<p><code>determinism</code> (default)</p>
-<ul>
-<li>If no mode flag is provided, the tool runs in determinism mode by default. It checks if the inputs are fixed, the outputs are unique.</li>
-</ul>
-</li>
-<li>
-<p><code>--check_correctness &lt;correctness.json&gt;</code></p>
-<ul>
-<li>Activates correctness-checking mode.</li>
-<li>Verifies whether the input R1CS file is consistent with the given SMT-LIB (<code>.smt2</code>) formula. The <code>correctness.json</code> file must contain several fields:
-<ul>
-<li><code>input_signals</code> and <code>output_signals</code>, two lists of signals which must match the input/output structure of the R1CS file.</li>
-<li><code>signals</code>, listing the auxiliar variables that appear in the SMT formula.</li>
-<li><code>constraints</code>, specifying the SMT formula to be checked.</li>
-</ul>
-</li>
-</ul>
-</li>
-<li>
-<p><code>--check_equivalence &lt;another_file.r1cs&gt;</code></p>
-<ul>
-<li>Activates equivalence check mode.</li>
-<li>Checks equivalence between the input and the given R1CS files. Both files must have the same input/output structure. Otherwise, they cannot be equivalent.</li>
-</ul>
-</li>
-</ul>
-<h2 id="arguments-and-options"><a class="header" href="#arguments-and-options">Arguments and options</a></h2>
-<h3 id="required-argument"><a class="header" href="#required-argument">Required argument</a></h3>
-<ul>
-<li><code>INPUT</code>
-<ul>
-<li>Type: path (<code>String</code>)</li>
-<li>Default: <code>./circuit.circom</code></li>
-<li>Description: path to the R1CS constraint system to be verified.</li>
-</ul>
-</li>
-</ul>
-<h3 id="optional-flags"><a class="header" href="#optional-flags">Optional flags</a></h3>
-<ul>
-<li>
-<p><code>--input_structure &lt;PATH&gt;</code></p>
-<ul>
-<li>Type: path</li>
-<li>Description: path to a pre-computed decomposition structure JSON (as produced by the <code>clustering</code> tool). If not given, avazar clusters the circuit internally using <code>--clustering_size</code>.</li>
-</ul>
-</li>
-<li>
-<p><code>--original_structure &lt;PATH&gt;</code></p>
-<ul>
-<li>Type: path</li>
-<li>Description: original structural metadata of the circuit (E.g., in circom, template-level component info). Used to produce more meaningful error messages. Optional.</li>
-</ul>
-</li>
-<li>
-<p><code>--timeout &lt;MILLISECONDS&gt;</code></p>
-<ul>
-<li>Type: <code>u64</code></li>
-<li>Default: <code>5000</code></li>
-<li>Description: timeout in milliseconds for each call to the underlying solver.</li>
-</ul>
-</li>
-<li>
-<p><code>--solver &lt;SOLVER&gt;</code></p>
-<ul>
-<li>Type: string</li>
-<li>Default: <code>civer</code></li>
-<li>Accepted values: <code>civer</code>, <code>ffsol</code>, <code>cvc5</code>, <code>z3</code></li>
-<li>Description:</li>
-</ul>
-</li>
-<li>
-<p><code>--equivalence &lt;MODE&gt;</code></p>
-<ul>
-<li>Type: string</li>
-<li>Default: <code>structural</code></li>
-<li>Accepted values: <code>none</code>, <code>local</code>, <code>structural</code></li>
-<li>See <a href="#equivalence-modes">Equivalence modes</a> below.</li>
-</ul>
-</li>
-<li>
-<p><code>-p, --prime &lt;N&gt;</code></p>
-<ul>
-<li>Type: <code>BigInt</code></li>
-<li>Default: <code>21888242871839275222246405745257275088548364400416034343698204186575808495617</code> (BN254 scalar field prime)</li>
-<li>Description: prime field modulus used during verification.</li>
-</ul>
-</li>
-<li>
-<p><code>-c, --clustering_size &lt;N&gt;</code></p>
-<ul>
-<li>Type: <code>usize</code></li>
-<li>Default: <code>200</code></li>
-<li>Description: maximum size of nodes considered for internal re-clustering. Nodes larger than this threshold are split further. Set to <code>0</code> to disable internal clustering entirely.</li>
-</ul>
-</li>
-<li>
-<p><code>-t, --target_size &lt;N&gt;</code></p>
-<ul>
-<li>Type: <code>usize</code></li>
-<li>Default: <code>0</code></li>
-<li>Description: target size for nodes in the internal clustering. Set to <code>0</code> to disable (default). Takes effect only when <code>--input_structure</code> is not provided.</li>
-</ul>
-</li>
-</ul>
-<h2 id="equivalence-modes"><a class="header" href="#equivalence-modes">Equivalence modes</a></h2>
-<p>avazar avoids redundant solver calls by exploiting equivalence between DAG nodes:</p>
-<ul>
-<li>
-<p><strong><code>none</code></strong>: every node is sent to the solver independently, regardless of similarity.</p>
-</li>
-<li>
-<p><strong><code>local</code></strong>: nodes grouped by local equivalence (same local fingerprint/signature) share a result. If one representative in the class is verified, the others are assumed verified too.</p>
-</li>
-<li>
-<p><strong><code>structural</code></strong>: like <code>local</code>, but uses stricter structural equivalence that also accounts for the node's context in the DAG. Two nodes must agree in both content and structural position to be grouped. Consequently, two nodes can be local equivalent, but no structural equivalent.</p>
-</li>
-</ul>
-<p>The equivalence classes come either from the optional <code>--input_structure</code> file or are computed internally if that file is not provided.</p>
+<h3 id="with-time-limit"><a class="header" href="#with-time-limit">With time limit</a></h3>
+<pre><code class="language-bash">./ffsol -file file.smt2 -tlimit 20
+</code></pre>
+<p>Time limit is 20 seconds; default is no limit.</p>
+<h3 id="writing-model-to-file"><a class="header" href="#writing-model-to-file">Writing model to file</a></h3>
+<pre><code class="language-bash">./ffsol -file file.smt2 -model fileName
+</code></pre>
+<p>Model will be written to file <code>fileName</code>; default is model is not written.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="CLUSTERING.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="AVAZAR_TOOL.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="FFSOL_SOLVER.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                                <i class="fa fa-angle-right"></i>
-                            </a>
 
                         <div style="clear: both"></div>
                     </nav>
@@ -327,13 +213,10 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="CLUSTERING.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="AVAZAR_TOOL.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="FFSOL_SOLVER.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                        <i class="fa fa-angle-right"></i>
-                    </a>
             </nav>
 
         </div>
