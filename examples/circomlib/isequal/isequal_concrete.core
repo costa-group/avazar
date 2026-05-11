@@ -1,0 +1,52 @@
+def @IsZero_0(%arg0: ff) -> @out: ff {
+  %felt_const_0 = 0
+  %0 = bool.neq %felt_const_0 %arg0
+  if (%0 == 1) {
+    %felt_const_1_0 = 1
+    %5 = felt.div %felt_const_1_0 %arg0
+    @inv = %5
+    %1 = %5
+  }
+  else {
+    %felt_const_0_0 = 0
+    @inv = %felt_const_0_0
+    %1 = %felt_const_0_0
+  }
+  %2 = felt.neg %arg0
+  %3 = felt.mul %2 %1
+  %felt_const_1 = 1
+  %4 = felt.add %3 %felt_const_1
+  @out = %4
+}
+def @IsEqual_1(%arg0: arr<2>) -> @out: ff {
+  %c1 = 1
+  %pod_@count = %c1
+  %felt_const_1 = 1
+  %0 = %felt_const_1
+  array.read %arg0[%0] %1
+  %felt_const_0 = 0
+  %2 = %felt_const_0
+  array.read %arg0[%2] %3
+  %4 = felt.sub %1 %3
+  %pod_0_@in = %4
+  %5 = %pod_@count
+  %c1_1 = 1
+  %6 = felt.sub %5 %c1_1
+  %pod_@count = %6
+  %c0 = 0
+  %7 = bool.eq %6 %c0
+  if (%7 == 1) {
+    %11 = %pod_0_@in
+    call @IsZero_0(%11) to %12_@out
+    %pod_@comp_@out = %12_@out
+  }
+  else {
+  }
+  %8_@out = %pod_@comp_@out
+  %9 = %8_@out
+  @out = %9
+  %10_@out = %pod_@comp_@out
+}
+def main(%arg0: arr<2>) -> @out: ff {
+  call @IsEqual_1(%arg0) to @out
+}
