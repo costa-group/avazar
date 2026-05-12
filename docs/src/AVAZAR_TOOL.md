@@ -1,6 +1,10 @@
 # avazar Tool
 
-This document explains the `avazar` command-line tool, what it does, and the arguments it accepts.
+This document explains the `avazar` command-line tool, how to install it, what it does, and the arguments it accepts.
+
+## How to install the tool
+After cloning the repository, initialize and download all submodule dependencies by running: `git submodule update --init --recursive` to install the submodule dependencies in the project. Next, build the avazar tool in release mode: `cargo build --release`.
+Depending on the SMT solver you plan to use, make sure the corresponding executable is installed and available in your $PATH: `cvc5`, `z3`, `ffsol`, `yices`.
 
 ## What the tool does
 
@@ -63,7 +67,7 @@ The tool has three operating modes:
 - `--solver <SOLVER>`
   - Type: string
   - Default: `civer`
-  - Accepted values: `civer`, `ffsol`, `cvc5`, `z3`
+  - Accepted values: `civer`, `ffsol`, `cvc5`, `z3`, `niaz3`, `yices`.
   - Description: 
 
 - `--equivalence <MODE>`
