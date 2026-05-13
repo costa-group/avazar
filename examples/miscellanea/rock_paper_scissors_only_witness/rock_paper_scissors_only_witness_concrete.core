@@ -1,0 +1,55 @@
+def @Juego_0(%arg0: ff, %arg1: ff) -> @ganador: ff {
+  %0 = bool.eq %arg1 %arg0
+  if (%0 == 1) {
+    %felt_const_2 = 2
+    @ganador = %felt_const_2
+    %1 = %felt_const_2
+  }
+  else {
+    %felt_const_0 = 0
+    %2 = bool.eq %felt_const_0 %arg0
+    %felt_const_2 = 2
+    %3 = bool.eq %felt_const_2 %arg1
+    %4 = bool.and %2 %3
+    if (%4 == 1) {
+      %felt_const_0_0 = 0
+      @ganador = %felt_const_0_0
+      %5 = %felt_const_0_0
+    }
+    else {
+      %felt_const_1 = 1
+      %6 = bool.eq %felt_const_1 %arg0
+      %felt_const_0_0 = 0
+      %7 = bool.eq %felt_const_0_0 %arg1
+      %8 = bool.and %6 %7
+      if (%8 == 1) {
+        %felt_const_0_1 = 0
+        @ganador = %felt_const_0_1
+        %9 = %felt_const_0_1
+      }
+      else {
+        %felt_const_2_1 = 2
+        %10 = bool.eq %felt_const_2_1 %arg0
+        %felt_const_1_2 = 1
+        %11 = bool.eq %felt_const_1_2 %arg1
+        %12 = bool.and %10 %11
+        if (%12 == 1) {
+          %felt_const_0_3 = 0
+          @ganador = %felt_const_0_3
+          %13 = %felt_const_0_3
+        }
+        else {
+          %felt_const_1_3 = 1
+          @ganador = %felt_const_1_3
+          %13 = %felt_const_1_3
+        }
+        %9 = %13
+      }
+      %5 = %9
+    }
+    %1 = %5
+  }
+}
+def main(%arg0: ff, %arg1: ff) -> @ganador: ff {
+  call @Juego_0(%arg0, %arg1) to @ganador
+}
