@@ -50,7 +50,7 @@ def addArrayVarInfo {c : ZKConfig}
               let newVar := FFVar.mk newId md'
               let eqTb' : FFFormula c := (.and tbF (.eq (.var newVar) v1Term))
               let eqEb' : FFFormula c := (.and ebF (.eq (.var newVar) v2Term))
-              let arr' := Array.set arr idx (.var newVar) h3
+              let arr' := Array.set arr idx (.var ⟨newVar,none⟩) h3
               loop (idx + 1) arr' (nextId+1) (ffVarSet.insert newVar)  eqTb' eqEb'
             else
               throw s!"This is not supposed to happen"
@@ -81,7 +81,7 @@ def addFFVarInfo {c : ZKConfig}
     let newId := cfg.nextId --  a new
     let md' := FFVarMetaData.mk (s!"{id}") md.src_info
     let newVar := FFVar.mk newId md'
-    let symEnv' := setVar symEnv id (.ffVar (.var newVar))
+    let symEnv' := setVar symEnv id (.ffVar (.var ⟨newVar, none⟩))
     let v1Term := symVarToTerm v1
     let v2Term := symVarToTerm v2
     let eqTb := .eq (.var newVar) v1Term
@@ -200,12 +200,12 @@ def symValueToMacroParam {c : ZKConfig}
   match sv with
   | .ffVar v =>
     match v with
-    | .var ffVar => (.var (.inl ffVar)) :: acc
+    | .var ffVar => (.var (.inl ffVar.var)) :: acc
     | .const c => (.ff c) :: acc
   | .ffArray arr =>
     arr.toList.foldl (fun acc' elem =>
       match elem with
-      | .var ffVar => (.var (.inl ffVar)) :: acc'
+      | .var ffVar => (.var (.inl ffVar.var)) :: acc'
       | .const c => (.ff c) :: acc'
     ) acc
 
@@ -250,7 +250,7 @@ def varsToMacroParams {c : ZKConfig}
           let newId := cfg.nextId
           let md' := FFVarMetaData.mk actualRet md.src_info
           let newVar := FFVar.mk newId md'
-          let symEnv' := setVar symEnv actualRet (.ffVar (.var newVar))
+          let symEnv' := setVar symEnv actualRet (.ffVar (.var ⟨newVar, none⟩))
           let newFFVars' := newFFVars.insert newVar
           let cfg' := { cfg with nextId := cfg.nextId + 1 }
           let acc' := (.var (.inl newVar)) :: acc
@@ -261,7 +261,7 @@ def varsToMacroParams {c : ZKConfig}
                          (fun id => FFVar.mk
                                       (id+cfg.nextId)
                                       (FFVarMetaData.mk s!"{actualRet}_at_{id}" md.src_info))
-          let symVals := ffVars.map (fun v => (SymFFVar.var v))
+          let symVals := ffVars.map (fun v => (SymFFVar.var ⟨v, none⟩))
           let newArray := symVals.toArray
           let symEnv' := setVar symEnv actualRet (.ffArray newArray)
           let newFFVars' := ffVars.foldl (fun s var => s.insert var) newFFVars
@@ -509,7 +509,7 @@ def genInitialSymEnv {c : ZKConfig}
         | VarType.ff =>
             let md := FFVarMetaData.mk s!"{arg.name}" md.src_info
             let newVar := FFVar.mk nextId md
-            let symEnv' := setVar symEnv arg.name (.ffVar (.var newVar))
+            let symEnv' := setVar symEnv arg.name (.ffVar (.var ⟨newVar,none⟩))
             loop symEnv' args' (nextId + 1) (newVar :: acc)
         | VarType.array size =>
             let newIds := List.range size -- new variable ids for array elements
@@ -517,7 +517,7 @@ def genInitialSymEnv {c : ZKConfig}
                          (fun id => FFVar.mk
                                       (id+nextId)
                                       (FFVarMetaData.mk s!"{arg.name}_at_{id}" md.src_info))
-            let symVals := ffVars.map (fun v => (SymFFVar.var v))
+            let symVals := ffVars.map (fun v => (SymFFVar.var ⟨v,none⟩))
             let newArray := symVals.toArray
             let symEnv' := setVar symEnv arg.name (.ffArray newArray)
             let accm' := ffVars.foldl (fun acc var => var :: acc) acc

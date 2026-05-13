@@ -23,10 +23,16 @@ structure SymExecConfig (c : ZKConfig) where
   nextId : Nat := 0
   deriving Inhabited
 
+structure FFVarWithBinRep (c : ZKConfig) where
+  var : FFVar
+  bits : Option (List (FFTerm c))
+  deriving Repr, BEq, Inhabited
+
+
 /- A symbolic variable can either be a concrete value of a finite
    field or a field constraint variable -/
 inductive SymFFVar (c : ZKConfig) where
-  | var : FFVar → SymFFVar c
+  | var : FFVarWithBinRep c → SymFFVar c
   | const : FF c → SymFFVar c
   deriving Repr, BEq, Inhabited
 
@@ -75,10 +81,12 @@ structure CmdsSpec (c : ZKConfig) where
 
 structure ExprSpec (c : ZKConfig) where
   inSymEnv : SymEnv c := emptySymEnv
+  outSymEnv : SymEnv c := emptySymEnv
   f : FFFormula c := FFFormula.false
   -- resVar is not really used now. Maybe it will
   -- be useful for the proofs later.
   resTerm : FFTerm c := default
+  res : FFVarWithBinRep c := default
   nextId : Nat := 0
   newFFVars : FFVarSet := emptyFFVarSet
   newBoolVars : BoolVarSet := emptyBoolVarSet

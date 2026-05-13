@@ -85,7 +85,7 @@ def seArrayReadNonConstIdx {c : ZKConfig}
         let restFormula := loop rest (i + 1)
         .ite idxEq caseFormula restFormula
     let f := loop arrayElements 0
-    let newSymEnv := setVar symEnv out (SymValue.ffVar (SymFFVar.var outFFVar))
+    let newSymEnv := setVar symEnv out (SymValue.ffVar (SymFFVar.var ⟨outFFVar, none⟩))
     return { inSymEnv := symEnv,
              outSymEnv := newSymEnv,
              f := f,
@@ -151,7 +151,7 @@ def seArrayWriteNonConstIdx {c : ZKConfig}
                                                { src_info := md.src_info,
                                                  orig_name := s!"{a}_nc_write_{i}"
                                               })
-    let newArrayelements := newFFVars.map (fun v => SymFFVar.var v)
+    let newArrayelements := newFFVars.map (fun v => SymFFVar.var ⟨v, none⟩)
     let newArr : SymFFArray c := newArrayelements.toArray
     let newSymEnv := setVar symEnv a (SymValue.ffArray newArr)
     -- a list wit equalities for all elements
