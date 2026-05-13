@@ -40,7 +40,7 @@ def simpleExprToTerm {c : ZKConfig}
   match s with
   | .var id => match getVar senv id with
     | Except.ok (SymValue.ffVar (SymFFVar.const v)) => Except.ok (.val v)
-    | Except.ok (SymValue.ffVar (SymFFVar.var v)) => Except.ok (FFTerm.var v)
+    | Except.ok (SymValue.ffVar (SymFFVar.var v)) => Except.ok (FFTerm.var v.var)
     | Except.ok (SymValue.ffArray _) => Except.error s!"Variable '{id}' is an array"
     | Except.error err => Except.error err
   | .val v => Except.ok (.val v)
@@ -48,7 +48,7 @@ def simpleExprToTerm {c : ZKConfig}
 def symVarToTerm {c : ZKConfig} (v : SymFFVar c) : FFTerm c :=
   match v with
   | SymFFVar.const val => .val val
-  | SymFFVar.var v => FFTerm.var v
+  | SymFFVar.var v => FFTerm.var v.var
 
 
 end Llzk.SymExec.SymInstr
