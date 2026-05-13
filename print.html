@@ -817,14 +817,36 @@ by inserting phi-functions at control flow merge points (e.g., after
 <li><code>-V, --version</code>: print version.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
+<h1 id="ffsol-tool"><a class="header" href="#ffsol-tool">ffsol Tool</a></h1>
+<p>This document explains the usage of the SMT solver <code>ffsol</code>, specialized in finite field arithmetic.</p>
+<h2 id="what-the-tool-does-1"><a class="header" href="#what-the-tool-does-1">What the tool does</a></h2>
+<p><code>ffsol</code> is a solver designed to process formulas in the SMT-LIB2 (<code>.smt2</code>) format over finite fields. It checks whether a formula is satisfiable (<code>sat</code>), unsatisfiable (<code>unsat</code>), or if the result is unknown (<code>unknown</code>). Additionally, it allows precise configuration of which optimization and deduction subroutines are activated during the solving process. We have adopted the same SMT-LIB2 format for finite fields presented <a href="https://cvc5.github.io/docs/cvc5-1.3.2/theories/finite_field.html">here</a>.</p>
+<h2 id="installation"><a class="header" href="#installation">Installation</a></h2>
+<p>The repository of <code>ffsol</code> can be downloaded from <a href="https://mygitlab.cs.upc.edu/polynomial-equations/poly-eqs.git">here</a>. It provides an installation script, <code>install.sh</code>, which automatically installs all the required libraries and dependencies needed to compile and run the solver.</p>
+<h2 id="basic-usage-1"><a class="header" href="#basic-usage-1">Basic usage</a></h2>
+<pre><code class="language-bash">./ffsol -file &lt;FILE_SMT2&gt;
+</code></pre>
+<h2 id="usage-examples"><a class="header" href="#usage-examples">Usage Examples</a></h2>
+<h3 id="basic-invocation"><a class="header" href="#basic-invocation">Basic invocation</a></h3>
+<pre><code class="language-bash">./ffsol -file file.smt2
+</code></pre>
+<h3 id="with-time-limit"><a class="header" href="#with-time-limit">With time limit</a></h3>
+<pre><code class="language-bash">./ffsol -file file.smt2 -tlimit 20
+</code></pre>
+<p>Time limit is 20 seconds; default is no limit.</p>
+<h3 id="writing-model-to-file"><a class="header" href="#writing-model-to-file">Writing model to file</a></h3>
+<pre><code class="language-bash">./ffsol -file file.smt2 -model fileName
+</code></pre>
+<p>Model will be written to file <code>fileName</code>; default is model is not written.</p>
+<div style="break-before: page; page-break-before: always;"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
 <h1 id="avazar-tool"><a class="header" href="#avazar-tool">avazar Tool</a></h1>
 <p>This document explains the <code>avazar</code> command-line tool, how to install it, what it does, and the arguments it accepts.</p>
 <h2 id="how-to-install-the-tool"><a class="header" href="#how-to-install-the-tool">How to install the tool</a></h2>
 <p>After cloning the repository, initialize and download all submodule dependencies by running: <code>git submodule update --init --recursive</code> to install the submodule dependencies in the project. Next, build the avazar tool in release mode: <code>cargo build --release</code>.
 Depending on the SMT solver you plan to use, make sure the corresponding executable is installed and available in your $PATH: <code>cvc5</code>, <code>z3</code>, <code>ffsol</code>, <code>yices</code>.</p>
-<h2 id="what-the-tool-does-1"><a class="header" href="#what-the-tool-does-1">What the tool does</a></h2>
+<h2 id="what-the-tool-does-2"><a class="header" href="#what-the-tool-does-2">What the tool does</a></h2>
 <p><code>avazar</code> is a general modular verifier for ZK circuits. It reads an R1CS constraint system, optionally a pre-computed decomposition structure, and verifies the circuit node by node using an SMT solver according to the selected mode. It reports which nodes are verified, failed, or unknown.</p>
-<h2 id="basic-usage-1"><a class="header" href="#basic-usage-1">Basic usage</a></h2>
+<h2 id="basic-usage-2"><a class="header" href="#basic-usage-2">Basic usage</a></h2>
 <pre><code class="language-bash">avazar [OPTIONS] &lt;INPUT&gt;
 </code></pre>
 <p>An example:</p>
@@ -952,28 +974,6 @@ Depending on the SMT solver you plan to use, make sure the corresponding executa
 </li>
 </ul>
 <p>The equivalence classes come either from the optional <code>--input_structure</code> file or are computed internally if that file is not provided.</p>
-<div style="break-before: page; page-break-before: always;"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
-<h1 id="ffsol-tool"><a class="header" href="#ffsol-tool">ffsol Tool</a></h1>
-<p>This document explains the usage of the SMT solver <code>ffsol</code>, specialized in finite field arithmetic.</p>
-<h2 id="what-the-tool-does-2"><a class="header" href="#what-the-tool-does-2">What the tool does</a></h2>
-<p><code>ffsol</code> is a solver designed to process formulas in the SMT-LIB2 (<code>.smt2</code>) format over finite fields. It checks whether a formula is satisfiable (<code>sat</code>), unsatisfiable (<code>unsat</code>), or if the result is unknown (<code>unknown</code>). Additionally, it allows precise configuration of which optimization and deduction subroutines are activated during the solving process. We have adopted the same SMT-LIB2 format for finite fields presented <a href="https://cvc5.github.io/docs/cvc5-1.3.2/theories/finite_field.html">here</a>.</p>
-<h2 id="installation"><a class="header" href="#installation">Installation</a></h2>
-<p>The repository of <code>ffsol</code> can be downloaded from <a href="https://mygitlab.cs.upc.edu/polynomial-equations/poly-eqs.git">here</a>. It provides an installation script, <code>install.sh</code>, which automatically installs all the required libraries and dependencies needed to compile and run the solver.</p>
-<h2 id="basic-usage-2"><a class="header" href="#basic-usage-2">Basic usage</a></h2>
-<pre><code class="language-bash">./ffsol -file &lt;FILE_SMT2&gt;
-</code></pre>
-<h2 id="usage-examples"><a class="header" href="#usage-examples">Usage Examples</a></h2>
-<h3 id="basic-invocation"><a class="header" href="#basic-invocation">Basic invocation</a></h3>
-<pre><code class="language-bash">./ffsol -file file.smt2
-</code></pre>
-<h3 id="with-time-limit"><a class="header" href="#with-time-limit">With time limit</a></h3>
-<pre><code class="language-bash">./ffsol -file file.smt2 -tlimit 20
-</code></pre>
-<p>Time limit is 20 seconds; default is no limit.</p>
-<h3 id="writing-model-to-file"><a class="header" href="#writing-model-to-file">Writing model to file</a></h3>
-<pre><code class="language-bash">./ffsol -file file.smt2 -model fileName
-</code></pre>
-<p>Model will be written to file <code>fileName</code>; default is model is not written.</p>
 
                     </main>
 
