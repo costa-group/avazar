@@ -153,7 +153,7 @@
 )
 
 
-(define-fun @igualdadRepetida_2 ((v_0 FFp) (v_10 FFp) (v_1 FFp) (v_2 FFp) (v_3 FFp) (v_4 FFp) (v_5 FFp) (v_6 FFp) (v_7 FFp) (v_8 FFp) (v_9 FFp)) Bool
+(define-fun @EqualToVal_2 ((v_0 FFp) (v_10 FFp) (v_1 FFp) (v_2 FFp) (v_3 FFp) (v_4 FFp) (v_5 FFp) (v_6 FFp) (v_7 FFp) (v_8 FFp) (v_9 FFp)) Bool
   (and 
     (and 
       (and 
@@ -167,7 +167,7 @@
 )
 
 
-(define-fun @igualdadRepetida_3 ((v_0 FFp) (v_10 FFp) (v_1 FFp) (v_2 FFp) (v_3 FFp) (v_4 FFp) (v_5 FFp) (v_6 FFp) (v_7 FFp) (v_8 FFp) (v_9 FFp)) Bool
+(define-fun @EqualToVal_3 ((v_0 FFp) (v_10 FFp) (v_1 FFp) (v_2 FFp) (v_3 FFp) (v_4 FFp) (v_5 FFp) (v_6 FFp) (v_7 FFp) (v_8 FFp) (v_9 FFp)) Bool
   (and 
     (and 
       (and 
@@ -181,7 +181,7 @@
 )
 
 
-(define-fun @igualdadRepetida_4 ((v_0 FFp) (v_10 FFp) (v_1 FFp) (v_2 FFp) (v_3 FFp) (v_4 FFp) (v_5 FFp) (v_6 FFp) (v_7 FFp) (v_8 FFp) (v_9 FFp)) Bool
+(define-fun @EqualToVal_4 ((v_0 FFp) (v_10 FFp) (v_1 FFp) (v_2 FFp) (v_3 FFp) (v_4 FFp) (v_5 FFp) (v_6 FFp) (v_7 FFp) (v_8 FFp) (v_9 FFp)) Bool
   (and 
     (and 
       (and 
@@ -195,36 +195,36 @@
 )
 
 
-(define-fun @piedra_papel_tijera_5 ((v_0 FFp) (v_1 FFp) (v_85 FFp) (v_2 FFp) (v_3 FFp) (v_4 FFp) (v_5 FFp) (v_6 FFp) (v_7 FFp) (v_8 FFp) (v_9 FFp) (v_10 FFp) (v_11 FFp) (v_12 FFp) (v_13 FFp) (v_14 FFp) (v_15 FFp) (v_16 FFp) (v_17 FFp) (v_18 FFp) (v_19 FFp) (v_20 FFp) (v_21 FFp) (v_22 FFp) (v_23 FFp) (v_24 FFp) (v_25 FFp) (v_26 FFp) (v_27 FFp) (v_28 FFp) (v_29 FFp) (v_30 FFp) (v_31 FFp) (v_32 FFp) (v_33 FFp) (v_34 FFp) (v_35 FFp) (v_36 FFp) (v_37 FFp) (v_38 FFp) (v_39 FFp) (v_40 FFp) (v_41 FFp) (v_42 FFp) (v_43 FFp) (v_44 FFp) (v_45 FFp) (v_46 FFp) (v_47 FFp) (v_48 FFp) (v_49 FFp) (v_50 FFp) (v_51 FFp) (v_52 FFp) (v_53 FFp) (v_54 FFp) (v_55 FFp) (v_56 FFp) (v_57 FFp) (v_58 FFp) (v_59 FFp) (v_60 FFp) (v_61 FFp) (v_62 FFp) (v_63 FFp) (v_64 FFp) (v_65 FFp) (v_66 FFp) (v_67 FFp) (v_68 FFp) (v_69 FFp) (v_70 FFp) (v_71 FFp) (v_72 FFp) (v_73 FFp) (v_74 FFp) (v_75 FFp) (v_76 FFp) (v_77 FFp) (v_78 FFp) (v_79 FFp) (v_80 FFp) (v_81 FFp) (v_82 FFp) (v_83 FFp) (v_84 FFp)) Bool
+(define-fun @RockPaperScissors_5 ((v_0 FFp) (v_1 FFp) (v_85 FFp) (v_2 FFp) (v_3 FFp) (v_4 FFp) (v_5 FFp) (v_6 FFp) (v_7 FFp) (v_8 FFp) (v_9 FFp) (v_10 FFp) (v_11 FFp) (v_12 FFp) (v_13 FFp) (v_14 FFp) (v_15 FFp) (v_16 FFp) (v_17 FFp) (v_18 FFp) (v_19 FFp) (v_20 FFp) (v_21 FFp) (v_22 FFp) (v_23 FFp) (v_24 FFp) (v_25 FFp) (v_26 FFp) (v_27 FFp) (v_28 FFp) (v_29 FFp) (v_30 FFp) (v_31 FFp) (v_32 FFp) (v_33 FFp) (v_34 FFp) (v_35 FFp) (v_36 FFp) (v_37 FFp) (v_38 FFp) (v_39 FFp) (v_40 FFp) (v_41 FFp) (v_42 FFp) (v_43 FFp) (v_44 FFp) (v_45 FFp) (v_46 FFp) (v_47 FFp) (v_48 FFp) (v_49 FFp) (v_50 FFp) (v_51 FFp) (v_52 FFp) (v_53 FFp) (v_54 FFp) (v_55 FFp) (v_56 FFp) (v_57 FFp) (v_58 FFp) (v_59 FFp) (v_60 FFp) (v_61 FFp) (v_62 FFp) (v_63 FFp) (v_64 FFp) (v_65 FFp) (v_66 FFp) (v_67 FFp) (v_68 FFp) (v_69 FFp) (v_70 FFp) (v_71 FFp) (v_72 FFp) (v_73 FFp) (v_74 FFp) (v_75 FFp) (v_76 FFp) (v_77 FFp) (v_78 FFp) (v_79 FFp) (v_80 FFp) (v_81 FFp) (v_82 FFp) (v_83 FFp) (v_84 FFp)) Bool
   (and 
     (and 
       (and 
-        (@igualdadRepetida_2 v_0 v_2 v_3 v_4 v_5 v_6 v_7 v_8 v_9 v_10 v_11)
+        (@EqualToVal_2 v_0 v_2 v_3 v_4 v_5 v_6 v_7 v_8 v_9 v_10 v_11)
         true
       )
       (and 
         (and 
-          (@igualdadRepetida_3 v_0 v_12 v_13 v_14 v_15 v_16 v_17 v_18 v_19 v_20 v_21)
+          (@EqualToVal_3 v_0 v_12 v_13 v_14 v_15 v_16 v_17 v_18 v_19 v_20 v_21)
           true
         )
         (and 
           (and 
-            (@igualdadRepetida_4 v_0 v_22 v_23 v_24 v_25 v_26 v_27 v_28 v_29 v_30 v_31)
+            (@EqualToVal_4 v_0 v_22 v_23 v_24 v_25 v_26 v_27 v_28 v_29 v_30 v_31)
             true
           )
           (and 
             (and 
-              (@igualdadRepetida_2 v_1 v_32 v_33 v_34 v_35 v_36 v_37 v_38 v_39 v_40 v_41)
+              (@EqualToVal_2 v_1 v_32 v_33 v_34 v_35 v_36 v_37 v_38 v_39 v_40 v_41)
               true
             )
             (and 
               (and 
-                (@igualdadRepetida_3 v_1 v_42 v_43 v_44 v_45 v_46 v_47 v_48 v_49 v_50 v_51)
+                (@EqualToVal_3 v_1 v_42 v_43 v_44 v_45 v_46 v_47 v_48 v_49 v_50 v_51)
                 true
               )
               (and 
                 (and 
-                  (@igualdadRepetida_4 v_1 v_52 v_53 v_54 v_55 v_56 v_57 v_58 v_59 v_60 v_61)
+                  (@EqualToVal_4 v_1 v_52 v_53 v_54 v_55 v_56 v_57 v_58 v_59 v_60 v_61)
                   true
                 )
                 (and 
@@ -310,7 +310,7 @@
 
 (define-fun main ((v_0 FFp) (v_1 FFp) (v_86 FFp) (v_2 FFp) (v_3 FFp) (v_4 FFp) (v_5 FFp) (v_6 FFp) (v_7 FFp) (v_8 FFp) (v_9 FFp) (v_10 FFp) (v_11 FFp) (v_12 FFp) (v_13 FFp) (v_14 FFp) (v_15 FFp) (v_16 FFp) (v_17 FFp) (v_18 FFp) (v_19 FFp) (v_20 FFp) (v_21 FFp) (v_22 FFp) (v_23 FFp) (v_24 FFp) (v_25 FFp) (v_26 FFp) (v_27 FFp) (v_28 FFp) (v_29 FFp) (v_30 FFp) (v_31 FFp) (v_32 FFp) (v_33 FFp) (v_34 FFp) (v_35 FFp) (v_36 FFp) (v_37 FFp) (v_38 FFp) (v_39 FFp) (v_40 FFp) (v_41 FFp) (v_42 FFp) (v_43 FFp) (v_44 FFp) (v_45 FFp) (v_46 FFp) (v_47 FFp) (v_48 FFp) (v_49 FFp) (v_50 FFp) (v_51 FFp) (v_52 FFp) (v_53 FFp) (v_54 FFp) (v_55 FFp) (v_56 FFp) (v_57 FFp) (v_58 FFp) (v_59 FFp) (v_60 FFp) (v_61 FFp) (v_62 FFp) (v_63 FFp) (v_64 FFp) (v_65 FFp) (v_66 FFp) (v_67 FFp) (v_68 FFp) (v_69 FFp) (v_70 FFp) (v_71 FFp) (v_72 FFp) (v_73 FFp) (v_74 FFp) (v_75 FFp) (v_76 FFp) (v_77 FFp) (v_78 FFp) (v_79 FFp) (v_80 FFp) (v_81 FFp) (v_82 FFp) (v_83 FFp) (v_84 FFp) (v_85 FFp)) Bool
   (and 
-    (@piedra_papel_tijera_5 v_0 v_1 v_2 v_3 v_4 v_5 v_6 v_7 v_8 v_9 v_10 v_11 v_12 v_13 v_14 v_15 v_16 v_17 v_18 v_19 v_20 v_21 v_22 v_23 v_24 v_25 v_26 v_27 v_28 v_29 v_30 v_31 v_32 v_33 v_34 v_35 v_36 v_37 v_38 v_39 v_40 v_41 v_42 v_43 v_44 v_45 v_46 v_47 v_48 v_49 v_50 v_51 v_52 v_53 v_54 v_55 v_56 v_57 v_58 v_59 v_60 v_61 v_62 v_63 v_64 v_65 v_66 v_67 v_68 v_69 v_70 v_71 v_72 v_73 v_74 v_75 v_76 v_77 v_78 v_79 v_80 v_81 v_82 v_83 v_84 v_85)
+    (@RockPaperScissors_5 v_0 v_1 v_2 v_3 v_4 v_5 v_6 v_7 v_8 v_9 v_10 v_11 v_12 v_13 v_14 v_15 v_16 v_17 v_18 v_19 v_20 v_21 v_22 v_23 v_24 v_25 v_26 v_27 v_28 v_29 v_30 v_31 v_32 v_33 v_34 v_35 v_36 v_37 v_38 v_39 v_40 v_41 v_42 v_43 v_44 v_45 v_46 v_47 v_48 v_49 v_50 v_51 v_52 v_53 v_54 v_55 v_56 v_57 v_58 v_59 v_60 v_61 v_62 v_63 v_64 v_65 v_66 v_67 v_68 v_69 v_70 v_71 v_72 v_73 v_74 v_75 v_76 v_77 v_78 v_79 v_80 v_81 v_82 v_83 v_84 v_85)
     (= v_86 v_2)
   )
 )

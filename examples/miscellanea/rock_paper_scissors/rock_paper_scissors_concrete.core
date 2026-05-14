@@ -47,7 +47,7 @@ def @IsEqual_1(%arg0: arr<2>) -> @out: ff {
   @out = %9
   %10_@out = %pod_@comp_@out
 }
-def @igualdadRepetida_2(%arg0: ff) -> @out: ff {
+def @EqualToVal_2(%arg0: ff) -> @out: ff {
   %c2 = 2
   %pod_@count = %c2
   array.new 2 %pod_0_@in
@@ -94,7 +94,7 @@ def @igualdadRepetida_2(%arg0: ff) -> @out: ff {
   @out = %11
   %12_@out = %pod_@comp_@out
 }
-def @igualdadRepetida_3(%arg0: ff) -> @out: ff {
+def @EqualToVal_3(%arg0: ff) -> @out: ff {
   %c2 = 2
   %pod_@count = %c2
   array.new 2 %pod_0_@in
@@ -141,7 +141,7 @@ def @igualdadRepetida_3(%arg0: ff) -> @out: ff {
   @out = %11
   %12_@out = %pod_@comp_@out
 }
-def @igualdadRepetida_4(%arg0: ff) -> @out: ff {
+def @EqualToVal_4(%arg0: ff) -> @out: ff {
   %c2 = 2
   %pod_@count = %c2
   array.new 2 %pod_0_@in
@@ -188,7 +188,7 @@ def @igualdadRepetida_4(%arg0: ff) -> @out: ff {
   @out = %11
   %12_@out = %pod_@comp_@out
 }
-def @piedra_papel_tijera_5(%arg0: ff, %arg1: ff) -> @ganador: ff {
+def @RockPaperScissors_5(%arg0: ff, %arg1: ff) -> @winner: ff {
   %c1 = 1
   %pod_@count = %c1
   %c1_1 = 1
@@ -201,105 +201,105 @@ def @piedra_papel_tijera_5(%arg0: ff, %arg1: ff) -> @ganador: ff {
   %pod_11_@count = %c1_10
   %c1_13 = 1
   %pod_14_@count = %c1_13
-  %pod_6_@in = %arg0
-  %0 = %pod_5_@count
+  %pod_3_@in = %arg0
+  %0 = %pod_2_@count
   %c1_16 = 1
   %1 = felt.sub %0 %c1_16
-  %pod_5_@count = %1
+  %pod_2_@count = %1
   %c0 = 0
   %2 = bool.eq %1 %c0
   if (%2 == 1) {
-    %83 = %pod_6_@in
-    call @igualdadRepetida_2(%83) to %84_@out
-    %pod_5_@comp_@out = %84_@out
-  }
-  else {
-  }
-  %pod_0_@in = %arg0
-  %3 = %pod_@count
-  %c1_17 = 1
-  %4 = felt.sub %3 %c1_17
-  %pod_@count = %4
-  %c0_18 = 0
-  %5 = bool.eq %4 %c0_18
-  if (%5 == 1) {
-    %83 = %pod_0_@in
-    call @igualdadRepetida_3(%83) to %84_@out
-    %pod_@comp_@out = %84_@out
-  }
-  else {
-  }
-  %pod_9_@in = %arg0
-  %6 = %pod_8_@count
-  %c1_19 = 1
-  %7 = felt.sub %6 %c1_19
-  %pod_8_@count = %7
-  %c0_20 = 0
-  %8 = bool.eq %7 %c0_20
-  if (%8 == 1) {
-    %83 = %pod_9_@in
-    call @igualdadRepetida_4(%83) to %84_@out
-    %pod_8_@comp_@out = %84_@out
-  }
-  else {
-  }
-  %pod_12_@in = %arg1
-  %9 = %pod_11_@count
-  %c1_21 = 1
-  %10 = felt.sub %9 %c1_21
-  %pod_11_@count = %10
-  %c0_22 = 0
-  %11 = bool.eq %10 %c0_22
-  if (%11 == 1) {
-    %83 = %pod_12_@in
-    call @igualdadRepetida_2(%83) to %84_@out
-    %pod_11_@comp_@out = %84_@out
-  }
-  else {
-  }
-  %pod_15_@in = %arg1
-  %12 = %pod_14_@count
-  %c1_23 = 1
-  %13 = felt.sub %12 %c1_23
-  %pod_14_@count = %13
-  %c0_24 = 0
-  %14 = bool.eq %13 %c0_24
-  if (%14 == 1) {
-    %83 = %pod_15_@in
-    call @igualdadRepetida_3(%83) to %84_@out
-    %pod_14_@comp_@out = %84_@out
-  }
-  else {
-  }
-  %pod_3_@in = %arg1
-  %15 = %pod_2_@count
-  %c1_25 = 1
-  %16 = felt.sub %15 %c1_25
-  %pod_2_@count = %16
-  %c0_26 = 0
-  %17 = bool.eq %16 %c0_26
-  if (%17 == 1) {
     %83 = %pod_3_@in
-    call @igualdadRepetida_4(%83) to %84_@out
+    call @EqualToVal_2(%83) to %84_@out
     %pod_2_@comp_@out = %84_@out
   }
   else {
   }
-  %18_@out = %pod_5_@comp_@out
+  %pod_15_@in = %arg0
+  %3 = %pod_14_@count
+  %c1_17 = 1
+  %4 = felt.sub %3 %c1_17
+  %pod_14_@count = %4
+  %c0_18 = 0
+  %5 = bool.eq %4 %c0_18
+  if (%5 == 1) {
+    %83 = %pod_15_@in
+    call @EqualToVal_3(%83) to %84_@out
+    %pod_14_@comp_@out = %84_@out
+  }
+  else {
+  }
+  %pod_12_@in = %arg0
+  %6 = %pod_11_@count
+  %c1_19 = 1
+  %7 = felt.sub %6 %c1_19
+  %pod_11_@count = %7
+  %c0_20 = 0
+  %8 = bool.eq %7 %c0_20
+  if (%8 == 1) {
+    %83 = %pod_12_@in
+    call @EqualToVal_4(%83) to %84_@out
+    %pod_11_@comp_@out = %84_@out
+  }
+  else {
+  }
+  %pod_6_@in = %arg1
+  %9 = %pod_5_@count
+  %c1_21 = 1
+  %10 = felt.sub %9 %c1_21
+  %pod_5_@count = %10
+  %c0_22 = 0
+  %11 = bool.eq %10 %c0_22
+  if (%11 == 1) {
+    %83 = %pod_6_@in
+    call @EqualToVal_2(%83) to %84_@out
+    %pod_5_@comp_@out = %84_@out
+  }
+  else {
+  }
+  %pod_9_@in = %arg1
+  %12 = %pod_8_@count
+  %c1_23 = 1
+  %13 = felt.sub %12 %c1_23
+  %pod_8_@count = %13
+  %c0_24 = 0
+  %14 = bool.eq %13 %c0_24
+  if (%14 == 1) {
+    %83 = %pod_9_@in
+    call @EqualToVal_3(%83) to %84_@out
+    %pod_8_@comp_@out = %84_@out
+  }
+  else {
+  }
+  %pod_0_@in = %arg1
+  %15 = %pod_@count
+  %c1_25 = 1
+  %16 = felt.sub %15 %c1_25
+  %pod_@count = %16
+  %c0_26 = 0
+  %17 = bool.eq %16 %c0_26
+  if (%17 == 1) {
+    %83 = %pod_0_@in
+    call @EqualToVal_4(%83) to %84_@out
+    %pod_@comp_@out = %84_@out
+  }
+  else {
+  }
+  %18_@out = %pod_2_@comp_@out
   %19 = %18_@out
-  %20_@out = %pod_11_@comp_@out
+  %20_@out = %pod_5_@comp_@out
   %21 = %20_@out
   %22 = felt.mul %19 %21
   @eq0 = %22
-  %23_@out = %pod_@comp_@out
+  %23_@out = %pod_14_@comp_@out
   %24 = %23_@out
-  %25_@out = %pod_14_@comp_@out
+  %25_@out = %pod_8_@comp_@out
   %26 = %25_@out
   %27 = felt.mul %24 %26
   @eq1 = %27
-  %28_@out = %pod_8_@comp_@out
+  %28_@out = %pod_11_@comp_@out
   %29 = %28_@out
-  %30_@out = %pod_2_@comp_@out
+  %30_@out = %pod_@comp_@out
   %31 = %30_@out
   %32 = felt.mul %29 %31
   @eq2 = %32
@@ -309,42 +309,42 @@ def @piedra_papel_tijera_5(%arg0: ff, %arg1: ff) -> @ganador: ff {
   %felt_const_1 = 1
   %35 = felt.sub %felt_const_1 %34
   @inv = %35
-  %36_@out = %pod_5_@comp_@out
+  %36_@out = %pod_2_@comp_@out
   %37 = %36_@out
-  %38_@out = %pod_2_@comp_@out
+  %38_@out = %pod_@comp_@out
   %39 = %38_@out
   %40 = felt.mul %37 %39
   @j1_0 = %40
-  %41_@out = %pod_@comp_@out
+  %41_@out = %pod_14_@comp_@out
   %42 = %41_@out
-  %43_@out = %pod_11_@comp_@out
+  %43_@out = %pod_5_@comp_@out
   %44 = %43_@out
   %45 = felt.mul %42 %44
   @j1_1 = %45
-  %46_@out = %pod_8_@comp_@out
+  %46_@out = %pod_11_@comp_@out
   %47 = %46_@out
-  %48_@out = %pod_14_@comp_@out
+  %48_@out = %pod_8_@comp_@out
   %49 = %48_@out
   %50 = felt.mul %47 %49
   @j1_2 = %50
   %51 = felt.add %40 %45
   %52 = felt.add %51 %50
   @j1 = %52
-  %53_@out = %pod_5_@comp_@out
+  %53_@out = %pod_2_@comp_@out
   %54 = %53_@out
-  %55_@out = %pod_14_@comp_@out
+  %55_@out = %pod_8_@comp_@out
   %56 = %55_@out
   %57 = felt.mul %54 %56
   @j2_0 = %57
-  %58_@out = %pod_@comp_@out
+  %58_@out = %pod_14_@comp_@out
   %59 = %58_@out
-  %60_@out = %pod_2_@comp_@out
+  %60_@out = %pod_@comp_@out
   %61 = %60_@out
   %62 = felt.mul %59 %61
   @j2_1 = %62
-  %63_@out = %pod_8_@comp_@out
+  %63_@out = %pod_11_@comp_@out
   %64 = %63_@out
-  %65_@out = %pod_11_@comp_@out
+  %65_@out = %pod_5_@comp_@out
   %66 = %65_@out
   %67 = felt.mul %64 %66
   @j2_2 = %67
@@ -363,14 +363,14 @@ def @piedra_papel_tijera_5(%arg0: ff, %arg1: ff) -> @ganador: ff {
   %74 = felt.mul %73 %felt_const_2
   %75 = felt.mul %72 %35
   %76 = felt.add %74 %75
-  @ganador = %76
-  %77_@out = %pod_8_@comp_@out
-  %78_@out = %pod_5_@comp_@out
-  %79_@out = %pod_14_@comp_@out
-  %80_@out = %pod_@comp_@out
-  %81_@out = %pod_2_@comp_@out
-  %82_@out = %pod_11_@comp_@out
+  @winner = %76
+  %77_@out = %pod_11_@comp_@out
+  %78_@out = %pod_2_@comp_@out
+  %79_@out = %pod_5_@comp_@out
+  %80_@out = %pod_8_@comp_@out
+  %81_@out = %pod_14_@comp_@out
+  %82_@out = %pod_@comp_@out
 }
-def main(%arg0: ff, %arg1: ff) -> @ganador: ff {
-  call @piedra_papel_tijera_5(%arg0, %arg1) to @ganador
+def main(%arg0: ff, %arg1: ff) -> @winner: ff {
+  call @RockPaperScissors_5(%arg0, %arg1) to @winner
 }

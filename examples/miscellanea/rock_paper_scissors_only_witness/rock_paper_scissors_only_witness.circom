@@ -1,24 +1,24 @@
 pragma circom 2.0.0;
 
-template Juego(){
-   signal input jugador1;
-   signal input jugador2;
+template RockPaperScissors(){
+   signal input player1;
+   signal input player2;
    
-   signal output ganador;
+   signal output winner;
    
-   if (jugador1 == jugador2){
-       ganador <-- 2;
-   } else if (jugador1 == 0 && jugador2 == 2){
-       ganador <-- 0;
-   } else if (jugador1 == 1 && jugador2 == 0){
-      ganador <-- 0;
-   } else if (jugador1 == 2 && jugador2 == 1){
-      ganador <-- 0;
+   if (player1 == player2){
+       winner <-- 2;
+   } else if (player1 == 0 && player2 == 2){
+       winner <-- 0;
+   } else if (player1 == 1 && player2 == 0){
+      winner <-- 0;
+   } else if (player1 == 2 && player2 == 1){
+      winner <-- 0;
    } else{
-      ganador <-- 1;
+      winner <-- 1;
    }
 
 
 }
 
-component main = Juego();
+component main = RockPaperScissors();
