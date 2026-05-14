@@ -1,8 +1,8 @@
-def @Juego_0(%arg0: ff, %arg1: ff) -> @ganador: ff {
+def @RockPaperScissors_0(%arg0: ff, %arg1: ff) -> @winner: ff {
   %0 = bool.eq %arg1 %arg0
   if (%0 == 1) {
     %felt_const_2 = 2
-    @ganador = %felt_const_2
+    @winner = %felt_const_2
     %1 = %felt_const_2
   }
   else {
@@ -13,7 +13,7 @@ def @Juego_0(%arg0: ff, %arg1: ff) -> @ganador: ff {
     %4 = bool.and %2 %3
     if (%4 == 1) {
       %felt_const_0_0 = 0
-      @ganador = %felt_const_0_0
+      @winner = %felt_const_0_0
       %5 = %felt_const_0_0
     }
     else {
@@ -24,7 +24,7 @@ def @Juego_0(%arg0: ff, %arg1: ff) -> @ganador: ff {
       %8 = bool.and %6 %7
       if (%8 == 1) {
         %felt_const_0_1 = 0
-        @ganador = %felt_const_0_1
+        @winner = %felt_const_0_1
         %9 = %felt_const_0_1
       }
       else {
@@ -35,12 +35,12 @@ def @Juego_0(%arg0: ff, %arg1: ff) -> @ganador: ff {
         %12 = bool.and %10 %11
         if (%12 == 1) {
           %felt_const_0_3 = 0
-          @ganador = %felt_const_0_3
+          @winner = %felt_const_0_3
           %13 = %felt_const_0_3
         }
         else {
           %felt_const_1_3 = 1
-          @ganador = %felt_const_1_3
+          @winner = %felt_const_1_3
           %13 = %felt_const_1_3
         }
         %9 = %13
@@ -50,6 +50,6 @@ def @Juego_0(%arg0: ff, %arg1: ff) -> @ganador: ff {
     %1 = %5
   }
 }
-def main(%arg0: ff, %arg1: ff) -> @ganador: ff {
-  call @Juego_0(%arg0, %arg1) to @ganador
+def main(%arg0: ff, %arg1: ff) -> @winner: ff {
+  call @RockPaperScissors_0(%arg0, %arg1) to @winner
 }
