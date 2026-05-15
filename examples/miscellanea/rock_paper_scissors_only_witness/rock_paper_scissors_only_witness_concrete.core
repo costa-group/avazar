@@ -1,53 +1,69 @@
 def @RockPaperScissors_0(%arg0: ff, %arg1: ff) -> @winner: ff {
-  %0 = bool.eq %arg1 %arg0
-  if (%0 == 1) {
-    %felt_const_2 = 2
-    @winner = %felt_const_2
-    %1 = %felt_const_2
+  %felt_const_2 = 2
+  %0 = bool.eq %felt_const_2 %arg0
+  %felt_const_3 = 3
+  %1 = bool.eq %felt_const_3 %arg0
+  %2 = bool.or %0 %1
+  %felt_const_5 = 5
+  %3 = bool.eq %felt_const_5 %arg0
+  %4 = bool.or %2 %3
+  %felt_const_2_0 = 2
+  %5 = bool.eq %felt_const_2_0 %arg1
+  %felt_const_3_1 = 3
+  %6 = bool.eq %felt_const_3_1 %arg1
+  %7 = bool.or %5 %6
+  %felt_const_5_2 = 5
+  %8 = bool.eq %felt_const_5_2 %arg1
+  %9 = bool.or %7 %8
+  %10 = bool.eq %arg1 %arg0
+  if (%10 == 1) {
+    %felt_const_0 = 0
+    @winner = %felt_const_0
+    %11 = %felt_const_0
   }
   else {
-    %felt_const_0 = 0
-    %2 = bool.eq %felt_const_0 %arg0
-    %felt_const_2 = 2
-    %3 = bool.eq %felt_const_2 %arg1
-    %4 = bool.and %2 %3
-    if (%4 == 1) {
-      %felt_const_0_0 = 0
-      @winner = %felt_const_0_0
-      %5 = %felt_const_0_0
+    %felt_const_2_3 = 2
+    %12 = bool.eq %felt_const_2_3 %arg0
+    %felt_const_5_4 = 5
+    %13 = bool.eq %felt_const_5_4 %arg1
+    %14 = bool.and %12 %13
+    if (%14 == 1) {
+      %felt_const_1 = 1
+      @winner = %felt_const_1
+      %15 = %felt_const_1
     }
     else {
-      %felt_const_1 = 1
-      %6 = bool.eq %felt_const_1 %arg0
-      %felt_const_0_0 = 0
-      %7 = bool.eq %felt_const_0_0 %arg1
-      %8 = bool.and %6 %7
-      if (%8 == 1) {
-        %felt_const_0_1 = 0
-        @winner = %felt_const_0_1
-        %9 = %felt_const_0_1
+      %felt_const_3_5 = 3
+      %16 = bool.eq %felt_const_3_5 %arg0
+      %felt_const_2_6 = 2
+      %17 = bool.eq %felt_const_2_6 %arg1
+      %18 = bool.and %16 %17
+      if (%18 == 1) {
+        %felt_const_1 = 1
+        @winner = %felt_const_1
+        %19 = %felt_const_1
       }
       else {
-        %felt_const_2_1 = 2
-        %10 = bool.eq %felt_const_2_1 %arg0
-        %felt_const_1_2 = 1
-        %11 = bool.eq %felt_const_1_2 %arg1
-        %12 = bool.and %10 %11
-        if (%12 == 1) {
-          %felt_const_0_3 = 0
-          @winner = %felt_const_0_3
-          %13 = %felt_const_0_3
+        %felt_const_5_7 = 5
+        %20 = bool.eq %felt_const_5_7 %arg0
+        %felt_const_3_8 = 3
+        %21 = bool.eq %felt_const_3_8 %arg1
+        %22 = bool.and %20 %21
+        if (%22 == 1) {
+          %felt_const_1 = 1
+          @winner = %felt_const_1
+          %23 = %felt_const_1
         }
         else {
-          %felt_const_1_3 = 1
-          @winner = %felt_const_1_3
-          %13 = %felt_const_1_3
+          %felt_const_2_9 = 2
+          @winner = %felt_const_2_9
+          %23 = %felt_const_2_9
         }
-        %9 = %13
+        %19 = %23
       }
-      %5 = %9
+      %15 = %19
     }
-    %1 = %5
+    %11 = %15
   }
 }
 def main(%arg0: ff, %arg1: ff) -> @winner: ff {
