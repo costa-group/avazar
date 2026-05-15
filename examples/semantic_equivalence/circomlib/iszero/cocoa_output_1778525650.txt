@@ -1,0 +1,11 @@
+
+Loading CoCoA packages from directory:
+  /home/clara/investigacion/poly-eqs/CoCoALib/src/CoCoA-5/packages
+
+
+##########################################################################
+Executing file ./cocoa_input_1778525650.cocoa
+##########################################################################
+
+[1]
+[0,  0,  0,  -1,  0,  u_18*x_6,  u_18,  -u_18,  u_18,  0,  0,  0,  -u_18,  -u_18*x_3,  0,  0,  0,  0,  -u_18,  0]

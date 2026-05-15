@@ -24,6 +24,13 @@ template RockPaperScissors (){
 	signal out;
 	signal j1;
 	signal j2;	
+	
+	
+	signal player1_01 <== player1 * (player1 - 1);
+	0 === player1_01 * (player1 - 2);
+	
+	signal player2_01 <== player2 * (player2 - 1);
+	0 === player2_01 * (player2 - 2);
 	 
 	// Comparisons of the possible state of each player
 	
