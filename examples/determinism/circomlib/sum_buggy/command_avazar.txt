@@ -1,0 +1,2 @@
+avazar 1_incorrect_sum_test.r1cs --input_structure 1_incorrect_structure.json --solver ffsol --verbose
+

@@ -1,0 +1,2 @@
+avazar 1_correct_sum_test.r1cs --check_equivalence 1_correct_sum_test.r1cs --input_structure 2_merged_structure.json --solver ffsol --verbose
+
