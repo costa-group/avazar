@@ -6,7 +6,7 @@
 (declare-fun ff.mul (FFp FFp) FFp)
 (declare-fun ff.sub (FFp FFp) FFp)
 (declare-fun ff.neg (FFp) FFp)
-(declare-fun ff.range (FFp FFp FFp) Bool)
+
 (declare-fun ff.lt (FFp FFp) Bool)
 (declare-fun ff.gt (FFp FFp) Bool)
 (declare-fun ff.le (FFp FFp) Bool)
@@ -53,14 +53,14 @@
         (and 
           (and 
             (= v_4 (ite  (and  (= v_2 0) (= v_3 0) ) 0 1))
-            (ff.range v_4 0 1)
+            (or (= v_4 0) (= v_4 1))
           )
           (and 
             (= v_5 (ite  (= 5 v_0) 1 0))
             (and 
               (and 
                 (= v_6 (ite  (and  (= v_4 0) (= v_5 0) ) 0 1))
-                (ff.range v_6 0 1)
+            (or (= v_6 0) (= v_6 1))
               )
               (and 
                 (= v_7 (ite  (= 2 v_1) 1 0))
@@ -69,14 +69,14 @@
                   (and 
                     (and 
                       (= v_9 (ite  (and  (= v_7 0) (= v_8 0) ) 0 1))
-                      (ff.range v_9 0 1)
+            (or (= v_9 0) (= v_9 1))
                     )
                     (and 
                       (= v_10 (ite  (= 5 v_1) 1 0))
                       (and 
                         (and 
                           (= v_11 (ite  (and  (= v_9 0) (= v_10 0) ) 0 1))
-                          (ff.range v_11 0 1)
+            (or (= v_11 0) (= v_11 1))
                         )
                         (and 
                           (= v_12 (ite  (= v_1 v_0) 1 0))
@@ -94,7 +94,7 @@
                                   (and 
                                     (and 
                                       (= v_15 (ite  (or  (= v_13 0) (= v_14 0) ) 0 1))
-                                      (ff.range v_15 0 1)
+            (or (= v_15 0) (= v_15 1))
                                     )
                                     (and 
                                       (ite 
@@ -115,7 +115,7 @@
                                                 (and 
                                                   (and 
                                                     (= v_18 (ite  (or  (= v_16 0) (= v_17 0) ) 0 1))
-                                                    (ff.range v_18 0 1)
+            (or (= v_18 0) (= v_18 1))
                                                   )
                                                   (and 
                                                     (ite 
@@ -136,7 +136,7 @@
                                                               (and 
                                                                 (and 
                                                                   (= v_21 (ite  (or  (= v_19 0) (= v_20 0) ) 0 1))
-                                                                  (ff.range v_21 0 1)
+            (or (= v_21 0) (= v_21 1))
                                                                 )
                                                                 (and 
                                                                   (ite 
