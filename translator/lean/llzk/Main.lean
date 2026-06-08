@@ -39,7 +39,7 @@ def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Str
             @printConstraintSystem_asJSON c outStream constraints
             outStream.flush
          | fmt =>
-            IO.println s!"Unsupported SMT output format: {fmt}. Supported formats are 'smtlib' and 'json'."
+            IO.println s!"Unsupported SMT output format: {fmt}."
 
 /- Pretty printing of a given program -/
 def prettyPrinting
