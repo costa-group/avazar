@@ -27,10 +27,19 @@ def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Str
      | Except.error e =>
          IO.println s!"Error during symbolic execution: {e}"
      | Except.ok constraints =>
-       IO.println s!"Generating SMT constraints..."
-       IO.println s!""
-       @printConstraintSystem c outStream constraints
-       outStream.flush
+         match p.flag! "smt2_format" |>.as! String with
+         | "smt2" =>
+            IO.println s!"Generating encoding using SMT-LIB format..."
+            IO.println s!""
+            @printConstraintSystem c outStream constraints
+            outStream.flush
+         | "json" =>
+            IO.println s!"Generating encoding using JSON format..."
+            IO.println s!""
+            @printConstraintSystem_asJSON c outStream constraints
+            outStream.flush
+         | fmt =>
+            IO.println s!"Unsupported SMT output format: {fmt}. Supported formats are 'smtlib' and 'json'."
 
 /- Pretty printing of a given program -/
 def prettyPrinting
@@ -85,13 +94,14 @@ def llzkCmd : Cmd := `[Cli|
     sl, showliveness;        "Show liveness information for each command."
     pp, prettyprint;         "Parse and pretty-print the input program."
     se, symbolicexec;        "Perform symbolic execution of the input program."
-    zk, zkconfig : String;   "The ZKConfig to use for symbolic execution (f11,g64)"
+    zk, zkconfig : String;   "The ZKConfig to use for symbolic execution (f11,g64). Default is f11."
     m, main : String;        "The main function for symbolic execution (default: main)"
     o, output : String;      "The output file. If not provided, stdout is used."
+    smt2, smt2_format : String;  "The format of the SMT output (smtlib,json). Default is smtlib."
   ARGS:
     input : String;      "The input program"
   EXTENSIONS:
-    defaultValues! #[("zkconfig", "f11"), ("main", "main")]
+    defaultValues! #[("zkconfig", "f11"), ("main", "main"), ("smt2_format", "smtlib")]
 ]
 
 
