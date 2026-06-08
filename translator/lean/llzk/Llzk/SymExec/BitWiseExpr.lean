@@ -18,15 +18,19 @@ open Llzk.SymExec.Basic
 
 def sEvalBitWiseAND_general {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
-  let bits1Spec := bitify cfg md v1 -- bitify v1
-  let cfg' := { cfg with nextId := bits1Spec.nextId }
-  let bits2Spec := bitify cfg' md v2 -- bitify v2
-  let cfg'' := { cfg' with nextId := bits2Spec.nextId }
-  let bits3Spec := bitify cfg'' md (FFTerm.var outFFVar) -- bitify outVar
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let cfg' := { cfg with nextId := cfg.nextId+1 }
+  let bits1Spec := bitify cfg' md v1 -- bitify v1
+  let cfg'' := { cfg' with nextId := bits1Spec.nextId }
+  let bits2Spec := bitify cfg'' md v2 -- bitify v2
+  let cfg''' := { cfg'' with nextId := bits2Spec.nextId }
+  let bits3Spec := bitify cfg''' md (FFTerm.var outFFVar) -- bitify outVar
   -- generate $r_i = a_i * b_i$ for each bit
   let f : FFFormula c :=
     List.foldl
@@ -37,11 +41,13 @@ def sEvalBitWiseAND_general {c : ZKConfig}
                   (FFTerm.mul b1 b2))))
     (.and bits1Spec.f (.and bits2Spec.f bits3Spec.f))
     (List.zipWith3 (fun b1 b2 out => (b1, b2, out)) bits1Spec.bits bits2Spec.bits bits3Spec.bits)
-  let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars ∪ bits3Spec.newFFVars
+  let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars ∪ bits3Spec.newFFVars ∪ { outFFVar }
   return {
     inSymEnv := senv,
+    outSymEnv := senv,
     f := f,
     resTerm := (FFTerm.var outFFVar),
+    res := ⟨outFFVar, none⟩,
     nextId := bits3Spec.nextId,
     newFFVars := newFFVars
   }
@@ -49,16 +55,20 @@ def sEvalBitWiseAND_general {c : ZKConfig}
 
 def sEvalBitWiseAND_rconst {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v2 ← simpleExprToFF senv s2
   let v1 ← simpleExprToTerm senv s1
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let cfg' := { cfg with nextId := cfg.nextId+1 }
   let nbits := v2.val.log2 + 1
-  let bits1Spec := bitify cfg md v1 -- bitify v1 with c.k bits
-  let cfg' := { cfg with nextId := bits1Spec.nextId }
-  let bits2Spec := bitify_nbits cfg' md (FFTerm.val v2) nbits -- bitify v2 with nbits
-  let cfg'' := { cfg' with nextId := bits2Spec.nextId }
-  let bits3Spec := bitify_nbits cfg'' md (FFTerm.var outFFVar) nbits -- bitify outVar with nbits
+  let bits1Spec := bitify cfg' md v1 -- bitify v1 with c.k bits
+  let cfg'' := { cfg' with nextId := bits1Spec.nextId }
+  let bits2Spec := bitify_nbits cfg'' md (FFTerm.val v2) nbits -- bitify v2 with nbits
+  let cfg''' := { cfg'' with nextId := bits2Spec.nextId }
+  let bits3Spec := bitify_nbits cfg''' md (FFTerm.var outFFVar) nbits -- bitify outVar with nbits
   -- generate $r_i = a_i * b_i$ for each bit
   let f : FFFormula c :=
     List.foldl
@@ -69,41 +79,47 @@ def sEvalBitWiseAND_rconst {c : ZKConfig}
                   (FFTerm.mul b1 b2))))
     (.and bits1Spec.f (.and bits2Spec.f bits3Spec.f))
     (List.zipWith3 (fun b1 b2 out => (b1, b2, out)) bits1Spec.bits bits2Spec.bits bits3Spec.bits)
-  let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars ∪ bits3Spec.newFFVars
+  let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars ∪ bits3Spec.newFFVars ∪ { outFFVar }
   return {
     inSymEnv := senv,
+    outSymEnv := senv,
     f := f,
     resTerm := (FFTerm.var outFFVar),
+    res := ⟨outFFVar, none⟩,
     nextId := bits3Spec.nextId,
     newFFVars := newFFVars
   }
 
 def sEvalBitWiseAND {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  match sEvalBitWiseAND_rconst cfg md senv s1 s2 outFFVar with
+  match sEvalBitWiseAND_rconst cfg md senv s1 s2 id with
   | Except.ok spec => return spec
   | Except.error _ =>
-    match sEvalBitWiseAND_rconst cfg md senv s2 s1 outFFVar with
+    match sEvalBitWiseAND_rconst cfg md senv s2 s1 id with
     | Except.ok spec => return spec
     | Except.error _ =>
-      sEvalBitWiseAND_general cfg md senv s1 s2 outFFVar
+      sEvalBitWiseAND_general cfg md senv s1 s2 id
 
 
 
 
 def sEvalBitWiseOR {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
-  let bits1Spec := bitify cfg md v1 -- bitify v1
-  let cfg' := { cfg with nextId := bits1Spec.nextId }
-  let bits2Spec := bitify cfg' md v2 -- bitify v2
-  let cfg'' := { cfg' with nextId := bits2Spec.nextId }
-  let bits3Spec := bitify cfg'' md (FFTerm.var outFFVar) -- bitify outVar
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let cfg' := { cfg with nextId := cfg.nextId+1 }
+  let bits1Spec := bitify cfg' md v1 -- bitify v1
+  let cfg'' := { cfg' with nextId := bits1Spec.nextId }
+  let bits2Spec := bitify cfg'' md v2 -- bitify v2
+  let cfg''' := { cfg'' with nextId := bits2Spec.nextId }
+  let bits3Spec := bitify cfg''' md (FFTerm.var outFFVar) -- bitify outVar
   -- generate $r_i = a_i + b_i - a_i * b_i$ for each bit
   let f : FFFormula c :=
     List.foldl
@@ -114,26 +130,32 @@ def sEvalBitWiseOR {c : ZKConfig}
                   (FFTerm.sub (FFTerm.add b1 b2) (FFTerm.mul b1 b2)))))
     (.and bits1Spec.f (.and bits2Spec.f bits3Spec.f))
     (List.zipWith3 (fun b1 b2 out => (b1, b2, out)) bits1Spec.bits bits2Spec.bits bits3Spec.bits)
-  let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars ∪ bits3Spec.newFFVars
+  let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars ∪ bits3Spec.newFFVars ∪ { outFFVar }
   return {
     inSymEnv := senv,
+    outSymEnv := senv,
     f := f,
     resTerm := (FFTerm.var outFFVar),
+    res := ⟨outFFVar, none⟩,
     nextId := bits3Spec.nextId,
     newFFVars := newFFVars
   }
 
 def sEvalBitWiseXOR {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
-  let bits1Spec := bitify cfg md v1 -- bitify v1
-  let cfg' := { cfg with nextId := bits1Spec.nextId }
-  let bits2Spec := bitify cfg' md v2 -- bitify v2
-  let cfg'' := { cfg' with nextId := bits2Spec.nextId }
-  let bits3Spec := bitify cfg'' md (FFTerm.var outFFVar) -- bitify outVar
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let cfg' := { cfg with nextId := cfg.nextId+1 }
+  let bits1Spec := bitify cfg' md v1 -- bitify v1
+  let cfg'' := { cfg' with nextId := bits1Spec.nextId }
+  let bits2Spec := bitify cfg'' md v2 -- bitify v2
+  let cfg''' := { cfg'' with nextId := bits2Spec.nextId }
+  let bits3Spec := bitify cfg''' md (FFTerm.var outFFVar) -- bitify outVar
   -- generate $r_i = a_i + b_i - 2 * a_i * b_i$ for each bit
   let f : FFFormula c :=
     List.foldl
@@ -144,23 +166,29 @@ def sEvalBitWiseXOR {c : ZKConfig}
                 (FFTerm.sub (FFTerm.add b1 b2) (FFTerm.mul (FFTerm.mul (FFTerm.val 2) b1) b2)))))
     (.and bits1Spec.f (.and bits2Spec.f bits3Spec.f))
     (List.zipWith3 (fun b1 b2 out => (b1, b2, out)) bits1Spec.bits bits2Spec.bits bits3Spec.bits)
-  let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars ∪ bits3Spec.newFFVars
+  let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars ∪ bits3Spec.newFFVars ∪ { outFFVar }
   return {
     inSymEnv := senv,
+    outSymEnv := senv,
     f := f,
     resTerm := (FFTerm.var outFFVar),
+    res := ⟨outFFVar, none⟩,
     nextId := bits3Spec.nextId,
     newFFVars := newFFVars
   }
 
 def sEvalBitWiseNOT {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v ← simpleExprToTerm senv s
-  let bits1Spec := bitify cfg md v -- bitify v1
-  let cfg' := { cfg with nextId := bits1Spec.nextId }
-  let bits2Spec := bitify cfg' md (FFTerm.var outFFVar) -- bitify outVar
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let cfg' := { cfg with nextId := cfg.nextId+1 }
+  let bits1Spec := bitify cfg' md v -- bitify v1
+  let cfg'' := { cfg' with nextId := bits1Spec.nextId }
+  let bits2Spec := bitify cfg'' md (FFTerm.var outFFVar) -- bitify outVar
   -- generate $r_i = 1 - a_i$ for each bit
   let f : FFFormula c :=
     List.foldl
@@ -171,11 +199,13 @@ def sEvalBitWiseNOT {c : ZKConfig}
                 (FFTerm.sub (FFTerm.val 1) b))))
     (.and bits1Spec.f bits2Spec.f)
     (List.zip bits1Spec.bits bits2Spec.bits)
-  let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars
+  let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars ∪ { outFFVar }
   return {
     inSymEnv := senv,
+    outSymEnv := senv,
     f := f,
     resTerm := (FFTerm.var outFFVar),
+    res := ⟨outFFVar, none⟩,
     nextId := bits2Spec.nextId,
     newFFVars := newFFVars
   }
@@ -186,18 +216,25 @@ def sEvalBitWiseNOT {c : ZKConfig}
 
 def sEvalBitWiseSHLAux {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (v1 : FFTerm c) (v2 : Nat) (outFFVar : FFVar)
+  (senv : SymEnv c) (v1 : FFTerm c) (v2 : Nat) (id : VarID)
   : Except String (ExprSpec c) := do
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let cfg' := { cfg with nextId := cfg.nextId+1 }
   if v2 >= c.k then
     -- if shift amount is greater than or equal to bit width, the result is always 0
     return {
       inSymEnv := senv,
+      outSymEnv := senv,
       f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.val 0),
       resTerm := (FFTerm.var outFFVar),
-      nextId := cfg.nextId
+      res := ⟨outFFVar, none⟩,
+      nextId := cfg'.nextId,
+      newFFVars := { outFFVar }
     }
   else
-    let bits1Spec := bitify cfg md v1 -- bitify v1
+    let bits1Spec := bitify cfg' md v1 -- bitify v1
     let newBits := (bits1Spec.bits.reverse.drop v2).reverse
     let idxs := List.range c.k
     let pows := idxs.map (fun i => FFTerm.val (2 ^ (i+v2)))
@@ -209,22 +246,24 @@ def sEvalBitWiseSHLAux {c : ZKConfig}
                                    (List.zip bs ps)
                | _, _ => FFTerm.val 0 -- they are the same length, we reach this with empty lists
     let f : FFFormula c := (.and bits1Spec.f (FFFormula.eq (FFTerm.var outFFVar) sum))
-    let newFFVars := bits1Spec.newFFVars
+    let newFFVars := bits1Spec.newFFVars ∪ { outFFVar }
     return {
       inSymEnv := senv,
+      outSymEnv := senv,
       f := f,
       resTerm := (FFTerm.var outFFVar),
+      res := ⟨outFFVar, none⟩,
       nextId := bits1Spec.nextId,
       newFFVars := newFFVars
     }
 
 def sEvalBitWiseSHLConstShift {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToFF senv s2 -- the number of bits
-  sEvalBitWiseSHLAux cfg md senv v1 v2.val outFFVar
+  sEvalBitWiseSHLAux cfg md senv v1 v2.val id
 
 
 
@@ -247,6 +286,8 @@ where F is as follows. Let b1,...,bi be the log2(k)+1 lsb bits of s2
    outVar = outVar_{i+1}
 
 -/
+
+/-
 
 def sEvalBitWiseSHLNonConstShift_Loop {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
@@ -336,7 +377,15 @@ def sEvalBitWiseSHL {c : ZKConfig}
   | Except.ok spec => return spec
   | Except.error _ => sEvalBitWiseSHLNonConstShift cfg md senv s1 s2 outFFVar
 
+-/
 
+def sEvalBitWiseSHL {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
+  : Except String (ExprSpec c) := do
+  match sEvalBitWiseSHLConstShift cfg md senv s1 s2 id with
+  | Except.ok spec => return spec
+  | Except.error _ =>  Except.error "Non-constant lsh is not supported yet"
 
 /- SHIFT RIGHT
 -/
@@ -344,18 +393,25 @@ def sEvalBitWiseSHL {c : ZKConfig}
 
 def sEvalBitWiseSHRAux {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (v1 : FFTerm c) (v2 : Nat) (outFFVar : FFVar)
+  (senv : SymEnv c) (v1 : FFTerm c) (v2 : Nat) (id : VarID)
   : Except String (ExprSpec c) := do
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let cfg' := { cfg with nextId := cfg.nextId+1 }
   if v2 >= c.k then
     -- if shift amount is greater than or equal to bit width, the result is always 0
     return {
       inSymEnv := senv,
+      outSymEnv := senv,
       f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.val 0),
       resTerm := (FFTerm.var outFFVar),
-      nextId := cfg.nextId
+      res := ⟨outFFVar, none⟩,
+      nextId := cfg'.nextId,
+      newFFVars := { outFFVar }
     }
   else
-    let bits1Spec := bitify cfg md v1 -- bitify v1
+    let bits1Spec := bitify cfg' md v1 -- bitify v1
     let newBits := bits1Spec.bits.drop v2
     let idxs := List.range c.k
     let pows := idxs.map (fun i => FFTerm.val (2 ^ i))
@@ -367,23 +423,25 @@ def sEvalBitWiseSHRAux {c : ZKConfig}
                                     (List.zip bs ps)
                | _, _ => FFTerm.val 0 -- they are the same length, we reach this with empty lists
     let f : FFFormula c := (.and bits1Spec.f (FFFormula.eq (FFTerm.var outFFVar) sum))
-    let newFFVars := bits1Spec.newFFVars
+    let newFFVars := bits1Spec.newFFVars ∪ { outFFVar }
     return {
-       inSymEnv := senv,
-       f := f,
-       resTerm := (FFTerm.var outFFVar),
-       nextId := bits1Spec.nextId,
-       newFFVars := newFFVars
+      inSymEnv := senv,
+      outSymEnv := senv,
+      f := f,
+      resTerm := (FFTerm.var outFFVar),
+      res := ⟨outFFVar, none⟩,
+      nextId := bits1Spec.nextId,
+      newFFVars := newFFVars
     }
 
 
 def sEvalBitWiseSHRConstShift {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToFF senv s2 -- the number of bits
-  sEvalBitWiseSHRAux cfg md senv v1 v2.val outFFVar
+  sEvalBitWiseSHRAux cfg md senv v1 v2.val id
 
 
 /-
@@ -405,6 +463,7 @@ where F is as follows. Let b1,...,bi be the log2(k)+1 lsb bits of s2
 
 -/
 
+/-
 def sEvalBitWiseSHRNonConstShift_Loop {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
   (senv : SymEnv c)
@@ -492,4 +551,13 @@ def sEvalBitWiseSHR {c : ZKConfig}
   | Except.ok spec => return spec
   | Except.error _ => sEvalBitWiseSHRNonConstShift cfg md senv s1 s2 outFFVar
 
+-/
+
+def sEvalBitWiseSHR {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
+  : Except String (ExprSpec c) := do
+  match sEvalBitWiseSHRConstShift cfg md senv s1 s2 id with
+  | Except.ok spec => return spec
+  | Except.error _ => Except.error "Non-constant shr is not supported yet"
 end Llzk.SymExec.SymInstr
