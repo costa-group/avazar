@@ -293,7 +293,7 @@ def printConstraintSystem_asJSON {c : ZKConfig}
   stream.putStrLn s!"  \"macros\": \{"
   printMacros_asJSON stream sys.macros.reverse -- we assume main is first
   stream.putStrLn ""
-  stream.putStrLn s!"  }"
+  stream.putStrLn s!"  },"
   -- Main formula
   stream.putStrLn s!"  \"main\": \{"
   stream.putStr s!"    \"vars\": ["
