@@ -70,22 +70,16 @@ def seAssignmentConst {c : ZKConfig}
 def seAssignmentNonConst {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c) (id : VarID) (e : Expr c)
   : Except String (CmdsSpec c) := do
-  -- new variable for the result of the expression
-  let outFFVar : FFVar := { id := cfg.nextId,
-                            meta_data := { src_info := md.src_info, orig_name := id}
-                          }
-  -- increment the nextId in the config for the next variable
-  let cfg' : SymExecConfig c := { cfg with nextId := cfg.nextId + 1 }
   -- calculate the spec for the expression
-  let exprSpec ← sEvalExpr cfg' md symEnv e outFFVar
+  let exprSpec ← sEvalExpr cfg md symEnv e id
   -- update the symbolic environment with the new variable
-  let newSymEnv := setVar symEnv id (SymValue.ffVar (SymFFVar.var outFFVar))
+  let newSymEnv := setVar symEnv id (SymValue.ffVar (SymFFVar.var exprSpec.res))
   -- the command spec
   return { inSymEnv := symEnv,
            outSymEnv := newSymEnv,
            f := exprSpec.f,
            nextId := exprSpec.nextId,
-           newFFVars := exprSpec.newFFVars.insert outFFVar,
+           newFFVars := exprSpec.newFFVars,
            newBoolVars := exprSpec.newBoolVars }
 
 /- Symbolic execution of assignment -/

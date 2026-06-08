@@ -13,72 +13,102 @@ open Llzk.SymExec.Basic
 
 /- Symbolic expression of .neg expression -/
 def sEvalExprNeg {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s : SimpleExpr c) (outFFVar : FFVar)
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v ← simpleExprToTerm senv s
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   return {
           inSymEnv := senv,
+          outSymEnv := senv,
           f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.neg v), -- outVar = -v
           resTerm := (FFTerm.var outFFVar),
-          nextId := cfg.nextId
+          res := ⟨outFFVar, none⟩,
+          newFFVars := { outFFVar },
+          nextId := cfg.nextId+1
   }
 
 /- Symbolic expression of .add expression -/
 def sEvalExprAdd {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   return {
           inSymEnv := senv,
+          outSymEnv := senv,
           f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.add v1 v2), -- outVar = v1 + v2
           resTerm := (FFTerm.var outFFVar),
-          nextId := cfg.nextId
+          res := ⟨outFFVar, none⟩,
+          newFFVars := { outFFVar },
+          nextId := cfg.nextId+1
   }
 
 /- Symbolic expression of .sub expression -/
 def sEvalExprSub {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   return {
           inSymEnv := senv,
+          outSymEnv := senv,
           f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.sub v1 v2), -- outVar = v1 - v2
           resTerm := (FFTerm.var outFFVar),
-          nextId := cfg.nextId
+          res := ⟨outFFVar, none⟩,
+          newFFVars := { outFFVar },
+          nextId := cfg.nextId+1
   }
 
 /- Symbolic expression of .mul expression -/
 def sEvalExprMul {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   return {
           inSymEnv := senv,
+          outSymEnv := senv,
           f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.mul v1 v2), -- outVar = v1 * v2
           resTerm := (FFTerm.var outFFVar),
-          nextId := cfg.nextId
+          res := ⟨outFFVar, none⟩,
+          newFFVars := { outFFVar },
+          nextId := cfg.nextId+1
   }
 
 /- Symbolic expression of .div expression -/
 def sEvalExprDiv {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   return {
           inSymEnv := senv,
+          outSymEnv := senv,
           -- outVar*v2 = v1
           f := FFFormula.eq (FFTerm.mul (FFTerm.var outFFVar) v2) v1,  -- (outVar = v1 / v2)
           resTerm := (FFTerm.var outFFVar),
-          nextId := cfg.nextId
+          res := ⟨outFFVar, none⟩,
+          newFFVars := { outFFVar },
+          nextId := cfg.nextId+1
   }
 
 end Llzk.SymExec.SymInstr

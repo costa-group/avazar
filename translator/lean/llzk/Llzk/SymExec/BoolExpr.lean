@@ -25,18 +25,25 @@ open Llzk.SymExec.Basic
 -/
 
 def sEvalEq {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   return {
           inSymEnv := senv,
-          f := FFFormula.eq
-                    (FFTerm.var outFFVar)
-                    (FFTerm.ite (FFFormula.eq v1 v2) (.val 1) (.val 0))
+          outSymEnv := senv,
+          f := (.and (FFFormula.eq
+                        (FFTerm.var outFFVar)
+                        (FFTerm.ite (FFFormula.eq v1 v2) (.val 1) (.val 0)))
+                      (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force bool
           resTerm := (FFTerm.var outFFVar),
-          nextId := cfg.nextId
+          res := ⟨outFFVar, none⟩,
+          newFFVars := { outFFVar },
+          nextId := cfg.nextId+1
   }
 
 /- Non-equality of boolean expressions.
@@ -45,18 +52,25 @@ def sEvalEq {c : ZKConfig}
 -/
 
 def sEvalNeq {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   return {
           inSymEnv := senv,
-          f := FFFormula.eq
-                 (FFTerm.var outFFVar)
-                 (FFTerm.ite (FFFormula.eq v1 v2) (.val 0) (.val 1)),
+          outSymEnv := senv,
+          f := (.and (FFFormula.eq
+                        (FFTerm.var outFFVar)
+                        (FFTerm.ite (FFFormula.eq v1 v2) (.val 0) (.val 1)))
+                     (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force bool
           resTerm := (FFTerm.var outFFVar),
-          nextId := cfg.nextId
+          res := ⟨outFFVar, none⟩,
+          newFFVars := { outFFVar },
+          nextId := cfg.nextId+1
   }
 
 
@@ -65,13 +79,17 @@ def sEvalNeq {c : ZKConfig}
    0 if both are 0, 1 otherwise.
 -/
 def sEvalBor {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   return {
           inSymEnv := senv,
+          outSymEnv := senv,
           f := .and
                 (FFFormula.eq
                   (FFTerm.var outFFVar)
@@ -79,9 +97,11 @@ def sEvalBor {c : ZKConfig}
                     (.and (.eq v1 (.val 0)) (.eq v2 (.val 0)))
                     (.val 0)
                     (.val 1)))
-                (FFFormula.range (FFTerm.var outFFVar) 0 1), -- force the result to be boolean
+                (FFFormula.range (FFTerm.var outFFVar) 0 1), -- force bool
           resTerm := (FFTerm.var outFFVar),
-          nextId := cfg.nextId
+          res := ⟨outFFVar, none⟩,
+          newFFVars := { outFFVar },
+          nextId := cfg.nextId+1
   }
 
 /- Boolean AND operation.
@@ -89,13 +109,17 @@ def sEvalBor {c : ZKConfig}
    0 if either is 0, 1 otherwise.
 -/
 def sEvalBAnd {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   return {
           inSymEnv := senv,
+          outSymEnv := senv,
           f := .and
                 (FFFormula.eq
                   (FFTerm.var outFFVar)
@@ -103,9 +127,11 @@ def sEvalBAnd {c : ZKConfig}
                     (.or (.eq v1 (.val 0)) (.eq v2 (.val 0)))
                     (.val 0)
                     (.val 1)))
-                (FFFormula.range (FFTerm.var outFFVar) 0 1), -- force the result to be boolean
+                (FFFormula.range (FFTerm.var outFFVar) 0 1), -- force bool
           resTerm := (FFTerm.var outFFVar),
-          nextId := cfg.nextId
+          res := ⟨outFFVar, none⟩,
+          newFFVars := { outFFVar },
+          nextId := cfg.nextId+1
   }
 
 /- Boolean negation operation.
@@ -113,21 +139,27 @@ def sEvalBAnd {c : ZKConfig}
    1 if the input is 0, and 0 otherwise.
 -/
 def sEvalBNeg {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s : SimpleExpr c) (outFFVar : FFVar)
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v ← simpleExprToTerm senv s
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   return {
           inSymEnv := senv,
+          outSymEnv := senv,
           f := .and
                 (FFFormula.eq (FFTerm.var outFFVar)
                  (FFTerm.ite
                     (.eq v (.val 0))
                     (.val 1)
                     (.val 0)))
-                (FFFormula.range (FFTerm.var outFFVar) 0 1), -- force the result to be boolean
+                (FFFormula.range (FFTerm.var outFFVar) 0 1), -- force bool
           resTerm := (FFTerm.var outFFVar),
-          nextId := cfg.nextId
+          res := ⟨outFFVar, none⟩,
+          newFFVars := { outFFVar },
+          nextId := cfg.nextId+1
   }
 
 
@@ -144,20 +176,26 @@ def sEvalBNeg {c : ZKConfig}
   v > 0 -> range(x, 0, v-1)
 -/
 def sEvalLtUnSignedConstLeft {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToFF senv s2
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   let f := if v2.val == 0 then
              FFFormula.false -- x<0 is always false when we are working with unsigned integers
            else
              FFFormula.eq (FFTerm.var outFFVar) (.ite (.range v1 0 (v2-1)) (.val 1) (.val 0))
   return {
           inSymEnv := senv,
-          f := f,
-          nextId := cfg.nextId,
-          resTerm := (FFTerm.var outFFVar)
+          outSymEnv := senv,
+          f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force bool
+          resTerm := (FFTerm.var outFFVar),
+          res := ⟨outFFVar, none⟩,
+          newFFVars := { outFFVar },
+          nextId := cfg.nextId+1
         }
 
 /-
@@ -169,20 +207,26 @@ def sEvalLtUnSignedConstLeft {c : ZKConfig}
   v < c.p-1 -> range(x, v+1, c.p-1)
 -/
 def sEvalLtUnSignedConstRight {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToFF senv s1
   let v2 ← simpleExprToTerm senv s2
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   let f := if (v1.val == (c.p-1)) then
              FFFormula.false -- p-1 < x is always false when we are working with unsigned integers
            else
              FFFormula.eq (FFTerm.var outFFVar) (.ite (.range v2 (v1+1) (c.p-1)) (.val 1) (.val 0))
   return {
           inSymEnv := senv,
-          f := f,
-          nextId := cfg.nextId,
-          resTerm := (FFTerm.var outFFVar)
+          outSymEnv := senv,
+          f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force bool
+          resTerm := (FFTerm.var outFFVar),
+          res := ⟨outFFVar, none⟩,
+          newFFVars := { outFFVar },
+          nextId := cfg.nextId+1
         }
 
 /- Compare x < y bitwise. We compare the bits of x and y from the
@@ -190,13 +234,17 @@ def sEvalLtUnSignedConstRight {c : ZKConfig}
 -/
 def sEvalLtUnSignedBitCmp {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToTerm senv s2
-  let bits1Spec := bitify cfg md v1 -- bitify v1
-  let cfg' := { cfg with nextId := bits1Spec.nextId }
-  let bits2Spec := bitify cfg' md v2 -- bitify v2
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let cfg' := { cfg with nextId := cfg.nextId+1 }
+  let bits1Spec := bitify cfg' md v1 -- bitify v1
+  let cfg'' := { cfg with nextId := bits1Spec.nextId }
+  let bits2Spec := bitify cfg'' md v2 -- bitify v2
   let ite := List.foldl -- construct the ite expression for bitwise comparison
               (fun acc (b1, b2) =>
                   FFTerm.ite
@@ -205,12 +253,14 @@ def sEvalLtUnSignedBitCmp {c : ZKConfig}
                     (.ite (.and (.eq b1 (.val 1)) (.eq b2 (.val 0))) (.val 0) acc))
               (.val 0)
               (List.zip bits1Spec.bits bits2Spec.bits)
-  let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars
+  let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars ∪ { outFFVar }
   let f := .and bits1Spec.f (.and bits2Spec.f (.eq (FFTerm.var outFFVar) ite))
   return {
           inSymEnv := senv,
-          f := f,
+          outSymEnv := senv,
+          f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force bool
           resTerm := (FFTerm.var outFFVar),
+          res := ⟨outFFVar, none⟩,
           nextId := bits2Spec.nextId,
           newFFVars := newFFVars,
           newBoolVars := ∅
@@ -221,15 +271,15 @@ def sEvalLtUnSignedBitCmp {c : ZKConfig}
 -/
 def sEvalLtUnSigned {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  match sEvalLtUnSignedConstLeft cfg md senv s1 s2 outFFVar with
+  match sEvalLtUnSignedConstLeft cfg md senv s1 s2 id with
   | Except.ok spec => return spec
   | Except.error _ =>
-    match sEvalLtUnSignedConstRight cfg md senv s1 s2 outFFVar with
+    match sEvalLtUnSignedConstRight cfg md senv s1 s2 id with
     | Except.ok spec => return spec
     | Except.error _ =>
-      match sEvalLtUnSignedBitCmp cfg md senv s1 s2 outFFVar with
+      match sEvalLtUnSignedBitCmp cfg md senv s1 s2 id with
       | Except.ok spec => return spec
       | Except.error err => throw err
 
@@ -238,22 +288,25 @@ def sEvalLtUnSigned {c : ZKConfig}
 -/
 def sEvalLeUnSigned {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  let outFFVarLt : FFVar := { id := cfg.nextId,
-                              meta_data := { src_info := md.src_info, orig_name := "gt_aux" }
-                            }
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   -- increment the nextId in the config for the next variable
   let cfg' : SymExecConfig c := { cfg with nextId := cfg.nextId + 1 }
-  let ltSpec ← sEvalLtUnSigned cfg' md senv s2 s1 outFFVarLt
+  let ltSpec ← sEvalLtUnSigned cfg' md senv s2 s1 s!"{id}_le_aux"
   return {
           inSymEnv := senv,
+          outSymEnv := ltSpec.outSymEnv,
           -- ltSpec.f /\ outFFVar = 1-outFFVarLt
-          f := (.and ltSpec.f (.eq (FFTerm.var outFFVar)
-                                   (FFTerm.sub (.val 1) (FFTerm.var outFFVarLt)))),
+          f := (.and (.and ltSpec.f (.eq (FFTerm.var outFFVar)
+                                   (FFTerm.sub (.val 1) (FFTerm.var ltSpec.res.var))))
+                    (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force bool
           nextId := ltSpec.nextId,
           resTerm := (FFTerm.var outFFVar),
-          newFFVars := ltSpec.newFFVars.insert outFFVarLt,
+          res := ⟨outFFVar, none⟩,
+          newFFVars := ltSpec.newFFVars.insert outFFVar,
           newBoolVars := ltSpec.newBoolVars
   }
 
@@ -261,17 +314,17 @@ def sEvalLeUnSigned {c : ZKConfig}
    the operands -/
 def sEvalGtUnSigned {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  sEvalLtUnSigned cfg md senv s2 s1 outFFVar
+  sEvalLtUnSigned cfg md senv s2 s1 id
 
 /- Greater than equal simply uses the encoding of less than equal
    after swapping the operands -/
 def sEvalGeUnSigned {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  sEvalLeUnSigned cfg md senv s2 s1 outFFVar
+  sEvalLeUnSigned cfg md senv s2 s1 id
 
 /- Signed comparison-/
 
@@ -285,11 +338,14 @@ def sEvalGeUnSigned {c : ZKConfig}
      0 < v < c.midpoint -> range(x, 0, v-1) or range(x, c.midpoint, p-1)
 -/
 def sEvalLtSignedConstLeft {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToTerm senv s1
   let v2 ← simpleExprToFF senv s2
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   let f :=  if v2.val == c.midpoint then
               FFFormula.false -- s1 < midpoint is false, midpoint is the smallest negative number
             else if v2.val > c.midpoint then
@@ -305,9 +361,12 @@ def sEvalLtSignedConstLeft {c : ZKConfig}
                                 (.val 0))
   return {
           inSymEnv := senv,
+          outSymEnv := senv,
           f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force boolean
-          nextId := cfg.nextId,
-          resTerm := (FFTerm.var outFFVar)
+          resTerm := (FFTerm.var outFFVar),
+          res := ⟨outFFVar, none⟩,
+          nextId := cfg.nextId+1,
+          newFFVars := { outFFVar }
         }
 
 /- Special case of signed x < y when the lower bound is a constant.
@@ -320,11 +379,14 @@ def sEvalLtSignedConstLeft {c : ZKConfig}
      v >= c.midpoint -> range(x, v+1, p-1) or range(x, 0, midpoint-1)
 -/
 def sEvalLtSignedConstRight {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let v1 ← simpleExprToFF senv s1
   let v2 ← simpleExprToTerm senv s2
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
   let f := if (v1.val == c.midpoint-1) then
              FFFormula.false -- c.midpoint-1 is the largest positive
            else if (v1.val < c.midpoint-1) then
@@ -340,9 +402,12 @@ def sEvalLtSignedConstRight {c : ZKConfig}
                                 (.val 0))
   return {
           inSymEnv := senv,
+          outSymEnv := senv,
           f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force boolean
-          nextId := cfg.nextId,
-          resTerm := (FFTerm.var outFFVar)
+          resTerm := (FFTerm.var outFFVar),
+          res := ⟨outFFVar, none⟩,
+          nextId := cfg.nextId+1,
+          newFFVars := { outFFVar }
         }
 
 /- Encoding signed x < y using the unsigned version.
@@ -357,42 +422,36 @@ def sEvalLtSignedConstRight {c : ZKConfig}
 -/
 def sEvalLtSignedBitCmp {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  -- A
-  let ffVarIsS1Pos : FFVar := { id := cfg.nextId,
-                                meta_data := { src_info := md.src_info, orig_name := "isS1Pos" }
-                              }
-  -- B
-  let ffVarIsS2Pos : FFVar := { id := cfg.nextId + 1,
-                                meta_data := { src_info := md.src_info, orig_name := "isS2Pos" }
-                              }
-  -- C
-  let ffVarLt : FFVar := { id := cfg.nextId + 2,
-                              meta_data := { src_info := md.src_info, orig_name := "ltAux" }
-                            }
-  let cfg' := { cfg with nextId := cfg.nextId + 3 }
-  let isS1Pos ← sEvalLtUnSigned cfg' md senv s1 (SimpleExpr.val c.midpoint) ffVarIsS1Pos
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let cfg' := { cfg with nextId := cfg.nextId + 4 }
+  let isS1Pos ← sEvalLtUnSigned cfg' md senv s1 (SimpleExpr.val c.midpoint) s!"{id}isS1Pos"
   let cfg'' := { cfg' with nextId := isS1Pos.nextId }
-  let isS2Pos ← sEvalLtUnSigned cfg'' md senv s2 (SimpleExpr.val c.midpoint) ffVarIsS2Pos
+  let isS2Pos ← sEvalLtUnSigned cfg'' md
+                     isS1Pos.outSymEnv s2 (SimpleExpr.val c.midpoint) s!"{id}_isS2Pos"
   let cfg''' := { cfg'' with nextId := isS2Pos.nextId }
-  let ltSpec ← sEvalLtUnSignedBitCmp cfg''' md senv s1 s2 ffVarLt
+  let ltSpec ← sEvalLtUnSignedBitCmp cfg''' md isS1Pos.outSymEnv s1 s2 s!"{id}ltAux"
   -- if A=B then C else 1-A
   let f := (.and
               (FFFormula.eq
                 (FFTerm.var outFFVar)
                 (FFTerm.ite
-                  (.eq (FFTerm.var ffVarIsS1Pos) (FFTerm.var ffVarIsS2Pos))
-                  (FFTerm.var ffVarLt)
-                  (FFTerm.sub (.val 1) (FFTerm.var ffVarIsS1Pos))))
+                  (.eq (FFTerm.var isS1Pos.res.var) (FFTerm.var isS2Pos.res.var))
+                  (FFTerm.var ltSpec.res.var)
+                  (FFTerm.sub (.val 1) (FFTerm.var isS1Pos.res.var))))
               (FFFormula.range (FFTerm.var outFFVar) 0 1)) -- force boolean
   return {
           inSymEnv := senv,
+          outSymEnv := ltSpec.outSymEnv,
           f := .and isS1Pos.f (.and isS2Pos.f (.and ltSpec.f f)),
           resTerm := (FFTerm.var outFFVar),
-          nextId := ltSpec.nextId,
+          res := ⟨outFFVar, none⟩,
+          nextId := ltSpec.nextId+1,
           newFFVars := isS1Pos.newFFVars ∪ isS2Pos.newFFVars ∪ ltSpec.newFFVars ∪
-                       {ffVarIsS1Pos, ffVarIsS2Pos, ffVarLt},
+                       {outFFVar},
           newBoolVars := isS1Pos.newBoolVars ∪ isS2Pos.newBoolVars ∪ ltSpec.newBoolVars
         }
 
@@ -400,37 +459,39 @@ def sEvalLtSignedBitCmp {c : ZKConfig}
    those don't apply, we use the bitwise comparison. -/
 def sEvalLtSigned {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  match sEvalLtSignedConstLeft cfg md senv s1 s2 outFFVar with
+  match sEvalLtSignedConstLeft cfg md senv s1 s2 id with
   | Except.ok spec => return spec
   | Except.error _ =>
-    match sEvalLtSignedConstRight cfg md senv s1 s2 outFFVar with
+    match sEvalLtSignedConstRight cfg md senv s1 s2 id with
     | Except.ok spec => return spec
-    | Except.error _ => sEvalLtSignedBitCmp cfg md senv s1 s2 outFFVar
+    | Except.error _ => sEvalLtSignedBitCmp cfg md senv s1 s2 id
 
 /- x<=y is be encoded as 1 minus the result variable of (y < x).
 -/
 def sEvalLeSigned {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  let outFFVarLt : FFVar := { id := cfg.nextId,
+  let outFFVar : FFVar := { id := cfg.nextId,
                               meta_data := { src_info := md.src_info, orig_name := "gt_aux" }
                             }
   -- increment the nextId in the config for the next variable
   let cfg' : SymExecConfig c := { cfg with nextId := cfg.nextId + 1 }
-  let ltSpec ← sEvalLtSigned cfg' md senv s2 s1 outFFVarLt
+  let ltSpec ← sEvalLtSigned cfg' md senv s2 s1 s!"{id}_gt_aux"
   return {
           inSymEnv := senv,
+          outSymEnv := ltSpec.outSymEnv,
           -- ltSpec.f /\ outFFVar = 1-outFFVarLt
           f := (.and ltSpec.f
                      (.and (.eq (FFTerm.var outFFVar)
-                                   (FFTerm.sub (.val 1) (FFTerm.var outFFVarLt)))
-                           (FFFormula.range (FFTerm.var outFFVar) 0 1))),
+                                   (FFTerm.sub (.val 1) (FFTerm.var ltSpec.res.var)))
+                           (FFFormula.range (FFTerm.var outFFVar) 0 1))), -- force bool
           nextId := ltSpec.nextId,
           resTerm := (FFTerm.var outFFVar),
-          newFFVars := ltSpec.newFFVars.insert outFFVarLt,
+          res := ⟨outFFVar, none⟩,
+          newFFVars := ltSpec.newFFVars.insert outFFVar,
           newBoolVars := ltSpec.newBoolVars
   }
 
@@ -438,16 +499,16 @@ def sEvalLeSigned {c : ZKConfig}
    the operands -/
 def sEvalGtSigned {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  sEvalLtSigned cfg md senv s2 s1 outFFVar
+  sEvalLtSigned cfg md senv s2 s1 id
 
 /- Greater than equal simply uses the encoding of less than equal
    after swapping the operands -/
 def sEvalGeSigned {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (outFFVar : FFVar)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  sEvalLeSigned cfg md senv s2 s1 outFFVar
+  sEvalLeSigned cfg md senv s2 s1 id
 
 end Llzk.SymExec.SymInstr
