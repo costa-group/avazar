@@ -243,5 +243,68 @@ def printConstraintSystem {c : ZKConfig}
   stream.putStrLn ")"
   stream.flush
 
+def printParam_asJSON
+  (stream : IO.FS.Stream) (var : Var) : IO Unit := do
+  match var with
+  | .inl ffVar =>
+      stream.putStr s!"\{ \"name\": \"{ffVarID ffVar}\", \"type\": \"ff\" }"
+  | .inr boolVar =>
+      stream.putStr s!"\{ \"name\": \"{boolVarID boolVar}\", \"type\": \"bool\" }"
+
+def printParams_asJSON
+  (stream : IO.FS.Stream) (params : List Var) : IO Unit := do
+  match params with
+  | [] => return ()
+  | var :: rest =>
+      printParam_asJSON stream var
+      if rest != [] then
+        stream.putStr ", "
+      printParams_asJSON stream rest
+
+def printMacro_asJSON {c : ZKConfig}
+  (stream : IO.FS.Stream) (m : FFMacro c) : IO Unit := do
+  stream.putStrLn s!"    \"{m.name}\": \{"
+  stream.putStr s!"        \"params\": ["
+  printParams_asJSON stream m.params
+  stream.putStrLn s!"],"
+  stream.putStr s!"        \"formula\": \""
+  printFormula stream m.body 0 false
+  stream.putStrLn s!" \""
+  stream.putStr s!"     }"
+
+
+def printMacros_asJSON {c : ZKConfig}
+  (stream : IO.FS.Stream) (ms : List (FFMacro c)) : IO Unit := do
+  match ms with
+  | [] => return ()
+  | m :: rest =>
+      printMacro_asJSON stream m
+      if rest != [] then stream.putStrLn ","
+      printMacros_asJSON stream rest
+
+def printConstraintSystem_asJSON {c : ZKConfig}
+  (stream : IO.FS.Stream) (sys : FFConstraintSystem c) : IO Unit := do
+  match mainFormula sys with
+  | Except.error e => stream.putStrLn s!"Error: {e}"
+  | Except.ok (f, vars) =>
+  stream.putStrLn "{"
+  stream.putStrLn s!"  \"prime\": {c.p},"
+  -- Macros
+  stream.putStrLn s!"  \"macros\": \{"
+  printMacros_asJSON stream sys.macros.reverse -- we assume main is first
+  stream.putStrLn ""
+  stream.putStrLn s!"  },"
+  -- Main formula
+  stream.putStrLn s!"  \"main\": \{"
+  stream.putStr s!"    \"vars\": ["
+  printParams_asJSON stream vars
+  stream.putStrLn s!"],"
+  stream.putStr s!"    \"formula\": \""
+  printFormula stream f 0 false
+  stream.putStr s!" \""
+  stream.putStrLn " }"
+  stream.putStrLn "}"
+  stream.flush
+
 
 end Llzk.FFConstraints.SMT

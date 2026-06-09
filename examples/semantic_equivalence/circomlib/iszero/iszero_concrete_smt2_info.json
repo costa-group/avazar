@@ -1,0 +1,10 @@
+{
+"node_id": 0,
+"node_name": "is_zero",
+
+"constraints":  ["(assert (and (= v_1 (ite (= 0 v_0) 0 1)) (ite (= v_1 1) (and (and (= (ff.mul v_2 v_0) 1) true) (= v_3 v_2)) (and true (= v_3 0))) (= v_4 (ff.neg v_0)) (= v_5 (ff.mul v_4 v_3)) (= v_6 (ff.add v_5 1)) true (= v_7 v_6)))"],
+  "input_signals": ["v_0"],
+  "output_signals": ["v_7"],
+  "signals": ["v_0", "v_1","v_2","v_3","v_4","v_5","v_6", "v_7"]
+}
+
