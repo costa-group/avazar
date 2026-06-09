@@ -4,16 +4,32 @@ import Llzk.Basic
 import Llzk.Language.Core.Analysis.Liveness
 import Llzk.FFConstraints.SMT
 import Llzk.SymExec.BigStep
+import Llzk.SymExec.Basic
 
 import Cli
 
 open Llzk.Language.Core.Syntax.Printer
 open Llzk.Language.Core.Syntax.Parser
 open Llzk.Language.Core.Analysis.Liveness
+open Llzk.SymExec.Basic
 open Llzk.SymExec.BigStep
 open Llzk.FFConstraints.SMT
 
 open Cli
+
+
+def buildCfg (c : ZKConfig) (p : Parsed) : Except String (SymExecConfig c):= do
+  let nextId := 0
+  let cmpScm ←
+    match p.flag! "comparison_scheme" |>.as! String with
+      | "range_of_diff" => pure CmpScm.range_of_diff
+      | "normal" => pure CmpScm.normal
+      | scm => Except.error s!"Unsupported comparison scheme: {scm}"
+  let cfg : SymExecConfig c := {
+    nextId := nextId
+    cmpScm := cmpScm
+  }
+  Except.ok cfg
 
 def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Stream) : IO Unit := do
      IO.println s!"Parsing {inFile}..."
@@ -23,7 +39,12 @@ def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Str
      let progWithLiveness := addLivenessProg prog
      IO.println s!"Performing symbolic execution..."
      let mainFunc := p.flag! "main" |>.as! String
-     match @seExecProg c {} progWithLiveness mainFunc with
+     let secfg ← match buildCfg c p with
+       | Except.ok cfg => pure cfg
+       | Except.error e =>
+           IO.println s!"Error building symbolic execution configuration: {e}"
+           return
+     match @seExecProg c secfg progWithLiveness mainFunc with
      | Except.error e =>
          IO.println s!"Error during symbolic execution: {e}"
      | Except.ok constraints =>
@@ -98,10 +119,11 @@ def llzkCmd : Cmd := `[Cli|
     m, main : String;        "The main function for symbolic execution (default: main)"
     o, output : String;      "The output file. If not provided, stdout is used."
     smt2, smt2_format : String;  "The format of the SMT output (smtlib,json). Default is smtlib."
+    cmpscm, comparison_scheme : String; "Encoding of signed comparison (range_of_diff, normal)."++  Default is range_of_diff."
   ARGS:
     input : String;      "The input program"
   EXTENSIONS:
-    defaultValues! #[("zkconfig", "f11"), ("main", "main"), ("smt2_format", "smtlib")]
+    defaultValues! #[("zkconfig", "f11"), ("main", "main"), ("smt2_format", "smtlib"), ("comparison_scheme", "range_of_diff")]
 ]
 
 
