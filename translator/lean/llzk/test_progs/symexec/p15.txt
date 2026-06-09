@@ -1,0 +1,48 @@
+func lt_gen(x:ff,y:ff) -> r:ff {
+  c = bool.lt x y
+  if ( c == 1 ) {
+    r = 1
+  } else {
+    r = 2
+  }
+}
+
+func lt_left_1(x:ff) -> r:ff {
+  c = bool.lt 3 x  # 3 is positive
+  if ( c == 1 ) {
+    r = 1
+  } else {
+    r = 2
+  }
+}
+
+func lt_left_2(x:ff) -> r:ff {
+  c = bool.lt 10 x # 10 is negative (-1)
+  if ( c == 1 ) {
+    r = 1
+  } else {
+    r = 2
+  }
+}
+
+
+func lt_right_1(x:ff) -> r:ff {
+  c = bool.lt x 3 # 3 is positive
+  if ( c == 1 ) {
+    r = 1
+  } else {
+    r = 2
+  }
+}
+
+func lt_right_2(x:ff) -> r:ff {
+  c = bool.lt x 10 # 10 is negative (-1)
+  if ( c == 1 ) {
+    r = 1
+  } else {
+    r = 2
+  }
+}
+
+func main() {
+}
