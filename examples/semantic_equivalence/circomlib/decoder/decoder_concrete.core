@@ -1,0 +1,37 @@
+def @Decoder_0(%arg0: ff) -> @out: arr<10>, @success: ff {
+  array.new 10 %nondet
+  %felt_const_10 = 10
+  %felt_const_0 = 0
+  %felt_const_0_0 = 0
+  %arg1 = %felt_const_0_0
+  %arg2 = %felt_const_0
+  repeat 10 {
+    %1_aft = bool.eq %arg1 %arg0
+    if (%1_aft == 1) {
+      %felt_const_1_1_aft = 1
+      %6_aft = %arg1
+      array.write %felt_const_1_1_aft %nondet[%6_aft]
+    }
+    else {
+      %felt_const_0_1_aft = 0
+      %6_aft = %arg1
+      array.write %felt_const_0_1_aft %nondet[%6_aft]
+    }
+    %2_aft = %arg1
+    array.read %nondet[%2_aft] %3_aft
+    %4_aft = felt.add %arg2 %3_aft
+    %felt_const_1_aft = 1
+    %5_aft = felt.add %arg1 %felt_const_1_aft
+    %arg1 = %5_aft
+    %arg2 = %4_aft
+    %felt_const_10_1_bef = 10
+    %1_bef = bool.lt %felt_const_10_1_bef %arg1
+    %0#0 = %arg1
+    %0#1 = %arg2
+  }
+  @success = %0#1
+  array.copy %nondet @out
+}
+def main(%arg0: ff) -> @out: arr<10>, @success: ff {
+  call @Decoder_0(%arg0) to @out, @success
+}

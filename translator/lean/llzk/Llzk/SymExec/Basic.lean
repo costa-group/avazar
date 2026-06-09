@@ -11,6 +11,22 @@ open Llzk.Language.Core.Syntax.AST
 open Llzk.FFConstraints.Basic
 open Llzk.Language.Core.Semantics.Basic
 
+
+/- This defines several schemes that are used to encode comparisons. In particular lt
+   as other are defined in terms of it.
+
+  Briefly, the "always_sub_range" scheme always encodes x<y by checking the range x-y. The
+  "normal" scheme encodes x<y using ranges when x or y are constants, and falls back to a
+  bitwise comparison otherwise.
+
+   For more information see the encoding of comparisons in BoolExpr.lean.
+
+-/
+inductive CmpScm where
+  | range_of_diff -- based one checking the range of x-y to encode x<y
+  | normal
+  deriving Repr, BEq, Inhabited
+
 /- This is a structure that will be passed around in the symbolic interpreter. We can
    encapsulate various things here. Separating it from the symbolic state makes things
    simpler.
@@ -21,6 +37,7 @@ open Llzk.Language.Core.Semantics.Basic
 -/
 structure SymExecConfig (c : ZKConfig) where
   nextId : Nat := 0
+  cmpScm : CmpScm := CmpScm.range_of_diff
   deriving Inhabited
 
 structure FFVarWithBinRep (c : ZKConfig) where
