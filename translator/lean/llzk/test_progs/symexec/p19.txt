@@ -1,0 +1,11 @@
+func foo(x:ff) -> z:ff {
+  y = 0
+  repeat 3 {
+    x = bit.shl x 1
+    y = felt.add y x
+  }
+  z = y
+}
+
+func main() {
+}
