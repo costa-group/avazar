@@ -261,16 +261,46 @@ def printParams_asJSON
         stream.putStr ", "
       printParams_asJSON stream rest
 
+def printVarInfo_asJSON {c : ZKConfig}
+  (stream : IO.FS.Stream) (var : MacroVarInfo c) : IO Unit := do
+  match var with
+  | .ffVar ffVar => stream.putStr s!"\"{ffVarID ffVar}\""
+  | .const val => stream.putStr s!"{val.val}"
+  | .array arr =>
+      stream.putStr "["
+      let varStrs := arr.map (fun v =>
+        match v with
+        | .inl ffVar => s!"\"{ffVarID ffVar}\""
+        | .inr val => s!"{val.val}"
+      )
+      stream.putStr (String.intercalate ", " varStrs)
+      stream.putStr "]"
+
+def printVarsInfo_asJSON {c : ZKConfig}
+  (stream : IO.FS.Stream) (vs : MacroVarsInfo c) : IO Unit := do
+  match vs with
+  | [] => return ()
+  | (id,v) :: rest =>
+      stream.putStr s!"\"{id}\": "
+      printVarInfo_asJSON stream v
+      if rest != [] then
+        stream.putStr ", "
+      printVarsInfo_asJSON stream rest
+
+
 def printMacro_asJSON {c : ZKConfig}
   (stream : IO.FS.Stream) (m : FFMacro c) : IO Unit := do
   stream.putStrLn s!"    \"{m.name}\": \{"
-  stream.putStr s!"        \"params\": ["
+  stream.putStr "        \"params\": ["
   printParams_asJSON stream m.params
-  stream.putStrLn s!"],"
-  stream.putStr s!"        \"formula\": \""
+  stream.putStrLn "],"
+  stream.putStr "        \"vars_info\": {"
+  printVarsInfo_asJSON stream m.vars_info
+  stream.putStrLn "},"
+  stream.putStr "        \"formula\": \""
   printFormula stream m.body 0 false
-  stream.putStrLn s!" \""
-  stream.putStr s!"     }"
+  stream.putStrLn " \""
+  stream.putStr "     }"
 
 
 def printMacros_asJSON {c : ZKConfig}
