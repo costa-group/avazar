@@ -41,7 +41,7 @@ def sEvalEq {c : ZKConfig}
                         (FFTerm.ite (FFFormula.eq v1 v2) (.val 1) (.val 0)))
                       (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force bool
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := { outFFVar },
           nextId := cfg.nextId+1
   }
@@ -68,7 +68,7 @@ def sEvalNeq {c : ZKConfig}
                         (FFTerm.ite (FFFormula.eq v1 v2) (.val 0) (.val 1)))
                      (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force bool
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := { outFFVar },
           nextId := cfg.nextId+1
   }
@@ -99,7 +99,7 @@ def sEvalBor {c : ZKConfig}
                     (.val 1)))
                 (FFFormula.range (FFTerm.var outFFVar) 0 1), -- force bool
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := { outFFVar },
           nextId := cfg.nextId+1
   }
@@ -129,7 +129,7 @@ def sEvalBAnd {c : ZKConfig}
                     (.val 1)))
                 (FFFormula.range (FFTerm.var outFFVar) 0 1), -- force bool
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := { outFFVar },
           nextId := cfg.nextId+1
   }
@@ -157,7 +157,7 @@ def sEvalBNeg {c : ZKConfig}
                     (.val 0)))
                 (FFFormula.range (FFTerm.var outFFVar) 0 1), -- force bool
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := { outFFVar },
           nextId := cfg.nextId+1
   }
@@ -193,7 +193,7 @@ def sEvalLtUnSignedConstLeft {c : ZKConfig}
           outSymEnv := senv,
           f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force bool
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := { outFFVar },
           nextId := cfg.nextId+1
         }
@@ -224,7 +224,7 @@ def sEvalLtUnSignedConstRight {c : ZKConfig}
           outSymEnv := senv,
           f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force bool
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := { outFFVar },
           nextId := cfg.nextId+1
         }
@@ -260,7 +260,7 @@ def sEvalLtUnSignedBitCmp {c : ZKConfig}
           outSymEnv := senv,
           f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force bool
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           nextId := bits2Spec.nextId,
           newFFVars := newFFVars,
           newBoolVars := ∅
@@ -301,11 +301,11 @@ def sEvalLeUnSigned {c : ZKConfig}
           outSymEnv := ltSpec.outSymEnv,
           -- ltSpec.f /\ outFFVar = 1-outFFVarLt
           f := (.and (.and ltSpec.f (.eq (FFTerm.var outFFVar)
-                                   (FFTerm.sub (.val 1) (FFTerm.var ltSpec.res.var))))
+                                   (FFTerm.sub (.val 1) ltSpec.resTerm)))
                     (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force bool
           nextId := ltSpec.nextId,
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := ltSpec.newFFVars.insert outFFVar,
           newBoolVars := ltSpec.newBoolVars
   }
@@ -364,7 +364,7 @@ def sEvalLtSignedConstLeft {c : ZKConfig}
           outSymEnv := senv,
           f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force boolean
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           nextId := cfg.nextId+1,
           newFFVars := { outFFVar }
         }
@@ -405,7 +405,7 @@ def sEvalLtSignedConstRight {c : ZKConfig}
           outSymEnv := senv,
           f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force boolean
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           nextId := cfg.nextId+1,
           newFFVars := { outFFVar }
         }
@@ -439,16 +439,16 @@ def sEvalLtSignedBitCmp {c : ZKConfig}
               (FFFormula.eq
                 (FFTerm.var outFFVar)
                 (FFTerm.ite
-                  (.eq (FFTerm.var isS1Pos.res.var) (FFTerm.var isS2Pos.res.var))
-                  (FFTerm.var ltSpec.res.var)
-                  (FFTerm.sub (.val 1) (FFTerm.var isS1Pos.res.var))))
+                  (.eq isS1Pos.resTerm isS2Pos.resTerm)
+                  ltSpec.resTerm
+                  (FFTerm.sub (.val 1) isS1Pos.resTerm)))
               (FFFormula.range (FFTerm.var outFFVar) 0 1)) -- force boolean
   return {
           inSymEnv := senv,
           outSymEnv := ltSpec.outSymEnv,
           f := .and isS1Pos.f (.and isS2Pos.f (.and ltSpec.f f)),
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           nextId := ltSpec.nextId+1,
           newFFVars := isS1Pos.newFFVars ∪ isS2Pos.newFFVars ∪ ltSpec.newFFVars ∪
                        {outFFVar},
@@ -514,7 +514,7 @@ def sEvalLtSigned_range_sub_left_const {c : ZKConfig}
             outSymEnv := senv,
             f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force boolean
             resTerm := (FFTerm.var outFFVar),
-            res := ⟨outFFVar, none⟩,
+            res := SymFFVar.var ⟨outFFVar, none⟩,
             nextId := cfg.nextId+2,
             newFFVars := { outFFVar }
           }
@@ -556,7 +556,7 @@ def sEvalLtSigned_range_sub_right_const {c : ZKConfig}
             outSymEnv := senv,
             f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force boolean
             resTerm := (FFTerm.var outFFVar),
-            res := ⟨outFFVar, none⟩,
+            res := SymFFVar.var ⟨outFFVar, none⟩,
             nextId := cfg.nextId+2,
             newFFVars := { outFFVar }
           }
@@ -598,7 +598,7 @@ def sEvalLtSigned_range_sub_gen {c : ZKConfig}
             outSymEnv := senv,
             f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force boolean
             resTerm := (FFTerm.var outFFVar),
-            res := ⟨outFFVar, none⟩,
+            res := SymFFVar.var ⟨outFFVar, none⟩,
             nextId := cfg.nextId+2,
             newFFVars := { outFFVar }
           }
@@ -658,11 +658,11 @@ def sEvalLeSigned {c : ZKConfig}
           -- ltSpec.f /\ outFFVar = 1-outFFVarLt
           f := (.and ltSpec.f
                      (.and (.eq (FFTerm.var outFFVar)
-                                   (FFTerm.sub (.val 1) (FFTerm.var ltSpec.res.var)))
+                                   (FFTerm.sub (.val 1) ltSpec.resTerm))
                            (FFFormula.range (FFTerm.var outFFVar) 0 1))), -- force bool
           nextId := ltSpec.nextId,
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := ltSpec.newFFVars.insert outFFVar,
           newBoolVars := ltSpec.newBoolVars
   }

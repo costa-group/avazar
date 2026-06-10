@@ -15,6 +15,14 @@ open Llzk.FFConstraints.Basic
 open Llzk.Language.Core.Semantics.Basic
 open Llzk.SymExec.Basic
 
+/-
+The bitwise operations are:
+
+  and, or, xor, not, shift left, and shift right
+
+
+-/
+
 
 def sEvalBitWiseAND_general {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)

@@ -119,11 +119,16 @@ def llzkCmd : Cmd := `[Cli|
     m, main : String;        "The main function for symbolic execution (default: main)"
     o, output : String;      "The output file. If not provided, stdout is used."
     smt2, smt2_format : String;  "The format of the SMT output (smtlib,json). Default is smtlib."
-    cmpscm, comparison_scheme : String; "Encoding of signed comparison (range_of_diff, normal)."++  Default is range_of_diff."
+    cmpscm, comparison_scheme : String; "Encoding of signed comparison (range_of_diff, normal). \
+    Default is range_of_diff."
   ARGS:
     input : String;      "The input program"
   EXTENSIONS:
-    defaultValues! #[("zkconfig", "f11"), ("main", "main"), ("smt2_format", "smtlib"), ("comparison_scheme", "range_of_diff")]
+    defaultValues! #[("zkconfig", "f11"),
+                     ("main", "main"),
+                     ("smt2_format", "smtlib"),
+                     ("comparison_scheme", "range_of_diff")
+                    ]
 ]
 
 
