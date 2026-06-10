@@ -55,7 +55,7 @@ def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Str
          IO.println s!"Error during symbolic execution: {e}"
      | Except.ok constraints =>
          match p.flag! "smt2_format" |>.as! String with
-         | "smt2" =>
+         | "smtlib" =>
             IO.println s!"Generating encoding using SMT-LIB format..."
             IO.println s!""
             @printConstraintSystem c outStream constraints
