@@ -94,4 +94,5 @@ def bitify {c : ZKConfig}
   : BitifySpec c :=
   bitify_nbits cfg md e c.k
 
+
 end Llzk.SymExec.SymInstr

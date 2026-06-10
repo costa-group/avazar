@@ -1,0 +1,12 @@
+func shl_const_test(x:ff) -> z:ff {
+  w = 2  
+  z = bit.shl x w
+}
+
+func shr_const_test(x:ff) -> z:ff {
+  w = 2  
+  z = bit.shr x w
+}
+
+func main() {
+}
