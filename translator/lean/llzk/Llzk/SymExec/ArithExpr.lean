@@ -25,7 +25,7 @@ def sEvalExprNeg {c : ZKConfig}
           outSymEnv := senv,
           f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.neg v), -- outVar = -v
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := { outFFVar },
           nextId := cfg.nextId+1
   }
@@ -45,7 +45,7 @@ def sEvalExprAdd {c : ZKConfig}
           outSymEnv := senv,
           f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.add v1 v2), -- outVar = v1 + v2
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := { outFFVar },
           nextId := cfg.nextId+1
   }
@@ -65,7 +65,7 @@ def sEvalExprSub {c : ZKConfig}
           outSymEnv := senv,
           f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.sub v1 v2), -- outVar = v1 - v2
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := { outFFVar },
           nextId := cfg.nextId+1
   }
@@ -85,7 +85,7 @@ def sEvalExprMul {c : ZKConfig}
           outSymEnv := senv,
           f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.mul v1 v2), -- outVar = v1 * v2
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := { outFFVar },
           nextId := cfg.nextId+1
   }
@@ -106,7 +106,7 @@ def sEvalExprDiv {c : ZKConfig}
           -- outVar*v2 = v1
           f := FFFormula.eq (FFTerm.mul (FFTerm.var outFFVar) v2) v1,  -- (outVar = v1 / v2)
           resTerm := (FFTerm.var outFFVar),
-          res := ⟨outFFVar, none⟩,
+          res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := { outFFVar },
           nextId := cfg.nextId+1
   }
