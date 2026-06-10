@@ -7,5 +7,23 @@ func foo(x:ff) -> z:ff {
   z = y
 }
 
+func moo(x:ff) -> z:ff {
+  y = 0
+  m = 7
+  repeat 3 {
+    x = bit.and x m
+    y = felt.add y x
+    m = bit.shr m 1
+  }
+  z = y
+}
+
+func foo_arr(x:arr<3>) -> z:ff {
+  array.read x[0] z
+  array.write 3 x[1]
+  array.new 4 w
+  
+}
+
 func main() {
 }

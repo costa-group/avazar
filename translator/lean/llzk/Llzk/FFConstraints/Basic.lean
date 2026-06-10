@@ -184,11 +184,22 @@ def sizeOfFormula {c : ZKConfig} : FFFormula c → Nat
 end
 
 
+inductive MacroVarInfo (c : ZKConfig)
+| ffVar (v : FFVar)
+| const (val : FF c)
+| array (arr : List (FFVar ⊕ FF c)) -- an array can contain either variables or constants
+  deriving Repr, BEq, Inhabited
+
+abbrev MacroVarsInfo (c : ZKConfig) := List (VarID × MacroVarInfo c)
+
+
+
 /- A macro is a named formula with parameters -/
 structure FFMacro (c : ZKConfig) where
   name : String
   params : List Var
   body : FFFormula c
+  vars_info : MacroVarsInfo c := default
   deriving Repr, BEq, Inhabited
 
 /- A constraint system consists of a list of macros and the name of the main macro -/

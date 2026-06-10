@@ -524,6 +524,47 @@ def genInitialSymEnv {c : ZKConfig}
             loop symEnv' args' (nextId + size) accm'
   loop symEnv args 0 []
 
+
+def genSymEnvWithRetsBinding {c : ZKConfig}
+    (cfg : SymExecConfig c) (md : FuncMD)
+    (rets : List Param)
+    (bodySpecOutSymEnv : SymEnv c)
+    (bodySpecF : FFFormula c)
+    : Except String (Nat × (List FFVar) × (SymEnv c) × (FFFormula c)) :=
+  let rec loop
+      (rets : List Param) (nextId : Nat) (senv : SymEnv c)
+      (acc : List FFVar) (bodySpecF : FFFormula c)
+    : Except String (Nat × (List FFVar) × (SymEnv c) × (FFFormula c)) := do
+      match rets with
+    | [] => Except.ok (nextId, acc.reverse, senv, bodySpecF)
+    | ret :: rets' =>
+        let symVal ← getVar bodySpecOutSymEnv ret.name
+        match symVal with
+        | .ffVar v =>
+          let t := symVarToTerm v
+          let ffVar := FFVar.mk nextId (FFVarMetaData.mk s!"ret_{ret.name}" md.src_info)
+          let f := .eq (FFTerm.var ffVar) t
+          let senv' := setVar senv ret.name (.ffVar (.var ⟨ffVar, symVarToBinRep v⟩))
+          loop rets' (nextId + 1) senv' (ffVar :: acc) (.and bodySpecF f)
+        | .ffArray arr =>
+          let ts := arr.toList
+          let (_,nextId',acc',bodySpecF',newArrayAsList) :=
+              ts.foldl (fun (s : Nat × Nat × List FFVar × FFFormula c × List (SymFFVar c))
+                       (v : SymFFVar c) =>
+                  let (idx, nextId, acc, f, arr) := s
+                  let ffVar := FFVar.mk
+                                 nextId
+                                 (FFVarMetaData.mk s!"ret_{ret.name}_at_{idx}" md.src_info)
+                  let t := symVarToTerm v
+                  let bs := symVarToBinRep v
+                  let sv := SymFFVar.var ⟨ffVar, bs⟩
+                  let eq := .eq (FFTerm.var ffVar) t
+                  (idx + 1, nextId + 1, ffVar :: acc, .and f eq, sv::arr))
+                (0, nextId, acc, bodySpecF, [])
+          let senv' := setVar senv ret.name (.ffArray newArrayAsList.reverse.toArray)
+          loop rets' nextId' senv' acc' bodySpecF'
+  loop rets cfg.nextId bodySpecOutSymEnv [] bodySpecF
+
 def genRetsBinding {c : ZKConfig}
     (cfg : SymExecConfig c) (md : FuncMD)
     (rets : List Param)
@@ -543,19 +584,36 @@ def genRetsBinding {c : ZKConfig}
           let f := .eq (FFTerm.var ffVar) t
           loop rets' (nextId + 1) (ffVar :: acc) (.and bodySpecF f)
         | .ffArray arr =>
-          let ts := arr.toList.map symVarToTerm
+          let ts := arr.toList
           let (_,nextId',acc',bodySpecF') :=
-              ts.foldl (fun (s : Nat × Nat × List FFVar × FFFormula c) (v : FFTerm c) =>
+              ts.foldl (fun (s : Nat × Nat × List FFVar × FFFormula c) (v : SymFFVar c) =>
                   let (idx, nextId, acc, f) := s
+                  let t := symVarToTerm v
                   let ffVar := FFVar.mk
                                  nextId
                                  (FFVarMetaData.mk s!"ret_{ret.name}_at_{idx}" md.src_info)
-                  let eq := .eq (FFTerm.var ffVar) v
+                  let eq := .eq (FFTerm.var ffVar) t
                   (idx + 1, nextId + 1, ffVar :: acc, .and f eq))
                 (0, nextId, acc, bodySpecF)
           loop rets' nextId' acc' bodySpecF'
   loop rets cfg.nextId [] bodySpecF
 
+
+def symEnvToMacroVarsInfo {c : ZKConfig} (symEnv : SymEnv c) : MacroVarsInfo c :=
+  symEnv.toList.foldl (fun acc (id, symVal) =>
+    match symVal with
+    | .ffVar v =>
+      match v with
+      | .var ffVar => (id,(MacroVarInfo.ffVar ffVar.var)) :: acc
+      | .const c => (id,(MacroVarInfo.const c)) :: acc
+    | .ffArray arr =>
+      let a := arr.toList.map (fun elem =>
+          match elem with
+          | .var ffVar => (.inl ffVar.var)
+          | .const v => (.inr v)
+        )
+      (id, MacroVarInfo.array a) :: acc
+  ) []
 
 def seExecFunc {c : ZKConfig}
     (cfg : SymExecConfig c) (md : FuncMD)
@@ -567,7 +625,9 @@ def seExecFunc {c : ZKConfig}
     let cfg' := { cfg with nextId := nextId }
     let bodySpec ← seCmds cfg' symEnv specs body
     let cfg'' := { cfg' with nextId := bodySpec.nextId }
-    let (nextId, retVars, bodySpecF) ← genRetsBinding cfg'' md rets bodySpec.outSymEnv bodySpec.f
+--    let (nextId, retVars, bodySpecF) ← genRetsBinding cfg'' md rets bodySpec.outSymEnv bodySpec.f
+    let (nextId, retVars, senv', bodySpecF) ←
+       genSymEnvWithRetsBinding cfg'' md rets bodySpec.outSymEnv bodySpec.f
     let boolAuxVars : List Var := bodySpec.newBoolVars.toList.map (fun v => .inr v)
     let ffAuxVars : List Var := bodySpec.newFFVars.toList.map (fun v => .inl v)
     let auxVars := ffAuxVars ++ boolAuxVars
@@ -575,10 +635,14 @@ def seExecFunc {c : ZKConfig}
     return {
       name := name,
       inSymEnv := symEnv,
-      outSymEnv := bodySpec.outSymEnv,
+      outSymEnv := senv',
       params := params,
       rets := rets,
-      f := {name := name, params := allVars, body := bodySpecF},
+      f := { name := name,
+             params := allVars,
+             body := bodySpecF,
+             vars_info := symEnvToMacroVarsInfo senv'
+          },
       nextId := nextId,
       numAuxFFVars := ffAuxVars.length,
       numAuxBoolVars := boolAuxVars.length,

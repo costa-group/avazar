@@ -50,5 +50,10 @@ def symVarToTerm {c : ZKConfig} (v : SymFFVar c) : FFTerm c :=
   | SymFFVar.const val => .val val
   | SymFFVar.var v => FFTerm.var v.var
 
+def symVarToBinRep {c : ZKConfig} (v : SymFFVar c) : Option (List (FFTerm c)) :=
+  match v with
+  | SymFFVar.const _ => none
+  | SymFFVar.var v => v.bits
+
 
 end Llzk.SymExec.SymInstr
