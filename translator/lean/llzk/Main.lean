@@ -25,9 +25,15 @@ def buildCfg (c : ZKConfig) (p : Parsed) : Except String (SymExecConfig c):= do
       | "range_of_diff" => pure CmpScm.range_of_diff
       | "normal" => pure CmpScm.normal
       | scm => Except.error s!"Unsupported comparison scheme: {scm}"
+  let boolScm ←
+    match p.flag! "boolean_scheme" |>.as! String with
+      | "range" => pure BoolFFScm.range
+      | "mul" => pure BoolFFScm.mul
+      | scm => Except.error s!"Unsupported boolean encoding scheme: {scm}"
   let cfg : SymExecConfig c := {
-    nextId := nextId
-    cmpScm := cmpScm
+    nextId := nextId,
+    cmpScm := cmpScm,
+    ffbool := boolScm
   }
   Except.ok cfg
 
@@ -121,13 +127,16 @@ def llzkCmd : Cmd := `[Cli|
     smt2, smt2_format : String;  "The format of the SMT output (smtlib,json). Default is smtlib."
     cmpscm, comparison_scheme : String; "Encoding of signed comparison (range_of_diff, normal). \
     Default is range_of_diff."
+    boolscm, boolean_scheme : String; "Encoding of boolean variables for bits (range, mul). \
+    Default is range."
   ARGS:
     input : String;      "The input program"
   EXTENSIONS:
     defaultValues! #[("zkconfig", "f11"),
                      ("main", "main"),
                      ("smt2_format", "smtlib"),
-                     ("comparison_scheme", "range_of_diff")
+                     ("comparison_scheme", "range_of_diff"),
+                     ("boolean_scheme", "range")
                     ]
 ]
 

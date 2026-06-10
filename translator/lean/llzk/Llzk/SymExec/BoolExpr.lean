@@ -3,7 +3,7 @@ import Llzk.Language.Core.Syntax.Printer
 import Llzk.FFConstraints.Basic
 import Llzk.SymExec.Basic
 import Llzk.SymExec.Common
-import Llzk.SymExec.Bitify
+import Llzk.SymExec.BinaryExpansion
 
 namespace Llzk.SymExec.SymInstr
 
@@ -229,6 +229,12 @@ def sEvalLtUnSignedConstRight {c : ZKConfig}
           nextId := cfg.nextId+1
         }
 
+def zipDefault {α β : Type} (defaultA : α) (defaultB : β) : List α → List β → List (α × β)
+  | [], [] => []
+  | a :: as, [] => (a, defaultB) :: zipDefault defaultA defaultB as []
+  | [], b :: bs => (defaultA, b) :: zipDefault defaultA defaultB [] bs
+  | a :: as, b :: bs => (a, b) :: zipDefault defaultA defaultB as bs
+
 /- Compare x < y bitwise. We compare the bits of x and y from the
    most significant bit to the least significant bit.
 -/
@@ -236,15 +242,13 @@ def sEvalLtUnSignedBitCmp {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  let v1 ← simpleExprToTerm senv s1
-  let v2 ← simpleExprToTerm senv s2
   let outFFVar : FFVar := { id := cfg.nextId,
                             meta_data := { src_info := md.src_info, orig_name := id}
                           }
   let cfg' := { cfg with nextId := cfg.nextId+1 }
-  let bits1Spec := bitify cfg' md v1 -- bitify v1
-  let cfg'' := { cfg with nextId := bits1Spec.nextId }
-  let bits2Spec := bitify cfg'' md v2 -- bitify v2
+  let bits1Spec ← binexpn cfg' md senv s1
+  let cfg'' := { cfg' with nextId := bits1Spec.nextId }
+  let bits2Spec ← binexpn cfg'' md bits1Spec.outSymEnv s2
   let ite := List.foldl -- construct the ite expression for bitwise comparison
               (fun acc (b1, b2) =>
                   FFTerm.ite
@@ -252,12 +256,12 @@ def sEvalLtUnSignedBitCmp {c : ZKConfig}
                     (.val 1)
                     (.ite (.and (.eq b1 (.val 1)) (.eq b2 (.val 0))) (.val 0) acc))
               (.val 0)
-              (List.zip bits1Spec.bits bits2Spec.bits)
+              (zipDefault (FFTerm.val 0) (FFTerm.val 0) bits1Spec.bits bits2Spec.bits)
   let newFFVars := bits1Spec.newFFVars ∪ bits2Spec.newFFVars ∪ { outFFVar }
   let f := .and bits1Spec.f (.and bits2Spec.f (.eq (FFTerm.var outFFVar) ite))
   return {
           inSymEnv := senv,
-          outSymEnv := senv,
+          outSymEnv := bits2Spec.outSymEnv,
           f := (.and f (FFFormula.range (FFTerm.var outFFVar) 0 1)), -- force bool
           resTerm := (FFTerm.var outFFVar),
           res := SymFFVar.var ⟨outFFVar, none⟩,
