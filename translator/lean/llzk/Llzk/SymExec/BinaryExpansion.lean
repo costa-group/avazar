@@ -112,7 +112,6 @@ def binexpn_var {c : ZKConfig}
       newBoolVars := emptyBoolVarSet
     }
   | some bits =>
-    dbg_trace s!"[DEBUG] {id} already has binary expansion with bits"
     return {
       inSymEnv := senv,
       outSymEnv := senv,

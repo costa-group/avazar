@@ -48,7 +48,7 @@ inductive BoolFFScm where
 structure SymExecConfig (c : ZKConfig) where
   nextId : Nat := 0
   cmpScm : CmpScm := CmpScm.range_of_diff
-  ffbool : BoolFFScm := BoolFFScm.range -- whether to use boolean variables for bits in binary expansion
+  ffbool : BoolFFScm := BoolFFScm.range -- whether to use boolean variables for bits
   deriving Inhabited
 
 structure FFVarWithBinRep (c : ZKConfig) where

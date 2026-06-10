@@ -307,7 +307,7 @@ def sEvalBitWiseSHLAux {c : ZKConfig}
     let newFFVars := binExpanSpec.newFFVars ∪ { outFFVar }
     return {
       inSymEnv := senv,
-      outSymEnv := senv,
+      outSymEnv := binExpanSpec.outSymEnv,
       f := f,
       resTerm := (FFTerm.var outFFVar),
       res := SymFFVar.var ⟨outFFVar, newBits⟩,
@@ -362,7 +362,7 @@ def sEvalBitWiseSHRAux {c : ZKConfig}
     let newFFVars := binExpanSpec.newFFVars ∪ { outFFVar }
     return {
       inSymEnv := senv,
-      outSymEnv := senv,
+      outSymEnv := binExpanSpec.outSymEnv,
       f := f,
       resTerm := (FFTerm.var outFFVar),
       res := SymFFVar.var ⟨outFFVar, newBits⟩,
