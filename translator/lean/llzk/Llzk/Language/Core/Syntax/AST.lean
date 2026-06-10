@@ -64,29 +64,29 @@ inductive SimpleExpr (c : ZKConfig) where
 
 
 inductive BinOp where
-  | add
-  | sub
-  | mul
-  | div
-  | shl
-  | shr
-  | and
-  | or
-  | xor
-  | eq
-  | neq
-  | lt
-  | gt
-  | le
-  | ge
-  | bor
-  | band
+  | add -- addition (arithmetic)
+  | sub -- subtraction (arithmetic)
+  | mul -- multiplication (arithmetic)
+  | div -- division (arithmetic)
+  | shl -- shift left (arithmetic)
+  | shr -- shift right (arithmetic)
+  | and -- bitwise and (bitwise)
+  | or  -- bitwise or (bitwise)
+  | xor -- bitwise xor (bitwise)
+  | eq  -- equality (boolean)
+  | neq -- inequality (boolean)
+  | lt  -- less than (boolean)
+  | gt  -- greater than (boolean)
+  | le  -- less than or equal to (boolean)
+  | ge  -- greater than or equal to (boolean)
+  | bor -- boolean or (boolean)
+  | band -- boolean and (boolean)
   deriving Repr, BEq, Inhabited
 
 inductive UnOp where
-  | neg
-  | not
-  | bneg
+  | neg   -- arithmetic negation (arithmetic)
+  | not   -- bitwise negation (bitwise)
+  | bneg  -- boolean negation (boolean)
   deriving Repr, BEq, Inhabited
 
 /- Expression can be binary or unary operations, where operands are simple expressions -/

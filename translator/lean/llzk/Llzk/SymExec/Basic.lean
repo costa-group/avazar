@@ -27,6 +27,16 @@ inductive CmpScm where
   | normal
   deriving Repr, BEq, Inhabited
 
+
+/- How to encode that an FF variable is boolean
+-/
+inductive BoolFFScm where
+  | range -- range(x,0,1)
+  | mul -- x*(1-x) = 0
+  deriving Repr, BEq, Inhabited
+
+
+
 /- This is a structure that will be passed around in the symbolic interpreter. We can
    encapsulate various things here. Separating it from the symbolic state makes things
    simpler.
@@ -38,6 +48,7 @@ inductive CmpScm where
 structure SymExecConfig (c : ZKConfig) where
   nextId : Nat := 0
   cmpScm : CmpScm := CmpScm.range_of_diff
+  ffbool : BoolFFScm := BoolFFScm.range -- whether to use boolean variables for bits in binary expansion
   deriving Inhabited
 
 structure FFVarWithBinRep (c : ZKConfig) where
@@ -103,7 +114,7 @@ structure ExprSpec (c : ZKConfig) where
   -- resVar is not really used now. Maybe it will
   -- be useful for the proofs later.
   resTerm : FFTerm c := default
-  res : FFVarWithBinRep c := default
+  res : SymFFVar c := default
   nextId : Nat := 0
   newFFVars : FFVarSet := emptyFFVarSet
   newBoolVars : BoolVarSet := emptyBoolVarSet
@@ -154,6 +165,31 @@ structure BitifySpec (c : ZKConfig) where
   bits : List (FFTerm c) := []
   vars : List FFVar := []
   bitifedTerm : FFTerm c := default
+  newFFVars : FFVarSet := emptyFFVarSet
+  newBoolVars : BoolVarSet := emptyBoolVarSet
+  deriving Inhabited
+
+
+structure BinExpanSpec (c : ZKConfig) where
+
+  -- input and output symbolic environments. The output is needed because we are
+  -- suppose to memoize the binary expansion.
+  inSymEnv : SymEnv c := emptySymEnv
+  outSymEnv : SymEnv c := emptySymEnv
+
+  -- the next available variable id after the binary expansion
+  nextId : Nat := 0
+
+  -- The formula that relates the bits to the original term, if needed (if it
+  -- has been binary expanded already, or it is a constant, then no need)
+  f : FFFormula c := FFFormula.true
+
+  -- The list of bits as terms, in the order from least significant to most significant.
+  -- The maximum length is c.k, and it can be shorter if the term is binary expanded
+  -- with fewer bits (e.g., a constant). The remaining up to c.k are 0.
+  bits : List (FFTerm c) := []
+
+  -- New variables introduced during encoding
   newFFVars : FFVarSet := emptyFFVarSet
   newBoolVars : BoolVarSet := emptyBoolVarSet
   deriving Inhabited

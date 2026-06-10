@@ -73,7 +73,7 @@ def seAssignmentNonConst {c : ZKConfig}
   -- calculate the spec for the expression
   let exprSpec ← sEvalExpr cfg md symEnv e id
   -- update the symbolic environment with the new variable
-  let newSymEnv := setVar symEnv id (SymValue.ffVar (SymFFVar.var exprSpec.res))
+  let newSymEnv := setVar exprSpec.outSymEnv id (SymValue.ffVar exprSpec.res)
   -- the command spec
   return { inSymEnv := symEnv,
            outSymEnv := newSymEnv,
