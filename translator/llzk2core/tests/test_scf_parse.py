@@ -162,6 +162,36 @@ class TestSCF:
         assert len(op.after_body) == 1
         assert next_cur == 6
 
+    def test_while_with_after_block_args(self):
+        self.lines = [
+            'scf.while (%arg0: !felt.type<"bn128"> = %v0, %arg1: !felt.type<"bn128"> = %v1)'
+            ' : (!felt.type<"bn128">, !felt.type<"bn128">) -> (!felt.type<"bn128">, !felt.type<"bn128">) {',
+            '^bb0(%arg0: !felt.type<"bn128">, %arg1: !felt.type<"bn128">):',
+            'scf.condition(%cond) %arg0, %arg1',
+            '} do {',
+            '^bb0(%arg2: !felt.type<"bn128">, %arg3: !felt.type<"bn128">):',
+            'scf.yield %arg2, %arg3 : !felt.type<"bn128">, !felt.type<"bn128">',
+            '}',
+        ]
+        op, next_cur = SCFWhile.parse(self.lines, 0, self._while_parse_fn)
+        assert len(op.after_args) == 2
+        assert op.after_args[0] == (SSAVar('%arg2'), Type('!felt.type<"bn128">'))
+        assert op.after_args[1] == (SSAVar('%arg3'), Type('!felt.type<"bn128">'))
+        assert len(op.before_body) == 1
+        assert len(op.after_body) == 1
+        assert next_cur == 7
+
+    def test_while_no_after_block_args(self):
+        self.lines = [
+            "scf.while (%arg = %init) : (index) -> (index) {",
+            "scf.condition(%cond) %arg",
+            "} do {",
+            "scf.yield %arg : index",
+            "}",
+        ]
+        op, next_cur = SCFWhile.parse(self.lines, 0, self._while_parse_fn)
+        assert op.after_args == []
+
     def test_while_match(self):
         assert SCFWhile.match("scf.while (%a = %b) {") is True
         assert SCFWhile.match("scf.if %c {") is False
