@@ -17,13 +17,14 @@ Attributes (represented as type annotations, not parsed independently):
 
 import re
 from typing import List, Optional, TYPE_CHECKING, Generator
+from collections import defaultdict
 
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
-from llzk_dialects.function import FunctionDef
+from llzk_dialects.poly import PolyTemplate
+from llzk_dialects.struct import StructDef, StructMember
 from llzk_dialects.utils import array_felt_first_dimension
-from llzk_dialects.core_utils import signature_args, invocation_args
-
+from llzk_dialects.core_utils import signature_args, invocation_args, struct_type_name
 
 if TYPE_CHECKING:
     pass  # avoid circular imports
@@ -180,3 +181,61 @@ class LLZKDialect(Dialect):
     def __init__(self):
         super().__init__("llzk")
         self.register(LLZKNondet)
+
+
+# Extra functions
+
+def compute_template2prefix(module: ModuleOp, context: TranslationContext):
+    template2prefix = _compute_template2prefix(module)
+    context.template2prefix = template2prefix
+
+
+def _compute_template2prefix(module: ModuleOp):
+    """
+    Aux function that links every template to the prefix that is needed to call signals
+    """
+    function2struct_members = defaultdict(lambda: dict())
+    function_names = []
+
+    # Iterate over the poly.templates inside the modules
+    for poly_template in module.body:
+        assert isinstance(poly_template, PolyTemplate)
+
+        # Here we have the poly name
+        poly_name = poly_template.sym_name.name
+
+        for struct_definition in poly_template.body:
+            assert isinstance(struct_definition, StructDef)
+
+            # Here we have the struct definition. The combination poly_name::struct_name
+            # is used in llzk to identify the variables
+            struct_name = poly_template.sym_name.name
+            combined_name = f"{poly_name}::{struct_name}"
+            function2struct_members[combined_name] = {}
+
+            for struct_operation in struct_definition.body:
+                if isinstance(struct_operation, StructMember):
+                    var_name = struct_operation.sym_name.name
+                    function_name = struct_type_name(struct_operation.member_type.name)
+                    if function_name is not None:
+                        # A function name must be already registered to be invoked
+                        function2struct_members[combined_name][var_name] = function_name
+
+            function_names.append(combined_name)
+
+    # Now we traver the function names to produce the prefix, starting
+    # with the function that invokes the main function
+    main_template = struct_type_name(module.main_type.name)
+    template2prefix = {main_template: "main"}
+    templates2visit = {main_template}
+    while len(templates2visit) > 0:
+        current_template = templates2visit.pop()
+        current_prefix = template2prefix[current_template]
+
+        defined_structs = function2struct_members[current_template]
+        for var_name, next_template in defined_structs.items():
+            templates2visit.add(next_template)
+            assert var_name[0] == "@", "Struct variables are assumed to start with @"
+            template2prefix[next_template] = f"{current_prefix}.{var_name[1:]}"
+
+    return template2prefix

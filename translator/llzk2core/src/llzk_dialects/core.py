@@ -153,6 +153,10 @@ class TranslationContext:
     # and how they are translated
     ssa2pod_var: Dict[str, Dict[str, Tuple[str, Type]]] = field(default_factory=dict)
 
+    # Maps every template to the sequence of previous template variables
+    # in order to name the signal variables
+    template2prefix: Dict[str, str] = field(default_factory=dict)
+
 
 class Operation(ABC):
     """

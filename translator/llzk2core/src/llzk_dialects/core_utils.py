@@ -9,6 +9,16 @@ from llzk_dialects.bool import BoolCmp
 from llzk_dialects.felt import FeltConst, FeltBinary
 
 
+def struct_type_name(type_str: str) -> Optional[str]:
+    """
+    Extracts the template::struct name from a struct type string.
+
+    Example: '!struct.type<@Num2Bits_2::@Num2Bits_2<[]>>' -> '@Num2Bits_2::@Num2Bits_2'
+    """
+    m = re.search(r'!struct\.type<([^><]+)', type_str)
+    return m.group(1).strip() if m is not None else None
+
+
 def signature_args(args: List[Tuple[str, Type]]) -> str:
     """
     Given a list of args and their types, returns a string for declaring
@@ -32,10 +42,7 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
     """
 
     if "!struct" in type_.name:
-        # Extract the name of the template::struct to invoke the corresponding function
-        pattern = r'!struct\.type<([^><]+)'
-        match = re.search(pattern, type_.name)
-        llzk_func = f"{match.group(1)}::@compute"
+        llzk_func = f"{struct_type_name(type_.name)}::@compute"
         core_func = ctx.llzk_func2core[llzk_func]
         _, output_args = ctx.core_func2args[core_func]
 

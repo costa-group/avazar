@@ -10,7 +10,7 @@ from llzk_dialects.felt import FeltDialect
 from llzk_dialects.function import FunctionDialect
 from llzk_dialects.global_ import GlobalDialect
 from llzk_dialects.include import IncludeDialect
-from llzk_dialects.llzk import LLZKDialect
+from llzk_dialects.llzk import LLZKDialect, compute_template2prefix
 from llzk_dialects.pod import PodDialect
 from llzk_dialects.poly import PolyDialect
 from llzk_dialects.scf import SCFDialect
@@ -56,7 +56,12 @@ def main(args: argparse.Namespace):
     assert len(res) == 1, "Multiple modules have been recognized inside the program"
 
     module_structure = res[0]
-    core_generator = module_structure.to_core(TranslationContext())
+    translation_context = TranslationContext()
+
+    # First we assign the prefix that is used to name the registers in to_core method
+    compute_template2prefix(module_structure, translation_context)
+
+    core_generator = module_structure.to_core(translation_context)
     with open(args.target, 'w') as f:
         # Indent stream generates the statements in a nice format
         for line in indent_stream(core_generator):
