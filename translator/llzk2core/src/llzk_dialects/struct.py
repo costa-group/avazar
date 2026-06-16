@@ -27,7 +27,7 @@ from llzk_dialects.core import (
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
 from llzk_dialects.utils import translate_assignment_core, array_felt_first_dimension
-from llzk_dialects.core_utils import translate_assignment_core_with_ctx
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx, struct_type_name
 
 
 class StructMember(Operation):
@@ -207,8 +207,10 @@ class StructReadm(Operation):
 
         # Defined by the current struct. The type matches the current struct
         if f"{ctx.current_template}::" in self.types[0].name:
-            # The name is directly the var name
-            assigned_var = SSAVar(self.member_name.name)
+            # The name is directly the var name, adding the prefix of the signal and ignoring the @
+            prefix = ctx.template2prefix[struct_type_name(self.types[0].name)]
+            new_name = f"{prefix}.{self.member_name.name[1:]}"
+            assigned_var = SSAVar(new_name)
         else:
             # The variable corresponds to the component name (a SSAVar) after adding the
             # member currently being accessed
@@ -283,8 +285,10 @@ class StructWritem(Operation):
 
             # Defined by the current struct. The type matches the current struct
             if f"{ctx.current_template}::" in self.types[0].name:
-                # The name is directly the var name
-                assigned_var = SSAVar(self.member_name.name)
+                # The name is directly the var name, adding the prefix of the signal and ignoring the @
+                prefix = ctx.template2prefix[struct_type_name(self.types[0].name)]
+                new_name = f"{prefix}.{self.member_name.name[1:]}"
+                assigned_var = SSAVar(new_name)
             else:
                 # The variable corresponds to the component name (a SSAVar) after adding the
                 # member currently being accessed
