@@ -11,11 +11,16 @@ from llzk_dialects.felt import FeltConst, FeltBinary
 
 def struct_type_name(type_str: str) -> Optional[str]:
     """
-    Extracts the template::struct name from a struct type string.
+    Extracts the template::struct name from a struct type string. Also works if "!struct.type<*>" does not appear
 
-    Example: '!struct.type<@Num2Bits_2::@Num2Bits_2<[]>>' -> '@Num2Bits_2::@Num2Bits_2'
+    Example: '!struct.type<@Num2Bits_2::@Num2Bits_2<[]>>' -> '@Num2Bits_2::@Num2Bits_2',
+                           '@Num2Bits_2::@Num2Bits_2<[]>'  -> '@Num2Bits_2::@Num2Bits_2'
     """
     m = re.search(r'!struct\.type<([^><]+)', type_str)
+    if m is not None:
+        return m.group(1).strip()
+
+    m = re.search(r'([^><]+)', type_str)
     return m.group(1).strip() if m is not None else None
 
 
