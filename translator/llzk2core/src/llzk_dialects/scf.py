@@ -293,9 +293,11 @@ class SCFIf(BlockOperation):
         yield f"if ({self.condition.to_core()} == 1) {{"
         yield from self._translate_branch(self.then_body, ctx)
         yield "}\n"
-        yield "else {"
-        yield from self._translate_branch(self.else_body, ctx)
-        yield "}"
+        # New modification: if can appear with no else, even it empty
+        if self.else_body is not None:
+            yield "else {"
+            yield from self._translate_branch(self.else_body, ctx)
+            yield "}"
 
     def _translate_branch(self, branch_ops: List[Operation], ctx: TranslationContext) -> Generator[str, None, None]:
 
