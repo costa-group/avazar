@@ -114,15 +114,15 @@ class PodNew(Operation):
                                               for record, initial_value in self.result_type.items()}
 
         # We return the variables that are assigned to a concrete value
-        yield from (
-            translate_assignment_core_with_ctx(
+        for record, initial_value in self.init_records.items():
+            result = translate_assignment_core_with_ctx(
                 SSAVar.parse(f"{self._result.name}_{record}"),
                 initial_value,
                 self.result_type.get(record, Type("!felt.type")),
                 ctx,
             )
-            for record, initial_value in self.init_records.items()
-        )
+            if result:
+                yield result
 
         # Also, we translate variables
         for record, type_ in self.result_type.items():
@@ -201,12 +201,14 @@ class PodRead(Operation):
 
         assert self.result_type is None or self.result_type == var_type, "Pod.read must match the type inside the dict ssa2pod_var"
 
-        yield translate_assignment_core_with_ctx(
+        result = translate_assignment_core_with_ctx(
             self._result,
             SSAVar.parse(variable_name),
             var_type,
             ctx
         )
+        if result:
+            yield result
 
     def __repr__(self):
         fields = ', '.join(f"{k}: {v}" for k, v in self.pod_type.items())
@@ -277,12 +279,14 @@ class PodWrite(Operation):
 
         assert self.value_type is None or self.value_type == var_type, "Pod.write must match the type inside the dict ssa2pod_var"
 
-        yield translate_assignment_core_with_ctx(
+        result = translate_assignment_core_with_ctx(
             SSAVar.parse(variable_name),
             self.value,
             var_type,
             ctx
         )
+        if result:
+            yield result
 
     def __repr__(self):
         fields = ', '.join(f"{k}: {v}" for k, v in self.pod_type.items())
