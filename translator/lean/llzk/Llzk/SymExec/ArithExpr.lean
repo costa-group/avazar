@@ -11,6 +11,24 @@ open Llzk.FFConstraints.Basic
 open Llzk.Language.Core.Semantics.Basic
 open Llzk.SymExec.Basic
 
+
+/- Symbolic expression of .neg expression -/
+def sEvalExprId {c : ZKConfig}
+  (cfg : SymExecConfig c) (_md : CmdMD)
+  (senv : SymEnv c) (s : SimpleExpr c) (_id : VarID)
+  : Except String (ExprSpec c) := do
+  let v ← simpleExprToSymFFVar senv s
+  return {
+          inSymEnv := senv,
+          outSymEnv := senv,
+          f := FFFormula.true, -- outVar = -v
+          resTerm := default, -- will not be used
+          res := v,
+          newFFVars := {},
+          nextId := cfg.nextId+1
+  }
+
+
 /- Symbolic expression of .neg expression -/
 def sEvalExprNeg {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)

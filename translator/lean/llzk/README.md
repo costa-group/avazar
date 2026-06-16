@@ -4,6 +4,14 @@ This part of the project focuses on translating LLZK programs into SMT2 formulas
 
 The translator does not work directly on LLZK, but rather on a language that is expressive enough to model LLZK programs and simple enough to facilitate proofs in Lean. We introduce this intermediate language — called **core-LLZK** — to provide stability, so that changes to LLZK do not cascade into changes in the formal statements.
 
+## Requirements
+
+Install `elan` (The Lean toolchain manager) using:
+
+```text
+curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh
+```
+
 ## Build
 
 ```text

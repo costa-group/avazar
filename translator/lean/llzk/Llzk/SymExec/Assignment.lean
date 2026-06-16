@@ -47,8 +47,8 @@ def evalExpr {c : ZKConfig}
     | .neg => Except.ok (SymFFVar.const (evalNeg v))
     | .not => Except.ok (SymFFVar.const (evalNot v))
     | .bneg => Except.ok (SymFFVar.const (evalBneg v))
-  | .id s =>
-    simpleExprToSymFFVar senv s
+  | .id _ =>
+    Except.error "Should be handled by sEvalExpr."
 
 
 
