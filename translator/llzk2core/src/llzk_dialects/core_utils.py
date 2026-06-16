@@ -69,7 +69,7 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
                                                             out_type, ctx)
                          for out_var, out_type in output_args)
 
-    is_ff = "array" not in type_.name and "!struct"
+    is_ff = "array" not in type_.name and "!pod.type" not in type_.name
 
     if is_ff:
         # Only check constants in case it is a ff
