@@ -1,0 +1,66 @@
+func @IsZero_0(%arg0:ff) -> main.componente.coliflor:ff {
+  %felt_const_0 = 0
+  %0 = bool.neq %felt_const_0 %arg0
+  if (%0 == 1) {
+    %felt_const_1_0 = 1
+    %4 = felt.div %felt_const_1_0 %arg0
+    main.componente.algo = %4
+    %1 = %4
+  } else {
+    %felt_const_0_0 = 0
+    main.componente.algo = %felt_const_0_0
+    %1 = %felt_const_0_0
+  }
+  %felt_const_1 = 1
+  %2 = felt.mul %arg0 %1
+  %3 = felt.sub %felt_const_1 %2
+  main.componente.coliflor = %3
+}
+
+func @IsEqual_1(%arg0:arr<4>) -> main.out:ff {
+  %c1 = 1
+  %pod_0_@count = %c1
+  %pod_0_@params = %pod
+  %felt_const_1 = 1
+  %0 = %felt_const_1
+  %felt_const_0 = 0
+  %1 = %felt_const_0
+  %2_s0 = 2
+  %2_t0 = felt.mul %0 %2_s0
+  %2_t1 = %1
+  %2_lin = felt.add %2_t0 %2_t1
+  array.read %arg0[%2_lin] %2
+  %felt_const_0_2 = 0
+  %3 = %felt_const_0_2
+  %felt_const_0_3 = 0
+  %4 = %felt_const_0_3
+  %5_s0 = 2
+  %5_t0 = felt.mul %3 %5_s0
+  %5_t1 = %4
+  %5_lin = felt.add %5_t0 %5_t1
+  array.read %arg0[%5_lin] %5
+  %6 = felt.sub %2 %5
+  %pod_1_@patata = %6
+  %7 = %pod_0_@count
+  %c1_4 = 1
+  %8 = felt.sub %7 %c1_4
+  %pod_0_@count = %8
+  %c0 = 0
+  %9 = bool.eq %8 %c0
+  if (%9 == 1) {
+    %13 = %pod_0_@params
+    %14 = %pod_1_@patata
+    call @IsZero_0 (%14) to %15_@coliflor
+    %pod_0_@comp_@coliflor = %15_@coliflor
+  } else {
+  }
+  %10_@coliflor = %pod_0_@comp_@coliflor
+  %11 = %10_@coliflor
+  main.out = %11
+  %12_@coliflor = %pod_0_@comp_@coliflor
+}
+
+func main(%arg0:arr<4>) -> @out:ff {
+  call @IsEqual_1 (%arg0) to @out
+}
+
