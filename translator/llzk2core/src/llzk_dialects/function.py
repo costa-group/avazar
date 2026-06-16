@@ -16,7 +16,7 @@ from llzk_dialects.core import (
     TranslationContext, ParseFn,
 )
 from llzk_dialects.definitions import Dialect
-from llzk_dialects.core_utils import signature_args, invocation_args
+from llzk_dialects.core_utils import signature_args, invocation_args, signature_args_with_prefix
 
 
 class FunctionReturn(Operation):
@@ -227,9 +227,10 @@ class FunctionDef(BlockOperation):
         # share the same signature (in particular, out_args are public struct members).
         core_name = ctx.current_core_function
         in_args, out_args = ctx.core_func2args[core_name]
+        prefix = ctx.template2prefix[f"{core_name}::{core_name}"]
 
         signature_in = signature_args(in_args)
-        signature_out = signature_args(out_args)
+        signature_out = signature_args_with_prefix(out_args, prefix)
 
         # We start with the declaration of the function and the args
         yield f"def {core_name}({signature_in}) -> {signature_out} {{\n"
