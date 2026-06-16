@@ -21,7 +21,8 @@ def struct_type_name(type_str: str) -> Optional[str]:
         return m.group(1).strip()
 
     m = re.search(r'([^><]+)', type_str)
-    return m.group(1).strip() if m is not None else None
+    # Ignore !felt.type inside the string, as otherwise it matches every possible operand
+    return m.group(1).strip() if m is not None and "!felt.type" not in type_str else None
 
 
 def signature_args(args: List[Tuple[str, Type]]) -> str:
@@ -30,6 +31,17 @@ def signature_args(args: List[Tuple[str, Type]]) -> str:
     the signature of a function in CORE, with the format: "arg1: type1, arg2: type2, ..."
     """
     return', '.join(f"{arg}: {type_.to_core()}" for arg, type_ in args)
+
+
+def signature_args_with_prefix(args: List[Tuple[str, Type]], prefix: str) -> str:
+    """
+    Given a list of args and their types, returns a string for declaring
+    the signature of a function in CORE, with the format: "arg1*: type1, arg2*: type2, ..."
+
+    argi* is determined by argi and adding the corresponding prefix from the context
+
+    """
+    return', '.join(f"{prefix}.{arg[1:]}: {type_.to_core()}" for arg, type_ in args)
 
 
 def invocation_args(args: List[Tuple[str, Type]]) -> str:

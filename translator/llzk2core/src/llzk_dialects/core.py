@@ -77,7 +77,7 @@ class GlobalVariable:
     def parse(cls, global_var: str) -> 'GlobalVariable':
         assert global_var[0] == "@", \
             f"Global variable must start with @: {global_var}"
-        return GlobalVariable(global_var)
+        return GlobalVariable(global_var.replace("$", "_"))
 
     def __repr__(self):
         return self.name
