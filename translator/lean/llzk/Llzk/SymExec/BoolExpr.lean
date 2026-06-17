@@ -501,22 +501,21 @@ def sEvalLtSigned_range_sub_left_const {c : ZKConfig}
   let outFFVar : FFVar := { id := cfg.nextId,
                               meta_data := { src_info := md.src_info, orig_name := id}
                           }
-  let diffFFVar : FFVar := { id := cfg.nextId+1,
-                               meta_data := { src_info := md.src_info, orig_name := id}
-                         }
-  let diffFormula := FFFormula.eq (FFTerm.var diffFFVar) (FFTerm.sub (FFTerm.val v1) v2)
-  let diffVarIsNeg := (FFFormula.range (FFTerm.var diffFFVar) (c.midpoint : FF c) ((c.p-1) : FF c))
+  --let diffFFVar : FFVar := { id := cfg.nextId+1,
+  --                             meta_data := { src_info := md.src_info, orig_name := id}
+  --                       }
+  let diffTerm := FFTerm.sub (FFTerm.val v1) v2
+  --let diffFormula := FFFormula.eq (FFTerm.var diffFFVar) diffTerm
+  let diffVarIsNeg := (FFFormula.range diffTerm (c.midpoint : FF c) ((c.p-1) : FF c))
   let fDiff := (FFTerm.ite diffVarIsNeg (FFTerm.val 1) (FFTerm.val 0))
   let f :=
     if ( v1.val < c.midpoint) then -- is positive
-      .and diffFormula
         (.eq (FFTerm.var outFFVar)
              (FFTerm.ite
                (FFFormula.range v2 (c.midpoint : FF c) ((c.p-1) : FF c)) -- v2 is negative
                (FFTerm.val 0)
                fDiff))
         else -- v1 is negative
-      .and diffFormula
         (.eq (FFTerm.var outFFVar)
              (FFTerm.ite
                (FFFormula.range v2 (0 : FF c) ( c.midpoint-1 : FF c)) -- v2 is positive
@@ -529,7 +528,7 @@ def sEvalLtSigned_range_sub_left_const {c : ZKConfig}
             f := f',
             resTerm := (FFTerm.var outFFVar),
             res := SymFFVar.var ⟨outFFVar, none⟩,
-            nextId := cfg.nextId+2,
+            nextId := cfg.nextId+1,
             newFFVars := { outFFVar }
           }
 
@@ -544,22 +543,21 @@ def sEvalLtSigned_range_sub_right_const {c : ZKConfig}
   let outFFVar : FFVar := { id := cfg.nextId,
                               meta_data := { src_info := md.src_info, orig_name := id}
                           }
-  let diffFFVar : FFVar := { id := cfg.nextId+1,
-                               meta_data := { src_info := md.src_info, orig_name := id}
-                         }
-  let diffFormula := FFFormula.eq (FFTerm.var diffFFVar) (FFTerm.sub v1 (FFTerm.val v2))
-  let diffVarIsNeg := (FFFormula.range (FFTerm.var diffFFVar) (c.midpoint : FF c) ((c.p-1) : FF c))
+  --let diffFFVar : FFVar := { id := cfg.nextId+1,
+  --                             meta_data := { src_info := md.src_info, orig_name := id}
+  --                       }
+  let diffTerm := FFTerm.sub v1 (FFTerm.val v2)
+  -- let diffFormula := FFFormula.eq (FFTerm.var diffFFVar) diffTerm
+  let diffVarIsNeg := (FFFormula.range diffTerm (c.midpoint : FF c) ((c.p-1) : FF c))
   let fDiff := (FFTerm.ite diffVarIsNeg (FFTerm.val 1) (FFTerm.val 0))
   let f :=
     if ( v2.val < c.midpoint) then -- v2 is positive
-      .and diffFormula
         (.eq (FFTerm.var outFFVar)
              (FFTerm.ite
                (FFFormula.range v1 (c.midpoint : FF c) ((c.p-1) : FF c)) -- v1 is negative
                (FFTerm.val 1)
                fDiff))
         else -- v2 is negative
-      .and diffFormula
         (.eq (FFTerm.var outFFVar)
              (FFTerm.ite
                (FFFormula.range v1 (0 : FF c) ( c.midpoint-1 : FF c)) -- v1 is positive
@@ -572,7 +570,7 @@ def sEvalLtSigned_range_sub_right_const {c : ZKConfig}
             f := f',
             resTerm := (FFTerm.var outFFVar),
             res := SymFFVar.var ⟨outFFVar, none⟩,
-            nextId := cfg.nextId+2,
+            nextId := cfg.nextId+1,
             newFFVars := { outFFVar }
           }
 
@@ -588,19 +586,19 @@ def sEvalLtSigned_range_sub_gen {c : ZKConfig}
   let outFFVar : FFVar := { id := cfg.nextId,
                               meta_data := { src_info := md.src_info, orig_name := id}
                           }
-  let diffFFVar : FFVar := { id := cfg.nextId+1,
-                               meta_data := { src_info := md.src_info, orig_name := id}
-                         }
+  -- let diffFFVar : FFVar := { id := cfg.nextId+1,
+  --                             meta_data := { src_info := md.src_info, orig_name := id}
+  --                       }
+  let diffTerm := FFTerm.sub v1 v2
   let cfg' := { cfg with nextId := cfg.nextId + 2 }
-  let diffFormula := FFFormula.eq (FFTerm.var diffFFVar) (FFTerm.sub v1 v2)
+  --let diffFormula := FFFormula.eq (FFTerm.var diffFFVar) diffTerm
   let s1IsPos := FFFormula.range v1 (0 : FF c) (c.midpoint-1 : FF c)
   let s1IsNeg := FFFormula.range v1 (c.midpoint : FF c) ((c.p-1) : FF c)
   let s2IsPos := FFFormula.range v2 (0 : FF c) (c.midpoint-1 : FF c)
   let s2IsNeg := FFFormula.range v2 (c.midpoint : FF c) ((c.p-1) : FF c)
-  let diffVarIsNeg := (FFFormula.range (FFTerm.var diffFFVar) (c.midpoint : FF c) ((c.p-1) : FF c))
+  let diffVarIsNeg := (FFFormula.range diffTerm (c.midpoint : FF c) ((c.p-1) : FF c))
   let fDiff := (FFTerm.ite diffVarIsNeg (FFTerm.val 1) (FFTerm.val 0))
   let f :=
-    .and diffFormula
         (.eq (FFTerm.var outFFVar)
              (FFTerm.ite
                (.and s1IsPos s2IsNeg) -- s1 is positive and s2 is negative
@@ -616,7 +614,7 @@ def sEvalLtSigned_range_sub_gen {c : ZKConfig}
             f := f',
             resTerm := (FFTerm.var outFFVar),
             res := SymFFVar.var ⟨outFFVar, none⟩,
-            nextId := cfg.nextId+2,
+            nextId := cfg.nextId+1,
             newFFVars := { outFFVar }
           }
 
