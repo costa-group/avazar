@@ -106,30 +106,39 @@ class PodNew(Operation):
         return list(self.init_records.values())
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # Every variable inside the pod is initialized to
-        # a new variable of the form "{pod_name}_{variable}"
-        # We store the result with the names of every operation
-        # and the result type
-        ctx.ssa2pod_var[self._result.name] = {record: (f"{self._result.name}_{record}", initial_value)
-                                              for record, initial_value in self.result_type.items()}
+        # Build the field-variable mapping. When this pod is an inputs pod for a
+        # struct member, use semantic names (e.g. "last1.in1_last") instead of
+        # the default SSA-derived names (e.g. "%pod_5_@in1_last").
+        member = ctx.input_pod_to_member.get(self._result.name)
+        if member:
+            ctx.ssa2pod_var[self._result.name] = {
+                record: (f"{member}.{record[1:]}", type_)
+                for record, type_ in self.result_type.items()
+            }
+        else:
+            ctx.ssa2pod_var[self._result.name] = {
+                record: (f"{self._result.name}_{record}", type_)
+                for record, type_ in self.result_type.items()
+            }
 
-        # We return the variables that are assigned to a concrete value
+        # Emit assignments for records that have an initial value
         for record, initial_value in self.init_records.items():
+            var_name, var_type = ctx.ssa2pod_var[self._result.name][record]
             result = translate_assignment_core_with_ctx(
-                SSAVar.parse(f"{self._result.name}_{record}"),
+                SSAVar(var_name),
                 initial_value,
-                self.result_type.get(record, Type("!felt.type")),
+                var_type,
                 ctx,
             )
             if result:
                 yield result
 
-        # Also, we translate variables
+        # Initialise array fields
         for record, type_ in self.result_type.items():
             first_dim = array_felt_first_dimension(type_.name)
-
             if first_dim is not None:
-                yield f"array.new {first_dim} {self._result.name}_{record}"
+                var_name, _ = ctx.ssa2pod_var[self._result.name][record]
+                yield f"array.new {first_dim} {var_name}"
 
     def __repr__(self):
         inits = ', '.join(f"{k} = {v}" for k, v in self.init_records.items())
@@ -201,9 +210,14 @@ class PodRead(Operation):
 
         assert self.result_type is None or self.result_type == var_type, "Pod.read must match the type inside the dict ssa2pod_var"
 
+        # When the pod field has a semantic name (no % prefix), record an alias so
+        # that downstream operations (e.g. function.call args) use it directly.
+        if not variable_name.startswith("%"):
+            ctx.ssa_to_name[self._result.name] = variable_name
+
         result = translate_assignment_core_with_ctx(
             self._result,
-            SSAVar.parse(variable_name),
+            SSAVar(variable_name),
             var_type,
             ctx
         )
@@ -280,7 +294,7 @@ class PodWrite(Operation):
         assert self.value_type is None or self.value_type == var_type, "Pod.write must match the type inside the dict ssa2pod_var"
 
         result = translate_assignment_core_with_ctx(
-            SSAVar.parse(variable_name),
+            SSAVar(variable_name),
             self.value,
             var_type,
             ctx

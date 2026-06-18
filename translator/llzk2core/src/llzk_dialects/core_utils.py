@@ -57,6 +57,10 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
     Generates a str with the translation of an assignment in core. Moreover,
     it updates the context if rhs corresponds to a variable that evaluates to a constant
     """
+    # Resolve any semantic alias for rhs (e.g. "%14_@out_last" -> "last1.out_last")
+    alias = ctx.ssa_to_name.get(rhs.name)
+    if alias is not None:
+        rhs = SSAVar(alias)
 
     if "!struct" in type_.name:
         llzk_func = f"{struct_type_name(type_.name)}::@compute"
