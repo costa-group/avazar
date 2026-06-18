@@ -26,8 +26,24 @@ from llzk_dialects.core import (
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
-from llzk_dialects.utils import translate_assignment_core, array_felt_first_dimension, split_top_level_commas
-from llzk_dialects.core_utils import translate_assignment_core_with_ctx, struct_type_name
+from llzk_dialects.utils import split_top_level_commas
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx
+
+
+def _build_component_naming_maps(body, ctx):
+    """
+    Pre-pass: scan a compute function body to populate ctx.input_pod_to_member
+    so that PodNew can assign semantic field names (e.g. "last1.in1_last").
+    Only top-level struct.writem operations linking $inputs pods are needed.
+    """
+    ctx.input_pod_to_member.clear()
+    ctx.ssa_to_name.clear()
+
+    for op in body:
+        if isinstance(op, StructWritem) and op.types and "_inputs" in op.member_name.name:
+            member = op.member_name.name  # "@last1_inputs" ($ already converted to _)
+            base = member[1:member.index("_inputs")]
+            ctx.input_pod_to_member[op.value.name] = base
 
 
 class StructMember(Operation):
@@ -205,12 +221,9 @@ class StructReadm(Operation):
         # either a field inside the current struct of or another struct (as a subcomponent).
         # Hence, we separate both cases
 
-        # Defined by the current struct. The type matches the current struct
+        # Defined by the current struct: use just the member name (strip @)
         if f"{ctx.current_template}::" in self.types[0].name:
-            # The name is directly the var name, adding the prefix of the signal and ignoring the @
-            prefix = ctx.template2prefix[struct_type_name(self.types[0].name)]
-            new_name = f"{prefix}.{self.member_name.name[1:]}"
-            assigned_var = SSAVar(new_name)
+            assigned_var = SSAVar(self.member_name.name[1:])
         else:
             # The variable corresponds to the component name (a SSAVar) after adding the
             # member currently being accessed
@@ -277,21 +290,18 @@ class StructWritem(Operation):
         return [self.component, self.value]
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
-        # Members of the struct are handled as plain variables. Hence, writing
-        # a field just translates to an assignment.
         # Struct-typed members are ignored (subcomponent assignments are not tracked here).
         if "!struct" in self.types[-1].name:
             return
 
-        # Defined by the current struct. The type matches the current struct
+        # Pod input members ($inputs) are tracked via SSA pod variables in compute;
+        # no named signal assignment is needed here.
+        if "!pod.type" in self.types[-1].name:
+            return
+
         if f"{ctx.current_template}::" in self.types[0].name:
-            # The name is directly the var name, adding the prefix of the signal and ignoring the @
-            prefix = ctx.template2prefix[struct_type_name(self.types[0].name)]
-            new_name = f"{prefix}.{self.member_name.name[1:]}"
-            assigned_var = SSAVar(new_name)
+            assigned_var = SSAVar(self.member_name.name[1:])  # plain name, no prefix
         else:
-            # The variable corresponds to the component name (a SSAVar) after adding the
-            # member currently being accessed
             assigned_var = SSAVar(self.component.name + "_" + self.member_name.name)
 
         result = translate_assignment_core_with_ctx(assigned_var, self.value, self.types[-1], ctx)
@@ -379,11 +389,16 @@ class StructDef(BlockOperation):
         ctx.core_func2args[core_name] = in_args_with_type, out_args_with_type
         ctx.current_core_function = core_name
 
+        # Pre-pass: build naming maps so calls use semantic signal names
+        _build_component_naming_maps(compute_op.body, ctx)
+
         # After setting the translation, we just need to render the function
         # considering the out arguments we have generated
         yield from compute_op.to_core(ctx)
 
-        # Set again to None to avoid inconsistencies in the future
+        # Clear per-function naming maps
+        ctx.input_pod_to_member.clear()
+        ctx.ssa_to_name.clear()
         ctx.current_core_function = None
 
     def _compute_core_function_info_from_struct(self) -> Tuple[Operation, List[Tuple[str, Type]], List[Tuple[str, Type]], List[Tuple[str, Type]]]:
