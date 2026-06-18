@@ -1,6 +1,6 @@
 import pytest
 from llzk_dialects.struct import StructMember, StructNew, StructReadm, StructWritem, StructDef
-from llzk_dialects.core import SSAVar, GlobalVariable, Type
+from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.felt import FeltConst
 
 

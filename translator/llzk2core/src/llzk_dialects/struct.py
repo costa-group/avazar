@@ -26,7 +26,7 @@ from llzk_dialects.core import (
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
-from llzk_dialects.utils import translate_assignment_core, array_felt_first_dimension
+from llzk_dialects.utils import translate_assignment_core, array_felt_first_dimension, split_top_level_commas
 from llzk_dialects.core_utils import translate_assignment_core_with_ctx, struct_type_name
 
 
@@ -185,7 +185,7 @@ class StructReadm(Operation):
         if not m:
             raise ValueError(f"Failed to parse StructReadm: {line}")
         types = (
-            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            [Type.parse(t.strip()) for t in split_top_level_commas(m["types"])]
             if m["types"] else []
         )
         return StructReadm(SSAVar.parse(m["res"]), SSAVar.parse(m["comp"]),
@@ -216,8 +216,10 @@ class StructReadm(Operation):
             # member currently being accessed
             assigned_var = SSAVar(self.component.name + "_" + self.member_name.name)
 
-        yield translate_assignment_core_with_ctx(self._result, assigned_var,
-                                                 self.types[-1], ctx)
+        result = translate_assignment_core_with_ctx(self._result, assigned_var,
+                                                    self.types[-1], ctx)
+        if result:
+            yield result
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
@@ -263,7 +265,7 @@ class StructWritem(Operation):
         if not m:
             raise ValueError(f"Failed to parse StructWritem: {line}")
         types = (
-            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            [Type.parse(t.strip()) for t in split_top_level_commas(m["types"])]
             if m["types"] else []
         )
         return StructWritem(SSAVar.parse(m["comp"]),
@@ -276,25 +278,25 @@ class StructWritem(Operation):
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Members of the struct are handled as plain variables. Hence, writing
-        # a field just translates to an assignment
+        # a field just translates to an assignment.
+        # Struct-typed members are ignored (subcomponent assignments are not tracked here).
+        if "!struct" in self.types[-1].name:
+            return
 
-        # Writing a pod and a struct is ignored for now,
-        # because this refers to variables that do not affect the compute
-        # TODO: better fix using the context and storing the variables in a dict
-        if "!struct" not in self.types[-1].name and "!pod" not in self.types[-1].name:
+        # Defined by the current struct. The type matches the current struct
+        if f"{ctx.current_template}::" in self.types[0].name:
+            # The name is directly the var name, adding the prefix of the signal and ignoring the @
+            prefix = ctx.template2prefix[struct_type_name(self.types[0].name)]
+            new_name = f"{prefix}.{self.member_name.name[1:]}"
+            assigned_var = SSAVar(new_name)
+        else:
+            # The variable corresponds to the component name (a SSAVar) after adding the
+            # member currently being accessed
+            assigned_var = SSAVar(self.component.name + "_" + self.member_name.name)
 
-            # Defined by the current struct. The type matches the current struct
-            if f"{ctx.current_template}::" in self.types[0].name:
-                # The name is directly the var name, adding the prefix of the signal and ignoring the @
-                prefix = ctx.template2prefix[struct_type_name(self.types[0].name)]
-                new_name = f"{prefix}.{self.member_name.name[1:]}"
-                assigned_var = SSAVar(new_name)
-            else:
-                # The variable corresponds to the component name (a SSAVar) after adding the
-                # member currently being accessed
-                assigned_var = SSAVar(self.component.name + "_" + self.member_name.name)
-
-            yield translate_assignment_core_with_ctx(assigned_var, self.value, self.types[-1], ctx)
+        result = translate_assignment_core_with_ctx(assigned_var, self.value, self.types[-1], ctx)
+        if result:
+            yield result
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
