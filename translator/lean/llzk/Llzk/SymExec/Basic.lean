@@ -92,6 +92,8 @@ def getVar {c : ZKConfig} (env : SymEnv c) (id : VarID) : Except String (SymValu
 def setVar {c : ZKConfig} (env : SymEnv c) (id : VarID) (v : SymValue c) : SymEnv c :=
   env.insert id v
 
+def isDefinedVar {c : ZKConfig} (env : SymEnv c) (id : VarID) : Bool :=
+  env.contains id
 
 /- A specification for a sequence of commands. It is a formula describing the
    relationship between the input and output symbolic environments.

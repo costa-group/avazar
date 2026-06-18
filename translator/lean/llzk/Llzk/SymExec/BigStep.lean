@@ -104,14 +104,11 @@ def addVarInfo {c : ZKConfig}
     (tbF ebF : FFFormula c)
     (symEnv : SymEnv c) -- this is the one for the exit of the if-stmt
     : Except String (IfSpec c) := do
-    let tbVarInfo ← getVar tbSymEnv id -- lookup the variable info in then-branch
-    let ebVarInfo ← getVar ebSymEnv id -- lookup the variable info in else-branch
-    if (ebVarInfo == tbVarInfo) then
-      let symEnv' := setVar symEnv id tbVarInfo
-      -- the variable has the same info in both branches, we can keep it as is
+    if ( !isDefinedVar tbSymEnv id && !isDefinedVar ebSymEnv id ) then
+      -- the variable is not defined in either branch, we can ignore it
       return {
         inSymEnv := inSymEnv,
-        outSymEnv := symEnv',
+        outSymEnv := symEnv,
         tbF := tbF,
         ebF := ebF,
         nextId := cfg.nextId,
@@ -119,12 +116,27 @@ def addVarInfo {c : ZKConfig}
         newBoolVars := emptyBoolVarSet
       }
     else
-      match tbVarInfo, ebVarInfo with
-      | .ffVar v1, .ffVar v2 =>
-        addFFVarInfo cfg md id v1 v2 inSymEnv tbSymEnv ebSymEnv tbF ebF symEnv
-      | .ffArray v1, .ffArray v2 =>
-        addArrayVarInfo cfg md id v1 v2 inSymEnv tbSymEnv ebSymEnv tbF ebF symEnv
-      | _, _ => throw s!"Type mismatch for variable {id} in then-branch and else-branch"
+      let tbVarInfo ← getVar tbSymEnv id -- lookup the variable info in then-branch
+      let ebVarInfo ← getVar ebSymEnv id -- lookup the variable info in else-branch
+      if (ebVarInfo == tbVarInfo) then
+        let symEnv' := setVar symEnv id tbVarInfo
+        -- the variable has the same info in both branches, we can keep it as is
+        return {
+         inSymEnv := inSymEnv,
+         outSymEnv := symEnv',
+         tbF := tbF,
+         ebF := ebF,
+         nextId := cfg.nextId,
+         newFFVars := emptyFFVarSet,
+         newBoolVars := emptyBoolVarSet
+        }
+      else
+        match tbVarInfo, ebVarInfo with
+        | .ffVar v1, .ffVar v2 =>
+          addFFVarInfo cfg md id v1 v2 inSymEnv tbSymEnv ebSymEnv tbF ebF symEnv
+        | .ffArray v1, .ffArray v2 =>
+          addArrayVarInfo cfg md id v1 v2 inSymEnv tbSymEnv ebSymEnv tbF ebF symEnv
+        | _, _ => throw s!"Type mismatch for variable {id} in then-branch and else-branch"
 
 def mergeIfBranches' {c : ZKConfig}
     (cfg : SymExecConfig c)

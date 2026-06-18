@@ -87,8 +87,10 @@ def seAssignment {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c) (id : VarID) (e : Expr c)
   : Except String (CmdsSpec c) := do
   match seAssignmentConst cfg md symEnv id e with -- try to do constant propagation first
-  | Except.ok spec => return spec
-  | Except.error _ => seAssignmentNonConst cfg md symEnv id e
+  | Except.ok spec =>
+    return spec
+  | Except.error _ =>
+    seAssignmentNonConst cfg md symEnv id e
 
 
 end Llzk.SymExec.SymInstr
