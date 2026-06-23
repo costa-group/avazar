@@ -100,7 +100,7 @@ instance : ToString (List Param) where
 
 mutual
 
-def formatCom {c : ZKConfig} (i : ComWithMD c) (level : Nat) (sp : String) : String :=
+def formatCom {c : ZKConfig} (i : ComWithMD c) (level : Nat := 0) (sp : String := "") : String :=
   match i with
   | .mk _ info =>
       match info with

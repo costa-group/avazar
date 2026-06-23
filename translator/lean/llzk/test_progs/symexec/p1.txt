@@ -1,6 +1,7 @@
 
 
 func main(%x:ff) -> %y:ff { 
-  %y = felt.mul 2 %x
+  %z = felt.mul 2 %x
+  %y = %z
 }
 
