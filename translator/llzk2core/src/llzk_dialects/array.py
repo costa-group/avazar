@@ -20,6 +20,7 @@ from typing import List, Optional, Generator
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.utils import array_felt_first_dimension, array_felt_dimensions, split_top_level_commas
+from llzk_dialects.pod import _parse_pod_fields
 
 
 def _lin_var(base: str, n_dims: int) -> str:
@@ -133,6 +134,11 @@ class ArrayNew(Operation):
         if len(self.elements) > 0:
             raise NotImplementedError("array.new not implemented with initial elements")
         dim = array_felt_first_dimension(self.result_type.name)
+        if dim is None:
+            # Clear stale entries from a prior function that reused this SSA name.
+            ctx.array_pod_entries.pop(self._result.name, None)
+            ctx.array_struct_entries.pop(self._result.name, None)
+            return
         yield f"array.new {dim} {self._result}"
 
     def __repr__(self):
@@ -193,6 +199,34 @@ class ArrayRead(Operation):
         return [self.arr_ref] + list(self.indices)
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Non-felt element types (pod, struct): bookkeeping only, no CORE output.
+        if self.types:
+            elem_type = self.types[-1]
+            if "!pod.type" in elem_type.name or "!struct.type" in elem_type.name:
+                if self.indices:
+                    idx_const = ctx.var2const.get(self.indices[0].name)
+                    if idx_const is not None:
+                        arr_name = self.arr_ref.name
+                        if "!pod.type" in elem_type.name:
+                            pod_name = ctx.array_pod_entries.get(arr_name, {}).get(idx_const)
+                            if pod_name is not None and pod_name in ctx.ssa2pod_var:
+                                # Copy pod-var dict using source variable names (not re-keyed),
+                                # so downstream writes use the same CORE variable names.
+                                ctx.ssa2pod_var[self._result.name] = dict(ctx.ssa2pod_var[pod_name])
+                            else:
+                                # No prior write: create fresh pod vars from the element type.
+                                pod_fields = _parse_pod_fields(elem_type.name)
+                                if pod_fields:
+                                    ctx.ssa2pod_var[self._result.name] = {
+                                        field: (f"{self._result.name}_{field}", type_)
+                                        for field, type_ in pod_fields.items()
+                                    }
+                        else:
+                            entry = ctx.array_struct_entries.get(arr_name, {}).get(idx_const)
+                            if entry is not None:
+                                ctx.ssa_to_name[self._result.name] = ctx.ssa_to_name.get(entry, entry)
+                return
+
         if len(self.indices) <= 1:
             idx = self.indices[0].to_core() if self.indices else "0"
             yield f"array.read {self.arr_ref.to_core()}[{idx}] {self._result.to_core()}"
@@ -263,6 +297,20 @@ class ArrayWrite(Operation):
         return [self.arr_ref] + list(self.indices) + [self.rvalue]
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Non-felt element types (pod, struct): update tracking, no CORE output.
+        if self.types:
+            elem_type = self.types[-1]
+            if "!pod.type" in elem_type.name or "!struct.type" in elem_type.name:
+                if self.indices:
+                    idx_const = ctx.var2const.get(self.indices[0].name)
+                    if idx_const is not None:
+                        arr_name = self.arr_ref.name
+                        if "!pod.type" in elem_type.name:
+                            ctx.array_pod_entries.setdefault(arr_name, {})[idx_const] = self.rvalue.name
+                        else:
+                            ctx.array_struct_entries.setdefault(arr_name, {})[idx_const] = self.rvalue.name
+                return
+
         if len(self.indices) <= 1:
             idx = self.indices[0].to_core() if self.indices else "0"
             yield f"array.write {self.rvalue.to_core()} {self.arr_ref.to_core()}[{idx}]"

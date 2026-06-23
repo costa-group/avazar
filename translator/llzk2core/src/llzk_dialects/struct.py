@@ -389,13 +389,24 @@ class StructDef(BlockOperation):
         ctx.core_func2args[core_name] = in_args_with_type, out_args_with_type
         ctx.current_core_function = core_name
 
-        # Record subcomponent members (struct-typed) for this function
+        # Record subcomponent members (struct-typed) for this function.
+        # A direct struct member adds one entry; an array-of-structs member
+        # expands into N numbered entries (1-indexed).
         subcomponent_members = {}
         for op in self.body:
-            if isinstance(op, StructMember) and "!struct.type" in op.member_type.name:
-                member_name = op.sym_name.name[1:]  # strip leading @
-                full_ref = struct_type_name(op.member_type.name)  # "@X::@X"
-                referred = full_ref.split("::")[-1]
+            if not isinstance(op, StructMember):
+                continue
+            type_str = op.member_type.name
+            if "!struct.type" not in type_str:
+                continue
+            member_name = op.sym_name.name[1:]  # strip leading @
+            full_ref = struct_type_name(type_str)
+            referred = full_ref.split("::")[-1]
+            arr_m = re.search(r"!array\.type<\s*(\d+)\s+x\s+!struct\.type<", type_str)
+            if arr_m:
+                for i in range(1, int(arr_m.group(1)) + 1):
+                    subcomponent_members[f"{member_name}{i}"] = referred
+            else:
                 subcomponent_members[member_name] = referred
         if subcomponent_members:
             ctx.member_to_struct[core_name] = subcomponent_members
