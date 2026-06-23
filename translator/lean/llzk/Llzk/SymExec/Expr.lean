@@ -50,8 +50,8 @@ def sEvalExpr {c : ZKConfig}
      | .neg => sEvalExprNeg cfg md symEnv s id -- arith
      | .bneg => sEvalBNeg cfg md symEnv s id -- bool
      | .not => sEvalBitwiseNOT cfg md symEnv s id -- bitwise
-  | .id _ =>
-      Except.error s!"Evaluation of identifier is handled somewhere else, should not reach here"
+  | .id s =>
+      sEvalExprId cfg md symEnv s id
 
 
 end Llzk.SymExec.SymInstr
