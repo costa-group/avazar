@@ -9,12 +9,39 @@ from llzk_dialects.bool import BoolCmp
 from llzk_dialects.felt import FeltConst, FeltBinary
 
 
+def struct_type_name(type_str: str) -> Optional[str]:
+    """
+    Extracts the template::struct name from a struct type string. Also works if "!struct.type<*>" does not appear
+
+    Example: '!struct.type<@Num2Bits_2::@Num2Bits_2<[]>>' -> '@Num2Bits_2::@Num2Bits_2',
+                           '@Num2Bits_2::@Num2Bits_2<[]>'  -> '@Num2Bits_2::@Num2Bits_2'
+    """
+    m = re.search(r'!struct\.type<([^><]+)', type_str)
+    if m is not None:
+        return m.group(1).strip()
+
+    m = re.search(r'([^><]+)', type_str)
+    # Ignore !felt.type inside the string, as otherwise it matches every possible operand
+    return m.group(1).strip() if m is not None and "!felt.type" not in type_str else None
+
+
 def signature_args(args: List[Tuple[str, Type]]) -> str:
     """
     Given a list of args and their types, returns a string for declaring
     the signature of a function in CORE, with the format: "arg1: type1, arg2: type2, ..."
     """
     return', '.join(f"{arg}: {type_.to_core()}" for arg, type_ in args)
+
+
+def signature_args_with_prefix(args: List[Tuple[str, Type]], prefix: str) -> str:
+    """
+    Given a list of args and their types, returns a string for declaring
+    the signature of a function in CORE, with the format: "arg1*: type1, arg2*: type2, ..."
+
+    argi* is determined by argi and adding the corresponding prefix from the context
+
+    """
+    return', '.join(f"{prefix}.{arg[1:]}: {type_.to_core()}" for arg, type_ in args)
 
 
 def invocation_args(args: List[Tuple[str, Type]]) -> str:
@@ -30,12 +57,13 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
     Generates a str with the translation of an assignment in core. Moreover,
     it updates the context if rhs corresponds to a variable that evaluates to a constant
     """
+    # Resolve any semantic alias for rhs (e.g. "%14_@out_last" -> "last1.out_last")
+    alias = ctx.ssa_to_name.get(rhs.name)
+    if alias is not None:
+        rhs = SSAVar(alias)
 
     if "!struct" in type_.name:
-        # Extract the name of the template::struct to invoke the corresponding function
-        pattern = r'!struct\.type<([^><]+)'
-        match = re.search(pattern, type_.name)
-        llzk_func = f"{match.group(1)}::@compute"
+        llzk_func = f"{struct_type_name(type_.name)}::@compute"
         core_func = ctx.llzk_func2core[llzk_func]
         _, output_args = ctx.core_func2args[core_func]
 
@@ -45,7 +73,7 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
                                                             out_type, ctx)
                          for out_var, out_type in output_args)
 
-    is_ff = "array" not in type_.name and "!struct"
+    is_ff = "array" not in type_.name and "!pod.type" not in type_.name
 
     if is_ff:
         # Only check constants in case it is a ff

@@ -77,7 +77,7 @@ class GlobalVariable:
     def parse(cls, global_var: str) -> 'GlobalVariable':
         assert global_var[0] == "@", \
             f"Global variable must start with @: {global_var}"
-        return GlobalVariable(global_var)
+        return GlobalVariable(global_var.replace("$", "_"))
 
     def __repr__(self):
         return self.name
@@ -152,6 +152,17 @@ class TranslationContext:
     # Pod variables that have been traversed so far, with the name of their fields
     # and how they are translated
     ssa2pod_var: Dict[str, Dict[str, Tuple[str, Type]]] = field(default_factory=dict)
+
+    # Pre-pass maps built once per compute function, cleared after:
+    #   pod_ssa_name -> struct member base name (from @X$inputs writes)
+    input_pod_to_member: Dict[str, str] = field(default_factory=dict)
+    #   ssa_name -> semantic Core name (e.g. "%13" -> "last1.in1_last")
+    ssa_to_name: Dict[str, str] = field(default_factory=dict)
+
+    # Maps each core function name to its subcomponent members:
+    #   core_function_name -> {member_name -> referred_struct_name}
+    # e.g. {"IsZero_1": {"last1": "lastComponent_0", "last2": "lastComponent_0"}}
+    member_to_struct: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
 
 class Operation(ABC):

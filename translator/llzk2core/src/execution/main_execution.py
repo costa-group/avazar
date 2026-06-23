@@ -1,4 +1,7 @@
 import argparse
+import json
+import os
+import subprocess
 from typing import List
 from llzk_dialects.parser import LLZKParser
 from llzk_dialects.arith import ArithDialect
@@ -56,8 +59,34 @@ def main(args: argparse.Namespace):
     assert len(res) == 1, "Multiple modules have been recognized inside the program"
 
     module_structure = res[0]
-    core_generator = module_structure.to_core(TranslationContext())
+    translation_context = TranslationContext()
+    core_generator = module_structure.to_core(translation_context)
     with open(args.target, 'w') as f:
         # Indent stream generates the statements in a nice format
         for line in indent_stream(core_generator):
             f.write(line)
+
+    # For now, no need to store it in another file
+    # template_json_path = os.path.splitext(args.target)[0] + "_template.json"
+    # with open(template_json_path, 'w') as f:
+    #     json.dump(translation_context.member_to_struct, f, indent=2)
+
+    # We apply the JSON file
+    _here = os.path.dirname(os.path.abspath(__file__))
+    llzk_cli = os.path.join(_here, '..', '..', '..', 'lean', 'llzk_cli')
+    smt2_json_path = os.path.splitext(args.target)[0] + ".json"
+    subprocess.run(
+        [llzk_cli, '-zk', 'g64', '-se', '-smt2', 'json', '-o', smt2_json_path, args.target],
+        check=True,
+    )
+
+    # Finally, we combine the smt JSON file with the member_to_struct
+    with open(smt2_json_path, 'r') as f:
+        smt_json = json.load(f)
+
+        # Store the "components_info" information
+        for macro in smt_json["macros"]:
+            smt_json["macros"][macro]["components_info"] = translation_context.member_to_struct.get(macro, dict())
+
+    with open(smt2_json_path, 'w') as f:
+        json.dump(smt_json, f, indent=4)

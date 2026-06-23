@@ -17,13 +17,10 @@ Attributes (represented as type annotations, not parsed independently):
 
 import re
 from typing import List, Optional, TYPE_CHECKING, Generator
-
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
-from llzk_dialects.function import FunctionDef
 from llzk_dialects.utils import array_felt_first_dimension
 from llzk_dialects.core_utils import signature_args, invocation_args
-
 
 if TYPE_CHECKING:
     pass  # avoid circular imports
@@ -93,13 +90,16 @@ class ModuleOp:
         core_function = ctx.llzk_func2core[llzk_name]
         in_args, out_args = ctx.core_func2args[core_function]
 
+        # Strip @ prefix from output arg names (consistent with function body naming)
+        plain_out_args = [(n[1:] if n.startswith('@') else n, t) for n, t in out_args]
+
         # For declaring the main function
         joined_in_args_with_type = signature_args(in_args)
-        joined_out_args_with_type = signature_args(out_args)
+        joined_out_args_with_type = signature_args(plain_out_args)
 
         # For invoking the function
         joined_in_args = invocation_args(in_args)
-        joined_out_args = invocation_args(out_args)
+        joined_out_args = invocation_args(plain_out_args)
 
         yield f"""
             def main({joined_in_args_with_type}) -> {joined_out_args_with_type} {{
@@ -180,3 +180,5 @@ class LLZKDialect(Dialect):
     def __init__(self):
         super().__init__("llzk")
         self.register(LLZKNondet)
+
+
