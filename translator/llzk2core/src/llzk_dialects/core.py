@@ -159,6 +159,11 @@ class TranslationContext:
     #   ssa_name -> semantic Core name (e.g. "%13" -> "last1.in1_last")
     ssa_to_name: Dict[str, str] = field(default_factory=dict)
 
+    # Maps each core function name to its subcomponent members:
+    #   core_function_name -> {member_name -> referred_struct_name}
+    # e.g. {"IsZero_1": {"last1": "lastComponent_0", "last2": "lastComponent_0"}}
+    member_to_struct: Dict[str, Dict[str, str]] = field(default_factory=dict)
+
 
 class Operation(ABC):
     """

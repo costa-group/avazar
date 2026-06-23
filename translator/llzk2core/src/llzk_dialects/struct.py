@@ -27,7 +27,7 @@ from llzk_dialects.core import (
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
 from llzk_dialects.utils import split_top_level_commas
-from llzk_dialects.core_utils import translate_assignment_core_with_ctx
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx, struct_type_name
 
 
 def _build_component_naming_maps(body, ctx):
@@ -388,6 +388,17 @@ class StructDef(BlockOperation):
         ctx.llzk_func2core[llzk_name] = core_name
         ctx.core_func2args[core_name] = in_args_with_type, out_args_with_type
         ctx.current_core_function = core_name
+
+        # Record subcomponent members (struct-typed) for this function
+        subcomponent_members = {}
+        for op in self.body:
+            if isinstance(op, StructMember) and "!struct.type" in op.member_type.name:
+                member_name = op.sym_name.name[1:]  # strip leading @
+                full_ref = struct_type_name(op.member_type.name)  # "@X::@X"
+                referred = full_ref.split("::")[-1]
+                subcomponent_members[member_name] = referred
+        if subcomponent_members:
+            ctx.member_to_struct[core_name] = subcomponent_members
 
         # Pre-pass: build naming maps so calls use semantic signal names
         _build_component_naming_maps(compute_op.body, ctx)

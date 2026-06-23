@@ -1,4 +1,6 @@
 import argparse
+import json
+import os
 from typing import List
 from llzk_dialects.parser import LLZKParser
 from llzk_dialects.arith import ArithDialect
@@ -62,3 +64,7 @@ def main(args: argparse.Namespace):
         # Indent stream generates the statements in a nice format
         for line in indent_stream(core_generator):
             f.write(line)
+
+    template_json_path = os.path.splitext(args.target)[0] + "_template.json"
+    with open(template_json_path, 'w') as f:
+        json.dump(translation_context.member_to_struct, f, indent=2)
