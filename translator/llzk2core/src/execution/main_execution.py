@@ -83,8 +83,10 @@ def main(args: argparse.Namespace):
     # Finally, we combine the smt JSON file with the member_to_struct
     with open(smt2_json_path, 'r') as f:
         smt_json = json.load(f)
-        for struct_name, component_dict in translation_context.member_to_struct.items():
-            smt_json["macros"][struct_name]["components_info"] = component_dict
+
+        # Store the "components_info" information
+        for macro in smt_json["macros"]:
+            smt_json["macros"][macro]["components_info"] = translation_context.member_to_struct.get(macro, dict())
 
     with open(smt2_json_path, 'w') as f:
         json.dump(smt_json, f, indent=4)
