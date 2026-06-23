@@ -430,9 +430,40 @@ class SCFFor(BlockOperation):
         for op in self.body:
             op.update_variables(rename)
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        lb_val = ctx.var2const.get(self.lb.name)
+        ub_val = ctx.var2const.get(self.ub.name)
+        step_val = ctx.var2const.get(self.step.name, 1)
+
+        assert lb_val is not None, \
+            f"SCFFor: lower bound {self.lb.name} must be a known constant at translation time"
+        assert ub_val is not None, \
+            f"SCFFor: upper bound {self.ub.name} must be a known constant at translation time"
+
+        # Collect SSA variable names *defined* inside the body so we can
+        # rename them per-iteration (avoids collisions between iterations when
+        # the same SSA names are reused, e.g. %pod_26 for every iteration).
+        body_result_names = _collect_result_names(self.body)
+
+        for i in range(lb_val, ub_val, step_val):
+            ctx.var2const[self.iv.name] = i
+
+            # Rename all body-defined variables with an iteration suffix so
+            # that CORE variable names are unique across iterations.
+            suffix = f"_it{i}"
+            rename_fwd = {name: name + suffix for name in body_result_names}
+            for op in self.body:
+                op.update_variables(rename_fwd)
+
+            for op in self.body:
+                yield from op.to_core(ctx)
+
+            # Restore original SSA names for the next iteration.
+            rename_bwd = {name + suffix: name for name in body_result_names}
+            for op in self.body:
+                op.update_variables(rename_bwd)
+
+        ctx.var2const.pop(self.iv.name, None)
 
     def __repr__(self):
         res_str = (', '.join(repr(r) for r in self.results) + ' = ') if self.results else ''
