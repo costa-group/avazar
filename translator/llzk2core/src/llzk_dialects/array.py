@@ -19,7 +19,56 @@ from typing import List, Optional, Generator
 
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
-from llzk_dialects.utils import array_felt_first_dimension
+from llzk_dialects.utils import array_felt_first_dimension, array_felt_dimensions, split_top_level_commas
+
+
+def _lin_var(base: str, n_dims: int) -> str:
+    """Name for the final linearised index variable derived from base."""
+    return f"{base}_lin"
+
+
+def _linearise_indices(indices: List[SSAVar], dims: List[int], base: str) -> Generator[str, None, None]:
+    """
+    Emit Core IR statements that compute the row-major linear index for a
+    multi-dimensional access.  The final result is stored in ``{base}_lin``.
+
+    For dims=[d0, d1, ..., d_{n-1}] and indices [i0, i1, ..., i_{n-1}]:
+        linear = i0*stride0 + i1*stride1 + ... + i_{n-1}*1
+    where stride_k = d_{k+1} * d_{k+2} * ... * d_{n-1}.
+
+    Temporary variable names are derived from *base* (the SSA result or rvalue
+    name), which is unique within a function in SSA form.
+    """
+    n = len(dims)
+    strides = [1] * n
+    for i in range(n - 2, -1, -1):
+        strides[i] = dims[i + 1] * strides[i + 1]
+
+    # First term: indices[0] * strides[0]
+    idx0 = indices[0].to_core()
+    if strides[0] == 1:
+        acc = f"{base}_t0"
+        yield f"{acc} = {idx0}"
+    else:
+        s_var = f"{base}_s0"
+        acc = f"{base}_t0"
+        yield f"{s_var} = {strides[0]}"
+        yield f"{acc} = felt.mul {idx0} {s_var}"
+
+    for i in range(1, n):
+        idx_i = indices[i].to_core()
+        if strides[i] == 1:
+            term = f"{base}_t{i}"
+            yield f"{term} = {idx_i}"
+        else:
+            s_var = f"{base}_s{i}"
+            term = f"{base}_t{i}"
+            yield f"{s_var} = {strides[i]}"
+            yield f"{term} = felt.mul {idx_i} {s_var}"
+
+        new_acc = f"{base}_lin" if i == n - 1 else f"{base}_acc{i}"
+        yield f"{new_acc} = felt.add {acc} {term}"
+        acc = new_acc
 
 
 def _parse_index_list(raw: Optional[str]) -> List[SSAVar]:
@@ -129,7 +178,7 @@ class ArrayRead(Operation):
             raise ValueError(f"Failed to parse ArrayRead: {line}")
         indices = _parse_index_list(m["idx"])
         types = (
-            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            [Type.parse(t.strip()) for t in split_top_level_commas(m["types"])]
             if m["types"] else []
         )
         return ArrayRead(SSAVar.parse(m["res"]), SSAVar.parse(m["arr"]),
@@ -144,11 +193,19 @@ class ArrayRead(Operation):
         return [self.arr_ref] + list(self.indices)
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
-        # We cover the case in which there could be multiple accesses because
-        # there are multiple indices. To do that, we recover a different
-        # component of the result
-        for i, index in enumerate(self.indices):
-            yield f"array.read {self.arr_ref.to_core()}[{index.to_core()}] {self._result.to_core_component(i)}"
+        if len(self.indices) <= 1:
+            idx = self.indices[0].to_core() if self.indices else "0"
+            yield f"array.read {self.arr_ref.to_core()}[{idx}] {self._result.to_core()}"
+            return
+
+        dims = array_felt_dimensions(self.types[0].name) if self.types else None
+        assert dims is not None and len(dims) == len(self.indices), (
+            f"ArrayRead: {len(self.indices)}-index read requires type annotation "
+            f"with {len(self.indices)} felt dimensions, got {self.types}"
+        )
+        yield from _linearise_indices(self.indices, dims, self._result.name)
+        lin = _lin_var(self._result.name, len(dims))
+        yield f"array.read {self.arr_ref.to_core()}[{lin}] {self._result.to_core()}"
 
     def __repr__(self):
         idx_str = ', '.join(repr(i) for i in self.indices)
@@ -195,7 +252,7 @@ class ArrayWrite(Operation):
             raise ValueError(f"Failed to parse ArrayWrite: {line}")
         indices = _parse_index_list(m["idx"])
         types = (
-            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            [Type.parse(t.strip()) for t in split_top_level_commas(m["types"])]
             if m["types"] else []
         )
         return ArrayWrite(SSAVar.parse(m["arr"]), indices,
@@ -205,12 +262,23 @@ class ArrayWrite(Operation):
     def operands(self) -> List[SSAVar]:
         return [self.arr_ref] + list(self.indices) + [self.rvalue]
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # We cover the case in which there could be multiple accesses because
-        # there are multiple indices. To do that, we recover a different
-        # component of the result
-        for i, index in enumerate(self.indices):
-            yield f"array.write {self.rvalue.to_core_component(i)} {self.arr_ref.to_core()}[{index.to_core()}]"
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        if len(self.indices) <= 1:
+            idx = self.indices[0].to_core() if self.indices else "0"
+            yield f"array.write {self.rvalue.to_core()} {self.arr_ref.to_core()}[{idx}]"
+            return
+
+        dims = array_felt_dimensions(self.types[0].name) if self.types else None
+        assert dims is not None and len(dims) == len(self.indices), (
+            f"ArrayWrite: {len(self.indices)}-index write requires type annotation "
+            f"with {len(self.indices)} felt dimensions, got {self.types}"
+        )
+        # Base the temp names on the rvalue (unique SSA def) to avoid collisions
+        # with other reads/writes in the same scope.
+        base = self.rvalue.name
+        yield from _linearise_indices(self.indices, dims, base)
+        lin = _lin_var(base, len(dims))
+        yield f"array.write {self.rvalue.to_core()} {self.arr_ref.to_core()}[{lin}]"
 
     def __repr__(self):
         idx_str = ', '.join(repr(i) for i in self.indices)
@@ -311,7 +379,7 @@ class ArrayInsert(Operation):
         if not m:
             raise ValueError(f"Failed to parse ArrayInsert: {line}")
         types = (
-            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            [Type.parse(t.strip()) for t in split_top_level_commas(m["types"])]
             if m["types"] else []
         )
         return ArrayInsert(SSAVar.parse(m["arr"]), _parse_index_list(m["idx"]),
@@ -377,9 +445,17 @@ class ArrayLen(Operation):
     def operands(self) -> List[SSAVar]:
         return [self.arr_ref, self.dim]
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        dims = array_felt_dimensions(self.arr_type.name)
+        assert dims is not None, \
+            f"ArrayLen: requires an array of felt type, got {self.arr_type}"
+        dim_idx = ctx.var2const.get(self.dim.name)
+        assert dim_idx is not None, \
+            f"ArrayLen: dimension index {self.dim} must be a known constant at translation time"
+        assert 0 <= dim_idx < len(dims), \
+            f"ArrayLen: dimension index {dim_idx} out of range for {len(dims)}-D array"
+        ctx.var2const[self._result.name] = dims[dim_idx]
+        yield f"{self._result.to_core()} = {dims[dim_idx]}"
 
     def __repr__(self):
         return (f"ArrayLen({self._result} = array.len "

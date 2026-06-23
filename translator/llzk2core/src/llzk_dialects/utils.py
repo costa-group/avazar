@@ -2,7 +2,7 @@
 Module for reusable methods in different modules
 """
 import re
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 
 def split_top_level_commas(s: str) -> List[str]:
@@ -27,16 +27,43 @@ def split_top_level_commas(s: str) -> List[str]:
     return parts
 
 
+def array_felt_dimensions(type_: str) -> Optional[List[int]]:
+    """
+    Returns the list of integer dimensions for an N-D array of felt type.
+
+    Handles the real MLIR format where outer dimensions are comma-separated
+    and the final dimension precedes the element type with 'x':
+        <d0,d1,...,dn x !felt.type<...>>   (n-D, commas between dims)
+        <N x !felt.type<...>>              (1-D, single dim)
+
+    Also accepts the all-x-separated form for compatibility:
+        <d0 x d1 x ... x !felt.type<...>>
+
+    Returns None if the type is not a recognised felt array.
+    """
+    # Primary format: comma-separated outer dims, last dim uses 'x' before element type
+    m = re.search(r"<\s*((?:\d+\s*,\s*)*\d+)\s+x\s+!felt\.type<", type_)
+    if m:
+        return [int(d) for d in re.findall(r'\d+', m.group(1))]
+    # Fallback: all dims x-separated (e.g. test fixtures)
+    m = re.search(r"<\s*((?:\d+\s+x\s+)+)!felt\.type<", type_)
+    if m:
+        return [int(d) for d in re.findall(r'\d+', m.group(1))]
+    return None
+
+
 def array_felt_first_dimension(type_: str) -> Optional[int]:
     """
-    Method that recognizes 2D array expressions of felt and
-    returns the x dimension.
+    Returns the total linearized size (product of all dimensions) for an
+    N-D felt array type.  E.g. !array.type<2 x 3 x !felt.type<"bn128">> -> 6.
     """
-    pattern = r"!array\.type<(\d+)\s+x\s+!felt\.type<"
-    match = re.search(pattern, type_)
-    if match:
-        return int(match.group(1))
-    return None
+    dims = array_felt_dimensions(type_)
+    if dims is None:
+        return None
+    result = 1
+    for d in dims:
+        result *= d
+    return result
 
 
 def translate_assignment_core(lhs: str, rhs: str, is_ff: bool) -> str:

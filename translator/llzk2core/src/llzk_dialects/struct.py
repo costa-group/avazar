@@ -26,8 +26,24 @@ from llzk_dialects.core import (
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
-from llzk_dialects.utils import translate_assignment_core, array_felt_first_dimension
-from llzk_dialects.core_utils import translate_assignment_core_with_ctx
+from llzk_dialects.utils import split_top_level_commas
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx, struct_type_name
+
+
+def _build_component_naming_maps(body, ctx):
+    """
+    Pre-pass: scan a compute function body to populate ctx.input_pod_to_member
+    so that PodNew can assign semantic field names (e.g. "last1.in1_last").
+    Only top-level struct.writem operations linking $inputs pods are needed.
+    """
+    ctx.input_pod_to_member.clear()
+    ctx.ssa_to_name.clear()
+
+    for op in body:
+        if isinstance(op, StructWritem) and op.types and "_inputs" in op.member_name.name:
+            member = op.member_name.name  # "@last1_inputs" ($ already converted to _)
+            base = member[1:member.index("_inputs")]
+            ctx.input_pod_to_member[op.value.name] = base
 
 
 class StructMember(Operation):
@@ -185,7 +201,7 @@ class StructReadm(Operation):
         if not m:
             raise ValueError(f"Failed to parse StructReadm: {line}")
         types = (
-            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            [Type.parse(t.strip()) for t in split_top_level_commas(m["types"])]
             if m["types"] else []
         )
         return StructReadm(SSAVar.parse(m["res"]), SSAVar.parse(m["comp"]),
@@ -205,17 +221,18 @@ class StructReadm(Operation):
         # either a field inside the current struct of or another struct (as a subcomponent).
         # Hence, we separate both cases
 
-        # Defined by the current struct. The type matches the current struct
+        # Defined by the current struct: use just the member name (strip @)
         if f"{ctx.current_template}::" in self.types[0].name:
-            # The name is directly the var name
-            assigned_var = SSAVar(self.member_name.name)
+            assigned_var = SSAVar(self.member_name.name[1:])
         else:
             # The variable corresponds to the component name (a SSAVar) after adding the
             # member currently being accessed
             assigned_var = SSAVar(self.component.name + "_" + self.member_name.name)
 
-        yield translate_assignment_core_with_ctx(self._result, assigned_var,
-                                                 self.types[-1], ctx)
+        result = translate_assignment_core_with_ctx(self._result, assigned_var,
+                                                    self.types[-1], ctx)
+        if result:
+            yield result
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
@@ -261,7 +278,7 @@ class StructWritem(Operation):
         if not m:
             raise ValueError(f"Failed to parse StructWritem: {line}")
         types = (
-            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            [Type.parse(t.strip()) for t in split_top_level_commas(m["types"])]
             if m["types"] else []
         )
         return StructWritem(SSAVar.parse(m["comp"]),
@@ -273,24 +290,23 @@ class StructWritem(Operation):
         return [self.component, self.value]
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
-        # Members of the struct are handled as plain variables. Hence, writing
-        # a field just translates to an assignment
+        # Struct-typed members are ignored (subcomponent assignments are not tracked here).
+        if "!struct" in self.types[-1].name:
+            return
 
-        # Writing a pod and a struct is ignored for now,
-        # because this refers to variables that do not affect the compute
-        # TODO: better fix using the context and storing the variables in a dict
-        if "!struct" not in self.types[-1].name and "!pod" not in self.types[-1].name:
+        # Pod input members ($inputs) are tracked via SSA pod variables in compute;
+        # no named signal assignment is needed here.
+        if "!pod.type" in self.types[-1].name:
+            return
 
-            # Defined by the current struct. The type matches the current struct
-            if f"{ctx.current_template}::" in self.types[0].name:
-                # The name is directly the var name
-                assigned_var = SSAVar(self.member_name.name)
-            else:
-                # The variable corresponds to the component name (a SSAVar) after adding the
-                # member currently being accessed
-                assigned_var = SSAVar(self.component.name + "_" + self.member_name.name)
+        if f"{ctx.current_template}::" in self.types[0].name:
+            assigned_var = SSAVar(self.member_name.name[1:])  # plain name, no prefix
+        else:
+            assigned_var = SSAVar(self.component.name + "_" + self.member_name.name)
 
-            yield translate_assignment_core_with_ctx(assigned_var, self.value, self.types[-1], ctx)
+        result = translate_assignment_core_with_ctx(assigned_var, self.value, self.types[-1], ctx)
+        if result:
+            yield result
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
@@ -373,11 +389,27 @@ class StructDef(BlockOperation):
         ctx.core_func2args[core_name] = in_args_with_type, out_args_with_type
         ctx.current_core_function = core_name
 
+        # Record subcomponent members (struct-typed) for this function
+        subcomponent_members = {}
+        for op in self.body:
+            if isinstance(op, StructMember) and "!struct.type" in op.member_type.name:
+                member_name = op.sym_name.name[1:]  # strip leading @
+                full_ref = struct_type_name(op.member_type.name)  # "@X::@X"
+                referred = full_ref.split("::")[-1]
+                subcomponent_members[member_name] = referred
+        if subcomponent_members:
+            ctx.member_to_struct[core_name] = subcomponent_members
+
+        # Pre-pass: build naming maps so calls use semantic signal names
+        _build_component_naming_maps(compute_op.body, ctx)
+
         # After setting the translation, we just need to render the function
         # considering the out arguments we have generated
         yield from compute_op.to_core(ctx)
 
-        # Set again to None to avoid inconsistencies in the future
+        # Clear per-function naming maps
+        ctx.input_pod_to_member.clear()
+        ctx.ssa_to_name.clear()
         ctx.current_core_function = None
 
     def _compute_core_function_info_from_struct(self) -> Tuple[Operation, List[Tuple[str, Type]], List[Tuple[str, Type]], List[Tuple[str, Type]]]:
