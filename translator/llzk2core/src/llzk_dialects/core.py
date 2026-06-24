@@ -179,6 +179,21 @@ class TranslationContext:
     array_struct_entries: Dict[str, Dict[int, str]] = field(default_factory=dict)
 
 
+def _apply_rename(name: str, rename: Dict[str, str]) -> str:
+    """Apply a rename dict to an SSA variable name.
+
+    Handles plain names ("%2" -> "%2_aft") and component references
+    ("%2#1" -> "%2_aft#1") where only the base name appears in the dict.
+    """
+    if name in rename:
+        return rename[name]
+    if '#' in name:
+        base, idx = name.rsplit('#', 1)
+        if base in rename:
+            return rename[base] + '#' + idx
+    return name
+
+
 class Operation(ABC):
     """
     Abstract base for flat (single-line) LLZK operations.
@@ -229,12 +244,15 @@ class Operation(ABC):
         return []
 
     def update_variables(self, rename: Dict[str, str]) -> None:
-        """Rename SSA variables in-place according to rename. Mutates SSAVar.name directly."""
-        if self.result is not None and self.result.name in rename:
-            self.result.name = rename[self.result.name]
+        """Rename SSA variables in-place according to rename. Mutates SSAVar.name directly.
+
+        Also handles component references like %2#1: if %2 is renamed to %2_aft,
+        then %2#1 is renamed to %2_aft#1.
+        """
+        if self.result is not None:
+            self.result.name = _apply_rename(self.result.name, rename)
         for operand in self.operands:
-            if operand.name in rename:
-                operand.name = rename[operand.name]
+            operand.name = _apply_rename(operand.name, rename)
 
 
 # Type alias used by BlockOperation.parse
