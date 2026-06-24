@@ -24,7 +24,7 @@ def run_command(command: List[str]):
         e.printMessage()
         
     logging.info(f"Finished {command}")
-    
+    return res
 
 def main():
 
@@ -89,10 +89,10 @@ def main():
         llzk2core_main(llzk2core_args)
 
         #4. call to the solver
-        avazar_tool_command = [AVAZAR_TOOL, out_abs_path+"/"+root_name_withoutext+".r1cs", "--input_structure", out_abs_path+"/"+root_name_withoutext+"_structure.json", "--check_correctness", out_abs_path+"/"+root_name_withoutext+".json", "--correspondance", out_abs_path+"/"+root_name_withoutext+"_signals.json", "--solver", args.solver, "--verbose"]
+        avazar_tool_command = [AVAZAR_TOOL, out_abs_path+"/"+root_name_withoutext+".r1cs", "--input_structure", out_abs_path+"/"+root_name_withoutext+"_structure.json", "--check_correctness", out_abs_path+"/"+root_name_withoutext+".json", "--correspondence", out_abs_path+"/"+root_name_withoutext+"_signals.json", "--solver", args.solver, "--verbose"]
         print(" ".join(avazar_tool_command))
-        run_command(avazar_tool_command)
-
+        res_avazar = run_command(avazar_tool_command)
+        print(res_avazar.stdout)
         
         
     except FileNotFoundError as e:
