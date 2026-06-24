@@ -4,3 +4,7 @@
 [submodule "ffsol"]
 	path = ffsol
 	url = https://mygitlab.cs.upc.edu/polynomial-equations/poly-eqs.git
+[submodule "circom"]
+	path = circom
+	url = https://github.com/iden3/circom.git
+        branch = print_tree_info
