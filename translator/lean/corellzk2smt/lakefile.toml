@@ -4,7 +4,7 @@ keywords = ["math"]
 defaultTargets = ["Corellzk2smt"]
 
 [leanOptions]
-pp.unicode.fun = true # pretty-prints `fun a ↦ b`
+pp.unicode.fun = true                 # pretty-prints `fun a ↦ b`
 relaxedAutoImplicit = false
 weak.linter.mathlibStandardSet = true
 maxSynthPendingDepth = 3
@@ -13,6 +13,11 @@ maxSynthPendingDepth = 3
 name = "mathlib"
 scope = "leanprover-community"
 rev = "v4.32.0-rc1"
+
+[[require]]
+name = "Cli"
+git = "https://github.com/mhuisi/lean4-cli"
+rev = "main"
 
 [[lean_lib]]
 name = "Corellzk2smt"
