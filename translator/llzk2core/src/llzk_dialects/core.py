@@ -164,10 +164,17 @@ class TranslationContext:
     # e.g. {"IsZero_1": {"last1": "lastComponent_0", "last2": "lastComponent_0"}}
     member_to_struct: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
+    # Maps the SSA result name of a no-arg function call to the struct member name
+    # that holds that component instance (e.g. "%0" -> "cst" when the result of
+    # `call @Constants_3()` ends up as `@cst`). Used by FunctionCall.to_core() only;
+    # kept separate from ssa_to_name so struct decomposition doesn't see it.
+    struct_result_to_member: Dict[str, str] = field(default_factory=dict)
+
     # Arrays of non-felt elements: tracks what pod/struct SSA var lives at each index.
     # Populated by array.write, consumed by array.read (no CORE output generated).
     #   array_ssa_name -> {index: pod_ssa_name}
     array_pod_entries: Dict[str, Dict[int, str]] = field(default_factory=dict)
+
     #   array_ssa_name -> {index: struct_ssa_name}
     array_struct_entries: Dict[str, Dict[int, str]] = field(default_factory=dict)
 
