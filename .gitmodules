@@ -8,3 +8,6 @@
 	path = circom
 	url = https://github.com/iden3/circom.git
         branch = print_tree_info
+[submodule "circom-llzk"]
+	path = circom-llzk
+	url = git@github.com:project-llzk/circom.git
