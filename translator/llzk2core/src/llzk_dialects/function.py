@@ -144,13 +144,7 @@ class FunctionCall(Operation):
                                        "But {self.results} is returned instead"
         result = self.results[0]
 
-        # Infer component member name from aliased args (e.g. "last1.in1_last" → "last1")
-        member = None
-        for arg in self.args:
-            alias = ctx.ssa_to_name.get(arg.name, "")
-            if '.' in alias:
-                member = alias.split('.')[0]
-                break
+        member = ctx.struct_result_to_member.get(result.name)
 
         if member:
             out_var_names = []

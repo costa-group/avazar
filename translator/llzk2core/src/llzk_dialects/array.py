@@ -311,9 +311,13 @@ class ArrayWrite(Operation):
                             ctx.array_struct_entries.setdefault(arr_name, {})[idx_const] = self.rvalue.name
                 return
 
+        # Resolve the array ref through ssa_to_name so that writes to a pod field
+        # with a semantic name (e.g. "mux.c") go directly into that named array.
+        arr_core = ctx.ssa_to_name.get(self.arr_ref.name, self.arr_ref.to_core())
+
         if len(self.indices) <= 1:
             idx = self.indices[0].to_core() if self.indices else "0"
-            yield f"array.write {self.rvalue.to_core()} {self.arr_ref.to_core()}[{idx}]"
+            yield f"array.write {self.rvalue.to_core()} {arr_core}[{idx}]"
             return
 
         dims = array_felt_dimensions(self.types[0].name) if self.types else None
@@ -326,7 +330,7 @@ class ArrayWrite(Operation):
         base = self.rvalue.name
         yield from _linearise_indices(self.indices, dims, base)
         lin = _lin_var(base, len(dims))
-        yield f"array.write {self.rvalue.to_core()} {self.arr_ref.to_core()}[{lin}]"
+        yield f"array.write {self.rvalue.to_core()} {arr_core}[{lin}]"
 
     def __repr__(self):
         idx_str = ', '.join(repr(i) for i in self.indices)
