@@ -1,6 +1,6 @@
 import pytest
 from llzk_dialects.scf import SCFYield, SCFCondition, SCFIf, SCFFor, SCFWhile
-from llzk_dialects.core import SSAVar, Type
+from llzk_dialects.core import SSAVar, Type, TranslationContext
 from llzk_dialects.felt import FeltConst, FeltBinary
 from llzk_dialects.bool import BoolCmp
 from llzk_dialects.constrain import ConstrainEq
@@ -132,6 +132,53 @@ class TestSCF:
     def test_for_match(self):
         assert SCFFor.match("scf.for %iv = %lb to %ub step %s {") is True
         assert SCFFor.match("scf.while (%a = %b) {") is False
+
+    def test_for_to_core_unroll(self):
+        # Verify that scf.for unrolls iterations and suffixes body variable names.
+        lines = [
+            "scf.for %iv = %c0 to %c2 step %c1 {",
+            "%x = felt.add %iv, %arg0 : !felt.type, !felt.type",
+            "}",
+        ]
+
+        def parse_fn(start, end):
+            ops = []
+            for i in range(start, end):
+                line = lines[i].strip()
+                if not line or line == "}":
+                    continue
+                if FeltBinary.match(line):
+                    ops.append(FeltBinary.parse(line))
+            return ops
+
+        op, _ = SCFFor.parse(lines, 0, parse_fn)
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+        ctx.var2const["%c2"] = 3
+        ctx.var2const["%c1"] = 1
+
+        out = list(op.to_core(ctx))
+        # Should produce 3 iterations (0, 1, 2); each emits one felt.add line.
+        assert len(out) == 3
+        # Body variable %x is suffixed per iteration.
+        assert any("_it0" in line for line in out)
+        assert any("_it1" in line for line in out)
+        assert any("_it2" in line for line in out)
+        # Induction variable is not in var2const after the loop.
+        assert "%iv" not in ctx.var2const
+
+    def test_for_to_core_missing_bound_raises(self):
+        lines = [
+            "scf.for %iv = %c0 to %c2 step %c1 {",
+            "scf.yield",
+            "}",
+        ]
+        op, _ = SCFFor.parse(lines, 0, lambda s, e: [])
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+        # %c2 deliberately missing — must raise
+        with pytest.raises(AssertionError):
+            list(op.to_core(ctx))
 
     # ── SCFWhile (BlockOperation) ─────────────────────────────────────────────
 
