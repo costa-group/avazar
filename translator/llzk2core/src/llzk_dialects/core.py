@@ -164,6 +164,35 @@ class TranslationContext:
     # e.g. {"IsZero_1": {"last1": "lastComponent_0", "last2": "lastComponent_0"}}
     member_to_struct: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
+    # Maps the SSA result name of a no-arg function call to the struct member name
+    # that holds that component instance (e.g. "%0" -> "cst" when the result of
+    # `call @Constants_3()` ends up as `@cst`). Used by FunctionCall.to_core() only;
+    # kept separate from ssa_to_name so struct decomposition doesn't see it.
+    struct_result_to_member: Dict[str, str] = field(default_factory=dict)
+
+    # Arrays of non-felt elements: tracks what pod/struct SSA var lives at each index.
+    # Populated by array.write, consumed by array.read (no CORE output generated).
+    #   array_ssa_name -> {index: pod_ssa_name}
+    array_pod_entries: Dict[str, Dict[int, str]] = field(default_factory=dict)
+
+    #   array_ssa_name -> {index: struct_ssa_name}
+    array_struct_entries: Dict[str, Dict[int, str]] = field(default_factory=dict)
+
+
+def _apply_rename(name: str, rename: Dict[str, str]) -> str:
+    """Apply a rename dict to an SSA variable name.
+
+    Handles plain names ("%2" -> "%2_aft") and component references
+    ("%2#1" -> "%2_aft#1") where only the base name appears in the dict.
+    """
+    if name in rename:
+        return rename[name]
+    if '#' in name:
+        base, idx = name.rsplit('#', 1)
+        if base in rename:
+            return rename[base] + '#' + idx
+    return name
+
 
 class Operation(ABC):
     """
@@ -215,12 +244,15 @@ class Operation(ABC):
         return []
 
     def update_variables(self, rename: Dict[str, str]) -> None:
-        """Rename SSA variables in-place according to rename. Mutates SSAVar.name directly."""
-        if self.result is not None and self.result.name in rename:
-            self.result.name = rename[self.result.name]
+        """Rename SSA variables in-place according to rename. Mutates SSAVar.name directly.
+
+        Also handles component references like %2#1: if %2 is renamed to %2_aft,
+        then %2#1 is renamed to %2_aft#1.
+        """
+        if self.result is not None:
+            self.result.name = _apply_rename(self.result.name, rename)
         for operand in self.operands:
-            if operand.name in rename:
-                operand.name = rename[operand.name]
+            operand.name = _apply_rename(operand.name, rename)
 
 
 # Type alias used by BlockOperation.parse

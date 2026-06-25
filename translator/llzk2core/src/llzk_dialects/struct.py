@@ -30,20 +30,92 @@ from llzk_dialects.utils import split_top_level_commas
 from llzk_dialects.core_utils import translate_assignment_core_with_ctx, struct_type_name
 
 
+def _collect_all_ops(ops):
+    """Yield every operation in a body, recursing into all nested block bodies."""
+    from llzk_dialects.scf import SCFWhile, SCFIf, SCFFor
+    for op in ops:
+        yield op
+        for attr in ('body', 'then_body', 'else_body', 'before_body', 'after_body'):
+            sub = getattr(op, attr, None)
+            if sub:
+                yield from _collect_all_ops(sub)
+
+
 def _build_component_naming_maps(body, ctx):
     """
-    Pre-pass: scan a compute function body to populate ctx.input_pod_to_member
-    so that PodNew can assign semantic field names (e.g. "last1.in1_last").
-    Only top-level struct.writem operations linking $inputs pods are needed.
+    Pre-pass: scan a compute function body to build two naming maps.
+
+    1. ctx.input_pod_to_member — pod_ssa -> member base name
+       Used by PodNew so semantic field names like "mux.c" are used instead
+       of raw "%pod_0_@c" names.  Traces through scf.while result chains.
+
+    2. ctx.struct_result_to_member — call_result_ssa -> member name
+       Used by FunctionCall so the output is named "cst.out" instead of
+       "%0_@out".  Works by finding every pod.write/@comp assignment (at any
+       nesting depth) and mapping it back to the struct member that eventually
+       holds that component.
     """
+    from llzk_dialects.scf import SCFWhile
+    from llzk_dialects.pod import PodNew, PodRead, PodWrite
+
     ctx.input_pod_to_member.clear()
     ctx.ssa_to_name.clear()
+    ctx.struct_result_to_member.clear()
+
+    # --- Part 1: $inputs pod mapping ---
+    # Build map: while-result component name -> its initial value name.
+    # Handles chains like "%1#1" -> "%0#1" -> "%pod_0".
+    result_to_init = {}
+    for op in body:
+        if isinstance(op, SCFWhile):
+            flat_results = []
+            for res in op.results:
+                for k in range(res.n_components):
+                    flat_results.append(res.to_core_component(k))
+            for comp_name, (_, init_val) in zip(flat_results, op.init_args):
+                result_to_init[comp_name] = init_val.name
+
+    def trace_source(name):
+        seen = set()
+        while name in result_to_init and name not in seen:
+            seen.add(name)
+            name = result_to_init[name]
+        return name
 
     for op in body:
         if isinstance(op, StructWritem) and op.types and "_inputs" in op.member_name.name:
             member = op.member_name.name  # "@last1_inputs" ($ already converted to _)
             base = member[1:member.index("_inputs")]
-            ctx.input_pod_to_member[op.value.name] = base
+            source = trace_source(op.value.name)
+            ctx.input_pod_to_member[source] = base
+
+    # --- Part 2: call-result -> member name mapping ---
+    # Step A: find pod -> member from top-level struct.writem @member = pod.read(%pod, @comp)
+    pod_comp_read = {}  # read_result_ssa -> pod_ssa
+    for op in body:
+        if isinstance(op, PodRead) and op.record_name.name == "@comp":
+            pod_comp_read[op._result.name] = op.pod_ref.name
+
+    pod_to_member = {}  # pod_ssa -> member_name
+    for op in body:
+        if (isinstance(op, StructWritem) and op.types
+                and "_inputs" not in op.member_name.name
+                and "!struct" in op.types[-1].name):
+            pod_var = pod_comp_read.get(op.value.name)
+            if pod_var is not None:
+                pod_to_member[pod_var] = op.member_name.name[1:]  # strip @
+
+    # Step B: scan ALL ops (including nested bodies) for pod.write @comp = %result
+    # and map the result to the member.  Also covers pod.new { @comp = %result }.
+    for op in _collect_all_ops(body):
+        if isinstance(op, PodWrite) and op.record_name.name == "@comp":
+            member = pod_to_member.get(op.pod_ref.name)
+            if member is not None:
+                ctx.struct_result_to_member[op.value.name] = member
+        elif isinstance(op, PodNew) and "@comp" in op.init_records:
+            member = pod_to_member.get(op._result.name)
+            if member is not None:
+                ctx.struct_result_to_member[op.init_records["@comp"].name] = member
 
 
 class StructMember(Operation):
@@ -389,13 +461,24 @@ class StructDef(BlockOperation):
         ctx.core_func2args[core_name] = in_args_with_type, out_args_with_type
         ctx.current_core_function = core_name
 
-        # Record subcomponent members (struct-typed) for this function
+        # Record subcomponent members (struct-typed) for this function.
+        # A direct struct member adds one entry; an array-of-structs member
+        # expands into N numbered entries (1-indexed).
         subcomponent_members = {}
         for op in self.body:
-            if isinstance(op, StructMember) and "!struct.type" in op.member_type.name:
-                member_name = op.sym_name.name[1:]  # strip leading @
-                full_ref = struct_type_name(op.member_type.name)  # "@X::@X"
-                referred = full_ref.split("::")[-1]
+            if not isinstance(op, StructMember):
+                continue
+            type_str = op.member_type.name
+            if "!struct.type" not in type_str:
+                continue
+            member_name = op.sym_name.name[1:]  # strip leading @
+            full_ref = struct_type_name(type_str)
+            referred = full_ref.split("::")[-1]
+            arr_m = re.search(r"!array\.type<\s*(\d+)\s+x\s+!struct\.type<", type_str)
+            if arr_m:
+                for i in range(1, int(arr_m.group(1)) + 1):
+                    subcomponent_members[f"{member_name}{i}"] = referred
+            else:
                 subcomponent_members[member_name] = referred
         if subcomponent_members:
             ctx.member_to_struct[core_name] = subcomponent_members
@@ -410,6 +493,7 @@ class StructDef(BlockOperation):
         # Clear per-function naming maps
         ctx.input_pod_to_member.clear()
         ctx.ssa_to_name.clear()
+        ctx.struct_result_to_member.clear()
         ctx.current_core_function = None
 
     def _compute_core_function_info_from_struct(self) -> Tuple[Operation, List[Tuple[str, Type]], List[Tuple[str, Type]], List[Tuple[str, Type]]]:

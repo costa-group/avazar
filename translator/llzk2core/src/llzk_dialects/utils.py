@@ -72,6 +72,8 @@ def translate_assignment_core(lhs: str, rhs: str, is_ff: bool) -> str:
     Depending on whether the variables are ff or arr<2>, a different statement is issued.
     Bool "is_ff" marks the corresponding case
     """
+    if lhs == rhs:
+        return ""
     if is_ff:
         return f"{lhs} = {rhs}"
     else:
