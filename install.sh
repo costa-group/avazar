@@ -52,6 +52,19 @@ info "=== Building avazar_tool ==="
 info "avazar built: $REPO_ROOT/avazar_tool/target/release/avazar"
 
 ###############################################################################
+# llzk_cli
+###############################################################################
+
+info "=== Downloading llzk_cli ==="
+
+mkdir -p "$REPO_ROOT/translator/lean"
+curl -L -o "$REPO_ROOT/translator/lean/llzk_cli" \
+    "https://costa.fdi.ucm.es/papers/costa/llzk_cli"
+chmod +x "$REPO_ROOT/translator/lean/llzk_cli"
+
+info "llzk_cli downloaded: $REPO_ROOT/translator/lean/llzk_cli"
+
+###############################################################################
 # Summary
 ###############################################################################
 
