@@ -1,16 +1,15 @@
 import Mathlib.Data.ZMod.Basic
 import Mathlib.Data.Nat.Prime.Basic
 
+/--
+Configuration for ZK environment: the prime, number of bits, and
+some corresponding requirements
 
-/- Configuration for ZK environment: the prime, number of bits, and
-   some corresponding requirements
+Numbers are supposed to be signed, with the following ordering:
 
-   Numbers are supposed to be signed, with the following ordering:
-
-      Negative         Positive
-   ---------------- ------------------
-   midpoint,...,p-1,0,1,...,midpoint-1
-
+   Negative         Positive
+---------------- ------------------
+midpoint,...,p-1,0,1,...,midpoint-1
 -/
 structure ZKConfig where
   k : ℕ  -- bit-width of p
