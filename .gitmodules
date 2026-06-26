@@ -13,3 +13,6 @@
 [submodule "circom-llzk"]
 	path = circom-llzk
 	url = https://github.com/project-llzk/circom.git
+[submodule "llzk-lib"]
+	path = llzk-lib
+	url = https://github.com/project-llzk/llzk-lib.git
