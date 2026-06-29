@@ -1,5 +1,6 @@
 import Corellzk2smt.Basic
 import Corellzk2smt.Language.Core.Syntax.AST
+import Corellzk2smt.Config
 
 /- This module defines the syntax of constraint systems over finite fields
    and boolean variables -/
@@ -128,30 +129,33 @@ end
 
 mutual
 
-def sizeOfTerm {c : ZKConfig} : FFTerm c → Nat
+def sizeOfTerm {c : ZKConfig} (gconf : GlobalConfig c) (ffterm : FFTerm c) : Nat :=
+  match ffterm with
   | .val _ => 1
   | .var _ => 1
-  | .add a b | .sub a b | .mul a b => 1 + sizeOfTerm a + sizeOfTerm b
-  | .neg a => 1 + sizeOfTerm a
-  | .ite c t e => 1 + sizeOfFormula c + sizeOfTerm t + sizeOfTerm e
+  | .add a b | .sub a b | .mul a b =>
+      1 + sizeOfTerm gconf a + sizeOfTerm gconf b
+  | .neg a => 1 + sizeOfTerm gconf a
+  | .ite c t e => 1 + sizeOfFormula gconf c + sizeOfTerm gconf t + sizeOfTerm gconf e
 
-def sizeOfFormula {c : ZKConfig} : FFFormula c → Nat
+def sizeOfFormula {c : ZKConfig} (gconf : GlobalConfig c) (f: FFFormula c) : Nat :=
+  match f with
   | .true | .false => 1
-  | .range t _ _=> 1 + sizeOfTerm t
+  | .range t _ _=> 1 + sizeOfTerm gconf t
   | .bool _ => 1
-  | .eq a b => 1 + sizeOfTerm a + sizeOfTerm b
+  | .eq a b => 1 + sizeOfTerm gconf a + sizeOfTerm gconf b
   /-
   | .lt a b => 1 + sizeOfTerm a + sizeOfTerm b
   | .gt a b => 1 + sizeOfTerm a + sizeOfTerm b
   | .le a b => 1 + sizeOfTerm a + sizeOfTerm b
   | .ge a b => 1 + sizeOfTerm a + sizeOfTerm b
   -/
-  | .and a b => 1 + sizeOfFormula a + sizeOfFormula b
-  | .or a b => 1 + sizeOfFormula a + sizeOfFormula b
-  | .imply a b => 1 + sizeOfFormula a + sizeOfFormula b
-  | .iff a b => 1 + sizeOfFormula a + sizeOfFormula b
-  | .not a => 1 + sizeOfFormula a
-  | .ite c t e => 1 + sizeOfFormula c + sizeOfFormula t + sizeOfFormula e
+  | .and a b => 1 + sizeOfFormula gconf a + sizeOfFormula gconf b
+  | .or a b => 1 + sizeOfFormula gconf a + sizeOfFormula gconf b
+  | .imply a b => 1 + sizeOfFormula gconf a + sizeOfFormula gconf b
+  | .iff a b => 1 + sizeOfFormula gconf a + sizeOfFormula gconf b
+  | .not a => 1 + sizeOfFormula gconf a
+  | .ite c t e => 1 + sizeOfFormula gconf c + sizeOfFormula gconf t + sizeOfFormula gconf e
   | .call _ _ => 1
 
 end
@@ -192,18 +196,19 @@ structure FFConstraintSystem (c : ZKConfig) where
    macro? Macros cannot be recursive
 -/
 def fetchMacro {c : ZKConfig}
-    (ms : List (FFMacro c)) (name : String) : Except String (FFMacro c × List (FFMacro c)) :=
+    (gconf : GlobalConfig c) (ms : List (FFMacro c)) (name : String)
+    : Except String (FFMacro c × List (FFMacro c)) :=
   match ms with
   | [] => Except.error s!"Macro {name} not found"
   | m :: rest =>
       if m.name == name then Except.ok (m, rest)
-      else fetchMacro rest name
+      else fetchMacro gconf rest name
 
 /- The main formula of a constraint system is a call to the
    main macro -/
-def mainFormula {c : ZKConfig} (sys : FFConstraintSystem c)
+def mainFormula {c : ZKConfig} (gconf : GlobalConfig c) (sys : FFConstraintSystem c)
     : Except String (FFFormula c × List Var) :=
-  match fetchMacro sys.macros sys.main with
+  match fetchMacro gconf sys.macros sys.main with
   | Except.error msg => Except.error msg
   | Except.ok (m, _) =>
       let params := m.params.map (fun v => (MacroCallParam.var v))

@@ -1,6 +1,7 @@
 import Corellzk2smt.Basic
 import Corellzk2smt.FFConstraints.Basic
 import Corellzk2smt.FFConstraints.Basic_th
+import Corellzk2smt.Config
 --import Corellzk2smt.Language.Core.Syntax.AST
 --import Corellzk2smt.Language.Core.Semantics.Basic
 
@@ -61,43 +62,43 @@ def newAssignment {c : ZKConfig}
 
 mutual
 /- Evaluate a term to FF value -/
-def evalTerm {c : ZKConfig}
+def evalTerm {c : ZKConfig} (gconf : GlobalConfig c)
   (assign : Assignment c) (t : FFTerm c) (ms : List (FFMacro c))
   : Except String (FF c) :=
   match t with
   | .val v => Except.ok v
   | .var v => Except.ok (assign.ff v)
   | .add a b =>
-     match evalTerm assign a ms with
+     match evalTerm gconf assign a ms with
       | Except.error e => Except.error e
       | Except.ok va =>
-        match evalTerm assign b ms with
+        match evalTerm gconf assign b ms with
         | Except.error e => Except.error e
         | Except.ok vb => Except.ok (va + vb)
   | .sub a b =>
-      match evalTerm assign a ms with
+      match evalTerm gconf assign a ms with
         | Except.error e => Except.error e
         | Except.ok va =>
-          match evalTerm assign b ms with
+          match evalTerm gconf assign b ms with
           | Except.error e => Except.error e
           | Except.ok vb => Except.ok (va - vb)
   | .mul a b =>
-      match evalTerm assign a ms with
+      match evalTerm gconf assign a ms with
         | Except.error e => Except.error e
         | Except.ok va =>
-          match evalTerm assign b ms with
+          match evalTerm gconf assign b ms with
           | Except.error e => Except.error e
           | Except.ok vb => Except.ok (va * vb)
-  | .neg a => match evalTerm assign a ms with
+  | .neg a => match evalTerm gconf assign a ms with
             | Except.error e => Except.error e
             | Except.ok va => Except.ok (-va)
   | .ite c t e =>
-      match evalFormula assign c ms with
+      match evalFormula gconf assign c ms with
       | Except.error e => Except.error e
       | Except.ok vc =>
-        if vc then evalTerm assign t ms else evalTerm assign e ms
+        if vc then evalTerm gconf assign t ms else evalTerm gconf assign e ms
 
-termination_by (ms.length, sizeOfTerm t)
+termination_by (ms.length, sizeOfTerm gconf t)
 decreasing_by
   all_goals
     apply Prod.Lex.right
@@ -106,49 +107,49 @@ decreasing_by
 
 
 /- Evaluate a formula to a boolean value -/
-def evalFormula {c : ZKConfig}
+def evalFormula {c : ZKConfig} (gconf : GlobalConfig c)
   (assign : Assignment c) (f : FFFormula c) (ms : List (FFMacro c))
   : Except String Bool :=
   match f with
   | .true     => Except.ok true
   | .false    => Except.ok false
   | .range t l u =>
-      match evalTerm assign t ms with
+      match evalTerm gconf assign t ms with
       | Except.error e => Except.error e
       /- FIXME: this range check shouldn't use evalLE? -/
       | Except.ok v => Except.ok (l.val <= v.val && v.val <= u.val)
   | .bool v   => Except.ok (assign.bool v)
   | .eq a b =>
-      match evalTerm assign a ms with
+      match evalTerm gconf assign a ms with
       | Except.error e => Except.error e
       | Except.ok va =>
-        match evalTerm assign b ms with
+        match evalTerm gconf assign b ms with
         | Except.error e => Except.error e
         | Except.ok vb => Except.ok (va == vb)
   /-
       | .lt a b =>
-      match evalTerm assign a ms with
+      match evalTerm gconf assign a ms with
       | Except.error e => Except.error e
       | Except.ok va =>
-        match evalTerm assign b ms with
+        match evalTerm gconf assign b ms with
         | Except.error e => Except.error e
         | Except.ok vb => Except.ok (evalLt va vb == 1)
   | .gt a b =>
-      match evalTerm assign a ms with
+      match evalTerm gconf assign a ms with
       | Except.error e => Except.error e
       | Except.ok va =>
-        match evalTerm assign b ms with
+        match evalTerm gconf assign b ms with
         | Except.error e => Except.error e
         | Except.ok vb => Except.ok (evalGt va vb == 1)
   | .le a b =>
-      match evalTerm assign a ms with
+      match evalTerm gconf assign a ms with
       | Except.error e => Except.error e
       | Except.ok va =>
-        match evalTerm assign b ms with
+        match evalTerm gconf assign b ms with
         | Except.error e => Except.error e
         | Except.ok vb => Except.ok (evalLe va vb == 1)
   | .ge a b =>
-      match evalTerm assign a ms with
+      match evalTerm gconf assign a ms with
       | Except.error e => Except.error e
       | Except.ok va =>
         match evalTerm assign b ms with
@@ -156,51 +157,51 @@ def evalFormula {c : ZKConfig}
         | Except.ok vb => Except.ok (evalGe va vb == 1)
   -/
   | .and a b =>
-      match evalFormula assign a ms with
+      match evalFormula gconf assign a ms with
       | Except.error e => Except.error e
       | Except.ok va =>
-        match evalFormula assign b ms with
+        match evalFormula gconf assign b ms with
         | Except.error e => Except.error e
         | Except.ok vb => Except.ok (va && vb)
   | .or a b =>
-      match evalFormula assign a ms with
+      match evalFormula gconf assign a ms with
       | Except.error e => Except.error e
       | Except.ok va =>
-        match evalFormula assign b ms with
+        match evalFormula gconf assign b ms with
         | Except.error e => Except.error e
         | Except.ok vb => Except.ok (va || vb)
   | .not a =>
-      match evalFormula assign a ms with
+      match evalFormula gconf assign a ms with
       | Except.error e => Except.error e
       | Except.ok va => Except.ok (!va)
   | .ite c t e =>
-      match evalFormula assign c ms with
+      match evalFormula gconf assign c ms with
       | Except.error e => Except.error e
       | Except.ok vc =>
-        if vc then evalFormula assign t ms else evalFormula assign e ms
+        if vc then evalFormula gconf assign t ms else evalFormula gconf assign e ms
   | .imply a b =>
-      match evalFormula assign a ms with
+      match evalFormula gconf assign a ms with
       | Except.error e => Except.error e
       | Except.ok va =>
-        match evalFormula assign b ms with
+        match evalFormula gconf assign b ms with
         | Except.error e => Except.error e
         | Except.ok vb => Except.ok (!va || vb)
   | .iff a b =>
-      match evalFormula assign a ms with
+      match evalFormula gconf assign a ms with
       | Except.error e => Except.error e
       | Except.ok va =>
-        match evalFormula assign b ms with
+        match evalFormula gconf assign b ms with
         | Except.error e => Except.error e
         | Except.ok vb => Except.ok (va == vb)
   | .call name args =>
-     match _h_fetchm: fetchMacro ms name with
+     match _h_fetchm: fetchMacro gconf ms name with
      | Except.error e => Except.error e
      | Except.ok (m,ms') =>
           match newAssignment assign args m.params with
           | Except.error e => Except.error e
-          | Except.ok newAssign => evalFormula newAssign m.body ms'
+          | Except.ok newAssign => evalFormula gconf newAssign m.body ms'
 
-termination_by (ms.length, sizeOfFormula f)
+termination_by (ms.length, sizeOfFormula gconf f)
 
 decreasing_by
   any_goals
@@ -208,7 +209,7 @@ decreasing_by
     simp only [sizeOfFormula]
     grind
   · apply Prod.Lex.left
-    apply fetchMacroLT ms ms' name m _h_fetchm
+    apply fetchMacroLT gconf ms ms' name m _h_fetchm
 
 end
 
@@ -216,17 +217,19 @@ end
 
    EXIST an assignment σ such that evalFormula return true
 -/
-def isSatFormula {c : ZKConfig} (f : FFFormula c) (ms : List (FFMacro c)) : Prop :=
-  ∃ (σ : Assignment c), evalFormula σ f ms = Except.ok true
+def isSatFormula {c : ZKConfig} (gconf : GlobalConfig c) (f : FFFormula c)
+    (ms : List (FFMacro c)) : Prop :=
+  ∃ (σ : Assignment c), evalFormula gconf σ f ms = Except.ok true
 
 
 /- Satisfiability of a system:
 
   EXIST an assignment σ such that the main formula is true?
 -/
-def isSatSys {c : ZKConfig} (sys : FFConstraintSystem c) : Except String Prop := do
-  let (f,_) ← mainFormula sys
-  return isSatFormula f sys.macros
+def isSatSys {c : ZKConfig} (gconf : GlobalConfig c)
+    (sys : FFConstraintSystem c) : Except String Prop := do
+  let (f,_) ← mainFormula gconf sys
+  return isSatFormula gconf f sys.macros
 
 
 end Llzk.FFConstraints.Satisfiability
