@@ -5,7 +5,7 @@ import Corellzk2smt.Language.Core.Syntax.AST
    and boolean variables -/
 
 namespace Corellzk2smt.FFConstraints.Basic
-open Corellzk2smt.Language.Core.Syntax.AST
+open Corellzk2smt.Language.Core.Syntax.AST (SrcInfo VarID)
 
 
 /- A finite field variable -/
@@ -104,10 +104,12 @@ inductive FFFormula (c : ZKConfig) where
   | range  : FFTerm c → FF c -> FF c -> FFFormula c        -- P(x) in the range of the field
   | bool   : BoolVar → FFFormula c        -- A boolean variable
   | eq     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) = P2(x)
+  /-
   | lt     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) < P2(x)
   | gt     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) > P2(x)
   | le     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) <= P2(x)
   | ge     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) >= P2(x)
+  -/
   -- TODO add lt, etc with the same semantics as in the interpreter
   | and    : FFFormula c → FFFormula c → FFFormula c -- and
   | or     : FFFormula c → FFFormula c → FFFormula c -- or
@@ -138,10 +140,12 @@ def sizeOfFormula {c : ZKConfig} : FFFormula c → Nat
   | .range t _ _=> 1 + sizeOfTerm t
   | .bool _ => 1
   | .eq a b => 1 + sizeOfTerm a + sizeOfTerm b
+  /-
   | .lt a b => 1 + sizeOfTerm a + sizeOfTerm b
   | .gt a b => 1 + sizeOfTerm a + sizeOfTerm b
   | .le a b => 1 + sizeOfTerm a + sizeOfTerm b
   | .ge a b => 1 + sizeOfTerm a + sizeOfTerm b
+  -/
   | .and a b => 1 + sizeOfFormula a + sizeOfFormula b
   | .or a b => 1 + sizeOfFormula a + sizeOfFormula b
   | .imply a b => 1 + sizeOfFormula a + sizeOfFormula b

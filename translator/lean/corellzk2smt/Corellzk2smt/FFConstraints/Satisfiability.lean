@@ -1,7 +1,8 @@
 import Corellzk2smt.Basic
 import Corellzk2smt.FFConstraints.Basic
 import Corellzk2smt.FFConstraints.Basic_th
-import Corellzk2smt.Language.Core.Semantics.Basic
+--import Corellzk2smt.Language.Core.Syntax.AST
+--import Corellzk2smt.Language.Core.Semantics.Basic
 
 /-
 This module defines executable semantics and satisfiability predicates for finite-field
@@ -11,8 +12,8 @@ namespace Llzk.FFConstraints.Satisfiability
 
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Basic_th
-open Corellzk2smt.Language.Core.Syntax.AST
-open Corellzk2smt.Language.Core.Semantics.Basic
+--open Corellzk2smt.Language.Core.Syntax.AST
+--open Corellzk2smt.Language.Core.Semantics.Basic
 
 /- An assignment maps variables to values. There are two types of
    variables, finite field variables and boolean variables, so we have
@@ -124,7 +125,8 @@ def evalFormula {c : ZKConfig}
         match evalTerm assign b ms with
         | Except.error e => Except.error e
         | Except.ok vb => Except.ok (va == vb)
-  | .lt a b =>
+  /-
+      | .lt a b =>
       match evalTerm assign a ms with
       | Except.error e => Except.error e
       | Except.ok va =>
@@ -152,6 +154,7 @@ def evalFormula {c : ZKConfig}
         match evalTerm assign b ms with
         | Except.error e => Except.error e
         | Except.ok vb => Except.ok (evalGe va vb == 1)
+  -/
   | .and a b =>
       match evalFormula assign a ms with
       | Except.error e => Except.error e
