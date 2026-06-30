@@ -4,5 +4,6 @@ import Corellzk2smt.Config
 import Corellzk2smt.FFConstraints.Basic
 import Corellzk2smt.FFConstraints.Basic_th
 import Corellzk2smt.FFConstraints.Satisfiability
+import Corellzk2smt.FFConstraints.SMT
 
 import Corellzk2smt.Language.Core.Syntax.AST
