@@ -1,0 +1,267 @@
+import Corellzk2smt.Basic
+import Corellzk2smt.Config
+import Corellzk2smt.Language.Core.Syntax.AST
+import Corellzk2smt.Language.Core.Syntax.Keywords
+
+
+namespace Corellzk2smt.Language.Core.Syntax.Printer
+
+open Corellzk2smt.Language.Core.Syntax.AST
+open Corellzk2smt.Language.Core.Syntax.Keywords
+
+
+/- The following few functions are used to convert a program to a string
+   using pretty printing. It is registered as ToString instance for Prog
+   so that it can be called implicitly
+-/
+def getIndent (level : Nat := 0) (spl : Nat := 2) : String :=
+  String.ofList (List.replicate (level * spl) ' ') -- spl is spaces per level of indentation
+
+def formatSExpr {c : ZKConfig} (s : SimpleExpr c) : String :=
+  match s with
+  | .var varName => s!"{varName}"
+  | .val val => s!"{val}"
+
+-- register ToString instance for SimpleExpr
+instance {c : ZKConfig} : ToString (SimpleExpr c) where
+  toString s := formatSExpr s
+
+/- format binary operations -/
+def formatBinOp (s : BinOp) : String :=
+  match s with
+  | .add  => add_keyword
+  | .sub  => sub_keyword
+  | .mul  => mul_keyword
+  | .div  => div_keyword
+  | .shl  => shl_keyword
+  | .shr  => shr_keyword
+  | .and  => and_keyword
+  | .or   => or_keyword
+  | .xor  => xor_keyword
+  | .eq   => eq_keyword
+  | .neq  => neq_keyword
+  | .lt   => lt_keyword
+  | .gt   => gt_keyword
+  | .le   => le_keyword
+  | .ge   => ge_keyword
+  | .bor  => bor_keyword
+  | .band => band_keyword
+
+/- register ToString instance for BinOp -/
+instance : ToString (BinOp) where
+  toString s := formatBinOp s
+
+/- format unary operations -/
+def formatUnOp (s : UnOp) : String :=
+  match s with
+  | .neg => neg_keyword
+  | .not => not_keyword
+  | .bneg => bneg_keyword
+
+/- register ToString instance for UnOp -/
+instance : ToString (UnOp) where
+  toString s := formatUnOp s
+
+/- format expressions -/
+def formatExpr {c : ZKConfig} (e : Expr c) : String :=
+  match e with
+  -- arithmetic
+  | .bop op s1 s2 =>
+      s!"{op} {s1} {s2}"
+  | .uop op s =>
+      s!"{op} {s}"
+  | .id s =>
+      s!"{s}"
+
+/- register ToString instance for Expr -/
+instance {c : ZKConfig} : ToString (Expr c) where
+  toString e := formatExpr e
+
+/- format conditions  -/
+def formatCond {c : ZKConfig} (cond : Cond c) : String :=
+  match cond with
+  | .eq s1 s2 => s!"{s1} == {s2}"
+
+/- register ToString instance for Cond -/
+instance {c : ZKConfig} : ToString (Cond c) where
+  toString cond := formatCond cond
+
+/- format a function parameter -/
+def formatParam (p : Param) : String :=
+  let typeStr := match p.type with
+                 | VarType.ff => "ff"
+                 | VarType.array size => s!"arr<{size}>"
+  s!"{p.name}:{typeStr}"
+
+/- register ToString instance for Param -/
+instance : ToString Param where
+  toString p := formatParam p
+
+/- format function parameters -/
+def formatParams (ps : List Param) : String :=
+  String.intercalate ", " (ps.map toString)
+
+/- register ToString instance for (List Param) -/
+instance : ToString (List Param) where
+  toString ps := formatParams ps
+
+mutual
+
+def formatCom {c : ZKConfig} (i : ComWithMD c) (level : Nat := 0) (sp : String := "") : String :=
+  match i with
+  | .mk _ info =>
+      match info with
+      | .assign out e => s!"{out} := {e}"
+      | .if_stmt cond tb eb =>
+          let tbStr := formatCmds tb (level + 1)
+          let ebStr := formatCmds eb (level + 1)
+          s!"if ({cond}) " ++ "{\n" ++ s!"{tbStr}" ++
+          s!"{sp}} else " ++ "{\n" ++ s!"{ebStr}" ++ s!"{sp}}"
+      | .loop_exp rep body =>
+          let bodyStr := formatCmds body (level + 1)
+          s!"repeat {rep} " ++ "{\n" ++ s!"{bodyStr}" ++ s!"{sp}}"
+      | .loop rep body =>
+          let bodyStr := formatCmds body (level + 1)
+          s!"for {rep} " ++ "{\n" ++ s!"{bodyStr}" ++ s!"{sp}}"
+      | .new_array out size =>
+         s!"array.new {size} {out}"
+      | .read_array out arr idx =>
+         s!"array.read {arr}[{idx}] {out}"
+      | .write_array arr idx value =>
+          s!"array.write {value} {arr}[{idx}]"
+      | .copy_array out arr =>
+         s!"array.copy {arr} {out}"
+      | .func_call outs fname args =>
+         let outsStr := String.intercalate ", " (outs.map (fun v => s!"{v}"))
+         let argsStr := String.intercalate ", " (args.map toString)
+         if (outs == []) then
+            s!"call {fname} ({argsStr})"
+         else
+            s!"call {fname} ({argsStr}) to {outsStr}"
+
+def formatCmds {c : ZKConfig} (p : List (ComWithMD c)) (level : Nat) : String :=
+  let sp := getIndent level
+  match p with
+  | [] => ""
+  | cmd::cmds =>
+      let cmdStr := formatCom cmd level sp
+      let restStr := formatCmds cmds level
+      s!"{sp}{cmdStr}\n{restStr}"
+
+end -- mutual
+
+def formatFunction {c : ZKConfig} (f : FuncWithMD c) : String :=
+  match f with
+  | .mk _ func =>
+    match func with
+    | .mk name params rets body =>
+      let bodyStr := formatCmds body 1
+      if (rets == []) then
+        s!"func {name}({params}) " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
+      else
+        s!"func {name}({params}) -> {rets} " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
+
+-- register ToString instance for Function
+instance {c : ZKConfig} : ToString (FuncWithMD c) where
+  toString f := formatFunction f
+
+def formatProg {c : ZKConfig} (p : ProgWithMD c) : String :=
+  match p with
+  | .mk _ fs =>
+      let funcStrs := fs.reverse.map toString
+      String.intercalate "\n\n" funcStrs
+
+-- register ToString instance for Program
+instance {c : ZKConfig} : ToString (ProgWithMD c) where
+  toString p := formatProg p
+
+
+mutual
+
+def printCom {c : ZKConfig} (gconf : GlobalConfig c)
+  (h : IO.FS.Stream) (i : ComWithMD c) (level : Nat) (sp : String) : IO Unit := do
+  match i with
+  | .mk _md info =>
+      match info with
+      | .assign out e => h.putStr s!"{out} = {e}"
+      | .if_stmt cond tb eb =>
+          h.putStr s!"if ({cond})"
+          h.putStrLn " {"
+          printBody gconf h tb (level + 1)
+          h.putStr sp
+          h.putStrLn "} else {"
+          printBody gconf h eb (level + 1)
+          h.putStr sp
+          h.putStr "}"
+      | .loop_exp rep body =>
+          h.putStr s!"repeat {rep}"
+          h.putStrLn " {"
+          printBody gconf h body (level + 1)
+          h.putStr sp
+          h.putStr "}"
+      | .loop rep body =>
+          h.putStr s!"repeat {rep}"
+          h.putStrLn " {"
+          printBody gconf h body (level + 1)
+          h.putStr sp
+          h.putStr "}"
+      | .new_array out size =>
+          h.putStr s!"array.new {size} {out}"
+      | .read_array out arr idx =>
+          h.putStr s!"array.read {arr}[{idx}] {out}"
+      | .write_array arr idx value =>
+          h.putStr s!"array.write {value} {arr}[{idx}]"
+      | .copy_array out arr =>
+          h.putStr s!"array.copy {arr} {out}"
+      | .func_call outs fname args =>
+          let outsStr := String.intercalate ", " (outs.map (fun v => s!"{v}"))
+          let argsStr := String.intercalate ", " (args.map toString)
+          if (outs == []) then
+            h.putStr s!"call {fname} ({argsStr})"
+          else
+            h.putStr s!"call {fname} ({argsStr}) to {outsStr}"
+
+def printBody {c : ZKConfig}
+  (gconf : GlobalConfig c) (h : IO.FS.Stream) (p : List (ComWithMD c)) (level : Nat) : IO Unit := do
+  let sp := getIndent level gconf.prog_printer.spaces_per_indent_level
+  match p with
+  | [] => pure ()
+  | cmd::cmds =>
+      match cmd with
+      | .mk md _ =>
+        if gconf.prog_printer.show_liveness then
+          h.putStr s!"{sp}"
+          h.putStrLn s!"# live_in={md.liveness.live_in}, live_out={md.liveness.live_out}"
+        h.putStr s!"{sp}"
+        printCom gconf h cmd level sp
+        h.putStrLn ""
+        printBody gconf h cmds level
+
+end -- mutual
+
+def printFunction {c : ZKConfig}
+    (gconf : GlobalConfig c) (h : IO.FS.Stream) (f : FuncWithMD c) : IO Unit := do
+  match f with
+  | .mk md func =>
+    match func with
+    | .mk name params rets body =>
+      if gconf.prog_printer.show_liveness then
+        h.putStrLn s!"# live_in={md.liveness.live_in}, live_out={md.liveness.live_out}"
+      if (rets == []) then
+        h.putStr s!"func {name}({params})"
+      else
+        h.putStr s!"func {name}({params}) -> {rets}"
+      h.putStrLn " {"
+      printBody gconf h body 1
+      h.putStrLn "}"
+
+def printProg {c : ZKConfig} (gconf : GlobalConfig c) (p : ProgWithMD c)
+    (h : IO.FS.Stream) : IO Unit := do
+    match p with
+    | .mk _ fs =>
+      for f in fs.reverse do
+        printFunction gconf h f
+        h.putStrLn ""
+
+
+end Corellzk2smt.Language.Core.Syntax.Printer
