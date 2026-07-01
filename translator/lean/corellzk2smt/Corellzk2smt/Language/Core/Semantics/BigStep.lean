@@ -1,0 +1,152 @@
+import Corellzk2smt.Basic
+import Corellzk2smt.Config
+import Corellzk2smt.Language.Core.Syntax.AST
+import Corellzk2smt.Language.Core.Semantics.Basic
+
+namespace Corellzk2smt.Language.Core.Semantics.BigStep
+
+open Corellzk2smt.Language.Core.Syntax.AST
+open Corellzk2smt.Language.Core.Semantics.Basic
+
+
+
+
+
+mutual
+
+def evalCmd {c : ZKConfig} (gconf : GlobalConfig c) (scfg : SemConfig c)
+    (p : Prog c) (st : State c) (i : ComWithMD c) : Except String (State c) := do
+  match i with
+   | .mk md cmd =>
+      match cmd with
+      | Com.assign id e => evalAssign st id e
+      | Com.new_array id size => evalNewArray st id size
+      | Com.read_array out a index => evalReadArray st out a index
+      | Com.write_array a index value => evalWriteArray st a index value
+      | Com.copy_array out a => evalCopyArray st out a
+      | Com.if_stmt cond tb eb =>
+          let condVal ← evalCond st cond
+          if condVal then evalCmds gconf scfg p st tb else evalCmds gconf scfg p st eb
+      | Com.loop_exp rep body =>
+          let repVal ← evalSimpleExprToFF st rep
+          let loop := (ComWithMD.mk md (Com.loop repVal.val body))
+          evalCmd gconf scfg p st loop
+      | Com.loop (rep+1) body =>
+          let st' ← evalCmds gconf scfg p st body -- evaluate loop body (1 iteration)
+          -- evaluate the rest iterations of loop
+          evalCmd gconf scfg p st' (ComWithMD.mk md (Com.loop rep body))
+      | Com.loop 0 _body =>
+          return st
+      | Com.func_call outs fname args =>
+        let argVals ← evalSimpleExprsToValue st args
+        let outVals ← evalFun gconf scfg p fname argVals
+        let vars_env ← setVars st.vars outs outVals
+        let st' := { st with vars := vars_env }
+        return st'
+termination_by (p.length, numOfLoopExpCom i, sizeOfCom i)
+decreasing_by
+    all_goals -- in all recursive calls the program remain the same
+      apply Prod.Lex.right
+    -- recursive call with then-branch
+    · have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+      rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
+      · apply Prod.Lex.left
+        simp only [numOfLoopExpCom]
+        exact h_less
+      · simp only [numOfLoopExpCom]
+        rw [← h_equal]
+        apply Prod.Lex.right
+        simp only [sizeOfCom]
+        grind
+    -- recursive call with else-branch
+    · have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+      rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
+      · apply Prod.Lex.left
+        simp only [numOfLoopExpCom]
+        exact h_less
+      · simp only [numOfLoopExpCom]
+        rw [← h_equal]
+        apply Prod.Lex.right
+        simp only [sizeOfCom]
+        grind
+    -- the case of loop_exp
+    · simp only [numOfLoopExpCom]
+      apply Prod.Lex.left
+      grind
+    -- the 1st iteration of loop
+    · simp only [numOfLoopExpCom]
+      apply Prod.Lex.right
+      simp only [sizeOfCom]
+      grind
+    -- the rest of iterations of loop
+    · simp only [numOfLoopExpCom]
+      apply Prod.Lex.right
+      simp only [sizeOfCom]
+      grind
+    -- function call
+    · simp only [numOfLoopExpCom]
+      apply Prod.Lex.right
+      simp only [sizeOfCom]
+      grind
+
+
+def evalCmds {c : ZKConfig} (gconf : GlobalConfig c)  (scfg : SemConfig c)
+    (p : Prog c) (st : State c) (cmds : List (ComWithMD c)) : Except String (State c) := do
+  match cmds with
+  | [] => Except.ok st
+  | cmd :: rest => do
+    let st' ← evalCmd gconf scfg p st cmd
+    evalCmds gconf scfg p st' rest
+termination_by (p.length, numOfLoopExpComs cmds, sizeOfComs cmds)
+decreasing_by
+  -- recursive call on cmd
+  · apply Prod.Lex.right
+    have h1 : numOfLoopExpCom cmd ≤ numOfLoopExpCom cmd + numOfLoopExpComs rest := by
+      grind
+    rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
+    · apply Prod.Lex.left
+      simp only [numOfLoopExpComs]
+      exact h_less
+    · simp only [numOfLoopExpComs]
+      rw [← h_equal]
+      apply Prod.Lex.right
+      simp only [sizeOfComs]
+      grind
+  -- recursive call on rest
+  · apply Prod.Lex.right
+    have h1 : numOfLoopExpComs rest ≤ numOfLoopExpCom cmd + numOfLoopExpComs rest := by
+      grind
+    rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
+    · apply Prod.Lex.left
+      simp only [numOfLoopExpComs]
+      exact h_less
+    · simp only [numOfLoopExpComs]
+      rw [← h_equal]
+      apply Prod.Lex.right
+      simp only [sizeOfComs]
+      grind
+
+def evalFun {c : ZKConfig} (gconf : GlobalConfig c) (scfg : SemConfig c)
+    (p : Prog c) (fname : FName) (args : List (Value c))
+    : Except String (List (Value c)) := do
+    match _h_fetch: fetchFunc p fname with
+    | Except.error e => Except.error e
+    | Except.ok (f, p') =>
+      match f with
+      | .mk _ func =>
+      match func with
+       | Func.mk _ params rets body =>
+           let vars_env ← bindInParams (emptyEnv c) params args
+           let st := ⟨vars_env⟩
+           let st' ← evalCmds gconf scfg p' st body
+           let rets ← bindOutParams st'.vars rets
+           Except.ok rets
+termination_by (p.length, 0 ,0)
+decreasing_by
+    apply Prod.Lex.left
+    apply fetchLT p fname f p'
+    assumption
+
+end -- mutual
+
+end Corellzk2smt.Language.Core.Semantics.BigStep
