@@ -148,6 +148,12 @@ def formatCmds {c : ZKConfig} (p : List (ComWithMD c)) (level : Nat) : String :=
 
 end -- mutual
 
+
+-- register ToString instance for Function
+instance {c : ZKConfig} : ToString (ComWithMD c) where
+  toString cmd := formatCom cmd 0 ""
+
+
 def formatFunction {c : ZKConfig} (f : FuncWithMD c) : String :=
   match f with
   | .mk _ func =>
