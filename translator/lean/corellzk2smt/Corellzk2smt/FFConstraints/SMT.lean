@@ -9,7 +9,7 @@ import Corellzk2smt.FFConstraints.Basic
    described in: https://arxiv.org/abs/2407.21169
 -/
 
-namespace Llzk.FFConstraints.SMT
+namespace Corellzk2smt.FFConstraints.SMT
 
 --open Corellzk2smt.Language.Core.Syntax.AST
 open Corellzk2smt.FFConstraints.Basic
@@ -21,9 +21,7 @@ def getIndent {c : ZKConfig} (_ : GlobalConfig c) (level : Nat) : String :=
 
 /- Generates a unique string identifier for a variable based on ID -/
 def varID {c : ZKConfig} (_ : GlobalConfig c) (v : Var) : String :=
-  match v with
-  | .ffv v' => s!"{v'}"
-  | .boolv v' => s!"{v'}"
+  s!"{v}"
 
 def const_repr {c : ZKConfig} (_ : GlobalConfig c) (c : Const c) : String :=
   match c with
@@ -34,7 +32,7 @@ def const_repr {c : ZKConfig} (_ : GlobalConfig c) (c : Const c) : String :=
 def printVar {c : ZKConfig} (gconf : GlobalConfig c) (stream : IO.FS.Stream)
     (v : Var) : IO Unit := do
 --  stream.putStr s!"v_{v.id}"
-  stream.putStr s!"v_{varID gconf v}"
+  stream.putStr (varID gconf v)
 
 mutual
 /-- Prints a term as an S-expression: (+ a b) -/
@@ -79,7 +77,7 @@ def printTerm {c : ZKConfig} (gconf : GlobalConfig c)
 /- Prints the boolean formula structure -/
 def printFormula {c : ZKConfig} (gconf : GlobalConfig c)
   (stream : IO.FS.Stream) (f : FFFormula c) (level : Nat) (indent: Bool): IO Unit := do
-  let sp := if indent then getIndent gconf level else " "
+  let sp := if indent then getIndent gconf level else ""
   let nl := if indent then "\n" else ""
   match f with
   | .true  => stream.putStr s!"{sp}true{nl}"
@@ -100,32 +98,6 @@ def printFormula {c : ZKConfig} (gconf : GlobalConfig c)
       stream.putStr " "
       printTerm gconf stream b
       stream.putStr s!"){nl}"
-  /-
-  | .lt a b =>
-      stream.putStr s!"{sp}(ff.lt "
-      printTerm stream a
-      stream.putStr " "
-      printTerm stream b
-      stream.putStr s!"){nl}"
-  | .gt a b =>
-      stream.putStr s!"{sp}(ff.gt "
-      printTerm stream a
-      stream.putStr " "
-      printTerm stream b
-      stream.putStr s!"){nl}"
-  | .le a b =>
-      stream.putStr s!"{sp}(ff.le "
-      printTerm stream a
-      stream.putStr " "
-      printTerm stream b
-      stream.putStr s!"){nl}"
-  | .ge a b =>
-      stream.putStr s!"{sp}(ff.ge "
-      printTerm stream a
-      stream.putStr " "
-      printTerm stream b
-      stream.putStr s!"){nl}"
-  -/
   | .and a b =>
       -- we remove trivial cases to simplify the output
       if a == (@FFFormula.true c) then
@@ -319,7 +291,7 @@ def printMacros_asJSON {c : ZKConfig} (gconf : GlobalConfig c)
       if rest != [] then stream.putStrLn ","
       printMacros_asJSON gconf stream rest
 
-/-- Prints a constraint system as JSON -/
+/- Prints a constraint system as JSON -/
 def printConstraintSystem_asJSON {c : ZKConfig} (gconf : GlobalConfig c)
   (stream : IO.FS.Stream) (sys : FFConstraintSystem c) : IO Unit := do
   match mainFormula gconf sys with
@@ -345,4 +317,4 @@ def printConstraintSystem_asJSON {c : ZKConfig} (gconf : GlobalConfig c)
   stream.flush
 
 
-end Llzk.FFConstraints.SMT
+end Corellzk2smt.FFConstraints.SMT

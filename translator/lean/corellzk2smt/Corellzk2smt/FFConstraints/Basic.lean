@@ -23,7 +23,7 @@ inductive Var where
 
 /- Metadata for FF variables -/
 structure VarMetaData where
-  orig_name : String
+  orig_name : VarID
   src_info : SrcInfo
   deriving Repr, BEq, Inhabited
 
@@ -44,7 +44,7 @@ inductive MacroCallParam (c : ZKConfig) where
 instance : ToString Var where
   toString v := match v with
   | .ffv n => s!"v_{n}"
-  | .boolv n => s!"v_{n}"
+  | .boolv n => s!"b_{n}"
 
 
 /-  Ordering (Ord) of Var. Needed if we use ordered sets
@@ -105,13 +105,6 @@ inductive FFFormula (c : ZKConfig) where
   | range  : FFTerm c → FF c -> FF c -> FFFormula c        -- P(x) in the range of the field
   | bool   : BoolVar → FFFormula c        -- A boolean variable
   | eq     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) = P2(x)
-  /-
-  | lt     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) < P2(x)
-  | gt     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) > P2(x)
-  | le     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) <= P2(x)
-  | ge     : FFTerm c → FFTerm c → FFFormula c       -- P1(x) >= P2(x)
-  -/
-  -- TODO add lt, etc with the same semantics as in the interpreter
   | and    : FFFormula c → FFFormula c → FFFormula c -- and
   | or     : FFFormula c → FFFormula c → FFFormula c -- or
   | not    : FFFormula c → FFFormula c -- negation
@@ -129,33 +122,27 @@ end
 
 mutual
 
-def sizeOfTerm {c : ZKConfig} (gconf : GlobalConfig c) (ffterm : FFTerm c) : Nat :=
+def sizeOfTerm {c : ZKConfig} (ffterm : FFTerm c) : Nat :=
   match ffterm with
   | .val _ => 1
   | .var _ => 1
   | .add a b | .sub a b | .mul a b =>
-      1 + sizeOfTerm gconf a + sizeOfTerm gconf b
-  | .neg a => 1 + sizeOfTerm gconf a
-  | .ite c t e => 1 + sizeOfFormula gconf c + sizeOfTerm gconf t + sizeOfTerm gconf e
+      1 + sizeOfTerm a + sizeOfTerm b
+  | .neg a => 1 + sizeOfTerm a
+  | .ite c t e => 1 + sizeOfFormula c + sizeOfTerm t + sizeOfTerm e
 
-def sizeOfFormula {c : ZKConfig} (gconf : GlobalConfig c) (f: FFFormula c) : Nat :=
+def sizeOfFormula {c : ZKConfig} (f: FFFormula c) : Nat :=
   match f with
   | .true | .false => 1
-  | .range t _ _=> 1 + sizeOfTerm gconf t
+  | .range t _ _=> 1 + sizeOfTerm t
   | .bool _ => 1
-  | .eq a b => 1 + sizeOfTerm gconf a + sizeOfTerm gconf b
-  /-
-  | .lt a b => 1 + sizeOfTerm a + sizeOfTerm b
-  | .gt a b => 1 + sizeOfTerm a + sizeOfTerm b
-  | .le a b => 1 + sizeOfTerm a + sizeOfTerm b
-  | .ge a b => 1 + sizeOfTerm a + sizeOfTerm b
-  -/
-  | .and a b => 1 + sizeOfFormula gconf a + sizeOfFormula gconf b
-  | .or a b => 1 + sizeOfFormula gconf a + sizeOfFormula gconf b
-  | .imply a b => 1 + sizeOfFormula gconf a + sizeOfFormula gconf b
-  | .iff a b => 1 + sizeOfFormula gconf a + sizeOfFormula gconf b
-  | .not a => 1 + sizeOfFormula gconf a
-  | .ite c t e => 1 + sizeOfFormula gconf c + sizeOfFormula gconf t + sizeOfFormula gconf e
+  | .eq a b => 1 + sizeOfTerm a + sizeOfTerm b
+  | .and a b => 1 + sizeOfFormula a + sizeOfFormula b
+  | .or a b => 1 + sizeOfFormula a + sizeOfFormula b
+  | .imply a b => 1 + sizeOfFormula a + sizeOfFormula b
+  | .iff a b => 1 + sizeOfFormula a + sizeOfFormula b
+  | .not a => 1 + sizeOfFormula a
+  | .ite c t e => 1 + sizeOfFormula c + sizeOfFormula t + sizeOfFormula e
   | .call _ _ => 1
 
 end
@@ -203,6 +190,24 @@ def fetchMacro {c : ZKConfig}
   | m :: rest =>
       if m.name == name then Except.ok (m, rest)
       else fetchMacro gconf rest name
+
+theorem fetchMacroLT {c : ZKConfig} (gconf : GlobalConfig c) (ms ms' : List (FFMacro c))
+    (name : String) (m : FFMacro c) :
+  fetchMacro gconf ms name = Except.ok (m, ms') → ms'.length < ms.length := by
+  cases ms with
+  | nil => simp [fetchMacro]
+  | cons head tail =>
+      simp only [fetchMacro]
+      by_cases h : head.name = name
+      · simp only [h, BEq.rfl, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, List.length_cons,
+        Order.lt_add_one_iff, and_imp] at *
+        intro  h1 h2
+        rw [h2]
+      · simp only [h, not_false_eq_true, beq_iff_eq, ↓reduceIte, List.length_cons,
+        Order.lt_add_one_iff] at *
+        intro h1
+        have h2 := fetchMacroLT gconf tail ms' name m h1
+        grind
 
 /- The main formula of a constraint system is a call to the
    main macro -/

@@ -1,20 +1,14 @@
 import Corellzk2smt.Basic
 import Corellzk2smt.FFConstraints.Basic
-import Corellzk2smt.FFConstraints.Basic_th
 import Corellzk2smt.Config
---import Corellzk2smt.Language.Core.Syntax.AST
---import Corellzk2smt.Language.Core.Semantics.Basic
 
 /-
 This module defines executable semantics and satisfiability predicates for finite-field
 constraint formulas and systems.
 -/
-namespace Llzk.FFConstraints.Satisfiability
+namespace Corellzk2smt.FFConstraints.Satisfiability
 
 open Corellzk2smt.FFConstraints.Basic
-open Corellzk2smt.FFConstraints.Basic_th
---open Corellzk2smt.Language.Core.Syntax.AST
---open Corellzk2smt.Language.Core.Semantics.Basic
 
 /- An assignment maps variables to values. There are two types of
    variables, finite field variables and boolean variables, so we have
@@ -98,7 +92,7 @@ def evalTerm {c : ZKConfig} (gconf : GlobalConfig c)
       | Except.ok vc =>
         if vc then evalTerm gconf assign t ms else evalTerm gconf assign e ms
 
-termination_by (ms.length, sizeOfTerm gconf t)
+termination_by (ms.length, sizeOfTerm t)
 decreasing_by
   all_goals
     apply Prod.Lex.right
@@ -126,36 +120,6 @@ def evalFormula {c : ZKConfig} (gconf : GlobalConfig c)
         match evalTerm gconf assign b ms with
         | Except.error e => Except.error e
         | Except.ok vb => Except.ok (va == vb)
-  /-
-      | .lt a b =>
-      match evalTerm gconf assign a ms with
-      | Except.error e => Except.error e
-      | Except.ok va =>
-        match evalTerm gconf assign b ms with
-        | Except.error e => Except.error e
-        | Except.ok vb => Except.ok (evalLt va vb == 1)
-  | .gt a b =>
-      match evalTerm gconf assign a ms with
-      | Except.error e => Except.error e
-      | Except.ok va =>
-        match evalTerm gconf assign b ms with
-        | Except.error e => Except.error e
-        | Except.ok vb => Except.ok (evalGt va vb == 1)
-  | .le a b =>
-      match evalTerm gconf assign a ms with
-      | Except.error e => Except.error e
-      | Except.ok va =>
-        match evalTerm gconf assign b ms with
-        | Except.error e => Except.error e
-        | Except.ok vb => Except.ok (evalLe va vb == 1)
-  | .ge a b =>
-      match evalTerm gconf assign a ms with
-      | Except.error e => Except.error e
-      | Except.ok va =>
-        match evalTerm assign b ms with
-        | Except.error e => Except.error e
-        | Except.ok vb => Except.ok (evalGe va vb == 1)
-  -/
   | .and a b =>
       match evalFormula gconf assign a ms with
       | Except.error e => Except.error e
@@ -201,7 +165,7 @@ def evalFormula {c : ZKConfig} (gconf : GlobalConfig c)
           | Except.error e => Except.error e
           | Except.ok newAssign => evalFormula gconf newAssign m.body ms'
 
-termination_by (ms.length, sizeOfFormula gconf f)
+termination_by (ms.length, sizeOfFormula f)
 
 decreasing_by
   any_goals
@@ -232,4 +196,4 @@ def isSatSys {c : ZKConfig} (gconf : GlobalConfig c)
   return isSatFormula gconf f sys.macros
 
 
-end Llzk.FFConstraints.Satisfiability
+end Corellzk2smt.FFConstraints.Satisfiability
