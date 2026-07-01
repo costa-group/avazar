@@ -59,7 +59,7 @@ def evalCmd {c : ZKConfig} (gconf : GlobalConfig c)
         match evalSimpleExprsToValue st args with
         | Except.error err => Except.error err
         | Except.ok argVals =>
-          match evalFun gconf p fname argVals with
+          match evalFunCall gconf p fname argVals with
           | Except.error err => Except.error err
           | Except.ok outVals =>
             match setVars st.vars outs outVals with
@@ -152,7 +152,7 @@ decreasing_by
       simp only [sizeOfComs]
       grind
 
-def evalFun {c : ZKConfig} (gconf : GlobalConfig c)
+def evalFunCall {c : ZKConfig} (gconf : GlobalConfig c)
     (p : Prog c) (fname : FName) (args : List (Value c))
     : Except String (List (Value c)) := do
     match _h_fetch: fetchFunc p fname with
