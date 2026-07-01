@@ -1,13 +1,11 @@
 import Corellzk2smt.Basic
 import Corellzk2smt.Config
 import Corellzk2smt.Language.Core.Syntax.AST
-import Corellzk2smt.Language.Core.Syntax.Keywords
 
 
 namespace Corellzk2smt.Language.Core.Syntax.Printer
 
 open Corellzk2smt.Language.Core.Syntax.AST
-open Corellzk2smt.Language.Core.Syntax.Keywords
 
 
 /- The following few functions are used to convert a program to a string
@@ -29,23 +27,23 @@ instance {c : ZKConfig} : ToString (SimpleExpr c) where
 /- format binary operations -/
 def formatBinOp (s : BinOp) : String :=
   match s with
-  | .add  => add_keyword
-  | .sub  => sub_keyword
-  | .mul  => mul_keyword
-  | .div  => div_keyword
-  | .shl  => shl_keyword
-  | .shr  => shr_keyword
-  | .and  => and_keyword
-  | .or   => or_keyword
-  | .xor  => xor_keyword
-  | .eq   => eq_keyword
-  | .neq  => neq_keyword
-  | .lt   => lt_keyword
-  | .gt   => gt_keyword
-  | .le   => le_keyword
-  | .ge   => ge_keyword
-  | .bor  => bor_keyword
-  | .band => band_keyword
+  | .add => "felt.add"
+  | .sub => "felt.sub"
+  | .mul => "felt.mul"
+  | .div => "felt.div"
+  | .shl => "bit.shl"
+  | .shr => "bit.shr"
+  | .and => "bit.and"
+  | .or => "bit.or"
+  | .xor => "bit.xor"
+  | .eq => "bool.eq"
+  | .neq => "bool.neq"
+  | .lt => "bool.lt"
+  | .gt => "bool.gt"
+  | .le => "bool.le"
+  | .ge => "bool.ge"
+  | .bor => "bool.or"
+  | .band => "bool.and"
 
 /- register ToString instance for BinOp -/
 instance : ToString (BinOp) where
@@ -54,9 +52,9 @@ instance : ToString (BinOp) where
 /- format unary operations -/
 def formatUnOp (s : UnOp) : String :=
   match s with
-  | .neg => neg_keyword
-  | .not => not_keyword
-  | .bneg => bneg_keyword
+  | .neg => "felt.neg"
+  | .not => "bool.not"
+  | .bneg => "bit.bneg"
 
 /- register ToString instance for UnOp -/
 instance : ToString (UnOp) where
