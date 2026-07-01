@@ -15,44 +15,48 @@ namespace Corellzk2smt.Language.Core.Syntax.AST
 abbrev VarID := String -- Program variable identifier
 abbrev FName := String -- Function name
 
-
+/- Sets of variable identifiers -/
 abbrev VarIDSet := Std.TreeSet VarID
 abbrev emptyVarIDSet : VarIDSet := Std.TreeSet.empty
 
 /- toString instance for VarIDSet -/
-def VarIDSetToString (s : VarIDSet) : String :=
-  let vars := s.toList
-  String.intercalate ", " vars
-
 instance : ToString VarIDSet where
-  toString s := "{" ++ VarIDSetToString s ++ "}"
+  toString s := "{" ++ (String.intercalate ", " s.toList) ++ "}"
 
 
-/- A structure for command information. It will be mainly used to related
-   instructions to the source code, like line numbers, etc. More fields
-   can be added later.
+/- A structure for command source code information. It will be mainly used
+   to related instructions to the source code, like line numbers, etc. More
+   fields can be added later.
 -/
 structure SrcInfo where
   row : ℕ
   col : ℕ
   deriving Repr, BEq, Inhabited, Ord
 
-/-
+/- A structure to include the liveness information at a given program point.
+-/
 structure LivenessInfo where
   live_in : VarIDSet := emptyVarIDSet
   live_out : VarIDSet := emptyVarIDSet
   deriving Repr, BEq, Inhabited
 
+/- Metadata for commands, it includes source code information and liveness
+   information. More fields can be added later.
+-/
 structure CmdMD where
   src_info : SrcInfo
   liveness : LivenessInfo := default
   deriving Repr, BEq, Inhabited
 
+/- Metadata for functions, it includes source code information and liveness
+   information. More fields can be added later.
+-/
 structure FuncMD where
   src_info : SrcInfo
-  liveness : LivenessInfo := default
+  liveness : LivenessInfo := default -- TBD: not sure this is needed
   deriving Repr, BEq, Inhabited
 
+/- Metadata for programs, it does not include anything for now. -/
 structure ProgMD where
   deriving Repr, BEq, Inhabited
 
@@ -63,7 +67,7 @@ inductive SimpleExpr (c : ZKConfig) where
   | val (val : FF c) : SimpleExpr c     -- FF value
   deriving Repr, BEq, Inhabited
 
-
+/- Binary operations -/
 inductive BinOp where
   | add -- addition (arithmetic)
   | sub -- subtraction (arithmetic)
@@ -76,14 +80,15 @@ inductive BinOp where
   | xor -- bitwise xor (bitwise)
   | eq  -- equality (boolean)
   | neq -- inequality (boolean)
-  | lt  -- less than (boolean)
-  | gt  -- greater than (boolean)
-  | le  -- less than or equal to (boolean)
-  | ge  -- greater than or equal to (boolean)
+  | lt  -- signed less than (boolean)
+  | gt  -- signed greater than (boolean)
+  | le  -- signed less than or equal to (boolean)
+  | ge  -- signed greater than or equal to (boolean)
   | bor -- boolean or (boolean)
   | band -- boolean and (boolean)
   deriving Repr, BEq, Inhabited
 
+/- Unary operations -/
 inductive UnOp where
   | neg   -- arithmetic negation (arithmetic)
   | not   -- bitwise negation (bitwise)
@@ -98,38 +103,50 @@ inductive Expr (c : ZKConfig) where
   | id (s : SimpleExpr c) : Expr c
    deriving Repr, BEq, Inhabited
 
+/- A condition is a comparison between two simple expressions. This will appear in a
+   conditional statement. More elaborated conditions can be evaluated using the corresponding
+   expression first, for example:
+
+     z = bool.gt x y
+     if (z == 1) { ... } else { ... }
+
+-/
 inductive Cond (c : ZKConfig) where
   | eq (s1 s2 : SimpleExpr c) : Cond c
   deriving Repr, BEq, Inhabited
+
+
+
+/- The next data type is for representing commands. It consists of one for a command, and
+   another one for a command with metadata. This is why it is mutually defined.
+-/
 
 mutual
 
 /- A data type for command -/
 inductive Com (c : ZKConfig) where
-  -- in principle `skip` is not needed, we keep so we can augment it with
-  -- debugging information if needed in the future, like a list of variables
-  -- to print, etc.
-  | skip
-  -- x := e
+  -- assign 'e' to variable 'out'
   | assign (out: VarID) (e : Expr c)
-  -- if (cond) {tb} else {eb}
+  -- conditional statement
   | if_stmt (cond: Cond c) (tb eb :  List (ComWithMD c))
-  -- with (out := e) { body }
-  -- e is supposed to be a constant expression, runtime error should be thrown
-  -- if it is not. We keep it as Expr for simplicity.
+  -- In loop_exp: the loop body is repeated 'se' times.
+  -- In loop: the loop body is repeated N times.
+  -- We have both loop and loop_exp because in the symbolic execution it is easier to
+  -- handle the case where the number of repetitions is a constant, and we can
+  -- unroll it. So in principle loop_exp will be evaluated using a corresponding
+  -- loop command.
   | loop_exp (rep: SimpleExpr c) (body: List (ComWithMD c))
-  -- repeat N { body }
-  -- N is supposed to be a natural number
   | loop (rep : ℕ) (body: List (ComWithMD c))
-  -- size is supposed to be a constant expression, runtime error should be thrown if it is not.
+  -- size is supposed to be a constant expression. Note that during symbolic execution,
+  -- 'size' should be a constant expression, a runtime error should be thrown if it is not.
   | new_array (out: VarID) (size: SimpleExpr c)
-  -- out := arr[idx]
+  -- assign 'arr[idx]' to 'out'
   | read_array (out: VarID) (arr: VarID) (idx: SimpleExpr c)
-  -- out[idx] := value
+  -- assign 'value' to 'arr[idx]'
   | write_array (arr: VarID) (idx: SimpleExpr c) (value: SimpleExpr c)
-  -- out := copy_array arr
+  -- assign copy of 'arr' to 'out'
   | copy_array (out: VarID) (arr: VarID)
-  -- out1, out2, ... := func(args)
+  -- assign result of 'fname(args)' to 'outs'
   | func_call (outs: List VarID) (fname: FName) (args: List (SimpleExpr c))
    deriving Repr, BEq, Inhabited
 
@@ -140,27 +157,34 @@ inductive ComWithMD (c : ZKConfig) : Type
 
 end
 
-/- A command with metadata -/
---abbrev ComWithMD (c : ZKConfig) := ProgElem (Com c)
 
-/- We have two types: finite field and array -/
+
+
+/- Type are used only for function parameters and return values. For other variables they
+   are inferred dynamically. They are needed for functions mainly for symbolic execution,
+   since every function is translated separately without considering the calling context.
+
+   We have two types: finite field and array (of finite field).
+-/
 inductive VarType where
   | ff
   | array (size : ℕ)
   deriving Repr, BEq, Inhabited
 
-/- A parameter is a pair of variable identifier and its type -/
+/- A function parameter is a pair of variable identifier and its type -/
 structure Param where
   name : VarID
   type : VarType
   deriving Repr, BEq, Inhabited
 
 /- A function receives input parameters `params`, executes the whole `body`,
-   and returns the variables in `rets`.
+   and returns the values of the variables in `rets`.
 -/
 inductive Func (c : ZKConfig) where
-  | mk (name : FName) (params : List Param)
-       (rets : List Param) (body : List (ComWithMD c)) : Func c
+  | mk (name : FName)
+       (params : List Param)
+       (rets : List Param)
+       (body : List (ComWithMD c)) : Func c
   deriving Repr, BEq, Inhabited
 
 /- A function with metadata -/
@@ -168,23 +192,26 @@ inductive FuncWithMD (c : ZKConfig) where
   | mk (md : FuncMD) (func : Func c) : FuncWithMD c
   deriving Repr, BEq, Inhabited
 
-/- A program is a list of functions. Since we forbid recursion, a function can only call
-those that precede it in the list (this should be forced in the semantics)
- -/
+/- A program is a list of functions. Since we forbid recursion, a function
+   can only call those that precede it in the list (this should be forced
+   in the semantics).
+-/
 abbrev Prog (c : ZKConfig) := List (FuncWithMD c)
 
-/- A program with metadata. It is the top-level element of a program, which includes
-   the whole program and the metadata for it. -/
+/- A program with metadata. It is the top-level element of a program, which
+   includes the whole program and the metadata of the program.
+-/
 inductive ProgWithMD (c : ZKConfig) where
   | mk (md : ProgMD) (prog : Prog c) : ProgWithMD c
   deriving Repr, BEq, Inhabited
 
 /- Search a function by name. It returns the function and the remaining program,
-   which includes the functions that can be called by it. -/
+   which includes the functions that can be called by it.
+-/
 def fetchFunc {c : ZKConfig}
   (p : Prog c) (fname : FName) : Except String (FuncWithMD c × Prog c) :=
   match p with
-  | [] => Except.error s!"Function {fname} not found in the program"
+  | [] => Except.error s!"Function {fname} not found"
   | funcWMD :: fs =>
     match funcWMD with
     | .mk _ f =>
@@ -195,7 +222,9 @@ def fetchFunc {c : ZKConfig}
        else
          fetchFunc fs fname
 
-/- fetchFunc returns a smaller program -/
+/- fetchFunc returns a smaller program. It is used to prove termination
+   of the functions representing the semantics.
+-/
 theorem fetchLT {c : ZKConfig}
   (p : Prog c) (fname : FName) (f : FuncWithMD c) (p' : Prog c) :
   fetchFunc p fname = Except.ok (f, p') → p'.length < p.length := by
@@ -223,8 +252,11 @@ theorem fetchLT {c : ZKConfig}
           apply Nat.lt_of_lt_of_le h2
           apply Nat.le_succ
 
+
 /- Size of a command and list of commands. They are used to prove termination of
-   functions that manipulate programs -/
+   functions that manipulate programs. The only "tricky" parts are thos of loop_exp
+   and loop.
+-/
 
 mutual
 
@@ -232,7 +264,6 @@ def sizeOfCom {c : ZKConfig} (i : ComWithMD c) : Nat :=
   match i with
   | .mk _ info =>
     match info with
-    | .skip => 1
     | .if_stmt _ tb eb =>
         1 + sizeOfComs tb + sizeOfComs eb
     | .loop_exp _ body =>
@@ -248,8 +279,10 @@ match cmds with
 
 end -- mutual
 
-/- Number of loop_exp in a command and list of commands. They are used to prove termination of
-   functions that manipulate programs -/
+
+/- Number of loop_exp in a command and list of commands. They are used
+   to prove termination of functions that manipulate programs
+-/
 
 mutual
 
@@ -271,9 +304,6 @@ def numOfLoopExpComs {c : ZKConfig} (cmds : List (ComWithMD c)) : Nat :=
   | cmd::rest => numOfLoopExpCom cmd + numOfLoopExpComs rest
 
 end -- mutual
-
--/
-
 
 
 end Corellzk2smt.Language.Core.Syntax.AST
