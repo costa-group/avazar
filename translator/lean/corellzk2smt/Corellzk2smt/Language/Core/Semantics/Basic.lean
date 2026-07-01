@@ -192,11 +192,6 @@ def evalNot {c : ZKConfig} (v : FF c) : FF c :=
   finalVal
 
 /- Boolean -/
-def evalTrue {c : ZKConfig} : FF c :=
-  1
-
-def evalFalse {c : ZKConfig} : FF c :=
-  0
 
 def evalEq {c : ZKConfig} (v1 v2 : FF c) : FF c :=
   if v1 = v2 then 1 else 0
