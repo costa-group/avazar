@@ -129,4 +129,30 @@ def sEvalExprDiv {c : ZKConfig}
           nextId := cfg.nextId+1
   }
 
+/- Symbolic expression of .pow expression -/
+def sEvalExprPow {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
+  : Except String (ExprSpec c) := do
+  let base ← simpleExprToTerm senv s1
+  let power ← simpleExprToFF senv s2 -- power must be a constant
+  let outFFVar : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let rec loop (n : Nat ) : FFTerm c :=
+    match n with
+    | 0 => FFTerm.val 1
+    | 1 => base
+    | n'+1 => FFTerm.mul base (loop n')
+  let f := .eq (FFTerm.var outFFVar) (loop power.val)
+  return {
+          inSymEnv := senv,
+          outSymEnv := senv,
+          f := f,
+          resTerm := (FFTerm.var outFFVar),
+          res := SymFFVar.var ⟨outFFVar, none⟩,
+          newFFVars := { outFFVar },
+          nextId := cfg.nextId+1
+  }
+
 end Llzk.SymExec.SymInstr

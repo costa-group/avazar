@@ -30,6 +30,7 @@ def formatBinOp (s : BinOp) : String :=
   | .sub => "felt.sub"
   | .mul => "felt.mul"
   | .div => "felt.div"
+  | .pow => "felt.pow"
   | .shl => "bit.shl"
   | .shr => "bit.shr"
   | .and => "bit.and"
