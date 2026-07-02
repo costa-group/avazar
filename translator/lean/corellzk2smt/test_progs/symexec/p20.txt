@@ -1,0 +1,38 @@
+func loop1(x:ff) -> z:ff {
+  y = 0
+  i = 0
+  repeat 3 {
+    a = felt.pow x i
+    y = felt.add y a
+    i = felt.add i 1
+  }
+  z = y
+}
+
+func loop_const(x:ff) -> z:ff {
+  y = 0
+  i = 0
+  repeat 3 {
+    a = felt.pow 2 i
+    b = felt.mul x a
+    y = felt.add y b
+    i = felt.add i 1
+  }
+  z = y
+}
+
+func pow_const(x:ff) -> z:ff {
+  a = felt.pow 3 3
+  z = felt.add x a
+}
+
+func pow0(x:ff) -> z:ff {
+  z = felt.pow x 0
+}
+
+func pow3(x:ff) -> z:ff {
+  z = felt.pow x 3
+}
+
+func main() {
+}

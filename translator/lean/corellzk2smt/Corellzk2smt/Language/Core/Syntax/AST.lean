@@ -73,6 +73,7 @@ inductive BinOp where
   | sub -- subtraction (arithmetic)
   | mul -- multiplication (arithmetic)
   | div -- division (arithmetic)
+  | pow -- exponentiation (arithmetic)
   | shl -- shift left (arithmetic)
   | shr -- shift right (arithmetic)
   | and -- bitwise and (bitwise)

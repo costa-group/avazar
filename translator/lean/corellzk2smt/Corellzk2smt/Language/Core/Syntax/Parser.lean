@@ -140,6 +140,11 @@ def parseExpr {c : ZKConfig} : ParserM c (Expr c) := do
     let op1 ← parseSimpleExpr
     let op2 ← parseSimpleExpr
     return Expr.bop BinOp.div op1 op2
+  | Token.ident "felt.pow" =>
+    let _ ← advance -- consume the 'felt.pow' keyword
+    let op1 ← parseSimpleExpr
+    let op2 ← parseSimpleExpr
+    return Expr.bop BinOp.pow op1 op2
   -- Bitwise
   | Token.ident "bit.shl" =>
     let _ ← advance -- consume the 'bit.shl' keyword

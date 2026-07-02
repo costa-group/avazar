@@ -151,6 +151,11 @@ def evalMul {c : ZKConfig} (v1 v2 : FF c) : FF c :=
 def evalDiv {c : ZKConfig} (v1 v2 : FF c) : FF c :=
   v1 / v2
 
+def evalPow {c : ZKConfig} (v1 v2 : FF c) : FF c :=
+  let base := v1.val
+  let exponent := v2.val
+  (base ^ exponent : FF c)
+
 /- Bitwise -/
 def evalShl {c : ZKConfig} (v1 v2 : FF c) : FF c :=
   let w : BitVec c.k := BitVec.ofNat c.k v1.val
@@ -250,6 +255,7 @@ def evalExpr {c : ZKConfig} (st : State c) (e : Expr c) : Except String (FF c) :
           | .sub => Except.ok (evalSub val1 val2)
           | .mul => Except.ok (evalMul val1 val2)
           | .div => Except.ok (evalDiv val1 val2)
+          | .pow => Except.ok (evalPow val1 val2)
           | .shl => Except.ok (evalShl val1 val2)
           | .shr => Except.ok (evalShr val1 val2)
           | .and => Except.ok (evalAnd val1 val2)
