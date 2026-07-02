@@ -1,13 +1,18 @@
 [submodule "avazar_tool"]
 	path = avazar_tool
 	url = https://github.com/costa-group/avazar_tool.git
+	branch = work_circom
 [submodule "ffsol"]
 	path = ffsol
 	url = https://mygitlab.cs.upc.edu/polynomial-equations/poly-eqs.git
+	branch = clean_in_work
 [submodule "circom"]
 	path = circom
 	url = https://github.com/iden3/circom.git
-        branch = print_tree_info
+	branch = print_tree_info
 [submodule "circom-llzk"]
 	path = circom-llzk
-	url = git@github.com:project-llzk/circom.git
+	url = https://github.com/project-llzk/circom.git
+[submodule "llzk-lib"]
+	path = llzk-lib
+	url = https://github.com/project-llzk/llzk-lib.git

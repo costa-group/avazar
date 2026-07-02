@@ -214,6 +214,10 @@ class PodRead(Operation):
         # that downstream operations (e.g. function.call args) use it directly.
         if not variable_name.startswith("%"):
             ctx.ssa_to_name[self._result.name] = variable_name
+            # For array-typed fields, ArrayWrite will look up the alias and write
+            # directly into the named array; no copy into a temp variable is needed.
+            if array_felt_first_dimension(var_type.name) is not None:
+                return
 
         result = translate_assignment_core_with_ctx(
             self._result,
