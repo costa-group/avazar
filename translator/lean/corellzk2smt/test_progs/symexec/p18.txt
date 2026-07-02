@@ -1,0 +1,6 @@
+func foo_lt(x:ff,y:ff) -> z:ff {
+  z = bool.lt x y
+}
+
+func main() {
+}

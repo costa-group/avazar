@@ -1,0 +1,26 @@
+
+# this is a comment
+func foo(%y:ff,%x:arr<10>) -> %r:ff {
+  %acc = %y
+  %i = 0 # this is the loop counter
+  repeat 10 {
+    array.read %y[%i] %aux
+    %r = bool.gt %aux 5
+    if (%r == 1) {
+      %acc = felt.add %acc %aux
+    }
+    %i = felt.add %i 1 # increment the loop counter
+  }
+  %r = %acc
+}
+
+func main(%y:ff) -> %ret:ff {
+  %size = 10
+  array.new %size %a
+  %i = 0
+  repeat %size {
+    array.write %i %a[%i]
+    %i = felt.add %i 1
+  }
+  call foo(%y,%a) to %ret
+}

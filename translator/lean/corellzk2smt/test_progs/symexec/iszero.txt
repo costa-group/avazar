@@ -1,0 +1,25 @@
+# template IsZero() {
+#  signal input in;
+#  signal output out;
+#
+#  signal inv <-- in != 0 ? 1 / in : 0;
+#  out <== 1 - (in * inv);
+#
+#  in * out === 0;
+# }
+
+
+func izero(in:ff) -> out:ff {
+  if (in == 0) {
+    inv = 0
+  } else {
+    inv = felt.div 1 in
+  }
+  aux = felt.mul in inv
+  out = felt.sub 1 aux
+}
+
+func main(%x:ff) -> %y:ff {
+  call izero(%x) to %y
+}
+
