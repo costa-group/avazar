@@ -270,7 +270,12 @@ def sizeOfCom {c : ZKConfig} (i : ComWithMD c) : Nat :=
       1 + sizeOfComs body
     | .loop rep body =>
       1 + rep*(1+sizeOfComs body)
-    | _ => 1
+    | .assign _ _ => 1
+    | .new_array _ _ => 1
+    | .read_array _ _ _ => 1
+    | .write_array _ _ _ => 1
+    | .copy_array _ _ => 1
+    | .func_call _ _ _ => 1
 
 def sizeOfComs {c : ZKConfig} (cmds : List (ComWithMD c)) : Nat :=
 match cmds with
@@ -279,6 +284,20 @@ match cmds with
 
 end -- mutual
 
+theorem sizeOfCom_pos {c : ZKConfig} (cmd : ComWithMD c) :
+  sizeOfCom cmd > 0 := by
+  cases cmd with
+  | mk _ info =>
+    match info with
+    | .if_stmt _ tb eb => simp only [sizeOfCom]; grind
+    | .loop_exp _ body => simp only [sizeOfCom]; grind
+    | .loop rep body => simp only [sizeOfCom]; grind
+    | .assign _ _ => simp only [sizeOfCom]; grind
+    | .new_array _ _ => simp only [sizeOfCom]; grind
+    | .read_array _ _ _ => simp only [sizeOfCom]; grind
+    | .write_array _ _ _ => simp only [sizeOfCom]; grind
+    | .copy_array _ _ => simp only [sizeOfCom]; grind
+    | .func_call _ _ _ => simp only [sizeOfCom]; grind
 
 /- Number of loop_exp in a command and list of commands. They are used
    to prove termination of functions that manipulate programs
