@@ -1,4 +1,5 @@
 import Corellzk2smt.Basic
+import Corellzk2smt.Config
 import Corellzk2smt.SymExec.Basic
 import Corellzk2smt.SymExec.Common
 import Corellzk2smt.FFConstraints.Basic
@@ -8,6 +9,7 @@ import Corellzk2smt.Language.Core.Syntax.AST
 namespace Corellzk2smt.SymExec.BigStep
 
 
+open Corellzk2smt.Config
 open Corellzk2smt.Language.Core.Syntax.AST
 open Corellzk2smt.SymExec.Basic
 open Corellzk2smt.FFConstraints.Basic

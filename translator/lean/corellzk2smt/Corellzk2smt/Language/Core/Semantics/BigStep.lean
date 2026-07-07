@@ -6,6 +6,7 @@ import Corellzk2smt.Language.Core.Semantics.Basic
 
 namespace Corellzk2smt.Language.Core.Semantics.BigStep
 
+open Corellzk2smt.Config
 open Corellzk2smt.Language.Core.Syntax.AST
 open Corellzk2smt.Language.Core.Semantics.Basic
 

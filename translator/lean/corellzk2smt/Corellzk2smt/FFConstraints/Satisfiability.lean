@@ -8,6 +8,7 @@ constraint formulas and systems.
 -/
 namespace Corellzk2smt.FFConstraints.Satisfiability
 
+open Corellzk2smt.Config (GlobalConfig)
 open Corellzk2smt.FFConstraints.Basic
 
 /- An assignment maps variables to values. There are two types of

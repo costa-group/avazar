@@ -12,6 +12,7 @@ import Corellzk2smt.FFConstraints.Basic
 namespace Corellzk2smt.FFConstraints.SMT
 
 --open Corellzk2smt.Language.Core.Syntax.AST
+open Corellzk2smt.Config (GlobalConfig)
 open Corellzk2smt.FFConstraints.Basic
 
 

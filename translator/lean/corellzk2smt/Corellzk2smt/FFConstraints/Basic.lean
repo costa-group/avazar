@@ -6,6 +6,8 @@ import Corellzk2smt.Config
    and boolean variables -/
 
 namespace Corellzk2smt.FFConstraints.Basic
+
+open Corellzk2smt.Config (GlobalConfig)
 open Corellzk2smt.Language.Core.Syntax.AST (SrcInfo VarID)
 
 

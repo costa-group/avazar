@@ -1,6 +1,10 @@
 import Init.System.IO
+import Corellzk2smt.Config
+
 
 namespace Corellzk2smt.Language.Core.Syntax.Lexer
+
+open Corellzk2smt.Config
 
 
 /- A structure to keep track of the lexer's state, including a buffer,

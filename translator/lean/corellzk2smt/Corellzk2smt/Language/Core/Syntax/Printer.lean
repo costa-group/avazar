@@ -5,6 +5,7 @@ import Corellzk2smt.Language.Core.Syntax.AST
 
 namespace Corellzk2smt.Language.Core.Syntax.Printer
 
+open Corellzk2smt.Config
 open Corellzk2smt.Language.Core.Syntax.AST
 
 

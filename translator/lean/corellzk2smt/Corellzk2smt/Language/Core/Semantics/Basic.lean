@@ -8,7 +8,7 @@ import Mathlib.Tactic.NormNum.LegendreSymbol -- needed for div in FF to compile
 namespace Corellzk2smt.Language.Core.Semantics.Basic
 
 open Corellzk2smt.Language.Core.Syntax.AST
-
+open Corellzk2smt.Config
 
 /- A type for arrays -/
 

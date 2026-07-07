@@ -6,6 +6,7 @@ import Corellzk2smt.FFConstraints.SMT
 
 namespace Corellzk2smt.FFConstraints.Tests
 
+open Corellzk2smt.Config (GlobalConfig)
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.SMT

@@ -10,6 +10,7 @@ import Corellzk2smt.Language.Core.Syntax.Lexer
 namespace Corellzk2smt.Language.Core.Syntax.Parser
 
 
+open Corellzk2smt.Config
 open Corellzk2smt.Language.Core.Syntax.AST
 open Corellzk2smt.Language.Core.Syntax.Lexer
 

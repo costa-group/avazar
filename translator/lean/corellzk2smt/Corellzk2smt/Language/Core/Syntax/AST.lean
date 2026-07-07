@@ -1,4 +1,6 @@
 import Corellzk2smt.Basic
+import Corellzk2smt.Config
+
 --import Std.Data.TreeSet.Basic
 
 /- This is a namespace for the core language -/
@@ -11,6 +13,8 @@ import Corellzk2smt.Basic
 -/
 namespace Corellzk2smt.Language.Core.Syntax.AST
 
+
+open Corellzk2smt.Config
 
 abbrev VarID := String -- Program variable identifier
 abbrev FName := String -- Function name
