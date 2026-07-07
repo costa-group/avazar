@@ -3,7 +3,7 @@ import Corellzk2smt.Basic
 
 namespace Corellzk2smt.Config
 
-structure ProgPrinterConfig where
+structure ProgPrinterParams where
   spaces_per_indent_level : Nat := 2
   show_liveness : Bool := false
   deriving Inhabited
@@ -36,7 +36,7 @@ inductive BoolFFScm where
   deriving Repr, BEq, Inhabited
 
 
-structure SymExecConfig (c : ZKConfig) where
+structure SymExecParams (c : ZKConfig) where
   cmpScm : CmpScm := CmpScm.normal
   boolFFScm : BoolFFScm := BoolFFScm.range
   deriving Inhabited
@@ -44,8 +44,8 @@ structure SymExecConfig (c : ZKConfig) where
 
 -- Structure for storing flags and global configurations
 structure GlobalConfig (c : ZKConfig) where
-  prog_printer : ProgPrinterConfig := default
-  sym_exec : SymExecConfig c := default
+  prog_printer : ProgPrinterParams := default
+  sym_exec : SymExecParams c := default
   deriving Inhabited
 
 

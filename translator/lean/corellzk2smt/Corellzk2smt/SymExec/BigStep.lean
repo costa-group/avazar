@@ -9,7 +9,7 @@ import Corellzk2smt.Language.Core.Syntax.AST
 namespace Corellzk2smt.SymExec.BigStep
 
 
-open Corellzk2smt.Config
+open Corellzk2smt.Config (GlobalConfig)
 open Corellzk2smt.Language.Core.Syntax.AST
 open Corellzk2smt.SymExec.Basic
 open Corellzk2smt.FFConstraints.Basic
@@ -67,6 +67,65 @@ def seqComposition {c : ZKConfig}
 
 mutual
 
+def seIfStmt {c : ZKConfig}
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (md : CmdMD)
+    (cond : Cond c)
+    (tb : List (ComWithMD c))
+    (eb : List (ComWithMD c))
+    : Except String (CmdsSpec c) :=
+    match tryEvalCondToConcreteValue gconf sconf symEnv md cond with
+    | Except.error _e =>
+        match seCmds gconf sconf symEnv specs tb with
+        | Except.error msg => Except.error msg
+        | Except.ok tbSpec =>
+            match seCmds gconf sconf tbSpec.outSymEnv specs eb with
+            | Except.error msg => Except.error msg
+            | Except.ok ebSpec =>
+                mergeIfBranches gconf sconf symEnv specs md tbSpec ebSpec cond
+    | Except.ok condVal =>
+        if condVal then
+          seCmds gconf sconf symEnv specs tb
+        else
+          seCmds gconf sconf symEnv specs eb
+termination_by (numOfLoopExpComs tb + numOfLoopExpComs eb, sizeOfComs tb + sizeOfComs eb)
+decreasing_by
+    -- recursive call with then-branch
+    · have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+      rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
+      · apply Prod.Lex.left
+        exact h_less
+      · rw [← h_equal]
+        apply Prod.Lex.right
+        exact sizeOfComs_a_lt_a_plus_b tb eb
+    -- recursive call with else-branch
+    · have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+      rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
+      · apply Prod.Lex.left
+        exact h_less
+      · rw [← h_equal]
+        apply Prod.Lex.right
+        rw [← Nat.add_comm]
+        exact sizeOfComs_a_lt_a_plus_b eb tb
+    · have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+      rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
+      · apply Prod.Lex.left
+        exact h_less
+      · rw [← h_equal]
+        apply Prod.Lex.right
+        exact sizeOfComs_a_lt_a_plus_b tb eb
+    -- recursive call with else-branch
+    · have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+      rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
+      · apply Prod.Lex.left
+        exact h_less
+      · rw [← h_equal]
+        apply Prod.Lex.right
+        rw [← Nat.add_comm]
+        exact sizeOfComs_a_lt_a_plus_b eb tb
 
 def seCmd {c : ZKConfig}
     (gconf : GlobalConfig c)
@@ -80,25 +139,7 @@ def seCmd {c : ZKConfig}
       match cmd with
       -- if statement
       | Com.if_stmt cond tb eb =>
-        match tryEvalCondToConcreteValue gconf sconf symEnv md cond with
-        --
-        -- if the condition is not a constant expression, we need to execute both branches and
-        -- merge the results
-        | Except.error _e =>
-          match seCmds gconf sconf symEnv specs tb with
-          | Except.error msg => Except.error msg
-          | Except.ok tbSpec =>
-            match seCmds gconf sconf tbSpec.outSymEnv specs eb with
-            | Except.error msg => Except.error msg
-            | Except.ok ebSpec =>
-              mergeIfBranches gconf sconf symEnv specs md tbSpec ebSpec cond
-        --
-        -- if the condition is a constant expression, we can just execute the corresponding branch
-        | Except.ok condVal =>
-          if condVal then
-            seCmds gconf sconf symEnv specs tb
-          else
-            seCmds gconf sconf symEnv specs eb
+        seIfStmt gconf sconf symEnv specs md cond tb eb
       -- Loop with a simple expression as the number of iterations.
       -- Reduced to loop with concrete repetitions.
       | Com.loop_exp repSExp body =>
@@ -132,50 +173,11 @@ def seCmd {c : ZKConfig}
         seSimpleCmd gconf sconf symEnv specs i
 termination_by (numOfLoopExpCom i, sizeOfCom i)
 decreasing_by
-  -- recursive call with then-branch (in constant expression case)
-  · have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
-    rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
-    · apply Prod.Lex.left
-      simp only [numOfLoopExpCom]
-      exact h_less
-    · simp only [numOfLoopExpCom]
-      rw [← h_equal]
-      apply Prod.Lex.right
-      simp only [sizeOfCom]
-      grind
-    -- recursive call with else-branch (in constant expression case)
-  · have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
-    rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
-    · apply Prod.Lex.left
-      simp only [numOfLoopExpCom]
-      exact h_less
-    · simp only [numOfLoopExpCom]
-      rw [← h_equal]
-      apply Prod.Lex.right
-      simp only [sizeOfCom]
-      grind
-  -- recursive call with then-branch (in non-constant expression case)
-  · have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
-    rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
-    · apply Prod.Lex.left
-      simp only [numOfLoopExpCom]
-      exact h_less
-    · simp only [numOfLoopExpCom]
-      rw [← h_equal]
-      apply Prod.Lex.right
-      simp only [sizeOfCom]
-      grind
-  -- recursive call with else-branch (in non-constant expression case)
-  · have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
-    rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
-    · apply Prod.Lex.left
-      simp only [numOfLoopExpCom]
-      exact h_less
-    · simp only [numOfLoopExpCom]
-      rw [← h_equal]
-      apply Prod.Lex.right
-      simp only [sizeOfCom]
-      grind
+  -- recursive call evalIfStmt
+  · simp only [numOfLoopExpCom]
+    apply Prod.Lex.right
+    simp only [sizeOfCom]
+    grind
   -- the case of loop_exp
   · simp only [numOfLoopExpCom]
     apply Prod.Lex.left

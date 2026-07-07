@@ -31,9 +31,45 @@ def evalSimpleCmd {c : ZKConfig}
       -- filtered out non-simple commands. However, we keep it here for safety.
       | _ => Except.error s!"evalSimpleCmd: command '{i}' is not a simple command"
 
-
-
 mutual
+
+def evalIfStmt {c : ZKConfig}
+    (gconf : GlobalConfig c)
+    (p : Prog c)
+    (env : Env c)
+    (_md : CmdMD)
+    (cond : Cond c)
+    (tb : List (ComWithMD c))
+    (eb : List (ComWithMD c))
+    : Except String (Env c) :=
+    match evalCond env cond with
+    | Except.error err => Except.error err
+    | Except.ok condVal =>
+        if condVal then
+          evalCmds gconf p env tb
+        else
+          evalCmds gconf p env eb
+termination_by (p.length, numOfLoopExpComs tb + numOfLoopExpComs eb, sizeOfComs tb + sizeOfComs eb)
+decreasing_by
+    all_goals -- in all recursive calls the program remain the same
+      apply Prod.Lex.right
+    -- recursive call with then-branch
+    · have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+      rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
+      · apply Prod.Lex.left
+        exact h_less
+      · rw [← h_equal]
+        apply Prod.Lex.right
+        exact sizeOfComs_a_lt_a_plus_b tb eb
+    -- recursive call with else-branch
+    · have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+      rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
+      · apply Prod.Lex.left
+        exact h_less
+      · rw [← h_equal]
+        apply Prod.Lex.right
+        rw [← Nat.add_comm]
+        exact sizeOfComs_a_lt_a_plus_b eb tb
 
 def evalCmd {c : ZKConfig}
     (gconf : GlobalConfig c)
@@ -45,10 +81,7 @@ def evalCmd {c : ZKConfig}
    | .mk md cmd =>
       match cmd with
       | Com.if_stmt cond tb eb =>
-          match evalCond env cond with
-          | Except.error err => Except.error err
-          | Except.ok condVal =>
-            if condVal then evalCmds gconf p env tb else evalCmds gconf p env eb
+        evalIfStmt gconf p env md cond tb eb
       | Com.loop_exp rep body =>
           match evalSimpleExprToFFValue env rep with
           | Except.error err => Except.error err
@@ -79,28 +112,11 @@ termination_by (p.length, numOfLoopExpCom i, sizeOfCom i)
 decreasing_by
     all_goals -- in all recursive calls the program remain the same
       apply Prod.Lex.right
-    -- recursive call with then-branch
-    · have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
-      rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
-      · apply Prod.Lex.left
-        simp only [numOfLoopExpCom]
-        exact h_less
-      · simp only [numOfLoopExpCom]
-        rw [← h_equal]
-        apply Prod.Lex.right
-        simp only [sizeOfCom]
-        grind
-    -- recursive call with else-branch
-    · have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
-      rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
-      · apply Prod.Lex.left
-        simp only [numOfLoopExpCom]
-        exact h_less
-      · simp only [numOfLoopExpCom]
-        rw [← h_equal]
-        apply Prod.Lex.right
-        simp only [sizeOfCom]
-        grind
+    -- recursive call evalIfStmt
+    · simp only [numOfLoopExpCom]
+      apply Prod.Lex.right
+      simp only [sizeOfCom]
+      grind
     -- the case of loop_exp
     · simp only [numOfLoopExpCom]
       apply Prod.Lex.left
@@ -126,7 +142,7 @@ def evalCmds {c : ZKConfig} (gconf : GlobalConfig c)
     (p : Prog c) (env : Env c) (cmds : List (ComWithMD c)) : Except String (Env c) :=
   match cmds with
   | [] => Except.ok env
-  | cmd :: rest => do
+  | cmd :: rest =>
     match evalCmd gconf p env cmd with
     | Except.error err => Except.error err
     | Except.ok env' => evalCmds gconf p env' rest
@@ -161,7 +177,7 @@ decreasing_by
 
 def evalFunCall {c : ZKConfig} (gconf : GlobalConfig c)
     (p : Prog c) (fname : FName) (args : List (Value c))
-    : Except String (List (Value c)) := do
+    : Except String (List (Value c)) :=
     match _h_fetch: fetchFunc p fname with
     | Except.error e => Except.error e
     | Except.ok (f, p') =>
@@ -169,11 +185,16 @@ def evalFunCall {c : ZKConfig} (gconf : GlobalConfig c)
       | .mk _ func =>
       match func with
        | Func.mk _ params rets body =>
-           let vars_env ← bindInParams (emptyEnv c) params args
-           let env := vars_env
-           let env' ← evalCmds gconf p' env body
-           let rets ← bindOutParams env' rets
-           Except.ok rets
+           match bindInParams (emptyEnv c) params args with
+           | Except.error err => Except.error err
+           | Except.ok vars_env =>
+               let env := vars_env
+               match evalCmds gconf p' env body with
+              | Except.error err => Except.error err
+              | Except.ok env' =>
+                  match getOutParamsValues env' rets with
+                  | Except.error err => Except.error err
+                  | Except.ok rets => Except.ok rets
 termination_by (p.length, 0 ,0)
 decreasing_by
     apply Prod.Lex.left

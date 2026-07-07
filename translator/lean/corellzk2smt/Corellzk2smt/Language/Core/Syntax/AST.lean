@@ -284,7 +284,7 @@ def sizeOfCom {c : ZKConfig} (i : ComWithMD c) : Nat :=
 
 def sizeOfComs {c : ZKConfig} (cmds : List (ComWithMD c)) : Nat :=
 match cmds with
-| [] => 0
+| [] => 1
 | cmd::rest => 1 + sizeOfCom cmd + sizeOfComs rest
 
 end -- mutual
@@ -303,6 +303,23 @@ theorem sizeOfCom_pos {c : ZKConfig} (cmd : ComWithMD c) :
     | .write_array _ _ _ => simp only [sizeOfCom]; grind
     | .copy_array _ _ => simp only [sizeOfCom]; grind
     | .func_call _ _ _ => simp only [sizeOfCom]; grind
+
+theorem sizeOfComs_a_lt_a_plus_b {c : ZKConfig}
+  (cmds1 cmds2 : List (ComWithMD c)) :
+  sizeOfComs cmds1 < sizeOfComs cmds1 + sizeOfComs cmds2 := by
+  cases cmds1 with
+  | nil =>
+    cases cmds2 with
+    | nil => simp only [sizeOfComs]; grind
+    | cons cmd2 rest2 => simp only [sizeOfComs]; grind
+  | cons cmd1 rest1 =>
+    cases cmds2 with
+    | nil => simp only [sizeOfComs]; grind
+    | cons cmd2 rest2 => simp only [sizeOfComs]; grind
+
+
+
+
 
 /- Number of loop_exp in a command and list of commands. They are used
    to prove termination of functions that manipulate programs
@@ -326,6 +343,27 @@ def numOfLoopExpComs {c : ZKConfig} (cmds : List (ComWithMD c)) : Nat :=
   match cmds with
   | [] => 0
   | cmd::rest => numOfLoopExpCom cmd + numOfLoopExpComs rest
+
+end -- mutual
+
+mutual
+
+def numIfstmt {c : ZKConfig} (cmd : ComWithMD c) : Nat :=
+  match cmd with
+  | .mk _ info =>
+    match info with
+    | .if_stmt _ tb eb =>
+        1 + numIfstmts tb + numIfstmts eb
+    | .loop_exp _ body =>
+        numIfstmts body
+    | .loop _ body =>
+      numIfstmts body
+    | _ => 0
+
+def numIfstmts {c : ZKConfig} (cmds : List (ComWithMD c)) : Nat :=
+  match cmds with
+  | [] => 0
+  | cmd::rest => numIfstmt cmd + numIfstmts rest
 
 end -- mutual
 

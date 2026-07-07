@@ -126,7 +126,7 @@ def bindInParams {c : ZKConfig}
     | Except.error err => Except.error err
   | _, _ => Except.error "Mismatched lengths of parameters and arguments"
 
-def bindOutParams {c : ZKConfig}
+def getOutParamsValues {c : ZKConfig}
     (env : Env c)
     (rets : List Param)
     : Except String (List (Value c)) :=
@@ -137,7 +137,7 @@ def bindOutParams {c : ZKConfig}
       | Except.ok v =>
         match ensureCorrectType v p.type with
         | Except.ok _ =>
-          match bindOutParams env rets' with
+          match getOutParamsValues env rets' with
           | Except.error err => Except.error err
           | Except.ok vs => Except.ok (v :: vs)
         | Except.error err => Except.error err
