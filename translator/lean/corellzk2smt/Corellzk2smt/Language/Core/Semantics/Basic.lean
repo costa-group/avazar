@@ -25,19 +25,16 @@ abbrev Env (c : ZKConfig) := Std.TreeMap VarID (Value c)
 /- Empty environment -/
 def emptyEnv (c : ZKConfig) : Env c := Std.TreeMap.empty
 
-/- A state is a structure holding the environments. Maybe we add more information
-   later -/
-structure State (c : ZKConfig) where
-  vars : Env c
-  deriving Repr, Inhabited
-
 /- The next few functions provide an abstraction of the different operations
    of an environment, so we can change the implementation later if needed
 -/
 
 /- Retrieve a value from an environment. It fails if the variable
    is not in the environment -/
-def getVar {c : ZKConfig} (env : Env c) (id : VarID) : Except String (Value c) :=
+def getVar {c : ZKConfig}
+  (env : Env c)
+  (id : VarID)
+    : Except String (Value c) :=
   match env.get? id with
   | some v => Except.ok v
   | none   => Except.error s!"Variable '{id}' not found"
@@ -50,7 +47,10 @@ def setVar {c : ZKConfig} (env : Env c) (id : VarID) (v : Value c) : Env c :=
 /- Set the values of multiple variables in an environment.
 -/
 def setVars {c : ZKConfig}
-    (env : Env c) (ids : List VarID) (vs : List (Value c)) : Except String (Env c) :=
+  (env : Env c)
+  (ids : List VarID)
+  (vs : List (Value c))
+  : Except String (Env c) :=
   match ids, vs with
   | [], [] => Except.ok env
   | id :: ids, v :: vs =>
@@ -61,12 +61,15 @@ def setVars {c : ZKConfig}
 
 
 /- Evaluate a simple expressions (a variable or a field value) to a field value,
-   by looking it up in the state. It fails if the variable is not found or if
+   by looking it up in the environment. It fails if the variable is not found or if
    the variable is an array.
 -/
-def evalSimpleExprToFF {c : ZKConfig} (st : State c) (s : SimpleExpr c) : Except String (FF c) :=
+def evalSimpleExprToFFValue {c : ZKConfig}
+  (env : Env c)
+  (s : SimpleExpr c)
+  : Except String (FF c) :=
   match s with
-  | .var id => match getVar st.vars id with
+  | .var id => match getVar env id with
     | Except.ok (Value.scalar v) => Except.ok v
     | Except.ok (Value.array _) => Except.error s!"Variable '{id}' is an array, expected scalar"
     | Except.error err => Except.error err
@@ -74,24 +77,33 @@ def evalSimpleExprToFF {c : ZKConfig} (st : State c) (s : SimpleExpr c) : Except
 
 /- A function for evaluating constant simple expressions -/
 def evalConstSimpleExpr {c : ZKConfig}
-    (st : State c) (s : SimpleExpr c) : Except String (FF c) :=
-   -- Clear variable environment to ensure const-ness
-  let st' := { st with vars := emptyEnv c}
-  evalSimpleExprToFF st' s
+  (_env : Env c)
+  (s : SimpleExpr c)
+  : Except String (FF c) :=
+  -- Clear variable environment to ensure constancy
+  let env' := emptyEnv c
+  evalSimpleExprToFFValue env' s
 
 /- -/
 def evalSimpleExprToValue {c : ZKConfig}
-    (st : State c) (s : SimpleExpr c) : Except String (Value c) :=
+  (env : Env c)
+  (s : SimpleExpr c)
+  : Except String (Value c) :=
   match s with
-  | .var id => getVar st.vars id
+  | .var id => getVar env id
   | .val v => Except.ok (Value.scalar v)
 
 def evalSimpleExprsToValue {c : ZKConfig}
-    (st : State c) (l : List (SimpleExpr c)) : Except String (List (Value c)) :=
-  l.mapM (evalSimpleExprToValue st)
+  (env : Env c)
+  (l : List (SimpleExpr c))
+  : Except String (List (Value c)) :=
+  l.mapM (evalSimpleExprToValue env)
 
 
-def ensureCorrectType {c : ZKConfig} (v : Value c) (type : VarType) : Except String Unit :=
+def ensureCorrectType {c : ZKConfig}
+  (v : Value c)
+  (type : VarType)
+  : Except String Unit :=
   match type, v with
   | .ff, Value.scalar _ => Except.ok ()
   | .array n, Value.array a =>
@@ -102,7 +114,10 @@ def ensureCorrectType {c : ZKConfig} (v : Value c) (type : VarType) : Except Str
   | _, _ => Except.error "Type mismatch"
 
 def bindInParams {c : ZKConfig}
-    (env : Env c) (params : List Param) (args : List (Value c)) : Except String (Env c) :=
+    (env : Env c)
+    (params : List Param)
+    (args : List (Value c))
+    : Except String (Env c) :=
   match params, args with
   | [], [] => Except.ok env
   | p :: ps, v :: vs =>
@@ -112,7 +127,9 @@ def bindInParams {c : ZKConfig}
   | _, _ => Except.error "Mismatched lengths of parameters and arguments"
 
 def bindOutParams {c : ZKConfig}
-    (env : Env c) (rets : List Param) : Except String (List (Value c)) :=
+    (env : Env c)
+    (rets : List Param)
+    : Except String (List (Value c)) :=
   match rets with
   | [] => Except.ok []
   | p :: rets' =>
@@ -241,13 +258,16 @@ def evalBneg {c : ZKConfig} (v : FF c) : FF c :=
 
 
 /- Functions for evaluating expressions -/
-def evalExpr {c : ZKConfig} (st : State c) (e : Expr c) : Except String (FF c) :=
+def evalExpr {c : ZKConfig}
+  (env : Env c)
+  (e : Expr c)
+  : Except String (FF c) :=
   match e with
   | .bop op s1 s2 =>
-      match evalSimpleExprToFF st s1 with
+      match evalSimpleExprToFFValue env s1 with
       | Except.error err => Except.error err
       | Except.ok val1 =>
-        match evalSimpleExprToFF st s2 with
+        match evalSimpleExprToFFValue env s2 with
         | Except.error err => Except.error err
         | Except.ok val2 =>
           match op with
@@ -270,7 +290,7 @@ def evalExpr {c : ZKConfig} (st : State c) (e : Expr c) : Except String (FF c) :
           | .le  => Except.ok (evalLe val1 val2)
           | .ge  => Except.ok (evalGe val1 val2)
   | .uop op s =>
-      match evalSimpleExprToFF st s with
+      match evalSimpleExprToFFValue env s with
       | Except.error err => Except.error err
       | Except.ok val =>
         match op with
@@ -278,24 +298,30 @@ def evalExpr {c : ZKConfig} (st : State c) (e : Expr c) : Except String (FF c) :
         | .not => Except.ok (evalNot val)
         | .bneg => Except.ok (evalBneg val)
   | .id s =>
-      match evalSimpleExprToFF st s with
+      match evalSimpleExprToFFValue env s with
       | Except.error err => Except.error err
       | Except.ok val => Except.ok (evalId val)
 
 /- A function for evaluating constant expressions -/
-def evalConstExpr {c : ZKConfig} (st : State c) (e : Expr c) : Except String (FF c) :=
-   -- Clear variable environment to ensure const-ness
-  let st' := { st with vars := emptyEnv c}
-  evalExpr st' e
+def evalConstExpr {c : ZKConfig}
+  (_env : Env c)
+  (e : Expr c)
+  : Except String (FF c) :=
+   -- Clear variable environment to ensure constancy
+  let env' := emptyEnv c
+  evalExpr env' e
 
 /- A function for evaluating conditions -/
-def evalCond {c : ZKConfig} (st : State c) (cond : Cond c) : Except String Bool :=
+def evalCond {c : ZKConfig}
+  (env : Env c)
+  (cond : Cond c)
+  : Except String Bool :=
   match cond with
   | .eq s1 s2 =>
-    match evalSimpleExprToFF st s1 with
+    match evalSimpleExprToFFValue env s1 with
     | Except.error err => Except.error err
     | Except.ok val1 =>
-      match evalSimpleExprToFF st s2 with
+      match evalSimpleExprToFFValue env s2 with
       | Except.error err => Except.error err
       | Except.ok val2 =>
         if val1 = val2 then
@@ -304,76 +330,94 @@ def evalCond {c : ZKConfig} (st : State c) (cond : Cond c) : Except String Bool 
           Except.ok false
 
 /- Functions for executing simple commands, like assignment, array operations, etc.
-   These functions take a state and a command, and return the new state after executing
-   the command. They can fail if there are errors, like variable not found, index
-   out of bounds, etc.
+   These functions take an environment and a command, and return the new environment
+   after executing the command. They can fail if there are errors, like variable not
+   found, index out of bounds, etc.
 -/
 
 /- id := e -/
 def evalAssign {c : ZKConfig}
-    (_md : CmdMD) (_gconf : GlobalConfig c)
-    (st : State c) (id : VarID) (e : Expr c) : Except String (State c) :=
-  match evalExpr st e with
+  (_md : CmdMD)
+  (_gconf : GlobalConfig c)
+  (env : Env c)
+  (id : VarID)
+  (e : Expr c) : Except String (Env c) :=
+  match evalExpr env e with
   | Except.error err => Except.error err
   | Except.ok val =>
-    let newEnv := setVar st.vars id (Value.scalar val)
-    Except.ok { st with vars := newEnv }
+    let newEnv := setVar env id (Value.scalar val)
+    Except.ok newEnv
 
 /- id := new Array(size) -/
 def evalNewArray {c : ZKConfig}
-    (_md : CmdMD) (_gconf : GlobalConfig c)
-    (st : State c) (id : VarID) (size : SimpleExpr c) : Except String (State c) :=
-  match evalSimpleExprToFF st size with
+  (_md : CmdMD)
+  (_gconf : GlobalConfig c)
+  (env : Env c)
+  (id : VarID)
+  (size : SimpleExpr c)
+  : Except String (Env c) :=
+  match evalSimpleExprToFFValue env size with
   | Except.error err => Except.error err
   | Except.ok sizeVal =>
     let arr := (List.replicate sizeVal.val (0 : FF c)).toArray -- initialize with zeros
-    let newAEnv := setVar st.vars id (Value.array arr)
-    Except.ok { st with vars := newAEnv }
+    let newAEnv := setVar env id (Value.array arr)
+    Except.ok newAEnv
 
 def evalReadArray {c : ZKConfig}
-    (_md : CmdMD) (_gconf : GlobalConfig c)
-    (st : State c) (out a : VarID) (index : SimpleExpr c) : Except String (State c) :=
-    match evalSimpleExprToFF st index with
-    | Except.error err => Except.error err
-    | Except.ok indexVal =>
-      match getVar st.vars a with
-      | Except.ok (Value.array arr) =>
-        if h : indexVal.val < arr.size then
-          let val := arr[indexVal.val]'h
-          let newEnv := setVar st.vars out (Value.scalar val)
-          Except.ok { st with vars := newEnv }
-        else
-          Except.error s!"Index out of bounds: {indexVal.val} >= {arr.size}"
-      | _ => Except.error s!"Variable '{a}' is not an array"
-
-def evalWriteArray {c : ZKConfig}
-    (_md : CmdMD) (_gconf : GlobalConfig c)
-    (st : State c) (a : VarID) (index value : SimpleExpr c) : Except String (State c) :=
-  match evalSimpleExprToFF st index with
+  (_md : CmdMD)
+  (_gconf : GlobalConfig c)
+  (env : Env c)
+  (out a : VarID)
+  (index : SimpleExpr c)
+  : Except String (Env c) :=
+  match evalSimpleExprToFFValue env index with
   | Except.error err => Except.error err
   | Except.ok indexVal =>
-    match evalSimpleExprToFF st value with
+    match getVar env a with
+    | Except.ok (Value.array arr) =>
+      if h : indexVal.val < arr.size then
+        let val := arr[indexVal.val]'h
+        let newEnv := setVar env out (Value.scalar val)
+        Except.ok newEnv
+      else
+        Except.error s!"Index out of bounds: {indexVal.val} >= {arr.size}"
+    | _ => Except.error s!"Variable '{a}' is not an array"
+
+def evalWriteArray {c : ZKConfig}
+  (_md : CmdMD)
+  (_gconf : GlobalConfig c)
+  (env : Env c)
+  (a : VarID)
+  (index value : SimpleExpr c)
+  : Except String (Env c) :=
+  match evalSimpleExprToFFValue env index with
+  | Except.error err => Except.error err
+  | Except.ok indexVal =>
+    match evalSimpleExprToFFValue env value with
     | Except.error err => Except.error err
     | Except.ok valueVal =>
-      match getVar st.vars a with
+      match getVar env a with
       | Except.ok (Value.array arr) =>
         if h : indexVal.val < arr.size then
           let newArr := Array.set arr indexVal.val valueVal h
-          let newAEnv := setVar st.vars a (Value.array newArr)
-          Except.ok { st with vars := newAEnv }
+          let newAEnv := setVar env a (Value.array newArr)
+          Except.ok newAEnv
         else
           Except.error s!"Index out of bounds: {indexVal.val} >= {arr.size}"
       | _ => Except.error s!"Variable '{a}' is not an array"
 
 def evalCopyArray {c : ZKConfig}
-    (_md : CmdMD) (_gconf : GlobalConfig c)
-    (st : State c) (out a : VarID) : Except String (State c) :=
-   match getVar st.vars a with
-   | Except.ok (Value.array arr) =>
-       let new_arr := arr
-       let newAEnv := setVar st.vars out (Value.array new_arr)
-       Except.ok { st with vars := newAEnv }
-   | _ => Except.error s!"Variable '{a}' is not an array"
+  (_md : CmdMD)
+  (_gconf : GlobalConfig c)
+  (env : Env c)
+  (out a : VarID)
+  : Except String (Env c) :=
+  match getVar env a with
+  | Except.ok (Value.array arr) =>
+      let new_arr := arr
+      let newAEnv := setVar env out (Value.array new_arr)
+      Except.ok newAEnv
+  | _ => Except.error s!"Variable '{a}' is not an array"
 
 
 end Corellzk2smt.Language.Core.Semantics.Basic
