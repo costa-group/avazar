@@ -31,4 +31,4 @@ g such that
 
 then
 
-`<phi/\f1 \/ ~phi/\f2, InVs,FFVs1 \cup FFVs2,BVs1 \cup BVs2>` is functional
+`<g/\f1 \/ ~g/\f2, InVs,FFVs1 \cup FFVs2,BVs1 \cup BVs2>` is functional

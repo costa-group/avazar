@@ -187,6 +187,15 @@ def isSatFormula {c : ZKConfig} (gconf : GlobalConfig c) (f : FFFormula c)
   ∃ (σ : Assignment c), evalFormula gconf σ f ms = Except.ok true
 
 
+/- Totality of a formula:
+
+   For EVERY assignment σ, evalFormula does not error (returns some Bool).
+-/
+def isTotal {c : ZKConfig} (gconf : GlobalConfig c) (f : FFFormula c)
+    (ms : List (FFMacro c)) : Prop :=
+  ∀ (σ : Assignment c), ∃ (v : Bool), evalFormula gconf σ f ms = Except.ok v
+
+
 /- Satisfiability of a system:
 
   EXIST an assignment σ such that the main formula is true?
