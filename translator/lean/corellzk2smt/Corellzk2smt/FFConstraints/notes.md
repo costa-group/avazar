@@ -1,10 +1,12 @@
 # Functional formula
 
-`<f,InVs,FFVs,BVs>` is functional if
+`<f,InVs,OutVs,AuxVs>` is functional if
 
-- InVs is a subset of FFVs
-- bvars(f) is a subset of BVs
-- ffvars(f) is a subset of FFVs
+- InVars and OutVars are two sets of FF variables
+- InVars and OutVars are not necessarily disjoint
+- AuxVs is a set of FF and boolean variables. The FF variables
+  do not appear in InVs \cup
+
 - **For any values of InVs, the formula f is satisfiable**
 
 The functional property can also be stated as:
@@ -15,7 +17,7 @@ The functional property can also be stated as:
 
 # Composition
 
-Given functional formulas `<f1,InVs1,FFVs1,BVs1>` and `<f2,InVs2,FFVs2,BVs2>` such that
+Given functional formulas `<f1,InVs1,OutVs1,AuxVs1>` and `<f2,InVs2,OutVs2,AuxVs2>` such that
 
 - InVs2 is a subset of FFVs1
 
@@ -32,3 +34,11 @@ g such that
 then
 
 `<phi/\f1 \/ ~phi/\f2, InVs,FFVs1 \cup FFVs2,BVs1 \cup BVs2>` is functional
+
+# Semantic equivalence
+
+A concrete execution has a corresponding abstract one and vice versa
+
+Given a context, which is a formula
+
+If we start from env and senv,
