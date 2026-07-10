@@ -85,13 +85,18 @@ def printFormula {c : ZKConfig}
   | .true  => stream.putStr s!"{sp}true{nl}"
   | .false => stream.putStr s!"{sp}false{nl}"
   | .range t l u =>
-      stream.putStr s!"{sp}(ff.range "
-      printTerm stream t
-      stream.putStr " "
-      stream.putStr s!"{l.val}"
-      stream.putStr " "
-      stream.putStr s!"{u.val}"
-      stream.putStr s!"){nl}"
+      let int_of_l : Int := if l.val < c.midpoint then l.val else l.val - c.p
+      let int_of_u : Int := if u.val < c.midpoint then u.val else u.val - c.p
+      if (int_of_l >= 0 && int_of_u < 0 ) then
+        panic s!"Error: range [{int_of_l}, {int_of_u}] crosses the midpoint of the field."
+      else if (int_of_l <= 0 && int_of_u < 0) || (int_of_l >= 0 && int_of_u >= 0) then
+        stream.putStr s!"{sp}(ff.range "
+        printTerm stream t
+        stream.putStr " "
+        stream.putStr s!"{int_of_l}"
+        stream.putStr " "
+        stream.putStr s!"{int_of_u}"
+        stream.putStr s!"){nl}"
   | .bool v =>
       stream.putStr s!"{sp}{boolVarID v}"
   | .eq a b =>

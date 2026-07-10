@@ -164,7 +164,7 @@ def sEvalBNeg {c : ZKConfig}
           nextId := cfg.nextId+1
   }
 
-
+/-
 
 /- Unsigned comparison-/
 
@@ -220,8 +220,9 @@ def sEvalLtUnSignedConstRight {c : ZKConfig}
                           }
   let f := if (v1.val == (c.p-1)) then
              FFFormula.false -- p-1 < x is always false when we are working with unsigned integers
-           else
-             FFFormula.eq (FFTerm.var outFFVar) (.ite (.range v2 (v1+1) (c.p-1)) (.val 1) (.val 0))
+           else if (v1.val < c.midpoint) then -- v1 is positive
+             FFFormula.eq (FFTerm.var outFFVar)
+                          (.ite (.or (.range v2 (v1+1) (c.p-1)) (.val 1) (.val 0))
   let f' := add_bool_ffterm cfg (FFTerm.var outFFVar) f
   return {
           inSymEnv := senv,
@@ -336,6 +337,9 @@ def sEvalGeUnSigned {c : ZKConfig}
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   sEvalLeUnSigned cfg md senv s2 s1 id
+
+
+
 
 /- Signed comparison-/
 
@@ -469,6 +473,20 @@ def sEvalLtSignedBitCmp {c : ZKConfig}
         }
 
 
+/- General case of x < y. We first try the special cases with constants, and if
+   those don't apply, we use the bitwise comparison. -/
+def sEvalLtSigned_normal {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
+  : Except String (ExprSpec c) := do
+  match sEvalLtSignedConstLeft cfg md senv s1 s2 id with
+  | Except.ok spec => return spec
+  | Except.error _ =>
+    match sEvalLtSignedConstRight cfg md senv s1 s2 id with
+    | Except.ok spec => return spec
+    | Except.error _ => sEvalLtSignedBitCmp cfg md senv s1 s2 id
+
+-/
 
 /-
 s1 < s2, where s1 is a constant value v1
@@ -533,6 +551,26 @@ def sEvalLtSigned_range_sub_left_const {c : ZKConfig}
           }
 
 /-
+s1 < s2, where s2 is a constant value v2
+
+if v2 is positive (v2.val < c.midpoint)
+
+  x' = s1-v2
+  out = ite (s1 in [midpoint, p-1]), -- s2 is negative
+            1, -- s1 is negative, so s1 < s2
+            ite (x' in [midpoint, p-1]), -- x' is negative, so s1 is less than s2
+                1,
+                0)
+
+if v2 is negative (v2.val >= c.midpoint)
+
+  x' = s1-v2
+  out = ite (s1 in [0, c.midpoint-1]), -- s1 is positive
+            0, -- s1 is positive, we cannot have s1 < s2
+            ite (x' in [midpoint, p-1]), -- x' is negative, so s1 is less than s2
+                1,
+                0)
+
 -/
 def sEvalLtSigned_range_sub_right_const {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
@@ -576,6 +614,13 @@ def sEvalLtSigned_range_sub_right_const {c : ZKConfig}
 
 
 /-
+
+s1<s2
+
+s1 is negative, s2 is positive => s1<s2 is true
+s1 is positive, s2 is negative => s1<s2 is false
+other wise, we compute the difference s1-s2 and check if it is negative.
+
 -/
 def sEvalLtSigned_range_sub_gen {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
@@ -630,18 +675,6 @@ def sEvalLtSigned_range_sub {c : ZKConfig}
       | Except.error _ => sEvalLtSigned_range_sub_gen cfg md senv s1 s2 id
 
 
-/- General case of x < y. We first try the special cases with constants, and if
-   those don't apply, we use the bitwise comparison. -/
-def sEvalLtSigned_normal {c : ZKConfig}
-  (cfg : SymExecConfig c) (md : CmdMD)
-  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
-  : Except String (ExprSpec c) := do
-  match sEvalLtSignedConstLeft cfg md senv s1 s2 id with
-  | Except.ok spec => return spec
-  | Except.error _ =>
-    match sEvalLtSignedConstRight cfg md senv s1 s2 id with
-    | Except.ok spec => return spec
-    | Except.error _ => sEvalLtSignedBitCmp cfg md senv s1 s2 id
 
 /- General case of x < y. We first try the special cases with constants, and if
    those don't apply, we use the bitwise comparison. -/
@@ -651,8 +684,9 @@ def sEvalLtSigned {c : ZKConfig}
   : Except String (ExprSpec c) := do
   match cfg.cmpScm with
   | CmpScm.range_of_diff => sEvalLtSigned_range_sub cfg md senv s1 s2 id
-  | CmpScm.normal => sEvalLtSigned_normal cfg md senv s1 s2 id
-
+  | CmpScm.normal =>
+    -- sEvalLtSigned_normal cfg md senv s1 s2 id
+    Except.error "sEvalLtSigned: normal comparison scheme was temporary disabled."
 
 
 /- x<=y is be encoded as 1 minus the result variable of (y < x).

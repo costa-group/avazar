@@ -84,8 +84,20 @@ def to_sum_with_bit_constraints {c : ZKConfig}
   (cfg : SymExecConfig c) (bits : List (FFTerm c)) (v : FFTerm c)
   : FFFormula c :=
   let sumF := to_sum cfg bits v
+  -- add constraints to ensure bits are boolean
   let f := bits.foldl (fun acc bit => add_bool_ffterm cfg bit acc) sumF
   f
+
+def add_deterministic_constraints {c : ZKConfig}
+  (_cfg : SymExecConfig c) (var : FFVar) (bits : List (FFTerm c)) (f : FFFormula c)
+  : FFFormula c :=
+  match bits.getLast? with
+  | none => f
+  | some msb =>
+    let vTerm := FFTerm.var var
+    let detF := (.imply (FFFormula.range vTerm 0 (c.midpoint-1))
+                      (FFFormula.eq msb (FFTerm.val 0)))
+    FFFormula.and f detF
 
 def binexpn_var {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (senv : SymEnv c) (id : VarID) (v : FFVarWithBinRep c)
@@ -99,8 +111,8 @@ def binexpn_var {c : ZKConfig}
                                               orig_name := s!"bit{i}"
                                             })
     let bits := ffVars.map (fun v => FFTerm.var v)
-    let f := to_sum_with_bit_constraints cfg bits (FFTerm.var v.var)
-    -- add constraints to ensure bits are boolean
+    let f' := to_sum_with_bit_constraints cfg bits (FFTerm.var v.var)
+    let f := add_deterministic_constraints cfg v.var bits f'
     let senv' := setVar senv id (SymValue.ffVar (SymFFVar.var { var := v.var, bits := some bits }))
     return {
       inSymEnv := senv,
