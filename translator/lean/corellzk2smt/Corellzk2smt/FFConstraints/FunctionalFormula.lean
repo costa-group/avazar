@@ -111,7 +111,7 @@ theorem functionalCompose {c : ZKConfig}
     -- over any starting assignment, so it happily extends `rho1` regardless of
     -- where its values on `inVs2` came from. The overlap between `ffVs1`/`ffVs2`
     -- is instead handled entirely by `h_disj_ff`.
-    (_h_link : inVs2 ⊆ ffVs1)
+    -- (_h_link : inVs2 ⊆ ffVs1)
     -- any var shared by ffVs1 and ffVs2 must be an input to f2
     -- (the "private" vars of f2 are disjoint from all of f1's vars)
     (h_disj_ff : ∀ n, Var.ffv n ∈ ffVs1 → Var.ffv n ∈ ffVs2 → Var.ffv n ∈ inVs2)
