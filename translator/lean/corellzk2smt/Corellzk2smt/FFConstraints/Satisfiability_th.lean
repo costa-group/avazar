@@ -125,7 +125,7 @@ theorem mem_bVars_call_of_mem_args {c : ZKConfig} (name : String)
 theorem newAssignment'_congr {c : ZKConfig} (a b : Assignment c)
     (args : List (MacroCallParam c)) (params : List Var)
     (ffMap : FFVar → FF c) (boolMap : BoolVar → Bool)
-    (h_ff   : ∀ n, MacroCallParam.var (Var.ffv n)   ∈ args → a.ff n   = b.ff n)
+    (h_ff : ∀ n, MacroCallParam.var (Var.ffv n) ∈ args → a.ff n = b.ff n)
     (h_bool : ∀ n, MacroCallParam.var (Var.boolv n) ∈ args → a.bool n = b.bool n) :
     newAssignment' a args params ffMap boolMap = newAssignment' b args params ffMap boolMap := by
   match params, args with
@@ -165,7 +165,7 @@ theorem newAssignment'_congr {c : ZKConfig} (a b : Assignment c)
 
 theorem newAssignment_congr {c : ZKConfig} (a b : Assignment c)
     (args : List (MacroCallParam c)) (params : List Var)
-    (h_ff   : ∀ n, MacroCallParam.var (Var.ffv n)   ∈ args → a.ff n   = b.ff n)
+    (h_ff : ∀ n, MacroCallParam.var (Var.ffv n) ∈ args → a.ff n = b.ff n)
     (h_bool : ∀ n, MacroCallParam.var (Var.boolv n) ∈ args → a.bool n = b.bool n) :
     newAssignment a args params = newAssignment b args params :=
   newAssignment'_congr a b args params _ _ h_ff h_bool
@@ -180,8 +180,8 @@ theorem newAssignment_congr {c : ZKConfig} (a b : Assignment c)
 mutual
 theorem evalTerm_congr {c : ZKConfig}
     (gconf : GlobalConfig c) (ms : List (FFMacro c)) (t : FFTerm c) (a b : Assignment c)
-    (h_ff   : agreesOnFF   (ffVarsOfTerm t) a b)
-    (h_bool : agreesOnBool (bVarsOfTerm  t) a b)
+    (h_ff : agreesOnFF (ffVarsOfTerm t) a b)
+    (h_bool : agreesOnBool (bVarsOfTerm t) a b)
     : evalTerm gconf a t ms = evalTerm gconf b t ms := by
   match t with
   | .val _ => simp only [evalTerm]
@@ -190,26 +190,26 @@ theorem evalTerm_congr {c : ZKConfig}
       rw [h_ff v Std.TreeSet.mem_insert_self]
   | .add t1 t2 =>
       have ih1 := evalTerm_congr gconf ms t1 a b
-        (agreesOnFF_mono   (fun x hx => Std.TreeSet.mem_union_of_left  hx) h_ff)
+        (agreesOnFF_mono (fun x hx => Std.TreeSet.mem_union_of_left  hx) h_ff)
         (agreesOnBool_mono (fun x hx => Std.TreeSet.mem_union_of_left  hx) h_bool)
       have ih2 := evalTerm_congr gconf ms t2 a b
-        (agreesOnFF_mono   (fun x hx => Std.TreeSet.mem_union_of_right hx) h_ff)
+        (agreesOnFF_mono (fun x hx => Std.TreeSet.mem_union_of_right hx) h_ff)
         (agreesOnBool_mono (fun x hx => Std.TreeSet.mem_union_of_right hx) h_bool)
       simp only [evalTerm, ih1, ih2]
   | .sub t1 t2 =>
       have ih1 := evalTerm_congr gconf ms t1 a b
-        (agreesOnFF_mono   (fun x hx => Std.TreeSet.mem_union_of_left  hx) h_ff)
+        (agreesOnFF_mono (fun x hx => Std.TreeSet.mem_union_of_left  hx) h_ff)
         (agreesOnBool_mono (fun x hx => Std.TreeSet.mem_union_of_left  hx) h_bool)
       have ih2 := evalTerm_congr gconf ms t2 a b
-        (agreesOnFF_mono   (fun x hx => Std.TreeSet.mem_union_of_right hx) h_ff)
+        (agreesOnFF_mono (fun x hx => Std.TreeSet.mem_union_of_right hx) h_ff)
         (agreesOnBool_mono (fun x hx => Std.TreeSet.mem_union_of_right hx) h_bool)
       simp only [evalTerm, ih1, ih2]
   | .mul t1 t2 =>
       have ih1 := evalTerm_congr gconf ms t1 a b
-        (agreesOnFF_mono   (fun x hx => Std.TreeSet.mem_union_of_left  hx) h_ff)
+        (agreesOnFF_mono (fun x hx => Std.TreeSet.mem_union_of_left  hx) h_ff)
         (agreesOnBool_mono (fun x hx => Std.TreeSet.mem_union_of_left  hx) h_bool)
       have ih2 := evalTerm_congr gconf ms t2 a b
-        (agreesOnFF_mono   (fun x hx => Std.TreeSet.mem_union_of_right hx) h_ff)
+        (agreesOnFF_mono (fun x hx => Std.TreeSet.mem_union_of_right hx) h_ff)
         (agreesOnBool_mono (fun x hx => Std.TreeSet.mem_union_of_right hx) h_bool)
       simp only [evalTerm, ih1, ih2]
   | .neg t1 =>
@@ -217,7 +217,7 @@ theorem evalTerm_congr {c : ZKConfig}
       simp only [evalTerm, ih1]
   | .ite g t1 t2 =>
       have ihg := evalFormula_congr gconf ms g a b
-        (agreesOnFF_mono   (fun x hx => Std.TreeSet.mem_union_of_left
+        (agreesOnFF_mono (fun x hx => Std.TreeSet.mem_union_of_left
             (Std.TreeSet.mem_union_of_left hx)) h_ff)
         (agreesOnBool_mono (fun x hx => Std.TreeSet.mem_union_of_left
             (Std.TreeSet.mem_union_of_left hx)) h_bool)
@@ -228,24 +228,24 @@ theorem evalTerm_congr {c : ZKConfig}
           cases vc with
           | true =>
               exact evalTerm_congr gconf ms t1 a b
-                (agreesOnFF_mono   (fun x hx => Std.TreeSet.mem_union_of_left
+                (agreesOnFF_mono (fun x hx => Std.TreeSet.mem_union_of_left
                     (Std.TreeSet.mem_union_of_right hx)) h_ff)
                 (agreesOnBool_mono (fun x hx => Std.TreeSet.mem_union_of_left
                     (Std.TreeSet.mem_union_of_right hx)) h_bool)
           | false =>
               exact evalTerm_congr gconf ms t2 a b
-                (agreesOnFF_mono   (fun x hx => Std.TreeSet.mem_union_of_right hx) h_ff)
+                (agreesOnFF_mono (fun x hx => Std.TreeSet.mem_union_of_right hx) h_ff)
                 (agreesOnBool_mono (fun x hx => Std.TreeSet.mem_union_of_right hx) h_bool)
 termination_by sizeOfTerm t
-decreasing_by all_goals (simp only [sizeOfTerm, sizeOfFormula]; omega)
+decreasing_by all_goals (simp only [sizeOfTerm]; omega)
 
 theorem evalFormula_congr {c : ZKConfig}
     (gconf : GlobalConfig c) (ms : List (FFMacro c)) (f : FFFormula c) (a b : Assignment c)
-    (h_ff   : agreesOnFF   (ffVarsOfFormula f) a b)
-    (h_bool : agreesOnBool (bVarsOfFormula  f) a b)
+    (h_ff : agreesOnFF (ffVarsOfFormula f) a b)
+    (h_bool : agreesOnBool (bVarsOfFormula f) a b)
     : evalFormula gconf a f ms = evalFormula gconf b f ms := by
   match f with
-  | .true  => simp only [evalFormula]
+  | .true => simp only [evalFormula]
   | .false => simp only [evalFormula]
   | .range t _l _u =>
       have iht := evalTerm_congr gconf ms t a b h_ff h_bool
@@ -318,7 +318,7 @@ theorem evalFormula_congr {c : ZKConfig}
         (agreesOnBool_mono (fun x hx => Std.TreeSet.mem_union_of_right hx) h_bool)
       simp only [evalFormula, ih1, ih2]
   | .call name args =>
-      have h_ff'   : ∀ n, MacroCallParam.var (Var.ffv n)   ∈ args → a.ff n   = b.ff n :=
+      have h_ff'   : ∀ n, MacroCallParam.var (Var.ffv n) ∈ args → a.ff n   = b.ff n :=
         fun n hn => h_ff n (mem_ffVars_call_of_mem_args name args n hn)
       have h_bool' : ∀ n, MacroCallParam.var (Var.boolv n) ∈ args → a.bool n = b.bool n :=
         fun n hn => h_bool n (mem_bVars_call_of_mem_args name args n hn)
@@ -328,7 +328,7 @@ theorem evalFormula_congr {c : ZKConfig}
       · rename_i m ms' _
         rw [newAssignment_congr a b args m.params h_ff' h_bool']
 termination_by sizeOfFormula f
-decreasing_by all_goals (simp only [sizeOfTerm, sizeOfFormula]; omega)
+decreasing_by all_goals (simp only [sizeOfFormula]; omega)
 end
 
 
@@ -507,7 +507,7 @@ termination_by (ms.length, sizeOfTerm t)
 decreasing_by
   all_goals
     apply Prod.Lex.right
-    simp only [sizeOfTerm, sizeOfFormula]
+    simp only [sizeOfTerm]
     omega
 
 theorem evalFormula_total {c : ZKConfig}
@@ -592,7 +592,7 @@ termination_by (ms.length, sizeOfFormula f)
 decreasing_by
   any_goals
     apply Prod.Lex.right
-    simp only [sizeOfTerm, sizeOfFormula]
+    simp only [sizeOfFormula]
     omega
   · apply Prod.Lex.left
     apply fetchMacroLT gconf ms ms' name m hfm

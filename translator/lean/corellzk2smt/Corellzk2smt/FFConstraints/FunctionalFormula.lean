@@ -63,7 +63,7 @@ def isFunctionalFormula {c : ZKConfig}
   ∀ (rho : Assignment c),
     ∃ (rho' : Assignment c),
       agreesOnFF inVs rho rho' ∧
-      (∀ n, Var.ffv n ∉ ffVs  → rho'.ff   n = rho.ff   n) ∧
+      (∀ n, Var.ffv n ∉ ffVs → rho'.ff n = rho.ff n) ∧
       (∀ n, Var.boolv n ∉ bVs → rho'.bool n = rho.bool n) ∧
       evalFormula gconf rho' f ms = Except.ok true
 
@@ -105,25 +105,30 @@ theorem functionalCompose {c : ZKConfig}
     -- f1 and f2 are separately functional
     (h1 : isFunctionalFormula gconf ms f1 inVs1 ffVs1 bVs1)
     (h2 : isFunctionalFormula gconf ms f2 inVs2 ffVs2 bVs2)
-    -- the inputs to f2 come from the vars of f1
-    (h_link : inVs2 ⊆ ffVs1)
+    -- The inputs to f2 come from the vars of f1 -- this is the intended data-flow
+    -- story from notes.md (f2 consumes what f1 produces), kept here as documentation
+    -- of that use case. It is NOT used by the proof below: `h2_ext` is universal
+    -- over any starting assignment, so it happily extends `rho1` regardless of
+    -- where its values on `inVs2` came from. The overlap between `ffVs1`/`ffVs2`
+    -- is instead handled entirely by `h_disj_ff`.
+    (_h_link : inVs2 ⊆ ffVs1)
     -- any var shared by ffVs1 and ffVs2 must be an input to f2
     -- (the "private" vars of f2 are disjoint from all of f1's vars)
-    (h_disj_ff   : ∀ n, Var.ffv   n ∈ ffVs1 → Var.ffv   n ∈ ffVs2 → Var.ffv   n ∈ inVs2)
+    (h_disj_ff : ∀ n, Var.ffv n ∈ ffVs1 → Var.ffv n ∈ ffVs2 → Var.ffv n ∈ inVs2)
     -- bool vars of f1 and f2 are disjoint (always fresh in symbolic exec)
-    (h_disj_bool : ∀ n, Var.boolv n ∈ bVs1  → Var.boolv n ∉ bVs2)
+    (h_disj_bool : ∀ n, Var.boolv n ∈ bVs1 → Var.boolv n ∉ bVs2)
     : isFunctionalFormula gconf ms (.and f1 f2) inVs1 (ffVs1 ∪ ffVs2) (bVs1 ∪ bVs2) := by
   obtain ⟨h1_sub, h1_ffv_sub, h1_bv_sub, h1_ext⟩ := h1
   obtain ⟨_h2_sub, h2_ffv_sub, h2_bv_sub, h2_ext⟩ := h2
   -- f1's congruence, derived from its declared var sets rather than assumed
   have h1_congr : ∀ (a b : Assignment c),
-      agreesOnFF   ffVs1 a b →
-      agreesOnBool bVs1  a b →
+      agreesOnFF ffVs1 a b →
+      agreesOnBool bVs1 a b →
       evalFormula gconf a f1 ms = evalFormula gconf b f1 ms :=
     fun a b hff hbool =>
       evalFormula_congr gconf ms f1 a b
-        (agreesOnFF_mono   h1_ffv_sub hff)
-        (agreesOnBool_mono h1_bv_sub  hbool)
+        (agreesOnFF_mono h1_ffv_sub hff)
+        (agreesOnBool_mono h1_bv_sub hbool)
   refine ⟨?_, ?_, ?_, ?_⟩
   · -- inVs1 ⊆ ffVs1 ∪ ffVs2
     intro v hv
@@ -139,7 +144,7 @@ theorem functionalCompose {c : ZKConfig}
   obtain ⟨rho2, h2_agree, h2_ff_frame, h2_bool_frame, h2_sat⟩ := h2_ext rho1
   -- rho2 is our witness
   refine ⟨rho2, ?_, ?_, ?_, ?_⟩
-
+  --
   · -- (1) rho2 agrees with rho on inVs1
     intro n hn
     have hn_in_ffVs1 : Var.ffv n ∈ ffVs1 := h1_sub (Var.ffv n) hn
@@ -153,20 +158,20 @@ theorem functionalCompose {c : ZKConfig}
       · exact h2_agree n (h_disj_ff n hn_in_ffVs1 hn2)
       · exact (h2_ff_frame n hn2).symm
     exact step1.trans step2
-
+  --
   · -- (2) Frame for FF: rho2 only changes vars in ffVs1 ∪ ffVs2
     intro n hn
     have hn1 : Var.ffv n ∉ ffVs1 := fun h => hn (Std.TreeSet.mem_union_of_left h)
     have hn2 : Var.ffv n ∉ ffVs2 := fun h => hn (Std.TreeSet.mem_union_of_right h)
     -- rho2 = rho1 outside ffVs2, and rho1 = rho outside ffVs1
     exact (h2_ff_frame n hn2).trans (h1_ff_frame n hn1)
-
+  --
   · -- (3) Frame for Bool: rho2 only changes vars in bVs1 ∪ bVs2
     intro n hn
     have hn1 : Var.boolv n ∉ bVs1 := fun h => hn (Std.TreeSet.mem_union_of_left h)
     have hn2 : Var.boolv n ∉ bVs2 := fun h => hn (Std.TreeSet.mem_union_of_right h)
     exact (h2_bool_frame n hn2).trans (h1_bool_frame n hn1)
-
+  --
   · -- (4) rho2 satisfies f1 ∧ f2
     -- First show rho2 agrees with rho1 on all vars of f1 (inside ffVs1/bVs1)
     have h_agree_ff1 : agreesOnFF ffVs1 rho2 rho1 := by
@@ -234,7 +239,7 @@ theorem functionalDisjunction {c : ZKConfig}
     (h_g_total : isTotal gconf g ms)
     -- g only reads FF vars from inVs, and no bool vars at all
     (h_g_ffvars : ffVarsOfFormula g ⊆ inVs)
-    (h_g_bvars  : bVarsOfFormula g = emptyVarSet)
+    (h_g_bvars : bVarsOfFormula g = emptyVarSet)
     -- f1/f2 evaluate without error on any assignment, not just at their own
     -- witnesses -- see the docstring above for why this can't be dropped
     (h_f1_total : isTotal gconf f1 ms)
