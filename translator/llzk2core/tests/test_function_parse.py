@@ -47,6 +47,18 @@ class TestFunction:
         op = FunctionCall.parse("function.call @init()")
         assert op.args == []
 
+    def test_call_result_property_single(self):
+        op = FunctionCall.parse("%r = function.call @f(%x)")
+        assert op.result == SSAVar("%r")
+
+    def test_call_result_property_no_result(self):
+        op = FunctionCall.parse("function.call @f(%x)")
+        assert op.result is None
+
+    def test_call_member_hint_initially_none(self):
+        op = FunctionCall.parse("%r = function.call @f(%x)")
+        assert op._member_hint is None
+
     def test_call_match(self):
         assert FunctionCall.match("function.call @f(%x)") is True
         assert FunctionCall.match("function.return") is False
