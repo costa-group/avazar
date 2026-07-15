@@ -132,6 +132,8 @@ def evalFormula {c : ZKConfig}
      | Except.ok (m,ms') =>
        let newAssign ← newAssignment assign args m.params
        evalFormula newAssign m.body ms'
+  | .anno a _ => evalFormula assign a ms
+
 
 termination_by (ms.length, sizeOfFormula f)
 decreasing_by

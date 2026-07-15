@@ -69,7 +69,7 @@ def printTerm {c : ZKConfig}
       stream.putStr ")"
   | .ite c t e =>
       stream.putStr "(ite "
-      printFormula stream c 0 false
+      printFormula stream c 0 false false
       stream.putStr " "
       printTerm stream t
       stream.putStr " "
@@ -78,7 +78,9 @@ def printTerm {c : ZKConfig}
 
 /- Prints the boolean formula structure -/
 def printFormula {c : ZKConfig}
-  (stream : IO.FS.Stream) (f : FFFormula c) (level : Nat) (indent: Bool): IO Unit := do
+  (stream : IO.FS.Stream)
+  (f : FFFormula c)
+  (level : Nat) (indent: Bool) (escape: Bool): IO Unit := do
   let sp := if indent then getIndent level else " "
   let nl := if indent then "\n" else ""
   match f with
@@ -132,44 +134,44 @@ def printFormula {c : ZKConfig}
   | .and a b =>
       -- we remove trivial cases to simplify the output
       if a == (@FFFormula.true c) then
-        printFormula stream b level indent
+        printFormula stream b level indent escape
       else if b == (@FFFormula.true c) then
-        printFormula stream a level indent
+        printFormula stream a level indent escape
       else
         stream.putStr s!"{sp}(and {nl}"
-        printFormula stream a (level + 1) indent
-        printFormula stream b (level + 1) indent
+        printFormula stream a (level + 1) indent escape
+        printFormula stream b (level + 1) indent escape
         stream.putStr s!"{sp}){nl}"
   | .or a b =>
       -- we remove trivial cases to simplify the output
       if a == (@FFFormula.false c) then
-        printFormula stream b level indent
+        printFormula stream b level indent escape
       else if b == (@FFFormula.false c) then
-        printFormula stream a level indent
+        printFormula stream a level indent escape
       else
         stream.putStr s!"{sp}(or {nl}"
-        printFormula stream a (level + 1) indent
-        printFormula stream b (level + 1) indent
+        printFormula stream a (level + 1) indent escape
+        printFormula stream b (level + 1) indent escape
         stream.putStr s!"{sp}){nl}"
   | .ite c t e =>
       stream.putStr s!"{sp}(ite {nl}"
-      printFormula stream c (level + 1) indent
-      printFormula stream t (level + 1) indent
-      printFormula stream e (level + 1) indent
+      printFormula stream c (level + 1) indent escape
+      printFormula stream t (level + 1) indent escape
+      printFormula stream e (level + 1) indent escape
       stream.putStr s!"{sp}){nl}"
   | .imply a b =>
       stream.putStr s!"{sp}(=> {nl}"
-      printFormula stream a (level + 1) indent
-      printFormula stream b (level + 1) indent
+      printFormula stream a (level + 1) indent escape
+      printFormula stream b (level + 1) indent escape
       stream.putStr s!"{sp}){nl}"
   | .iff a b =>
       stream.putStr s!"{sp}(= {nl}"
-      printFormula stream a (level + 1) indent
-      printFormula stream b (level + 1) indent
+      printFormula stream a (level + 1) indent escape
+      printFormula stream b (level + 1) indent escape
       stream.putStr s!"{sp}){nl}"
   | .not a =>
       stream.putStr s!"{sp}(not {nl}"
-      printFormula stream a (level + 1) indent
+      printFormula stream a (level + 1) indent escape
       stream.putStr s!"{sp}){nl}"
   | .call name args =>
       stream.putStr s!"{sp}({name} "
@@ -182,6 +184,13 @@ def printFormula {c : ZKConfig}
       )
       stream.putStr (String.intercalate " " argStrs)
       stream.putStr s!"){nl}"
+  | .anno a sym => -- (! Formula :named Symbol)
+      stream.putStr s!"{sp}(!{nl}"
+      printFormula stream a (level + 1) indent escape
+      -- if escape, replace " by \" in the symbol string
+      let symstr := s!"{sym}"
+      let symstr' := if escape then symstr.replace "\"" "\\\"" else symstr
+      stream.putStr s!"{sp}{symstr'}){nl}"
 
 end
 
@@ -195,7 +204,7 @@ def printMacro {c : ZKConfig}
   )
   stream.putStr (String.intercalate " " paramStrs)
   stream.putStrLn ") Bool"
-  printFormula stream m.body 1 true
+  printFormula stream m.body 1 true false
   stream.putStrLn ")"
 
 def printMacros {c : ZKConfig}
@@ -244,7 +253,7 @@ def printConstraintSystem {c : ZKConfig}
   printMacros stream sys.macros.reverse -- we assume main is first
   -- Main formula
   stream.putStrLn "(assert "
-  printFormula stream f 1 true
+  printFormula stream f 1 true false
   stream.putStrLn ")"
   stream.flush
 
@@ -303,7 +312,7 @@ def printMacro_asJSON {c : ZKConfig}
   printVarsInfo_asJSON stream m.vars_info
   stream.putStrLn "},"
   stream.putStr "        \"formula\": \""
-  printFormula stream m.body 0 false
+  printFormula stream m.body 0 false true
   stream.putStrLn " \""
   stream.putStr "     }"
 
@@ -335,7 +344,7 @@ def printConstraintSystem_asJSON {c : ZKConfig}
   printParams_asJSON stream vars
   stream.putStrLn s!"],"
   stream.putStr s!"    \"formula\": \""
-  printFormula stream f 0 false
+  printFormula stream f 0 false true
   stream.putStr s!" \""
   stream.putStrLn " }"
   stream.putStrLn "}"
