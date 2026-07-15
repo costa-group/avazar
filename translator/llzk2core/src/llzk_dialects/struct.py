@@ -30,37 +30,63 @@ from llzk_dialects.utils import split_top_level_commas
 from llzk_dialects.core_utils import translate_assignment_core_with_ctx, struct_type_name
 
 
-def _collect_all_ops(ops):
-    """Yield every operation in a body, recursing into all nested block bodies."""
-    from llzk_dialects.scf import SCFWhile, SCFIf, SCFFor
+def _annotate_function_calls(ops, pod_to_member):
+    """
+    Walk ops recursively, stamping _member_hint on each FunctionCall whose
+    result is immediately stored into a component pod via pod.write/@comp or
+    pod.new{@comp=...}.
+
+    A per-body SSA def-map is built at each nesting level so that two sibling
+    scf.if branches that both define %16 as a call result are treated as
+    distinct Python objects and can carry different hints independently.
+    """
+    from llzk_dialects.function import FunctionCall
+    from llzk_dialects.pod import PodNew, PodWrite
+
+    # SSA def-map for this body level only (not sub-bodies)
+    def_map = {}
     for op in ops:
-        yield op
+        if op.result is not None:
+            def_map[op.result.name] = op
+
+    for op in ops:
+        if isinstance(op, PodWrite) and op.record_name.name == "@comp":
+            member = pod_to_member.get(op.pod_ref.name)
+            if member is not None:
+                defining_op = def_map.get(op.value.name)
+                if isinstance(defining_op, FunctionCall):
+                    defining_op._member_hint = member
+        elif isinstance(op, PodNew) and "@comp" in op.init_records:
+            member = pod_to_member.get(op._result.name)
+            if member is not None:
+                defining_op = def_map.get(op.init_records["@comp"].name)
+                if isinstance(defining_op, FunctionCall):
+                    defining_op._member_hint = member
+
         for attr in ('body', 'then_body', 'else_body', 'before_body', 'after_body'):
             sub = getattr(op, attr, None)
             if sub:
-                yield from _collect_all_ops(sub)
+                _annotate_function_calls(sub, pod_to_member)
 
 
 def _build_component_naming_maps(body, ctx):
     """
-    Pre-pass: scan a compute function body to build two naming maps.
+    Pre-pass: scan a compute function body to build naming maps.
 
     1. ctx.input_pod_to_member — pod_ssa -> member base name
        Used by PodNew so semantic field names like "mux.c" are used instead
        of raw "%pod_0_@c" names.  Traces through scf.while result chains.
 
-    2. ctx.struct_result_to_member — call_result_ssa -> member name
-       Used by FunctionCall so the output is named "cst.out" instead of
-       "%0_@out".  Works by finding every pod.write/@comp assignment (at any
-       nesting depth) and mapping it back to the struct member that eventually
-       holds that component.
+    2. FunctionCall._member_hint — stamped directly on each call node.
+       Used by FunctionCall.to_core() so the output is named "n2ba.out"
+       instead of "%16_@out".  Per-body SSA def-maps prevent collisions when
+       two sibling scf.if branches define the same SSA name.
     """
     from llzk_dialects.scf import SCFWhile
-    from llzk_dialects.pod import PodNew, PodRead, PodWrite
+    from llzk_dialects.pod import PodRead
 
     ctx.input_pod_to_member.clear()
     ctx.ssa_to_name.clear()
-    ctx.struct_result_to_member.clear()
 
     # --- Part 1: $inputs pod mapping ---
     # Build map: while-result component name -> its initial value name.
@@ -89,8 +115,8 @@ def _build_component_naming_maps(body, ctx):
             source = trace_source(op.value.name)
             ctx.input_pod_to_member[source] = base
 
-    # --- Part 2: call-result -> member name mapping ---
-    # Step A: find pod -> member from top-level struct.writem @member = pod.read(%pod, @comp)
+    # --- Part 2: annotate FunctionCall objects with their component member name ---
+    # Build pod_ssa -> member_name from top-level struct.writem writes.
     pod_comp_read = {}  # read_result_ssa -> pod_ssa
     for op in body:
         if isinstance(op, PodRead) and op.record_name.name == "@comp":
@@ -105,17 +131,7 @@ def _build_component_naming_maps(body, ctx):
             if pod_var is not None:
                 pod_to_member[pod_var] = op.member_name.name[1:]  # strip @
 
-    # Step B: scan ALL ops (including nested bodies) for pod.write @comp = %result
-    # and map the result to the member.  Also covers pod.new { @comp = %result }.
-    for op in _collect_all_ops(body):
-        if isinstance(op, PodWrite) and op.record_name.name == "@comp":
-            member = pod_to_member.get(op.pod_ref.name)
-            if member is not None:
-                ctx.struct_result_to_member[op.value.name] = member
-        elif isinstance(op, PodNew) and "@comp" in op.init_records:
-            member = pod_to_member.get(op._result.name)
-            if member is not None:
-                ctx.struct_result_to_member[op.init_records["@comp"].name] = member
+    _annotate_function_calls(body, pod_to_member)
 
 
 class StructMember(Operation):
@@ -493,7 +509,6 @@ class StructDef(BlockOperation):
         # Clear per-function naming maps
         ctx.input_pod_to_member.clear()
         ctx.ssa_to_name.clear()
-        ctx.struct_result_to_member.clear()
         ctx.current_core_function = None
 
     def _compute_core_function_info_from_struct(self) -> Tuple[Operation, List[Tuple[str, Type]], List[Tuple[str, Type]], List[Tuple[str, Type]]]:

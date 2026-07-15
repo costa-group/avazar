@@ -97,8 +97,9 @@ class FunctionCall(Operation):
         self.results = results
         self.callee = callee
         self.args = args
-        # func_type stores the raw functional-type string for now
         self.func_type = func_type
+        # Set by the pre-pass in _build_component_naming_maps; None until then.
+        self._member_hint: Optional[str] = None
 
     def dialect(self) -> Dialect:
         return Dialect("function")
@@ -131,6 +132,10 @@ class FunctionCall(Operation):
                             args, m["ftype"])
 
     @property
+    def result(self) -> Optional[SSAVar]:
+        return self.results[0] if self.results else None
+
+    @property
     def operands(self) -> List[SSAVar]:
         return list(self.args)
 
@@ -144,7 +149,7 @@ class FunctionCall(Operation):
                                        "But {self.results} is returned instead"
         result = self.results[0]
 
-        member = ctx.struct_result_to_member.get(result.name)
+        member = self._member_hint
 
         if member:
             out_var_names = []
