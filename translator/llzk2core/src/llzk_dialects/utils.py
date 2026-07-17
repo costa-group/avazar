@@ -22,15 +22,15 @@ def struct_type_name(type_str: str) -> Optional[str]:
 
 
 def split_top_level_commas(s: str) -> List[str]:
-    """Split s on commas that are not nested inside <>, [], or ()."""
+    """Split s on commas that are not nested inside <>, [], (), or {}."""
     depth = 0
     parts: List[str] = []
     current: List[str] = []
     for ch in s:
-        if ch in '<[(':
+        if ch in '<[({':
             depth += 1
             current.append(ch)
-        elif ch in '>])':
+        elif ch in '>])}':
             depth -= 1
             current.append(ch)
         elif ch == ',' and depth == 0:

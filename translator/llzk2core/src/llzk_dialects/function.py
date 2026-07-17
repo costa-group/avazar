@@ -17,6 +17,36 @@ from llzk_dialects.core import (
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.core_utils import signature_args
+from llzk_dialects.utils import split_top_level_commas
+
+
+def _parse_in_arg(arg: str) -> Tuple[str, str, str]:
+    """
+    Splits a single argument declaration (e.g.
+    '%arg0: !array.type<2,2 x !felt.type<"bn128">> {function.arg_name = "in", llzk.pub}')
+    into (name, type_str, attrs_str). attrs_str is '' when there's no
+    trailing attribute dict. The dict is found by scanning from the end of
+    the string (tracking brace depth) rather than just splitting on '{', so
+    a multi-attribute dict — whose own comma would otherwise be mistaken for
+    an argument separator by a naive split — is correctly recognised and
+    stripped from the type instead of leaking into it.
+    """
+    arg = arg.strip()
+    name, _, rest = arg.partition(":")
+    rest = rest.strip()
+    attrs = ""
+    if rest.endswith("}"):
+        depth = 0
+        for i in range(len(rest) - 1, -1, -1):
+            if rest[i] == '}':
+                depth += 1
+            elif rest[i] == '{':
+                depth -= 1
+                if depth == 0:
+                    attrs = rest[i + 1:-1]
+                    rest = rest[:i].strip()
+                    break
+    return name.strip(), rest, attrs
 
 
 class FunctionReturn(Operation):
@@ -283,13 +313,17 @@ class FunctionDef(BlockOperation):
         """
         if self._in_args is None:
             arg_inside_parentheses = self.signature.split("->")[0].strip()
-            # Skip the ()
-            args_with_types = [arg for arg in arg_inside_parentheses[1:-1].split(', ') if arg != ""]
+            # Skip the (); split_top_level_commas (not a naive ', ' split) so
+            # a comma inside an argument's own attribute dict — e.g.
+            # "{function.arg_name = \"in\", llzk.pub}" — isn't mistaken for
+            # an argument separator.
+            args_with_types = [
+                arg for arg in split_top_level_commas(arg_inside_parentheses[1:-1]) if arg.strip() != ""
+            ]
             _in_args = []
             for arg in args_with_types:
-                split_args = arg.split(":")
-                # We need to transform the arguments to core
-                _in_args.append((split_args[0].strip(), Type.parse(split_args[1].strip())))
+                name, type_str, _ = _parse_in_arg(arg)
+                _in_args.append((name, Type.parse(type_str)))
             self._in_args = _in_args
         return self._in_args
 
@@ -303,11 +337,13 @@ class FunctionDef(BlockOperation):
         """
         if self._in_arg_names is None:
             arg_inside_parentheses = self.signature.split("->")[0].strip()
-            args_with_types = [arg for arg in arg_inside_parentheses[1:-1].split(', ') if arg != ""]
+            args_with_types = [
+                arg for arg in split_top_level_commas(arg_inside_parentheses[1:-1]) if arg.strip() != ""
+            ]
             result = {}
             for arg in args_with_types:
-                name = arg.split(":")[0].strip()
-                m = re.search(r'function\.arg_name\s*=\s*"([^"]*)"', arg)
+                name, _, attrs = _parse_in_arg(arg)
+                m = re.search(r'function\.arg_name\s*=\s*"([^"]*)"', attrs)
                 if m:
                     result[name] = m.group(1)
             self._in_arg_names = result

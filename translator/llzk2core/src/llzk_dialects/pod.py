@@ -157,8 +157,17 @@ class PodNew(Operation):
                     f"({record}: {type_}) is not yet supported"
                 )
                 for field_path, leaf_type in _flatten_container_fields(type_.name, ctx):
-                    leaf_size = array_total_size(leaf_type.name) or 1
-                    yield f"array.new {leaf_size} {_container_field_var(var_name, field_path)}"
+                    leaf_size = array_total_size(leaf_type.name)
+                    field_var = _container_field_var(var_name, field_path)
+                    if leaf_size is None:
+                        # Scalar leaf (e.g. a struct's felt-typed output
+                        # member): no array to allocate, just a placeholder
+                        # value so a later read/copy from it (before the
+                        # field is actually computed) reads a defined
+                        # variable instead of an undefined one.
+                        yield f"{field_var} = 0"
+                    else:
+                        yield f"array.new {leaf_size} {field_var}"
 
     def __repr__(self):
         inits = ', '.join(f"{k} = {v}" for k, v in self.init_records.items())
