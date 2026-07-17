@@ -247,4 +247,44 @@ decreasing_by
 end
 
 
+def seFunc {c : ZKConfig}
+  (gconf : GlobalConfig c)
+  (sconf : SymExecConfig c)
+  (symEnv : SymEnv c)
+  (specs : List (FuncSpec c))
+  (f : Func c)
+  : Except String (CmdsSpec c) :=
+  Except.error "TBD"
+
+
+def seExecFuncs {c : ZKConfig}
+  (gconf : GlobalConfig c)
+  (sconf : SymExecConfig c)
+  (p : List (FuncWithMD c)) :=
+  let rec loop (funcs : List (FuncWithMD c)) (specs : List (FuncSpec c))
+    : Except String (List (FuncSpec c)) := do
+    match funcs with
+    | [] => Except.ok specs
+    | func :: funcs' =>
+        match func with
+        | .mk md func =>
+          let spec ← seFunc gconf sconf symEnv specs func
+          loop funcs' (spec :: specs)
+  loop p.reverse []
+
+def seExecProg {c : ZKConfig}
+    (cfg : SymExecConfig c)
+    (p : ProgWithMD c)
+    (mainFuncName : FName)
+    : Except String (FFConstraintSystem c) := do
+    match p with
+    | .mk _ funcs =>
+      let funcSpecs ← seExecFuncs cfg sconf symEnv specs funcs
+      let macros := funcSpecs.map (fun spec => spec.f)
+      return {
+        macros := macros,
+        main := mainFuncName
+      }
+
+
 end Corellzk2smt.SymExec.BigStep
