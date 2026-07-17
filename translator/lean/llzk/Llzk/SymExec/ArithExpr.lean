@@ -171,49 +171,56 @@ def sEvalExprUidiv {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  let A ← simpleExprToTerm senv s1
-  let B ← simpleExprToTerm senv s2
-  let Q : FFVar := { id := cfg.nextId,
-                            meta_data := { src_info := md.src_info, orig_name := id}
-                          }
-  let R : FFVar := { id := cfg.nextId+1,
-                            meta_data := { src_info := md.src_info, orig_name := id}
-                          }
-  let f := FFFormula.and (FFFormula.eq A (FFTerm.add (FFTerm.mul (FFTerm.var Q) B) (FFTerm.var R)))
-                      (FFFormula.lt (FFTerm.var R) B)
-  return {
-          inSymEnv := senv,
-          outSymEnv := senv,
-          f := f,
-          resTerm := (FFTerm.var Q),
-          res := SymFFVar.var ⟨Q, none⟩,
-          newFFVars := { Q, R },
-          nextId := cfg.nextId+2
-  }
+  let B ← simpleExprToFF senv s2
+  if B.val > 0 && B.val < c.midpoint then
+    let A ← simpleExprToTerm senv s1
+    let Q : FFVar := { id := cfg.nextId,
+                              meta_data := { src_info := md.src_info, orig_name := id}
+                            }
+    let R : FFVar := { id := cfg.nextId+1,
+                              meta_data := { src_info := md.src_info, orig_name := id}
+                            }
+    let f := FFFormula.and
+              (.eq A (.add (.mul (FFTerm.var Q) (FFTerm.val B)) (.var R)))
+              (.range (.var R) 0 (B.val-1 : FF c)) -- R < B
+    return {
+            inSymEnv := senv,
+            outSymEnv := senv,
+            f := f,
+            resTerm := (FFTerm.var Q),
+            res := SymFFVar.var ⟨Q, none⟩,
+            newFFVars := { Q, R },
+            nextId := cfg.nextId+2
+    }
+  else
+    throw s!"Error: divisor {B.val} is not in the range [1, midpoint-1] for .uidiv expression."
 
 /- Symbolic expression of .uimod expression -/
 def sEvalExprUimod {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  let A ← simpleExprToTerm senv s1
-  let B ← simpleExprToTerm senv s2
-  let Q : FFVar := { id := cfg.nextId,
-                            meta_data := { src_info := md.src_info, orig_name := id}
-                          }
-  let R : FFVar := { id := cfg.nextId+1,
-                            meta_data := { src_info := md.src_info, orig_name := id}
-                          }
-  let f := FFFormula.and (FFFormula.eq A (FFTerm.add (FFTerm.mul (FFTerm.var Q) B) (FFTerm.var R)))
-                      (FFFormula.lt (FFTerm.var R) B)
-  return {
-          inSymEnv := senv,
-          outSymEnv := senv,
-          f := f,
-          resTerm := (FFTerm.var R),
-          res := SymFFVar.var ⟨R, none⟩,
-          newFFVars := { Q, R },
-          nextId := cfg.nextId+2
-  }
-
+  let B ← simpleExprToFF senv s2
+  if B.val > 0 && B.val < c.midpoint then
+    let A ← simpleExprToTerm senv s1
+    let Q : FFVar := { id := cfg.nextId,
+                              meta_data := { src_info := md.src_info, orig_name := id}
+                            }
+    let R : FFVar := { id := cfg.nextId+1,
+                              meta_data := { src_info := md.src_info, orig_name := id}
+                            }
+    let f := FFFormula.and
+              (.eq A (.add (.mul (FFTerm.var Q) (FFTerm.val B)) (.var R)))
+              (.range (.var R) 0 (B.val-1 : FF c)) -- R < B
+    return {
+            inSymEnv := senv,
+            outSymEnv := senv,
+            f := f,
+            resTerm := (FFTerm.var R),
+            res := SymFFVar.var ⟨R, none⟩,
+            newFFVars := { Q, R },
+            nextId := cfg.nextId+2
+    }
+  else
+    throw s!"Error: divisor {B.val} is not in the range [1, midpoint-1] for .uimod expression."
 end Llzk.SymExec.SymInstr

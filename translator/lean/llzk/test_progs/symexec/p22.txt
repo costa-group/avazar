@@ -1,0 +1,12 @@
+
+
+def f(%x: ff) -> %y: ff {
+  %y = felt.uidiv %x 2
+}
+
+def g(%x: ff) -> %y: ff {
+  %y = felt.uimod %x 2
+}
+
+def main() {
+}
