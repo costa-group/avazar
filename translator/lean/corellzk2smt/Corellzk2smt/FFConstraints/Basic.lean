@@ -168,6 +168,7 @@ inductive FFFormula (c : ZKConfig) where
   | imply  : FFFormula c → FFFormula c → FFFormula c  -- implication
   | iff    : FFFormula c → FFFormula c → FFFormula c  -- if and only if
   | call   : String → List (MacroCallParam c) → FFFormula c  -- macro call
+  | anno   : FFFormula c → String → FFFormula c  -- annotated formula
   deriving Repr, BEq, Inhabited
 
 end
@@ -200,6 +201,7 @@ def sizeOfFormula {c : ZKConfig} (f: FFFormula c) : Nat :=
   | .not a => 1 + sizeOfFormula a
   | .ite c t e => 1 + sizeOfFormula c + sizeOfFormula t + sizeOfFormula e
   | .call _ _ => 1
+  | .anno f _ => 1 + sizeOfFormula f
 
 end
 
@@ -233,6 +235,7 @@ def ffVarsOfFormula {c : ZKConfig} (f : FFFormula c) : VarSet :=
       params.foldl (fun acc p => match p with
         | .var (.ffv n) => acc.insert (Var.ffv n)
         | _             => acc) emptyVarSet
+  |.anno f _ => ffVarsOfFormula f
 
 end
 
@@ -266,6 +269,7 @@ def bVarsOfFormula {c : ZKConfig} (f : FFFormula c) : VarSet :=
       params.foldl (fun acc p => match p with
         | .var (.boolv n) => acc.insert (Var.boolv n)
         | _               => acc) emptyVarSet
+  | .anno f _ => bVarsOfFormula f
 
 end
 

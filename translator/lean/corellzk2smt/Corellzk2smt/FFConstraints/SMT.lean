@@ -150,6 +150,9 @@ def printFormula {c : ZKConfig} (gconf : GlobalConfig c)
       )
       stream.putStr (String.intercalate " " argStrs)
       stream.putStr s!"){nl}"
+  | .anno f _ =>
+      -- TBD for now we ignore the annotation
+      printFormula gconf stream f level indent
 
 end
 

@@ -165,6 +165,7 @@ def evalFormula {c : ZKConfig} (gconf : GlobalConfig c)
           match newAssignment assign args m.params with
           | Except.error e => Except.error e
           | Except.ok newAssign => evalFormula gconf newAssign m.body ms'
+  | .anno f _ => evalFormula gconf assign f ms
 
 termination_by (ms.length, sizeOfFormula f)
 
