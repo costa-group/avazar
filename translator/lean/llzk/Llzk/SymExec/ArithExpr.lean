@@ -155,4 +155,65 @@ def sEvalExprPow {c : ZKConfig}
           nextId := cfg.nextId+1
   }
 
+
+/-
+For the encodings of Q = A / B and R = A mod B, should I generate the
+finite field constraints
+
+  A = Q * B + R
+
+should I something else to aovid non-determinsim? like R<B?
+
+-/
+
+/- Symbolic expression of .uidiv expression -/
+def sEvalExprUidiv {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
+  : Except String (ExprSpec c) := do
+  let A ← simpleExprToTerm senv s1
+  let B ← simpleExprToTerm senv s2
+  let Q : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let R : FFVar := { id := cfg.nextId+1,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let f := FFFormula.and (FFFormula.eq A (FFTerm.add (FFTerm.mul (FFTerm.var Q) B) (FFTerm.var R)))
+                      (FFFormula.lt (FFTerm.var R) B)
+  return {
+          inSymEnv := senv,
+          outSymEnv := senv,
+          f := f,
+          resTerm := (FFTerm.var Q),
+          res := SymFFVar.var ⟨Q, none⟩,
+          newFFVars := { Q, R },
+          nextId := cfg.nextId+2
+  }
+
+/- Symbolic expression of .uimod expression -/
+def sEvalExprUimod {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
+  : Except String (ExprSpec c) := do
+  let A ← simpleExprToTerm senv s1
+  let B ← simpleExprToTerm senv s2
+  let Q : FFVar := { id := cfg.nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let R : FFVar := { id := cfg.nextId+1,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let f := FFFormula.and (FFFormula.eq A (FFTerm.add (FFTerm.mul (FFTerm.var Q) B) (FFTerm.var R)))
+                      (FFFormula.lt (FFTerm.var R) B)
+  return {
+          inSymEnv := senv,
+          outSymEnv := senv,
+          f := f,
+          resTerm := (FFTerm.var R),
+          res := SymFFVar.var ⟨R, none⟩,
+          newFFVars := { Q, R },
+          nextId := cfg.nextId+2
+  }
+
 end Llzk.SymExec.SymInstr

@@ -26,6 +26,8 @@ def sEvalExpr {c : ZKConfig}
     | .mul => sEvalExprMul cfg md symEnv s1 s2 id -- arith
     | .div => sEvalExprDiv cfg md symEnv s1 s2 id -- arith
     | .pow => sEvalExprPow cfg md symEnv s1 s2 id -- arith
+    | .uidiv => sEvalExprUidiv cfg md symEnv s1 s2 id -- arith
+    | .uimod => sEvalExprUimod cfg md symEnv s1 s2 id -- arith
     | .bor => sEvalBor cfg md symEnv s1 s2 id -- bool
     | .band => sEvalBAnd cfg md symEnv s1 s2 id -- bool
     | .eq => sEvalEq cfg md symEnv s1 s2 id -- bool
