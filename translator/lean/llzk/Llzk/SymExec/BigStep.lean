@@ -43,15 +43,19 @@ def addArrayVarInfo {c : ZKConfig}
             if h3: idx < arr.size then
               let v1AtIdx := v1[idx]'h1
               let v2AtIdx := v2[idx]'h2
-              let v1Term := symVarToTerm v1AtIdx
-              let v2Term := symVarToTerm v2AtIdx
-              let newId := idx
-              let md' := FFVarMetaData.mk (s!"{id}_{idx}") md.src_info
-              let newVar := FFVar.mk newId md'
-              let eqTb' : FFFormula c := (.and tbF (.eq (.var newVar) v1Term))
-              let eqEb' : FFFormula c := (.and ebF (.eq (.var newVar) v2Term))
-              let arr' := Array.set arr idx (.var ⟨newVar,none⟩) h3
-              loop (idx + 1) arr' (nextId+1) (ffVarSet.insert newVar)  eqTb' eqEb'
+              if ( v1AtIdx == v2AtIdx ) then
+                let arr' := Array.set arr idx v1AtIdx h3
+                loop (idx + 1) arr' nextId ffVarSet tbF ebF
+              else
+                let v1Term := symVarToTerm v1AtIdx
+                let v2Term := symVarToTerm v2AtIdx
+                let newId := nextId
+                let md' := FFVarMetaData.mk (s!"{id}_{idx}") md.src_info
+                let newVar := FFVar.mk newId md'
+                let eqTb' : FFFormula c := (.and tbF (.eq (.var newVar) v1Term))
+                let eqEb' : FFFormula c := (.and ebF (.eq (.var newVar) v2Term))
+                let arr' := Array.set arr idx (.var ⟨newVar,none⟩) h3
+                loop (idx + 1) arr' (nextId+1) (ffVarSet.insert newVar)  eqTb' eqEb'
             else
               throw s!"This is not supposed to happen"
           else
@@ -328,6 +332,43 @@ def seFuncCall {c : ZKConfig}
 
 
 
+def genCondAnnotation {c : ZKConfig} (cond : Cond c) : String :=
+  match cond with
+  | .eq s1 s2 => s!"{s1} == {s2}"
+
+def genExprAnnotation {c : ZKConfig} (e : Expr c) : String :=
+  match e with
+  -- arithmetic
+  | .bop op s1 s2 =>
+      s!"{op} {s1} {s2}"
+  | .uop op s =>
+      s!"{op} {s}"
+  | .id s =>
+      s!"{s}"
+
+def genCmdAnnotation {c : ZKConfig} (i : ComWithMD c) : String :=
+  match i with
+  | .mk _ info =>
+      match info with
+      | .skip => s!"skip"
+      | .assign out e => s!"{out} := {genExprAnnotation e}"
+      | .if_stmt cond _tb _eb =>
+          s!"if ({genCondAnnotation cond})"
+      | .loop_exp rep _body => s!"repeat_exp {rep}"
+      | .loop _rep _body => panic! "there should be no case for loop with constant repetition"
+      | .new_array out size => s!"array.new {size} {out}"
+      | .read_array out arr idx => s!"array.read {arr}[{idx}] {out}"
+      | .write_array arr idx value => s!"array.write {value} {arr}[{idx}]"
+      | .copy_array out arr => s!"array.copy {arr} {out}"
+      | .func_call outs fname args =>
+         let outsStr := String.intercalate ", " (outs.map (fun v => s!"{v}"))
+         let argsStr := String.intercalate ", " (args.map toString)
+         if (outs == []) then
+            s!"call {fname} ({argsStr})"
+         else
+            s!"call {fname} ({argsStr}) to {outsStr}"
+
+
 mutual
 
 
@@ -472,7 +513,9 @@ def seCmds {c : ZKConfig}
     return {
       inSymEnv := symEnv,
       outSymEnv := cmdsSpec.outSymEnv,
-      f := .and cmdSpec.f cmdsSpec.f,
+      --f := .and cmdSpec.f cmdsSpec.f
+      f := .and (.anno cmdSpec.f s!":meta-data \"{genCmdAnnotation cmd}\"")
+                cmdsSpec.f,
       nextId := cmdsSpec.nextId,
       newFFVars := cmdSpec.newFFVars ∪ cmdsSpec.newFFVars,
       newBoolVars := cmdSpec.newBoolVars ∪ cmdsSpec.newBoolVars

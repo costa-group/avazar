@@ -1,0 +1,15 @@
+def @Decoder_0(%arg0: ff, %arg1: ff, %arg2: ff) -> out: arr<4> {
+  array.new 4 %nondet
+  if (%arg0 == 1) {
+      array.write 0 %nondet[0]
+      array.write %arg2 %nondet[1]
+  } else {
+      array.write 1 %nondet[0]
+      array.write %arg2 %nondet[1]
+  }
+  array.copy %nondet out
+}
+
+def main(%arg0: ff, %arg1: ff, %arg2: ff) -> out: arr<4> {
+  call @Decoder_0(%arg0,%arg1,%arg2) to out
+}
