@@ -5,6 +5,22 @@ import re
 from typing import List, Optional, Tuple
 
 
+def struct_type_name(type_str: str) -> Optional[str]:
+    """
+    Extracts the template::struct name from a struct type string. Also works if "!struct.type<*>" does not appear
+
+    Example: '!struct.type<@Num2Bits_2::@Num2Bits_2<[]>>' -> '@Num2Bits_2::@Num2Bits_2',
+                           '@Num2Bits_2::@Num2Bits_2<[]>'  -> '@Num2Bits_2::@Num2Bits_2'
+    """
+    m = re.search(r'!struct\.type<([^><]+)', type_str)
+    if m is not None:
+        return m.group(1).strip()
+
+    m = re.search(r'([^><]+)', type_str)
+    # Ignore !felt.type inside the string, as otherwise it matches every possible operand
+    return m.group(1).strip() if m is not None and "!felt.type" not in type_str else None
+
+
 def split_top_level_commas(s: str) -> List[str]:
     """Split s on commas that are not nested inside <>, [], or ()."""
     depth = 0
@@ -25,6 +41,54 @@ def split_top_level_commas(s: str) -> List[str]:
     if current:
         parts.append(''.join(current))
     return parts
+
+
+def is_array_type(type_str: str) -> bool:
+    """
+    True if type_str denotes an array type at its OUTERMOST level — either
+    '!array.type<dims x elem>' or the bracket-only form 'dims x elem>' that
+    array.read/write/insert/extract's own type annotations use (they omit
+    the '!array.type' prefix). Anchored to the start of the string (unlike a
+    plain substring check), so a scalar/pod/struct type that merely CONTAINS
+    an array type nested inside — e.g. a pod field that is itself an array —
+    is correctly excluded.
+    """
+    s = type_str.strip()
+    if s.startswith("!array.type"):
+        s = s[len("!array.type"):]
+    return (re.match(r"^\s*<\s*(?:\d+\s*,\s*)*\d+\s+x\s+!", s) is not None
+            or re.match(r"^\s*<\s*(?:\d+\s+x\s+)+!", s) is not None)
+
+
+def array_dimensions(type_: str) -> Optional[List[int]]:
+    """
+    Like array_felt_dimensions, but element-type-agnostic: returns the list of
+    integer dimensions for an N-D array of any element type (felt, pod, struct, ...).
+
+        <d0,d1,...,dn x !anytype<...>>   (n-D, commas between dims)
+        <N x !anytype<...>>              (1-D, single dim)
+        <d0 x d1 x ... x !anytype<...>>  (all-x-separated, for compatibility)
+
+    Returns None if the type is not array-shaped.
+    """
+    m = re.search(r"<\s*((?:\d+\s*,\s*)*\d+)\s+x\s+!", type_)
+    if m:
+        return [int(d) for d in re.findall(r'\d+', m.group(1))]
+    m = re.search(r"<\s*((?:\d+\s+x\s+)+)!", type_)
+    if m:
+        return [int(d) for d in re.findall(r'\d+', m.group(1))]
+    return None
+
+
+def array_total_size(type_: str) -> Optional[int]:
+    """Total linearized size (product of all dims) for an N-D array of any element type."""
+    dims = array_dimensions(type_)
+    if dims is None:
+        return None
+    result = 1
+    for d in dims:
+        result *= d
+    return result
 
 
 def array_felt_dimensions(type_: str) -> Optional[List[int]]:

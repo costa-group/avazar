@@ -171,7 +171,8 @@ class FeltBinary(Operation):
     _OPS2CORE = {
         "felt.shr": "bit.shr", "felt.shl": "bit.shl",
         "felt.bit_and": "bit.and", "felt.bit_or": "bit.or",
-        "felt.bit_xor": "bit.xor"
+        "felt.bit_xor": "bit.xor", "felt.uintdiv": "felt.uidiv",
+        "felt.umod": "felt.uimod"
     }
 
     def __init__(self, variable: SSAVar, op: str,

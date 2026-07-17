@@ -26,8 +26,8 @@ from llzk_dialects.core import (
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
-from llzk_dialects.utils import split_top_level_commas
-from llzk_dialects.core_utils import translate_assignment_core_with_ctx, struct_type_name
+from llzk_dialects.utils import split_top_level_commas, struct_type_name
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx
 
 
 def _annotate_function_calls(ops, pod_to_member):

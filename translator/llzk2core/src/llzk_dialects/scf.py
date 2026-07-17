@@ -440,28 +440,20 @@ class SCFFor(BlockOperation):
         assert ub_val is not None, \
             f"SCFFor: upper bound {self.ub.name} must be a known constant at translation time"
 
-        # Collect SSA variable names *defined* inside the body so we can
-        # rename them per-iteration (avoids collisions between iterations when
-        # the same SSA names are reused, e.g. %pod_26 for every iteration).
-        body_result_names = _collect_result_names(self.body)
+        steps = len(range(lb_val, ub_val, step_val))
 
-        for i in range(lb_val, ub_val, step_val):
-            ctx.var2const[self.iv.name] = i
+        # The induction variable is initialised once before the loop and
+        # advanced by 'step' at the end of each repeat iteration — mirroring
+        # how scf.while's loop-carried variables are translated, rather than
+        # unrolling the body into per-iteration Python-duplicated text.
+        ctx.var2const[self.iv.name] = lb_val
+        yield f"{self.iv.to_core()} = {lb_val}"
 
-            # Rename all body-defined variables with an iteration suffix so
-            # that CORE variable names are unique across iterations.
-            suffix = f"_it{i}"
-            rename_fwd = {name: name + suffix for name in body_result_names}
-            for op in self.body:
-                op.update_variables(rename_fwd)
-
-            for op in self.body:
-                yield from op.to_core(ctx)
-
-            # Restore original SSA names for the next iteration.
-            rename_bwd = {name + suffix: name for name in body_result_names}
-            for op in self.body:
-                op.update_variables(rename_bwd)
+        yield f"repeat {steps} {{"
+        for op in self.body:
+            yield from op.to_core(ctx)
+        yield f"{self.iv.to_core()} = felt.add {self.iv.to_core()} {step_val}"
+        yield "}"
 
         ctx.var2const.pop(self.iv.name, None)
 
@@ -619,15 +611,23 @@ class SCFWhile(BlockOperation):
         # computed inside the body).
         after_arg_names: Set[str] = {v.name for v, _ in after_args}
 
+        # Suffixes are tagged with `cursor` (this scf.while's own header line,
+        # unique per occurrence in the source) so that sibling scf.while
+        # blocks in the same function — whose bodies may independently reuse
+        # the same LLZK-level SSA numbers (e.g. both defining a "%18") — don't
+        # collide on the same renamed name. ctx.ssa_to_name is a single dict
+        # spanning the whole function, so an unqualified "_bef"/"_aft" suffix
+        # would let an alias registered for one while's "%18_aft" leak into
+        # an unrelated "%18_aft" from a different while.
         before_rename: Dict[str, str] = {
-            name: name + "_bef"
+            name: name + f"_bef{cursor}"
             for name in _collect_result_names(before_body)
         }
         for op in before_body:
             op.update_variables(before_rename)
 
         after_rename: Dict[str, str] = {
-            name: name + "_aft"
+            name: name + f"_aft{cursor}"
             for name in _collect_result_names(after_body) - after_arg_names
         }
         for op in after_body:

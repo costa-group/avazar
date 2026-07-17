@@ -12,14 +12,25 @@ Operations:
   ArrayExtract — array.extract (read a sub-array by partial indices)
   ArrayInsert  — array.insert  (write a sub-array by partial indices)
   ArrayLen     — array.len     (return the length of a dimension)
+
+Container element types (pod, struct):
+  CORE arrays only hold ff. An array whose element type is pod or struct is
+  translated as a structure-of-arrays: one real flattened CORE array per leaf
+  field of the element type (recursing through nested pod/struct fields; a
+  leaf that is itself array-typed just contributes its own size as a
+  multiplier). See _flatten_container_fields.
 """
 
 import re
-from typing import List, Optional, Generator
+from typing import List, Optional, Generator, Tuple
 
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
-from llzk_dialects.utils import array_felt_first_dimension, array_felt_dimensions, split_top_level_commas
+from llzk_dialects.utils import (
+    array_felt_first_dimension, array_felt_dimensions,
+    array_dimensions, array_total_size, split_top_level_commas,
+    struct_type_name,
+)
 from llzk_dialects.pod import _parse_pod_fields
 
 
@@ -28,22 +39,36 @@ def _lin_var(base: str, n_dims: int) -> str:
     return f"{base}_lin"
 
 
-def _linearise_indices(indices: List[SSAVar], dims: List[int], base: str) -> Generator[str, None, None]:
+def _row_major_strides(dims: List[int]) -> List[int]:
     """
-    Emit Core IR statements that compute the row-major linear index for a
-    multi-dimensional access.  The final result is stored in ``{base}_lin``.
-
-    For dims=[d0, d1, ..., d_{n-1}] and indices [i0, i1, ..., i_{n-1}]:
-        linear = i0*stride0 + i1*stride1 + ... + i_{n-1}*1
-    where stride_k = d_{k+1} * d_{k+2} * ... * d_{n-1}.
-
-    Temporary variable names are derived from *base* (the SSA result or rvalue
-    name), which is unique within a function in SSA form.
+    Row-major strides for *dims*: stride_k = d_{k+1} * d_{k+2} * ... * d_{n-1}
+    (the last dimension always has stride 1).
     """
     n = len(dims)
     strides = [1] * n
     for i in range(n - 2, -1, -1):
         strides[i] = dims[i + 1] * strides[i + 1]
+    return strides
+
+
+def _linearise_indices(indices: List[SSAVar], dims: List[int], base: str) -> Generator[str, None, None]:
+    """
+    Emit Core IR statements that compute the row-major linear index for a
+    (possibly partial) multi-dimensional access. The final result is stored
+    in ``{base}_lin``.
+
+    For dims=[d0, ..., d_{n-1}] and indices=[i0, ..., i_{k-1}] (k <= n):
+        linear = i0*stride0 + i1*stride1 + ... + i_{k-1}*stride_{k-1}
+    where stride_j = d_{j+1} * ... * d_{n-1} — computed from the FULL dims, so
+    a partial index set (as used by array.insert/array.extract) correctly
+    accounts for the unindexed trailing dimensions.
+
+    Temporary variable names are derived from *base* (the SSA result or
+    rvalue name), which is unique within a function in SSA form.
+    """
+    strides = _row_major_strides(dims)
+    k = len(indices)
+    assert k >= 1, "_linearise_indices requires at least one index"
 
     # First term: indices[0] * strides[0]
     idx0 = indices[0].to_core()
@@ -56,7 +81,11 @@ def _linearise_indices(indices: List[SSAVar], dims: List[int], base: str) -> Gen
         yield f"{s_var} = {strides[0]}"
         yield f"{acc} = felt.mul {idx0} {s_var}"
 
-    for i in range(1, n):
+    if k == 1:
+        yield f"{base}_lin = {acc}"
+        return
+
+    for i in range(1, k):
         idx_i = indices[i].to_core()
         if strides[i] == 1:
             term = f"{base}_t{i}"
@@ -67,7 +96,7 @@ def _linearise_indices(indices: List[SSAVar], dims: List[int], base: str) -> Gen
             yield f"{s_var} = {strides[i]}"
             yield f"{term} = felt.mul {idx_i} {s_var}"
 
-        new_acc = f"{base}_lin" if i == n - 1 else f"{base}_acc{i}"
+        new_acc = f"{base}_lin" if i == k - 1 else f"{base}_acc{i}"
         yield f"{new_acc} = felt.add {acc} {term}"
         acc = new_acc
 
@@ -77,6 +106,67 @@ def _parse_index_list(raw: Optional[str]) -> List[SSAVar]:
     if not raw:
         return []
     return [SSAVar.parse(v.strip()) for v in raw.split(",") if v.strip()]
+
+
+def _container_field_var(base: str, field_path: List[str]) -> str:
+    """Core variable name for a flattened per-field array of a pod/struct array."""
+    return base + "_" + "_".join(field_path)
+
+
+def _struct_out_args(struct_type_str: str, ctx: TranslationContext) -> List[Tuple[str, Type]]:
+    """Resolve a struct type's own output args (name-with-@, Type), via ctx."""
+    full_ref = struct_type_name(struct_type_str)
+    core_func = ctx.llzk_func2core[f"{full_ref}::@compute"]
+    _, out_args = ctx.core_func2args[core_func]
+    return out_args
+
+
+def _flatten_container_fields(type_str: str, ctx: TranslationContext) -> List[Tuple[List[str], Type]]:
+    """
+    Recursively expand a container element type (pod or struct) into a flat
+    list of (field_path, leaf_type) pairs — one real CORE array per leaf
+    (structure-of-arrays). A leaf is any type that is not itself pod/struct,
+    including an array of felt (its own size just multiplies into the
+    leaf's total array size). Empty pods contribute nothing.
+
+    Pod is checked before struct, so a pod containing a struct-typed field
+    (whose type string textually contains "!struct.type") isn't mistaken for
+    a struct element.
+    """
+    if "!pod.type" in type_str:
+        fields = list(_parse_pod_fields(type_str).items())
+    else:
+        fields = _struct_out_args(type_str, ctx)
+
+    result: List[Tuple[List[str], Type]] = []
+    for field, field_type in fields:
+        if "!pod.type" in field_type.name or "!struct.type" in field_type.name:
+            for sub_path, leaf_type in _flatten_container_fields(field_type.name, ctx):
+                result.append(([field] + sub_path, leaf_type))
+        else:
+            result.append(([field], field_type))
+    return result
+
+
+def _emit_container_field_copy(src_arr: str, dest_arr: str, start: str, length: int,
+                               base: str) -> Generator[str, None, None]:
+    """
+    Emit a Core 'repeat' loop copying `length` contiguous elements from
+    src_arr[0..length-1] into dest_arr[start..start+length-1]. `start` is a
+    Core sexp (a variable name or integer literal). Core's repeat has no
+    implicit counter, so one is initialised before the loop and advanced
+    inside it (see CORELLZK.md's Bounded Loops).
+    """
+    counter = f"{base}_cp_idx"
+    tmp = f"{base}_cp_tmp"
+    dest = f"{base}_cp_dest"
+    yield f"{counter} = 0"
+    yield f"repeat {length} {{"
+    yield f"array.read {src_arr}[{counter}] {tmp}"
+    yield f"{dest} = felt.add {counter} {start}"
+    yield f"array.write {tmp} {dest_arr}[{dest}]"
+    yield f"{counter} = felt.add {counter} 1"
+    yield "}"
 
 
 class ArrayNew(Operation):
@@ -133,13 +223,21 @@ class ArrayNew(Operation):
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         if len(self.elements) > 0:
             raise NotImplementedError("array.new not implemented with initial elements")
-        dim = array_felt_first_dimension(self.result_type.name)
-        if dim is None:
-            # Clear stale entries from a prior function that reused this SSA name.
-            ctx.array_pod_entries.pop(self._result.name, None)
-            ctx.array_struct_entries.pop(self._result.name, None)
+        type_str = self.result_type.name
+        dim = array_felt_first_dimension(type_str)
+        if dim is not None:
+            yield f"array.new {dim} {self._result}"
             return
-        yield f"array.new {dim} {self._result}"
+
+        if "!pod.type" in type_str or "!struct.type" in type_str:
+            # Array of pod/struct (structure-of-arrays): one real flattened
+            # array per leaf field.
+            size = array_total_size(type_str)
+            assert size is not None, \
+                f"ArrayNew: could not determine size for container array {type_str}"
+            for field_path, leaf_type in _flatten_container_fields(type_str, ctx):
+                leaf_size = size * (array_total_size(leaf_type.name) or 1)
+                yield f"array.new {leaf_size} {_container_field_var(self._result.name, field_path)}"
 
     def __repr__(self):
         elem_str = f" : ({', '.join(repr(e) for e in self.elements)})" if self.elements else ""
@@ -199,33 +297,63 @@ class ArrayRead(Operation):
         return [self.arr_ref] + list(self.indices)
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
-        # Non-felt element types (pod, struct): bookkeeping only, no CORE output.
-        if self.types:
-            elem_type = self.types[-1]
-            if "!pod.type" in elem_type.name or "!struct.type" in elem_type.name:
-                if self.indices:
-                    idx_const = ctx.var2const.get(self.indices[0].name)
-                    if idx_const is not None:
-                        arr_name = self.arr_ref.name
-                        if "!pod.type" in elem_type.name:
-                            pod_name = ctx.array_pod_entries.get(arr_name, {}).get(idx_const)
-                            if pod_name is not None and pod_name in ctx.ssa2pod_var:
-                                # Copy pod-var dict using source variable names (not re-keyed),
-                                # so downstream writes use the same CORE variable names.
-                                ctx.ssa2pod_var[self._result.name] = dict(ctx.ssa2pod_var[pod_name])
-                            else:
-                                # No prior write: create fresh pod vars from the element type.
-                                pod_fields = _parse_pod_fields(elem_type.name)
-                                if pod_fields:
-                                    ctx.ssa2pod_var[self._result.name] = {
-                                        field: (f"{self._result.name}_{field}", type_)
-                                        for field, type_ in pod_fields.items()
-                                    }
-                        else:
-                            entry = ctx.array_struct_entries.get(arr_name, {}).get(idx_const)
-                            if entry is not None:
-                                ctx.ssa_to_name[self._result.name] = ctx.ssa_to_name.get(entry, entry)
-                return
+        elem_type = self.types[-1] if self.types else None
+        is_pod = elem_type is not None and "!pod.type" in elem_type.name
+        is_struct = elem_type is not None and not is_pod and "!struct.type" in elem_type.name
+
+        if is_pod or is_struct:
+            # Array of pod/struct (structure-of-arrays): fan out into one real
+            # array.read per leaf field. Pod results are additionally
+            # registered in ssa2pod_var (mirroring PodNew's convention) so
+            # downstream pod.read/pod.write keep working; struct results need
+            # no registration, since struct.readm resolves member storage by
+            # plain name concatenation.
+            arr_core = ctx.ssa_to_name.get(self.arr_ref.name, self.arr_ref.to_core())
+
+            if is_pod:
+                all_fields = _parse_pod_fields(elem_type.name)
+                ctx.ssa2pod_var[self._result.name] = {
+                    field: (f"{self._result.name}_{field}", field_type)
+                    for field, field_type in all_fields.items()
+                }
+                # An empty pod-typed field (e.g. @params: !pod.type<[]>)
+                # contributes no leaves to _flatten_container_fields below, so
+                # its storage name would otherwise never be independently
+                # registered. A pod created via pod.new gets this for free
+                # (PodNew's own initial-value assignment chain registers it
+                # when the source is itself a registered pod), but a pod
+                # extracted from an array has no such chain — register it
+                # explicitly here so a later pod.read of that field finds a
+                # registered (empty) source instead of falling through to the
+                # generic array.copy fallback with an undefined variable.
+                for field, field_type in all_fields.items():
+                    if "!pod.type" in field_type.name and not _parse_pod_fields(field_type.name):
+                        ctx.ssa2pod_var[f"{self._result.name}_{field}"] = {}
+
+            if len(self.indices) <= 1:
+                idx = self.indices[0].to_core() if self.indices else "0"
+            else:
+                dims = array_dimensions(self.types[0].name)
+                assert dims is not None and len(dims) == len(self.indices), (
+                    f"ArrayRead: {len(self.indices)}-index read requires type annotation "
+                    f"with {len(self.indices)} dimensions, got {self.types}"
+                )
+                base = self._result.name
+                yield from _linearise_indices(self.indices, dims, base)
+                idx = _lin_var(base, len(dims))
+
+            for field_path, leaf_type in _flatten_container_fields(elem_type.name, ctx):
+                src_arr = _container_field_var(arr_core, field_path)
+                dest_var = _container_field_var(self._result.name, field_path)
+                leaf_size = array_total_size(leaf_type.name)
+                if leaf_size is None:
+                    yield f"array.read {src_arr}[{idx}] {dest_var}"
+                else:
+                    start_var = f"{dest_var}_off"
+                    yield f"{start_var} = felt.mul {idx} {leaf_size}"
+                    yield f"array.new {leaf_size} {dest_var}"
+                    yield from _emit_container_field_copy(src_arr, dest_var, start_var, leaf_size, dest_var)
+            return
 
         if len(self.indices) <= 1:
             idx = self.indices[0].to_core() if self.indices else "0"
@@ -297,19 +425,42 @@ class ArrayWrite(Operation):
         return [self.arr_ref] + list(self.indices) + [self.rvalue]
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
-        # Non-felt element types (pod, struct): update tracking, no CORE output.
-        if self.types:
-            elem_type = self.types[-1]
-            if "!pod.type" in elem_type.name or "!struct.type" in elem_type.name:
-                if self.indices:
-                    idx_const = ctx.var2const.get(self.indices[0].name)
-                    if idx_const is not None:
-                        arr_name = self.arr_ref.name
-                        if "!pod.type" in elem_type.name:
-                            ctx.array_pod_entries.setdefault(arr_name, {})[idx_const] = self.rvalue.name
-                        else:
-                            ctx.array_struct_entries.setdefault(arr_name, {})[idx_const] = self.rvalue.name
-                return
+        elem_type = self.types[-1] if self.types else None
+        is_pod = elem_type is not None and "!pod.type" in elem_type.name
+        is_struct = elem_type is not None and not is_pod and "!struct.type" in elem_type.name
+
+        if is_pod or is_struct:
+            # Array of pod/struct (structure-of-arrays): fan out into one real
+            # array.write per leaf field. The source variable for each leaf is
+            # named by plain concatenation from rvalue.name (matching
+            # PodNew/StructReadm's own default naming), resolved through
+            # ssa_to_name in case it was given a semantic alias.
+            arr_core = ctx.ssa_to_name.get(self.arr_ref.name, self.arr_ref.to_core())
+
+            if len(self.indices) <= 1:
+                idx = self.indices[0].to_core() if self.indices else "0"
+            else:
+                dims = array_dimensions(self.types[0].name)
+                assert dims is not None and len(dims) == len(self.indices), (
+                    f"ArrayWrite: {len(self.indices)}-index write requires type annotation "
+                    f"with {len(self.indices)} dimensions, got {self.types}"
+                )
+                base = self.rvalue.name
+                yield from _linearise_indices(self.indices, dims, base)
+                idx = _lin_var(base, len(dims))
+
+            for field_path, leaf_type in _flatten_container_fields(elem_type.name, ctx):
+                raw_src = _container_field_var(self.rvalue.name, field_path)
+                src = ctx.ssa_to_name.get(raw_src, raw_src)
+                dest_arr = _container_field_var(arr_core, field_path)
+                leaf_size = array_total_size(leaf_type.name)
+                if leaf_size is None:
+                    yield f"array.write {src} {dest_arr}[{idx}]"
+                else:
+                    start_var = f"{raw_src}_off"
+                    yield f"{start_var} = felt.mul {idx} {leaf_size}"
+                    yield from _emit_container_field_copy(src, dest_arr, start_var, leaf_size, raw_src)
+            return
 
         # Resolve the array ref through ssa_to_name so that writes to a pod field
         # with a semantic name (e.g. "mux.c") go directly into that named array.
@@ -384,9 +535,50 @@ class ArrayExtract(Operation):
     def operands(self) -> List[SSAVar]:
         return [self.arr_ref] + list(self.indices)
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # array.extract reads a lower-rank sub-array out of arr_ref: a
+        # contiguous run of the flattened source array, copied into a freshly
+        # allocated result array. Symmetric to ArrayInsert (see there for the
+        # start/length derivation).
+        type_str = self.arr_type.name
+        dims = array_dimensions(type_str)
+        assert dims is not None, \
+            f"ArrayExtract: requires an array type annotation, got {self.arr_type}"
+
+        n = len(dims)
+        k = len(self.indices)
+        assert 0 <= k < n, \
+            f"ArrayExtract: {k} indices is not a valid partial index set for a {n}-D array"
+
+        length = 1
+        for d in dims[k:]:
+            length *= d
+
+        arr_core = ctx.ssa_to_name.get(self.arr_ref.name, self.arr_ref.to_core())
+        base = self._result.name
+
+        if k == 0:
+            start = "0"
+        else:
+            yield from _linearise_indices(self.indices, dims, base)
+            start = _lin_var(base, n)
+
+        if "!pod.type" in type_str or "!struct.type" in type_str:
+            for field_path, leaf_type in _flatten_container_fields(type_str, ctx):
+                leaf_mult = array_total_size(leaf_type.name) or 1
+                src_arr = _container_field_var(arr_core, field_path)
+                dest_arr = _container_field_var(self._result.name, field_path)
+                field_length = length * leaf_mult
+                field_start = start
+                if leaf_mult > 1:
+                    field_start = f"{dest_arr}_start"
+                    yield f"{field_start} = felt.mul {start} {leaf_mult}"
+                yield f"array.new {field_length} {dest_arr}"
+                yield from _emit_container_field_copy(src_arr, dest_arr, field_start, field_length, dest_arr)
+            return
+
+        yield f"array.new {length} {self._result.to_core()}"
+        yield from _emit_container_field_copy(arr_core, self._result.to_core(), start, length, base)
 
     def __repr__(self):
         idx_str = ', '.join(repr(i) for i in self.indices)
@@ -441,9 +633,53 @@ class ArrayInsert(Operation):
     def operands(self) -> List[SSAVar]:
         return [self.arr_ref] + list(self.indices) + [self.rvalue]
 
-    def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # array.insert writes a lower-rank sub-array into a partial slice of
+        # arr_ref. Since arrays are flattened to 1-D, the slice is a
+        # contiguous run: its first position ("start") and length are
+        # determined by arr_ref's shape and the (partial) indices. The index
+        # expression is kept symbolic (not resolved to a Python constant) so
+        # this works even when it comes from a runtime-carried variable (e.g.
+        # an scf.while loop variable), not just a compile-time-constant one.
+        dims = array_dimensions(self.types[0].name) if self.types else None
+        assert dims is not None, \
+            f"ArrayInsert: requires an array type annotation, got {self.types}"
+
+        n = len(dims)
+        k = len(self.indices)
+        assert 0 <= k < n, \
+            f"ArrayInsert: {k} indices is not a valid partial index set for a {n}-D array"
+
+        length = 1
+        for d in dims[k:]:
+            length *= d
+
+        arr_core = ctx.ssa_to_name.get(self.arr_ref.name, self.arr_ref.to_core())
+        base = self.rvalue.name
+
+        if k == 0:
+            start = "0"
+        else:
+            yield from _linearise_indices(self.indices, dims, base)
+            start = _lin_var(base, n)
+
+        elem_type = self.types[-1] if len(self.types) > 1 else None
+        if elem_type is not None and ("!pod.type" in elem_type.name or "!struct.type" in elem_type.name):
+            for field_path, leaf_type in _flatten_container_fields(elem_type.name, ctx):
+                leaf_mult = array_total_size(leaf_type.name) or 1
+                src_arr = _container_field_var(self.rvalue.name, field_path)
+                dest_arr = _container_field_var(arr_core, field_path)
+                field_base = _container_field_var(base, field_path)
+                field_start = start
+                field_length = length
+                if leaf_mult > 1:
+                    field_start = f"{field_base}_start"
+                    yield f"{field_start} = felt.mul {start} {leaf_mult}"
+                    field_length = length * leaf_mult
+                yield from _emit_container_field_copy(src_arr, dest_arr, field_start, field_length, field_base)
+            return
+
+        yield from _emit_container_field_copy(self.rvalue.to_core(), arr_core, start, length, base)
 
     def __repr__(self):
         idx_str = ', '.join(repr(i) for i in self.indices)

@@ -164,13 +164,10 @@ class TranslationContext:
     # e.g. {"IsZero_1": {"last1": "lastComponent_0", "last2": "lastComponent_0"}}
     member_to_struct: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
-    # Arrays of non-felt elements: tracks what pod/struct SSA var lives at each index.
-    # Populated by array.write, consumed by array.read (no CORE output generated).
-    #   array_ssa_name -> {index: pod_ssa_name}
-    array_pod_entries: Dict[str, Dict[int, str]] = field(default_factory=dict)
-
-    #   array_ssa_name -> {index: struct_ssa_name}
-    array_struct_entries: Dict[str, Dict[int, str]] = field(default_factory=dict)
+    # Maps an input parameter's SSA name to its declared 'function.arg_name'
+    # attribute (e.g. "%arg0" -> "c"), when the LLZK source annotates it.
+    # Not yet consumed by any translation logic.
+    param_arg_names: Dict[str, str] = field(default_factory=dict)
 
 
 def _apply_rename(name: str, rename: Dict[str, str]) -> str:

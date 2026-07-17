@@ -9,7 +9,7 @@ Operations:
 """
 
 import re
-from typing import List, Optional, Tuple, Generator
+from typing import List, Optional, Tuple, Dict, Generator
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, GlobalVariable, Type,
@@ -196,6 +196,7 @@ class FunctionDef(BlockOperation):
 
         # In arguments to from function definitions
         self._in_args = None
+        self._in_arg_names = None
 
     def dialect(self) -> Dialect:
         return Dialect("function")
@@ -209,13 +210,31 @@ class FunctionDef(BlockOperation):
               parse_fn: ParseFn) -> Tuple['FunctionDef', int]:
         header = lines[cursor]
         # function.def @name(args) [-> (rets)]? {
-        pattern = re.compile(
-            r"\s*function\.def\s+(?P<name>@[^\s(]+)"
-            r"(?P<sig>[^{]*)\{"
-        )
-        m = re.match(pattern, header)
+        name_pattern = re.compile(r"\s*function\.def\s+(?P<name>@[^\s(]+)")
+        m = re.match(name_pattern, header)
         if not m:
             raise ValueError(f"Failed to parse FunctionDef header: {header}")
+
+        # The signature (args, return type, attributes) may itself contain
+        # balanced '{...}' groups — a per-argument attribute dict (e.g.
+        # "%arg0: !type {llzk.pub}") or a trailing "attributes {...}" clause
+        # — before the function body's own opening brace. A naive "stop at
+        # the first '{'" search would truncate the signature right at the
+        # first such group, silently dropping any argument declared after
+        # it. Track a bracket stack instead: every '{' is pushed, every '}'
+        # pops its match, and whatever's left unmatched at the end of the
+        # line is the body's real opening brace.
+        stack = []
+        for i in range(m.end(), len(header)):
+            ch = header[i]
+            if ch == '{':
+                stack.append(i)
+            elif ch == '}' and stack:
+                stack.pop()
+        if not stack:
+            raise ValueError(f"Failed to find function body opening brace: {header}")
+        body_brace = stack[-1]
+        sig = header[m.end():body_brace]
 
         # Find matching closing brace
         depth = header.count('{') - header.count('}')
@@ -226,7 +245,7 @@ class FunctionDef(BlockOperation):
 
         body = parse_fn(cursor + 1, end)
         return (
-            FunctionDef(GlobalVariable.parse(m["name"]), m["sig"].strip(), body),
+            FunctionDef(GlobalVariable.parse(m["name"]), sig.strip(), body),
             end + 1,
         )
 
@@ -236,6 +255,8 @@ class FunctionDef(BlockOperation):
         # share the same signature (in particular, out_args are public struct members).
         core_name = ctx.current_core_function
         in_args, out_args = ctx.core_func2args[core_name]
+
+        ctx.param_arg_names.update(self.in_arg_names)
 
         signature_in = signature_args(in_args)
         signature_out = ', '.join(f"{arg[1:]}: {type_.to_core()}" for arg, type_ in out_args)
@@ -271,6 +292,26 @@ class FunctionDef(BlockOperation):
                 _in_args.append((split_args[0].strip(), Type.parse(split_args[1].strip())))
             self._in_args = _in_args
         return self._in_args
+
+    @property
+    def in_arg_names(self) -> Dict[str, str]:
+        """
+        Maps each input parameter's SSA name to its 'function.arg_name'
+        attribute value, when present (e.g. "%arg0" -> "c"), parsed from the
+        same raw signature text as in_args. Parameters without this
+        attribute are omitted.
+        """
+        if self._in_arg_names is None:
+            arg_inside_parentheses = self.signature.split("->")[0].strip()
+            args_with_types = [arg for arg in arg_inside_parentheses[1:-1].split(', ') if arg != ""]
+            result = {}
+            for arg in args_with_types:
+                name = arg.split(":")[0].strip()
+                m = re.search(r'function\.arg_name\s*=\s*"([^"]*)"', arg)
+                if m:
+                    result[name] = m.group(1)
+            self._in_arg_names = result
+        return self._in_arg_names
 
     @property
     def out_args(self) -> List[Tuple[str, str]]:

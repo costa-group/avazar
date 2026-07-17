@@ -133,8 +133,10 @@ class TestSCF:
         assert SCFFor.match("scf.for %iv = %lb to %ub step %s {") is True
         assert SCFFor.match("scf.while (%a = %b) {") is False
 
-    def test_for_to_core_unroll(self):
-        # Verify that scf.for unrolls iterations and suffixes body variable names.
+    def test_for_to_core_repeat(self):
+        # Verify that scf.for translates to a bounded "repeat" block: the
+        # induction variable is initialised once before the loop and advanced
+        # by 'step' at the end of the (single, not unrolled) body.
         lines = [
             "scf.for %iv = %c0 to %c2 step %c1 {",
             "%x = felt.add %iv, %arg0 : !felt.type, !felt.type",
@@ -158,12 +160,13 @@ class TestSCF:
         ctx.var2const["%c1"] = 1
 
         out = list(op.to_core(ctx))
-        # Should produce 3 iterations (0, 1, 2); each emits one felt.add line.
-        assert len(out) == 3
-        # Body variable %x is suffixed per iteration.
-        assert any("_it0" in line for line in out)
-        assert any("_it1" in line for line in out)
-        assert any("_it2" in line for line in out)
+        assert out == [
+            "%iv = 0",
+            "repeat 3 {",
+            "%x = felt.add %iv %arg0",
+            "%iv = felt.add %iv 1",
+            "}",
+        ]
         # Induction variable is not in var2const after the loop.
         assert "%iv" not in ctx.var2const
 

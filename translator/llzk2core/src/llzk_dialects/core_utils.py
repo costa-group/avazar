@@ -4,25 +4,9 @@ Module for useful methods applies to the classes in core.py
 import re
 from typing import List, Set, Dict, Union, Optional, Callable, Tuple
 from llzk_dialects.core import SSAVar, TranslationContext, Type, Operation
-from llzk_dialects.utils import translate_assignment_core
+from llzk_dialects.utils import translate_assignment_core, struct_type_name, is_array_type
 from llzk_dialects.bool import BoolCmp
 from llzk_dialects.felt import FeltConst, FeltBinary
-
-
-def struct_type_name(type_str: str) -> Optional[str]:
-    """
-    Extracts the template::struct name from a struct type string. Also works if "!struct.type<*>" does not appear
-
-    Example: '!struct.type<@Num2Bits_2::@Num2Bits_2<[]>>' -> '@Num2Bits_2::@Num2Bits_2',
-                           '@Num2Bits_2::@Num2Bits_2<[]>'  -> '@Num2Bits_2::@Num2Bits_2'
-    """
-    m = re.search(r'!struct\.type<([^><]+)', type_str)
-    if m is not None:
-        return m.group(1).strip()
-
-    m = re.search(r'([^><]+)', type_str)
-    # Ignore !felt.type inside the string, as otherwise it matches every possible operand
-    return m.group(1).strip() if m is not None and "!felt.type" not in type_str else None
 
 
 def signature_args(args: List[Tuple[str, Type]]) -> str:
@@ -80,6 +64,26 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
         const = ctx.var2const.get(rhs.name)
         if const is not None:
             ctx.var2const[lhs.name] = const
+
+    # Array of pod/struct (structure-of-arrays): copy each flattened per-field
+    # array independently, since there is no single real CORE array to
+    # array.copy. A leaf that is itself array-typed needs a full-array copy
+    # too (still a single array.copy — its size already accounts for the
+    # outer array's element count, from ArrayNew's own flattening).
+    #
+    # is_array_type (anchored to the start of the string) is required here,
+    # not a plain "array" substring check: a PLAIN pod whose OWN fields
+    # happen to be arrays (e.g. !pod.type<[@c: !array.type<...>, ...]>) would
+    # otherwise be mistaken for an array-of-pod.
+    elif is_array_type(type_.name) and ("!pod.type" in type_.name or "!struct.type" in type_.name):
+        from llzk_dialects.array import _flatten_container_fields, _container_field_var
+
+        assignments = []
+        for field_path, _ in _flatten_container_fields(type_.name, ctx):
+            src = _container_field_var(rhs.name, field_path)
+            dst = _container_field_var(lhs.name, field_path)
+            assignments.append(f"array.copy {src} {dst}")
+        return '\n'.join(assignments)
 
     # Assign pod vars
     elif rhs.name in ctx.ssa2pod_var:

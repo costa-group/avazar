@@ -20,7 +20,7 @@ from typing import List, Dict, Optional
 from llzk_dialects.core import Operation, SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.core_utils import translate_assignment_core_with_ctx
-from llzk_dialects.utils import array_felt_first_dimension, split_top_level_commas
+from llzk_dialects.utils import array_felt_first_dimension, array_total_size, split_top_level_commas
 
 _split_top_level_commas = split_top_level_commas
 
@@ -133,12 +133,32 @@ class PodNew(Operation):
             if result:
                 yield result
 
-        # Initialise array fields
+        # Allocate real storage for fields not given an initial value above.
+        # A plain felt/index array gets a direct array.new. A struct/pod-typed
+        # field recurses into its own leaves (structure-of-arrays) so that a
+        # later copy into/out of it (e.g. via array.write on an array of this
+        # pod type) reads from real, defined storage rather than an undefined
+        # variable — even though the field's actual value may still be unset
+        # until a later pod.write (e.g. a struct field only computed once a
+        # counter reaches zero).
         for record, type_ in self.result_type.items():
+            if record in self.init_records:
+                continue
+            var_name, _ = ctx.ssa2pod_var[self._result.name][record]
             first_dim = array_felt_first_dimension(type_.name)
             if first_dim is not None:
-                var_name, _ = ctx.ssa2pod_var[self._result.name][record]
                 yield f"array.new {first_dim} {var_name}"
+            elif "!struct.type" in type_.name or "!pod.type" in type_.name:
+                from llzk_dialects.array import _flatten_container_fields, _container_field_var
+                from llzk_dialects.utils import is_array_type
+
+                assert not is_array_type(type_.name), (
+                    f"PodNew: a pod field that is itself an array of struct/pod "
+                    f"({record}: {type_}) is not yet supported"
+                )
+                for field_path, leaf_type in _flatten_container_fields(type_.name, ctx):
+                    leaf_size = array_total_size(leaf_type.name) or 1
+                    yield f"array.new {leaf_size} {_container_field_var(var_name, field_path)}"
 
     def __repr__(self):
         inits = ', '.join(f"{k} = {v}" for k, v in self.init_records.items())
