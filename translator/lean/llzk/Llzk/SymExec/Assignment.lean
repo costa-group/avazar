@@ -29,6 +29,8 @@ def evalExpr {c : ZKConfig}
     | .mul => Except.ok (SymFFVar.const (evalMul v1 v2))
     | .div => Except.ok (SymFFVar.const (evalDiv v1 v2))
     | .pow => Except.ok (SymFFVar.const (evalPow v1 v2))
+    | .uidiv => Except.ok (SymFFVar.const (evalUidiv v1 v2))
+    | .uimod => Except.ok (SymFFVar.const (evalUimod v1 v2))
     | .shl => Except.ok (SymFFVar.const (evalShl v1 v2))
     | .shr => Except.ok (SymFFVar.const (evalShr v1 v2))
     | .and => Except.ok (SymFFVar.const (evalAnd v1 v2))
