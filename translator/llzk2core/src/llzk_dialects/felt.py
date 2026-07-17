@@ -164,7 +164,7 @@ class FeltBinary(Operation):
 
     _OPS = {
         "felt.add", "felt.bit_and", "felt.bit_or", "felt.bit_xor",
-        "felt.div", "felt.mul", "felt.shl", "felt.shr",
+        "felt.div", "felt.mul", "felt.pow", "felt.shl", "felt.shr",
         "felt.sintdiv", "felt.smod", "felt.sub", "felt.uintdiv", "felt.umod",
     }
 
@@ -252,51 +252,6 @@ class FeltBinary(Operation):
         return f"FeltBinary({self._result} = {self._op}({self.lhs}, {self.rhs})){type_str}"
 
 
-class FeltPow(FeltBinary):
-    """
-    Field element exponentiation — expanded at translation time into a chain of
-    felt.mul operations.  The exponent must be a compile-time constant.
-
-    Syntax: %result = felt.pow $base, $exp [: type($base), type($exp)]
-    """
-
-    _OPS = {"felt.pow"}
-
-    @staticmethod
-    def match(line: str) -> bool:
-        return line.split('=')[-1].strip().split()[0] in FeltPow._OPS
-
-    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
-        exp = ctx.var2const.get(self.rhs.name)
-        assert exp is not None, \
-            f"felt.pow: exponent {self.rhs.name!r} must be a known constant at translation time"
-        exp = int(exp)
-        assert exp >= 0, f"felt.pow: negative exponent {exp} not supported"
-
-        prefix = self._result.to_core()
-        base = self.lhs.to_core()
-        counter = [0]
-
-        def emit(base_, exp_, result_):
-            if exp_ == 0:
-                yield f"{result_} = 1"
-            elif exp_ == 1:
-                yield f"{result_} = {base_}"
-            elif exp_ == 2:
-                yield f"{result_} = felt.mul {base_} {base_}"
-            elif exp_ % 2 == 0:
-                counter[0] += 1
-                half = f"{prefix}_p{counter[0]}"
-                yield from emit(base_, exp_ // 2, half)
-                yield f"{result_} = felt.mul {half} {half}"
-            else:
-                counter[0] += 1
-                prev = f"{prefix}_p{counter[0]}"
-                yield from emit(base_, exp_ - 1, prev)
-                yield f"{result_} = felt.mul {prev} {base_}"
-
-        yield from emit(base, exp, prefix)
-
 
 class FeltDialect(Dialect):
     """Registry for all felt dialect operations."""
@@ -305,5 +260,4 @@ class FeltDialect(Dialect):
         super().__init__("felt")
         self.register(FeltConst)
         self.register(FeltUnary)
-        self.register(FeltPow)
         self.register(FeltBinary)
