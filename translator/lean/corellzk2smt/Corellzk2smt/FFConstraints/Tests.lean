@@ -177,12 +177,12 @@ private def sys_ff_var : FFConstraintSystem F5 := {
     "    \"main\": {\n" ++
     "        \"params\": [{ \"name\": \"v_0\", \"type\": \"ff\" }],\n" ++
     "        \"vars_info\": {},\n" ++
-    "        \"formula\": \" (= v_0 0) \"\n" ++
+    "        \"formula\": \"(= v_0 0) \"\n" ++
     "     }\n" ++
     "  },\n" ++
     "  \"main\": {\n" ++
     "    \"vars\": [{ \"name\": \"v_0\", \"type\": \"ff\" }],\n" ++
-    "    \"formula\": \" (main v_0) \" }\n" ++
+    "    \"formula\": \"(main v_0) \" }\n" ++
     "}\n"
   if result == expected then IO.println "OK"
   else IO.println s!"FAIL:\nexpected: '{expected}'\ngot:      '{result}'"
@@ -204,12 +204,12 @@ private def sys_bool_var : FFConstraintSystem F5 := {
     "    \"main\": {\n" ++
     "        \"params\": [{ \"name\": \"b_2\", \"type\": \"bool\" }],\n" ++
     "        \"vars_info\": {},\n" ++
-    "        \"formula\": \" b_2 \"\n" ++
+    "        \"formula\": \"b_2 \"\n" ++
     "     }\n" ++
     "  },\n" ++
     "  \"main\": {\n" ++
     "    \"vars\": [{ \"name\": \"b_2\", \"type\": \"bool\" }],\n" ++
-    "    \"formula\": \" (main b_2) \" }\n" ++
+    "    \"formula\": \"(main b_2) \" }\n" ++
     "}\n"
   if result == expected then IO.println "OK"
   else IO.println s!"FAIL:\nexpected: '{expected}'\ngot:      '{result}'"

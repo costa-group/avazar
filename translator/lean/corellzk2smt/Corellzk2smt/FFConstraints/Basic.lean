@@ -60,6 +60,57 @@ instance : Ord Var where
   | .boolv _, .ffv _ => Ordering.gt
 
 
+/-  OrientedCmp for Var: `compare a b = (compare b a).swap`.
+    - Same-constructor cases delegate to Nat (OrientedOrd Nat, from Mathlib).
+    - Cross-constructor cases: .lt and .gt are swaps of each other. -/
+instance : Std.OrientedCmp (compare : Var → Var → Ordering) where
+  eq_swap := by
+    intro a b
+    match a, b with
+    | .ffv n,   .ffv m   =>
+      change compare n m = (compare m n).swap
+      exact Std.OrientedCmp.eq_swap
+    | .boolv n, .boolv m =>
+      change compare n m = (compare m n).swap
+      exact Std.OrientedCmp.eq_swap
+    | .ffv _,   .boolv _ => rfl
+    | .boolv _, .ffv _   => rfl
+
+/-  TransCmp for Var: `(compare a b).isLE → (compare b c).isLE → (compare a c).isLE`.
+    - Same-constructor cases delegate to Nat (TransOrd Nat, from Mathlib).
+    - Cross-constructor cases are settled by the fixed ordering ffv < boolv:
+        the conclusion is trivially true, or a hypothesis is absurd (gt.isLE = false). -/
+instance : Std.TransCmp (compare : Var → Var → Ordering) where
+  isLE_trans {a b c} h1 h2 := by
+    -- Nat's TransCmp instance (via Mathlib's TransOrd Nat)
+    have natTC := (inferInstance : Std.TransCmp (compare : Nat → Nat → Ordering))
+    match a, b, c with
+    | .ffv n,   .ffv m,   .ffv k   =>
+      -- (compare (ffv n) (ffv m)) reduces definitionally to (compare n m : Nat)
+      have h1' : (compare n m).isLE := h1
+      have h2' : (compare m k).isLE := h2
+      exact natTC.isLE_trans h1' h2'
+    | .boolv n, .boolv m, .boolv k =>
+      have h1' : (compare n m).isLE := h1
+      have h2' : (compare m k).isLE := h2
+      exact natTC.isLE_trans h1' h2'
+    -- ffv ≤ ffv ≤ boolv  →  ffv < boolv  (Ordering.lt.isLE = true, trivial)
+    | .ffv _,   .ffv _,   .boolv _ => trivial
+    -- ffv < boolv ≤ boolv  →  ffv < boolv  (same)
+    | .ffv _,   .boolv _, .boolv _ => trivial
+    -- boolv > ffv: compare(.boolv,.ffv) = .gt, so .isLE = false, h1 absurd
+    | .boolv n, .ffv m,   _        =>
+      have : (compare (Var.boolv n) (Var.ffv m)).isLE = false := rfl
+      simp [this] at h1
+    -- boolv ≥ boolv, boolv > ffv: h2 : compare(.boolv,.ffv).isLE = false, absurd
+    | .boolv _, .boolv m, .ffv k   =>
+      have : (compare (Var.boolv m) (Var.ffv k)).isLE = false := rfl
+      simp [this] at h2
+    -- ffv < boolv, boolv > ffv: h2 absurd
+    | .ffv _,   .boolv m, .ffv k   =>
+      have : (compare (Var.boolv m) (Var.ffv k)).isLE = false := rfl
+      simp [this] at h2
+
 /-  Hashing (Hashable) of Var. Needed if we use this in a HashMap or HashSet -/
 instance : Hashable Var where
   hash a := match a with
@@ -85,6 +136,9 @@ def lookupVarInfo (v : Var) (vi : VarInfo) : Option VarMetaData :=
 /- Var set -/
 abbrev VarSet := Std.TreeSet Var compare
 abbrev emptyVarSet : VarSet := Std.TreeSet.empty
+
+instance : HasSubset VarSet where
+  Subset s t := ∀ x, x ∈ s → x ∈ t
 
 
 mutual
@@ -146,6 +200,72 @@ def sizeOfFormula {c : ZKConfig} (f: FFFormula c) : Nat :=
   | .not a => 1 + sizeOfFormula a
   | .ite c t e => 1 + sizeOfFormula c + sizeOfFormula t + sizeOfFormula e
   | .call _ _ => 1
+
+end
+
+
+/- FFVariables in a term and formula -/
+mutual
+
+def ffVarsOfTerm {c : ZKConfig} (t : FFTerm c) : VarSet :=
+  match t with
+  | .val _     => emptyVarSet
+  | .var n     => emptyVarSet.insert (Var.ffv n)
+  | .add a b
+  | .sub a b
+  | .mul a b   => ffVarsOfTerm a ∪ ffVarsOfTerm b
+  | .neg a     => ffVarsOfTerm a
+  | .ite f a b => ffVarsOfFormula f ∪ ffVarsOfTerm a ∪ ffVarsOfTerm b
+
+def ffVarsOfFormula {c : ZKConfig} (f : FFFormula c) : VarSet :=
+  match f with
+  | .true | .false => emptyVarSet
+  | .range t _ _   => ffVarsOfTerm t
+  | .bool _        => emptyVarSet
+  | .eq a b        => ffVarsOfTerm a ∪ ffVarsOfTerm b
+  | .and a b
+  | .or a b
+  | .imply a b
+  | .iff a b       => ffVarsOfFormula a ∪ ffVarsOfFormula b
+  | .not a         => ffVarsOfFormula a
+  | .ite c a b     => ffVarsOfFormula c ∪ ffVarsOfFormula a ∪ ffVarsOfFormula b
+  | .call _ params =>
+      params.foldl (fun acc p => match p with
+        | .var (.ffv n) => acc.insert (Var.ffv n)
+        | _             => acc) emptyVarSet
+
+end
+
+
+/- Boolean variables in a term and formula -/
+mutual
+
+def bVarsOfTerm {c : ZKConfig} (t : FFTerm c) : VarSet :=
+  match t with
+  | .val _     => emptyVarSet
+  | .var _     => emptyVarSet
+  | .add a b
+  | .sub a b
+  | .mul a b   => bVarsOfTerm a ∪ bVarsOfTerm b
+  | .neg a     => bVarsOfTerm a
+  | .ite f a b => bVarsOfFormula f ∪ bVarsOfTerm a ∪ bVarsOfTerm b
+
+def bVarsOfFormula {c : ZKConfig} (f : FFFormula c) : VarSet :=
+  match f with
+  | .true | .false => emptyVarSet
+  | .range t _ _   => bVarsOfTerm t
+  | .bool n        => emptyVarSet.insert (Var.boolv n)
+  | .eq a b        => bVarsOfTerm a ∪ bVarsOfTerm b
+  | .and a b
+  | .or a b
+  | .imply a b
+  | .iff a b       => bVarsOfFormula a ∪ bVarsOfFormula b
+  | .not a         => bVarsOfFormula a
+  | .ite c a b     => bVarsOfFormula c ∪ bVarsOfFormula a ∪ bVarsOfFormula b
+  | .call _ params =>
+      params.foldl (fun acc p => match p with
+        | .var (.boolv n) => acc.insert (Var.boolv n)
+        | _               => acc) emptyVarSet
 
 end
 

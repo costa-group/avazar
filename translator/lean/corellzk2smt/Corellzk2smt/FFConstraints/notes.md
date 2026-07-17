@@ -33,12 +33,4 @@ g such that
 
 then
 
-`<phi/\f1 \/ ~phi/\f2, InVs,FFVs1 \cup FFVs2,BVs1 \cup BVs2>` is functional
-
-# Semantic equivalence
-
-A concrete execution has a corresponding abstract one and vice versa
-
-Given a context, which is a formula
-
-If we start from env and senv,
+`<g/\f1 \/ ~g/\f2, InVs,FFVs1 \cup FFVs2,BVs1 \cup BVs2>` is functional
