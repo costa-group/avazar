@@ -113,6 +113,16 @@ def _container_field_var(base: str, field_path: List[str]) -> str:
     return base + "_" + "_".join(field_path)
 
 
+def _semantic_field_var(semantic_base: str, field_path: List[str]) -> str:
+    """
+    Core variable name for a flattened field of a component read out of a
+    named component array (e.g. "last_0.in1_last"), mirroring PodNew's
+    "{member}.{record}" convention for a scalar subcomponent — a dot after
+    the member/index prefix, then underscore-joined for any nested fields.
+    """
+    return semantic_base + "." + "_".join(p[1:] for p in field_path)
+
+
 def _struct_out_args(struct_type_str: str, ctx: TranslationContext) -> List[Tuple[str, Type]]:
     """Resolve a struct type's own output args (name-with-@, Type), via ctx."""
     full_ref = struct_type_name(struct_type_str)
@@ -261,6 +271,22 @@ class ArrayRead(Operation):
         self.arr_ref = arr_ref
         self.indices = indices
         self.types = types
+        # Set by struct.py's _build_component_naming_maps pre-pass (via
+        # _annotate_input_array_reads) when arr_ref is a registered
+        # "$inputs" component array: "member_idx" for a compile-time
+        # constant index, or the bare "member" when the index is a genuine
+        # runtime loop variable. None until then, or when arr_ref isn't a
+        # registered component array.
+        #
+        # This can't be computed here from ctx.var2const at to_core time:
+        # SCFFor/SCFWhile deliberately treat their own loop-carried
+        # variables as a compile-time constant for structural purposes (see
+        # their own to_core), even though the value actually varies per
+        # iteration — trusting that here would misattribute a genuinely
+        # symbolic loop index to one specific instance. The pre-pass instead
+        # resolves this with its own scope-safe static fold, once per
+        # function, and stamps the result directly on this node.
+        self._semantic_base: Optional[str] = None
 
     def dialect(self) -> Dialect:
         return Dialect("array")
@@ -310,12 +336,24 @@ class ArrayRead(Operation):
             # plain name concatenation.
             arr_core = ctx.ssa_to_name.get(self.arr_ref.name, self.arr_ref.to_core())
 
+            # When this array backs a named component-array member, name the
+            # extracted element after that member instead of a raw
+            # SSA-derived name — see the _semantic_base field comment above
+            # for how/when this is resolved.
+            semantic_base = self._semantic_base
+
             if is_pod:
                 all_fields = _parse_pod_fields(elem_type.name)
-                ctx.ssa2pod_var[self._result.name] = {
-                    field: (f"{self._result.name}_{field}", field_type)
-                    for field, field_type in all_fields.items()
-                }
+                if semantic_base is not None:
+                    ctx.ssa2pod_var[self._result.name] = {
+                        field: (_semantic_field_var(semantic_base, [field]), field_type)
+                        for field, field_type in all_fields.items()
+                    }
+                else:
+                    ctx.ssa2pod_var[self._result.name] = {
+                        field: (f"{self._result.name}_{field}", field_type)
+                        for field, field_type in all_fields.items()
+                    }
                 # An empty pod-typed field (e.g. @params: !pod.type<[]>)
                 # contributes no leaves to _flatten_container_fields below, so
                 # its storage name would otherwise never be independently
@@ -328,7 +366,9 @@ class ArrayRead(Operation):
                 # generic array.copy fallback with an undefined variable.
                 for field, field_type in all_fields.items():
                     if "!pod.type" in field_type.name and not _parse_pod_fields(field_type.name):
-                        ctx.ssa2pod_var[f"{self._result.name}_{field}"] = {}
+                        key = (_semantic_field_var(semantic_base, [field])
+                               if semantic_base is not None else f"{self._result.name}_{field}")
+                        ctx.ssa2pod_var[key] = {}
 
             if len(self.indices) <= 1:
                 idx = self.indices[0].to_core() if self.indices else "0"
@@ -344,7 +384,12 @@ class ArrayRead(Operation):
 
             for field_path, leaf_type in _flatten_container_fields(elem_type.name, ctx):
                 src_arr = _container_field_var(arr_core, field_path)
-                dest_var = _container_field_var(self._result.name, field_path)
+                raw_dest_var = _container_field_var(self._result.name, field_path)
+                if semantic_base is not None:
+                    dest_var = _semantic_field_var(semantic_base, field_path)
+                    ctx.ssa_to_name[raw_dest_var] = dest_var
+                else:
+                    dest_var = raw_dest_var
                 leaf_size = array_total_size(leaf_type.name)
                 if leaf_size is None:
                     yield f"array.read {src_arr}[{idx}] {dest_var}"

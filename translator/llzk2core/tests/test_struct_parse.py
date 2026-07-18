@@ -1,8 +1,15 @@
 import pytest
-from llzk_dialects.struct import StructMember, StructNew, StructReadm, StructWritem, StructDef, _annotate_function_calls
+from llzk_dialects.struct import (
+    StructMember, StructNew, StructReadm, StructWritem, StructDef,
+    _annotate_function_calls, _fold_index_constants, _find_array_component_bases,
+    _annotate_array_component_reads, _build_component_naming_maps,
+)
 from llzk_dialects.function import FunctionCall
-from llzk_dialects.pod import PodNew, PodWrite
-from llzk_dialects.scf import SCFIf
+from llzk_dialects.pod import PodNew, PodWrite, PodRead
+from llzk_dialects.scf import SCFIf, SCFFor
+from llzk_dialects.array import ArrayRead, ArrayWrite
+from llzk_dialects.arith import ArithConst
+from llzk_dialects.cast import CastToIndex
 from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.felt import FeltConst
 
@@ -259,3 +266,220 @@ class TestAnnotateFunctionCalls:
         # %call is never defined in this body — no crash, no annotation
         write = self._pod_write("%pod_a")
         _annotate_function_calls([write], {"%pod_a": "a"})  # should not raise
+
+
+# ── _fold_index_constants ──────────────────────────────────────────────────────
+
+class TestFoldIndexConstants:
+    """
+    Static (pre-to_core) constant folding used to attribute a specific
+    array-of-components slot (e.g. "last_0") to its counting-pod read,
+    ahead of when ctx.var2const would normally be populated.
+    """
+
+    def test_felt_const_folded(self):
+        const = FeltConst(SSAVar("%c0"), 0)
+        assert _fold_index_constants([const]) == {"%c0": 0}
+
+    def test_arith_const_folded(self):
+        const = ArithConst(SSAVar("%c1"), "1", Type("index"))
+        assert _fold_index_constants([const]) == {"%c1": 1}
+
+    def test_cast_to_index_propagates(self):
+        const = FeltConst(SSAVar("%fc"), 2)
+        cast = CastToIndex(SSAVar("%idx"), SSAVar("%fc"))
+        assert _fold_index_constants([const, cast]) == {"%fc": 2, "%idx": 2}
+
+    def test_non_constant_source_not_folded(self):
+        # %idx casts a value that was never defined as a constant in this
+        # body — must not appear in the resulting map.
+        cast = CastToIndex(SSAVar("%idx"), SSAVar("%arg0"))
+        assert _fold_index_constants([cast]) == {}
+
+
+# ── _find_array_component_bases ────────────────────────────────────────────────
+
+class TestFindArrayComponentBases:
+    """
+    Detects the counting-pod array backing an array-of-subcomponent member,
+    from the bulk-copy scf.for loop that reads each element's @comp field
+    into the array later struct-written as that member.
+    """
+
+    def _bulk_copy_loop(self, counting_arr="%array", target_arr="%array_13", iv="%iv"):
+        read = ArrayRead(SSAVar("%elem"), SSAVar(counting_arr), [SSAVar(iv)], [])
+        comp = PodRead(SSAVar("%comp"), SSAVar("%elem"), GlobalVariable("@comp"), {}, None)
+        write = ArrayWrite(SSAVar(target_arr), [SSAVar(iv)], SSAVar("%comp"), [])
+        return SCFFor([], SSAVar(iv), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"), [], [read, comp, write])
+
+    def test_detects_counting_array_to_member(self):
+        loop = self._bulk_copy_loop()
+        writem = StructWritem(SSAVar("%self"), GlobalVariable("@last"), SSAVar("%array_13"),
+                              [Type("!array.type<2 x !struct.type<@X>>")])
+        assert _find_array_component_bases([loop, writem]) == {"%array": "last"}
+
+    def test_inputs_member_ignored(self):
+        # A "$inputs" array member write must not be mistaken for the
+        # array-of-struct-component pattern.
+        loop = self._bulk_copy_loop()
+        writem = StructWritem(SSAVar("%self"), GlobalVariable("@last_inputs"), SSAVar("%array_13"),
+                              [Type("!array.type<2 x !pod.type<[@x: !felt.type]>>")])
+        assert _find_array_component_bases([loop, writem]) == {}
+
+    def test_no_matching_loop_yields_empty(self):
+        writem = StructWritem(SSAVar("%self"), GlobalVariable("@last"), SSAVar("%array_13"),
+                              [Type("!array.type<2 x !struct.type<@X>>")])
+        assert _find_array_component_bases([writem]) == {}
+
+    def test_loop_indexed_by_other_variable_ignored(self):
+        # The array.read/write inside the loop use a different index than
+        # the loop's own induction variable — not the bulk-copy pattern.
+        read = ArrayRead(SSAVar("%elem"), SSAVar("%array"), [SSAVar("%other")], [])
+        comp = PodRead(SSAVar("%comp"), SSAVar("%elem"), GlobalVariable("@comp"), {}, None)
+        write = ArrayWrite(SSAVar("%array_13"), [SSAVar("%other")], SSAVar("%comp"), [])
+        loop = SCFFor([], SSAVar("%iv"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"), [], [read, comp, write])
+        writem = StructWritem(SSAVar("%self"), GlobalVariable("@last"), SSAVar("%array_13"),
+                              [Type("!array.type<2 x !struct.type<@X>>")])
+        assert _find_array_component_bases([loop, writem]) == {}
+
+
+# ── _annotate_array_component_reads ────────────────────────────────────────────
+
+class TestAnnotateArrayComponentReads:
+    """
+    Recursive walk that names a counting-pod array read either "base_idx"
+    (constant index) or the bare "base" (non-constant index, e.g. a real
+    scf.while iteration variable), feeding the same pod_to_member map that
+    _annotate_function_calls consumes.
+    """
+
+    def test_constant_index_gets_subindex_name(self):
+        const = FeltConst(SSAVar("%c0"), 0)
+        cast = CastToIndex(SSAVar("%i0"), SSAVar("%c0"))
+        read = ArrayRead(SSAVar("%8"), SSAVar("%array"), [SSAVar("%i0")], [])
+        pod_to_member = {}
+        _annotate_array_component_reads([const, cast, read], {"%array": "last"}, {}, pod_to_member)
+        assert pod_to_member["%8"] == "last_0"
+
+    def test_non_constant_index_gets_bare_name(self):
+        # %arg4 is never folded to a constant anywhere — a genuine loop var.
+        read = ArrayRead(SSAVar("%15"), SSAVar("%array"), [SSAVar("%arg4")], [])
+        pod_to_member = {}
+        _annotate_array_component_reads([read], {"%array": "Num2Bits_16_325"}, {}, pod_to_member)
+        assert pod_to_member["%15"] == "Num2Bits_16_325"
+
+    def test_recurses_into_nested_body_using_inherited_constants(self):
+        const = FeltConst(SSAVar("%c1"), 1)
+        cast = CastToIndex(SSAVar("%i1"), SSAVar("%c1"))
+        read = ArrayRead(SSAVar("%9"), SSAVar("%array"), [SSAVar("%i1")], [])
+        inner_if = SCFIf([], SSAVar("%cond"), [], [read], None)
+        pod_to_member = {}
+        _annotate_array_component_reads([const, cast, inner_if], {"%array": "last"}, {}, pod_to_member)
+        assert pod_to_member["%9"] == "last_1"
+
+    def test_sibling_branches_do_not_leak_constants(self):
+        # Two sibling scf.if branches both fold "%idx" to *different*
+        # values — a flat/shared dict would let one leak into the other.
+        const_a = FeltConst(SSAVar("%idx"), 0)
+        read_a = ArrayRead(SSAVar("%ra"), SSAVar("%array"), [SSAVar("%idx")], [])
+        branch_a = SCFIf([], SSAVar("%ca"), [], [const_a, read_a], None)
+
+        const_b = FeltConst(SSAVar("%idx"), 1)
+        read_b = ArrayRead(SSAVar("%rb"), SSAVar("%array"), [SSAVar("%idx")], [])
+        branch_b = SCFIf([], SSAVar("%cb"), [], [const_b, read_b], None)
+
+        pod_to_member = {}
+        _annotate_array_component_reads([branch_a, branch_b], {"%array": "last"}, {}, pod_to_member)
+        assert pod_to_member["%ra"] == "last_0"
+        assert pod_to_member["%rb"] == "last_1"
+
+    def test_unregistered_array_ignored(self):
+        read = ArrayRead(SSAVar("%r"), SSAVar("%other_array"), [SSAVar("%i")], [])
+        pod_to_member = {}
+        _annotate_array_component_reads([read], {"%array": "last"}, {}, pod_to_member)
+        assert "%r" not in pod_to_member
+
+
+# ── _build_component_naming_maps — array-of-components integration ────────────
+
+class TestBuildComponentNamingMapsArrays:
+    """
+    End-to-end (within the pre-pass): a read of the counting-pod array is
+    named like a scalar subcomponent slot ("last_0"/"last_1") when its index
+    is a compile-time constant, and the FunctionCall stored into that slot's
+    @comp field is annotated with that same name — mirroring the fix for
+    three_subcomponents_array_concrete.mlir, where component instances used
+    to lose their name entirely (falling back to raw SSA names) once they
+    were held in an array instead of one variable per instance.
+
+    A read indexed by a genuine runtime loop variable (as in
+    ternary_concrete.mlir's scf.while-based Num2Bits_16_325 array) instead
+    gets the bare member name, for the caller to reconstruct per-iteration
+    names externally.
+    """
+
+    def _index_at(self, value, ssa_const, ssa_idx):
+        const = FeltConst(SSAVar(ssa_const), value)
+        cast = CastToIndex(SSAVar(ssa_idx), SSAVar(ssa_const))
+        return [const, cast]
+
+    def _bulk_copy_and_writem(self, counting_arr="%array", member="@last"):
+        read = ArrayRead(SSAVar("%elem"), SSAVar(counting_arr), [SSAVar("%iv")], [])
+        comp = PodRead(SSAVar("%comp"), SSAVar("%elem"), GlobalVariable("@comp"), {}, None)
+        write = ArrayWrite(SSAVar("%array_13"), [SSAVar("%iv")], SSAVar("%comp"), [])
+        loop = SCFFor([], SSAVar("%iv"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"), [], [read, comp, write])
+        writem = StructWritem(SSAVar("%self"), GlobalVariable(member), SSAVar("%array_13"),
+                              [Type("!array.type<2 x !struct.type<@X>>")])
+        return loop, writem
+
+    def test_array_slots_named_like_scalar_subcomponents(self):
+        ctx = TranslationContext()
+        loop, writem = self._bulk_copy_and_writem()
+
+        # Two constant-indexed top-level reads of the counting array (as an
+        # unrolled compute would emit for each concrete instance), each
+        # followed by a nested scf.if computing that instance's subcomponent.
+        idx0 = self._index_at(0, "%c0", "%i0")
+        top_read_0 = ArrayRead(SSAVar("%8"), SSAVar("%array"), [SSAVar("%i0")], [])
+        call_0 = FunctionCall([SSAVar("%26")], GlobalVariable("@Sub"), [], None)
+        write_comp_0 = PodWrite(SSAVar("%8"), GlobalVariable("@comp"), SSAVar("%26"), {}, None)
+        if_0 = SCFIf([], SSAVar("%cond0"), [], [call_0, write_comp_0], None)
+
+        idx1 = self._index_at(1, "%c1", "%i1")
+        top_read_1 = ArrayRead(SSAVar("%18"), SSAVar("%array"), [SSAVar("%i1")], [])
+        call_1 = FunctionCall([SSAVar("%26")], GlobalVariable("@Sub"), [], None)  # same SSA name, distinct object
+        write_comp_1 = PodWrite(SSAVar("%18"), GlobalVariable("@comp"), SSAVar("%26"), {}, None)
+        if_1 = SCFIf([], SSAVar("%cond1"), [], [call_1, write_comp_1], None)
+
+        body = [
+            loop, writem,
+            *idx0, top_read_0, if_0,
+            *idx1, top_read_1, if_1,
+        ]
+
+        _build_component_naming_maps(body, ctx)
+
+        assert call_0._member_hint == "last_0"
+        assert call_1._member_hint == "last_1"
+
+    def test_symbolic_loop_index_uses_bare_member_name(self):
+        # Mirrors ternary_concrete.mlir's Num2Bits_16_325: subcomponents are
+        # instantiated inside a real (scf.while-style) runtime loop, so the
+        # counting-array read's index is never a compile-time constant.
+        ctx = TranslationContext()
+        loop, writem = self._bulk_copy_and_writem(member="@Num2Bits_16_325")
+
+        top_read = ArrayRead(SSAVar("%15"), SSAVar("%array"), [SSAVar("%arg4")], [])
+        call = FunctionCall([SSAVar("%30")], GlobalVariable("@Sub"), [], None)
+        write_comp = PodWrite(SSAVar("%15"), GlobalVariable("@comp"), SSAVar("%30"), {}, None)
+        loop_body_if = SCFIf([], SSAVar("%cond"), [], [call, write_comp], None)
+        # The whole thing sits inside the runtime loop itself (unlike the
+        # constant-index case, which reads at the top level).
+        runtime_loop = SCFFor([], SSAVar("%arg4"), SSAVar("%lb2"), SSAVar("%ub2"), SSAVar("%step2"),
+                              [], [top_read, loop_body_if])
+
+        body = [loop, writem, runtime_loop]
+
+        _build_component_naming_maps(body, ctx)
+
+        assert call._member_hint == "Num2Bits_16_325"

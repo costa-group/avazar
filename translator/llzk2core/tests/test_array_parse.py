@@ -291,6 +291,54 @@ class TestArrayToCore:
         with pytest.raises(AssertionError):
             list(op.to_core(self._ctx()))
 
+    # ── ArrayRead.to_core — pod element (structure-of-arrays) ────────────────
+
+    def test_read_to_core_pod_default_naming(self):
+        # _semantic_base unset (as it is until struct.py's pre-pass runs):
+        # falls back to the raw SSA-derived field name.
+        op = ArrayRead.parse(
+            "%v = array.read %arr [%i]"
+            " : !array.type<2 x !pod.type<[@in1_last: !felt.type<\"bn128\">]>>,"
+            " !pod.type<[@in1_last: !felt.type<\"bn128\">]>"
+        )
+        lines = list(op.to_core(self._ctx()))
+        assert lines == ["array.read %arr_@in1_last[%i] %v_@in1_last"]
+
+    def test_read_to_core_pod_semantic_naming_constant_index(self):
+        # struct.py's pre-pass (_annotate_input_array_reads) stamps
+        # _semantic_base = "last_0" for a compile-time-constant index,
+        # matching the naming a scalar subcomponent would get (e.g. "last1").
+        op = ArrayRead.parse(
+            "%v = array.read %arr [%i]"
+            " : !array.type<2 x !pod.type<[@in1_last: !felt.type<\"bn128\">]>>,"
+            " !pod.type<[@in1_last: !felt.type<\"bn128\">]>"
+        )
+        op._semantic_base = "last_0"
+        ctx = self._ctx()
+        lines = list(op.to_core(ctx))
+        assert lines == ["array.read %arr_@in1_last[%i] last_0.in1_last"]
+        assert ctx.ssa2pod_var["%v"]["@in1_last"][0] == "last_0.in1_last"
+        # ArrayWrite resolves its source through ssa_to_name, so the raw
+        # SSA-derived name must alias to the semantic one too.
+        assert ctx.ssa_to_name["%v_@in1_last"] == "last_0.in1_last"
+
+    def test_read_to_core_pod_semantic_naming_non_constant_index(self):
+        # A registered component array whose index isn't a compile-time
+        # constant (a real runtime loop variable) gets the bare member name
+        # from the pre-pass — there is no single instance to name here; the
+        # caller reconstructs per-iteration names (e.g. "last_0") externally,
+        # from a symbolic execution of the emitted repeat loop.
+        op = ArrayRead.parse(
+            "%v = array.read %arr [%i]"
+            " : !array.type<2 x !pod.type<[@in1_last: !felt.type<\"bn128\">]>>,"
+            " !pod.type<[@in1_last: !felt.type<\"bn128\">]>"
+        )
+        op._semantic_base = "last"
+        ctx = self._ctx()
+        lines = list(op.to_core(ctx))
+        assert lines == ["array.read %arr_@in1_last[%i] last.in1_last"]
+        assert ctx.ssa2pod_var["%v"]["@in1_last"][0] == "last.in1_last"
+
     # ── ArrayWrite.to_core ────────────────────────────────────────────────────
 
     def test_write_to_core_1d(self):
