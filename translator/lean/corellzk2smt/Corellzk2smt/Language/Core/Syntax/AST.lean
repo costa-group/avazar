@@ -184,6 +184,17 @@ structure Param where
   type : VarType
   deriving Repr, BEq, Inhabited
 
+/- Whether a list of variable names contains a duplicate. A function's `params ++ rets` must be
+   duplicate-free: each name becomes a distinct constraint-macro parameter (`SymExec/BigStep.lean`,
+   `seFunc`), and a macro can't declare the same formal parameter twice. `evalFunCall`
+   (`Semantics/BigStep.lean`) rejects a call to a function violating this too, so that concrete
+   execution and symbolic translation fail together on the same malformed functions -- see
+   `SymExec/Correctness.lean`'s `H_funcCall`-related design notes. -/
+def hasDupNames (names : List VarID) : Bool :=
+  match names with
+  | [] => false
+  | n :: rest => rest.contains n || hasDupNames rest
+
 /- A function receives input parameters `params`, executes the whole `body`,
    and returns the values of the variables in `rets`.
 -/

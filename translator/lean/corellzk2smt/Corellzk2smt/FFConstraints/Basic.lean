@@ -111,6 +111,26 @@ instance : Std.TransCmp (compare : Var → Var → Ordering) where
       have : (compare (Var.boolv m) (Var.ffv k)).isLE = false := rfl
       simp [this] at h2
 
+/-  ReflCmp/LawfulEqCmp for Var: `compare a a = .eq`, and `compare a b = .eq → a = b`.
+    Needed for `Std.TreeSet` lemmas relating `VarSet` membership to `.toList` membership
+    (e.g. `mem_toList`). -/
+instance : Std.ReflCmp (compare : Var → Var → Ordering) where
+  compare_self {a} := by cases a with
+    | ffv n => exact Std.ReflCmp.compare_self (cmp := (compare : Nat → Nat → Ordering))
+    | boolv n => exact Std.ReflCmp.compare_self (cmp := (compare : Nat → Nat → Ordering))
+
+instance : Std.LawfulEqCmp (compare : Var → Var → Ordering) where
+  eq_of_compare {a b} h := by
+    match a, b with
+    | .ffv n, .ffv m =>
+        have : n = m := Std.LawfulEqCmp.eq_of_compare (cmp := (compare : Nat → Nat → Ordering)) h
+        rw [this]
+    | .boolv n, .boolv m =>
+        have : n = m := Std.LawfulEqCmp.eq_of_compare (cmp := (compare : Nat → Nat → Ordering)) h
+        rw [this]
+    | .ffv _, .boolv _ => simp at h
+    | .boolv _, .ffv _ => simp at h
+
 /-  Hashing (Hashable) of Var. Needed if we use this in a HashMap or HashSet -/
 instance : Hashable Var where
   hash a := match a with

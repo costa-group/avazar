@@ -10,6 +10,7 @@ import Cli
 open Corellzk2smt.Language.Core.Syntax.Printer
 open Corellzk2smt.Language.Core.Syntax.Parser
 open Corellzk2smt.Language.Core.Analysis.Liveness
+open Corellzk2smt.Config
 
 open Cli
 

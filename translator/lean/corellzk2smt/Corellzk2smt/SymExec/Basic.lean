@@ -79,6 +79,19 @@ def setVar {c : ZKConfig} (env : SymEnv c) (id : VarID) (v : SymValue c) : SymEn
 def isDefinedVar {c : ZKConfig} (env : SymEnv c) (id : VarID) : Bool :=
   env.contains id
 
+/-- Set several variables at once in a symbolic environment -- the symbolic mirror of
+    `Semantics.Basic.setVars`, used by `seFuncCall` to bind a call's fresh output values into
+    the caller's `outs`. -/
+def setVars {c : ZKConfig} (env : SymEnv c) (ids : List VarID) (vs : List (SymValue c))
+    : Except String (SymEnv c) :=
+  match ids, vs with
+  | [], [] => Except.ok env
+  | id :: ids, v :: vs =>
+    match setVars (setVar env id v) ids vs with
+    | Except.ok env' => Except.ok env'
+    | Except.error err => Except.error err
+  | _, _ => Except.error "Mismatched lengths of ids and values"
+
 
 /- A formula representing a functional relationship. In particular, its satisfiablity does not
    depend on the values of the variables in 'inVars'.
@@ -99,17 +112,54 @@ structure FunctionalFormula (c : ZKConfig) where
 structure CmdsSpec (c : ZKConfig) where
   inSymEnv : SymEnv c := emptySymEnv
   outSymEnv : SymEnv c := emptySymEnv
-  f : FunctionalFormula c := default
+  f : FFFormula c := FFFormula.false
+  -- these are variables in f that appear in
+  -- the inSymEnv and outSymEnv. Without the parts
+  -- of the binary expansion, these always appear
+  -- as auxiliary variables so far.
+  fVars : VarSet := emptyVarSet
+  -- these are variables that are in f but not
+  -- in the inSymEnv and outSymEnv.
+  auxVars : VarSet := emptyVarSet
+
+  -- We need a proposition stating that the variables of f
+  -- are exactly the union of fVars and auxVars.
+
   nextVarId : Nat := 0
 
 structure FuncSpec (c : ZKConfig) where
+  name : String := ""
   inSymEnv : SymEnv c := emptySymEnv
   outSymEnv : SymEnv c := emptySymEnv
-  f : FunctionalFormula c := default
+  f : FFMacro c := default
   nextVarId : Nat := 0
+  -- Concrete information about the function's parameters and return values -- needed by
+  -- `seFuncCall` at a call site to know how to flatten actual arguments/outputs (each `.array
+  -- size` param/ret becomes `size` consecutive macro parameters, matching `f.params`'s layout).
+  params : List Param := []
+  rets : List Param := []
+  -- How many trailing macro parameters (beyond the flattened params/rets) are auxiliary
+  -- (internal to the function, not part of its input/output signature) -- `seFuncCall` mints
+  -- this many fresh call-site variables to fill those slots.
+  numAuxFFVars : Nat := 0
+  numAuxBoolVars : Nat := 0
 
+/-- Fetch a function's spec by name from a list of specs. Mirrors `fetchFunc`/`fetchMacro`'s
+    shape, but doesn't need to return the remaining list (`specs` isn't consumed structurally
+    the way `Prog`/`List (FFMacro c)` are during a recursive call -- `seFuncCall` doesn't
+    recurse into the callee's own body, that's `H_funcCall`'s separate concern). -/
+def fetchFuncSpec {c : ZKConfig} (specs : List (FuncSpec c)) (fname : FName)
+    : Except String (FuncSpec c) :=
+  match specs with
+  | [] => Except.error s!"Function spec for '{fname}' not found"
+  | spec :: rest => if spec.name == fname then Except.ok spec else fetchFuncSpec rest fname
 
 /-
+
+structure ExprSpec (c : ZKConfig) where
+  inSymEnv : SymEnv c := emptySymEnv
+  outSymEnv : SymEnv c := emptySymEnv
+  f : FFFormula c := FFFormula.false
 
 structure ExprSpec (c : ZKConfig) where
   inSymEnv : SymEnv c := emptySymEnv

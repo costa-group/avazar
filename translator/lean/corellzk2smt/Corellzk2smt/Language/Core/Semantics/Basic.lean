@@ -19,6 +19,15 @@ inductive Value (c : ZKConfig) where
   | array (arr : FFArray c)
   deriving Repr, Inhabited
 
+/-- Whether two concrete values have the same "shape" for merging purposes: both scalars, or
+    both arrays of the same length. Mirrors `SymExec.Lemmas.sameShape`, the symbolic-level
+    analog `mergeSymValue` requires as a well-formedness precondition. -/
+def sameShapeValue {c : ZKConfig} (v1 v2 : Value c) : Prop :=
+  match v1, v2 with
+  | .scalar _, .scalar _ => True
+  | .array a1, .array a2 => a1.size = a2.size
+  | _, _ => False
+
 /- Environment: A mapping from program variables to Value -/
 abbrev Env (c : ZKConfig) := Std.TreeMap VarID (Value c)
 
@@ -43,6 +52,13 @@ def getVar {c : ZKConfig}
    the value if it exists already. It never fails -/
 def setVar {c : ZKConfig} (env : Env c) (id : VarID) (v : Value c) : Env c :=
   env.insert id v
+
+/- Build an environment where every variable in `vars` is defined, defaulted to the scalar
+   value 0. Used to give a function call a fully-defined starting environment (see
+   `evalFunCall`), so that a variable assigned along one branch of a conditional but not the
+   other is still always defined afterwards. -/
+def zeroInitEnv {c : ZKConfig} (vars : VarIDSet) : Env c :=
+  vars.foldl (fun env id => setVar env id (Value.scalar 0)) (emptyEnv c)
 
 /- Set the values of multiple variables in an environment.
 -/
@@ -113,6 +129,14 @@ def ensureCorrectType {c : ZKConfig}
       Except.error s!"Array size mismatch: expected {n}, got {a.size}"
   | _, _ => Except.error "Type mismatch"
 
+/-- `vs`'s shapes match `params`'s declared types, pointwise (via `ensureCorrectType`) -- the
+    "well-typed argument/return list" condition shared between call-site well-formedness
+    (`WellShapedCom`'s `.func_call` case) and the symbolic-execution correctness layer
+    (`SymExec/FuncCallCorrectness.lean`'s `seFuncCall_correct`), hence living here rather than in
+    either one specifically. -/
+def ValuesMatchParams {c : ZKConfig} (vs : List (Value c)) (params : List Param) : Prop :=
+  List.Forall₂ (fun v (p : Param) => ensureCorrectType v p.type = Except.ok ()) vs params
+
 def bindInParams {c : ZKConfig}
     (env : Env c)
     (params : List Param)
@@ -173,6 +197,15 @@ def evalPow {c : ZKConfig} (v1 v2 : FF c) : FF c :=
   let exponent := v2.val
   (base ^ exponent : FF c)
 
+def evalUidiv {c : ZKConfig} (v1 v2 : FF c) : FF c :=
+  let base := v1.val
+  let divisor := v2.val
+  (base / divisor : FF c)
+
+def evalUimod {c : ZKConfig} (v1 v2 : FF c) : FF c :=
+  let base := v1.val
+  let divisor := v2.val
+  (base % divisor : FF c)
 
 /- Bitwise -/
 def evalShl {c : ZKConfig} (v1 v2 : FF c) : FF c :=
@@ -278,7 +311,7 @@ def evalExpr {c : ZKConfig}
           | .div => Except.ok (evalDiv val1 val2)
           | .pow => Except.ok (evalPow val1 val2)
           | .uimod => Except.ok (evalUimod val1 val2)
-          | .udiv => Except.ok (evalUidiv val1 val2)
+          | .uidiv => Except.ok (evalUidiv val1 val2)
           | .shl => Except.ok (evalShl val1 val2)
           | .shr => Except.ok (evalShr val1 val2)
           | .and => Except.ok (evalAnd val1 val2)

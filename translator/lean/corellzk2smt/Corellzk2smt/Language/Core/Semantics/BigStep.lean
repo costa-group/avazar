@@ -3,12 +3,14 @@ import Corellzk2smt.Config
 import Corellzk2smt.Language.Core.Syntax.AST
 import Corellzk2smt.Language.Core.Syntax.Printer
 import Corellzk2smt.Language.Core.Semantics.Basic
+import Corellzk2smt.Language.Core.Analysis.DefinedVars
 
 namespace Corellzk2smt.Language.Core.Semantics.BigStep
 
 open Corellzk2smt.Config
 open Corellzk2smt.Language.Core.Syntax.AST
 open Corellzk2smt.Language.Core.Semantics.Basic
+open Corellzk2smt.Language.Core.Analysis.DefinedVars
 
 
 
@@ -185,7 +187,10 @@ def evalFunCall {c : ZKConfig} (gconf : GlobalConfig c)
       | .mk _ func =>
       match func with
        | Func.mk _ params rets body =>
-           match bindInParams (emptyEnv c) params args with
+         if hasDupNames ((params ++ rets).map (·.name)) then
+           Except.error s!"Function '{fname}' has a duplicate parameter/return name"
+         else
+           match bindInParams (zeroInitEnv (definedVarsOfFunc func)) params args with
            | Except.error err => Except.error err
            | Except.ok vars_env =>
                let env := vars_env

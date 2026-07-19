@@ -327,10 +327,568 @@ theorem evalFormula_congr {c : ZKConfig}
       · rfl
       · rename_i m ms' _
         rw [newAssignment_congr a b args m.params h_ff' h_bool']
+  | .anno f1 _ =>
+      have ih1 := evalFormula_congr gconf ms f1 a b h_ff h_bool
+      simp only [evalFormula, ih1]
 termination_by sizeOfFormula f
 decreasing_by all_goals (simp only [sizeOfFormula]; omega)
 end
 
+-- ---------------------------------------------------------------------------
+-- Prepending name-disjoint macros doesn't change a successful evaluation
+-- ---------------------------------------------------------------------------
+
+/-- If `fetchMacro` succeeds, the found macro's own name matches, it's a member of the searched
+    list, and its remainder (`ms'`) is a sub-list (mirrors `fetchMacroLT`'s own induction shape,
+    giving the membership/name facts `fetchMacroLT` doesn't). -/
+theorem fetchMacro_sound {c : ZKConfig} (gconf : GlobalConfig c) :
+    ∀ (ms ms' : List (FFMacro c)) (name : String) (m : FFMacro c),
+      fetchMacro gconf ms name = Except.ok (m, ms') →
+      m.name = name ∧ m ∈ ms ∧ ∀ x ∈ ms', x ∈ ms := by
+  intro ms
+  induction ms with
+  | nil => intro ms' name m h; simp [fetchMacro] at h
+  | cons head tail ih =>
+      intro ms' name m h
+      simp only [fetchMacro] at h
+      by_cases hc : head.name = name
+      · simp only [hc, BEq.rfl, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨h1, h2⟩ := h
+        refine ⟨h1 ▸ hc, ?_, fun x hx => List.mem_cons_of_mem _ (h2 ▸ hx)⟩
+        rw [← h1]; exact List.mem_cons_self ..
+      · simp only [hc, beq_iff_eq, ↓reduceIte] at h
+        obtain ⟨hname, hmem, hsub⟩ := ih ms' name m h
+        exact ⟨hname, List.mem_cons_of_mem _ hmem, fun x hx => List.mem_cons_of_mem _ (hsub x hx)⟩
+
+/-- If `fetchMacro` finds `name` in `ms`, searching `extra ++ ms` instead gives exactly the same
+    result, provided none of `extra`'s own macros are named `name` -- `fetchMacro`'s recursion
+    skips straight past every non-matching entry, so once past `extra` (all of which fail to
+    match, by hypothesis) the search continues exactly as `fetchMacro gconf ms name` would, with
+    no leftover trace of `extra` in the returned remainder. -/
+theorem fetchMacro_prepend_indep {c : ZKConfig} (gconf : GlobalConfig c) :
+    ∀ (extra ms : List (FFMacro c)) (name : String),
+      (∀ m ∈ extra, m.name ≠ name) →
+      fetchMacro gconf (extra ++ ms) name = fetchMacro gconf ms name := by
+  intro extra
+  induction extra with
+  | nil => intro ms name _; rfl
+  | cons m extra ih =>
+      intro ms name hdisj
+      have hne : m.name ≠ name := hdisj m (List.mem_cons_self ..)
+      have hbeq : (m.name == name) = false := by simpa using hne
+      simp only [List.cons_append, fetchMacro, hbeq, Bool.false_eq_true, ↓reduceIte]
+      exact ih ms name (fun m' hm' => hdisj m' (List.mem_cons_of_mem _ hm'))
+
+-- `evalTerm`/`evalFormula`'s successful results are unaffected by prepending macros to the
+-- macro list, as long as none of the prepended macros share a name with anything in the
+-- original list -- needed for the whole-program correctness argument (`seExecFuncs_correct`):
+-- a function's own `TranslatesCorrectly` fact, proven using only the specs of functions *after*
+-- it, still holds once more functions get prepended to the front of the final specs list.
+-- Phrased as "given a successful evaluation against `ms`, the same evaluation against
+-- `extra ++ ms` succeeds with the same result" (not a full bidirectional equality) because that
+-- asymmetric form is all `TranslatesCorrectly`-style facts ever need, and it sidesteps having
+-- to reason about *unsuccessful* lookups (where `extra`'s disjointness-from-`ms` alone wouldn't
+-- rule out an accidental name collision with whatever `fetchMacro` was actually searching for).
+-- Every actual `fetchMacro` call encountered along a *successful* evaluation path necessarily
+-- finds its target within `ms` (or a shrinking suffix of it), so `fetchMacro_prepend_indep`
+-- applies validly at every step.
+mutual
+theorem evalTerm_prepend_indep {c : ZKConfig} (gconf : GlobalConfig c) (extra : List (FFMacro c))
+    (assign : Assignment c) (t : FFTerm c) (ms : List (FFMacro c)) (v : FF c)
+    (hdisj : ∀ m ∈ extra, ∀ m' ∈ ms, m.name ≠ m'.name)
+    (heval : evalTerm gconf assign t ms = Except.ok v) :
+    evalTerm gconf assign t (extra ++ ms) = Except.ok v := by
+  match t with
+  | .val v' => simp only [evalTerm] at heval ⊢; exact heval
+  | .var v' => simp only [evalTerm] at heval ⊢; exact heval
+  | .add t1 t2 =>
+      simp only [evalTerm] at heval
+      cases h1 : evalTerm gconf assign t1 ms with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalTerm gconf assign t2 ms with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              injection heval with heval
+              have ih1 := evalTerm_prepend_indep gconf extra assign t1 ms v1 hdisj h1
+              have ih2 := evalTerm_prepend_indep gconf extra assign t2 ms v2 hdisj h2
+              simp only [evalTerm, ih1, ih2, ← heval]
+  | .sub t1 t2 =>
+      simp only [evalTerm] at heval
+      cases h1 : evalTerm gconf assign t1 ms with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalTerm gconf assign t2 ms with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              injection heval with heval
+              have ih1 := evalTerm_prepend_indep gconf extra assign t1 ms v1 hdisj h1
+              have ih2 := evalTerm_prepend_indep gconf extra assign t2 ms v2 hdisj h2
+              simp only [evalTerm, ih1, ih2, ← heval]
+  | .mul t1 t2 =>
+      simp only [evalTerm] at heval
+      cases h1 : evalTerm gconf assign t1 ms with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalTerm gconf assign t2 ms with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              injection heval with heval
+              have ih1 := evalTerm_prepend_indep gconf extra assign t1 ms v1 hdisj h1
+              have ih2 := evalTerm_prepend_indep gconf extra assign t2 ms v2 hdisj h2
+              simp only [evalTerm, ih1, ih2, ← heval]
+  | .neg t1 =>
+      simp only [evalTerm] at heval
+      cases h1 : evalTerm gconf assign t1 ms with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          injection heval with heval
+          have ih1 := evalTerm_prepend_indep gconf extra assign t1 ms v1 hdisj h1
+          simp only [evalTerm, ih1, ← heval]
+  | .ite g t1 t2 =>
+      simp only [evalTerm] at heval
+      cases hg : evalFormula gconf assign g ms with
+      | error e => rw [hg] at heval; simp at heval
+      | ok vc =>
+          rw [hg] at heval
+          have ihg := evalFormula_prepend_indep gconf extra assign g ms vc hdisj hg
+          simp only [evalTerm, ihg]
+          cases vc with
+          | true => exact evalTerm_prepend_indep gconf extra assign t1 ms v hdisj heval
+          | false => exact evalTerm_prepend_indep gconf extra assign t2 ms v hdisj heval
+termination_by sizeOfTerm t
+decreasing_by all_goals (simp only [sizeOfTerm]; grind)
+
+theorem evalFormula_prepend_indep {c : ZKConfig} (gconf : GlobalConfig c) (extra : List (FFMacro c))
+    (assign : Assignment c) (f : FFFormula c) (ms : List (FFMacro c)) (v : Bool)
+    (hdisj : ∀ m ∈ extra, ∀ m' ∈ ms, m.name ≠ m'.name)
+    (heval : evalFormula gconf assign f ms = Except.ok v) :
+    evalFormula gconf assign f (extra ++ ms) = Except.ok v := by
+  match f with
+  | .true => simp only [evalFormula] at heval ⊢; exact heval
+  | .false => simp only [evalFormula] at heval ⊢; exact heval
+  | .range t l u =>
+      simp only [evalFormula] at heval
+      cases ht : evalTerm gconf assign t ms with
+      | error e => rw [ht] at heval; simp at heval
+      | ok vt =>
+          rw [ht] at heval
+          have iht := evalTerm_prepend_indep gconf extra assign t ms vt hdisj ht
+          simp only [evalFormula, iht]
+          exact heval
+  | .bool v' => simp only [evalFormula] at heval ⊢; exact heval
+  | .eq t1 t2 =>
+      simp only [evalFormula] at heval
+      cases h1 : evalTerm gconf assign t1 ms with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalTerm gconf assign t2 ms with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              have ih1 := evalTerm_prepend_indep gconf extra assign t1 ms v1 hdisj h1
+              have ih2 := evalTerm_prepend_indep gconf extra assign t2 ms v2 hdisj h2
+              simp only [evalFormula, ih1, ih2]
+              exact heval
+  | .and f1 f2 =>
+      simp only [evalFormula] at heval
+      cases h1 : evalFormula gconf assign f1 ms with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalFormula gconf assign f2 ms with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              injection heval with heval
+              have ih1 := evalFormula_prepend_indep gconf extra assign f1 ms v1 hdisj h1
+              have ih2 := evalFormula_prepend_indep gconf extra assign f2 ms v2 hdisj h2
+              simp only [evalFormula, ih1, ih2, ← heval]
+  | .or f1 f2 =>
+      simp only [evalFormula] at heval
+      cases h1 : evalFormula gconf assign f1 ms with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalFormula gconf assign f2 ms with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              injection heval with heval
+              have ih1 := evalFormula_prepend_indep gconf extra assign f1 ms v1 hdisj h1
+              have ih2 := evalFormula_prepend_indep gconf extra assign f2 ms v2 hdisj h2
+              simp only [evalFormula, ih1, ih2, ← heval]
+  | .not f1 =>
+      simp only [evalFormula] at heval
+      cases h1 : evalFormula gconf assign f1 ms with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          injection heval with heval
+          have ih1 := evalFormula_prepend_indep gconf extra assign f1 ms v1 hdisj h1
+          simp only [evalFormula, ih1, ← heval]
+  | .ite g f1 f2 =>
+      simp only [evalFormula] at heval
+      cases hg : evalFormula gconf assign g ms with
+      | error e => rw [hg] at heval; simp at heval
+      | ok vc =>
+          rw [hg] at heval
+          have ihg := evalFormula_prepend_indep gconf extra assign g ms vc hdisj hg
+          simp only [evalFormula, ihg]
+          cases vc with
+          | true => exact evalFormula_prepend_indep gconf extra assign f1 ms v hdisj heval
+          | false => exact evalFormula_prepend_indep gconf extra assign f2 ms v hdisj heval
+  | .imply f1 f2 =>
+      simp only [evalFormula] at heval
+      cases h1 : evalFormula gconf assign f1 ms with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalFormula gconf assign f2 ms with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              have ih1 := evalFormula_prepend_indep gconf extra assign f1 ms v1 hdisj h1
+              have ih2 := evalFormula_prepend_indep gconf extra assign f2 ms v2 hdisj h2
+              simp only [evalFormula, ih1, ih2]
+              exact heval
+  | .iff f1 f2 =>
+      simp only [evalFormula] at heval
+      cases h1 : evalFormula gconf assign f1 ms with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalFormula gconf assign f2 ms with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              have ih1 := evalFormula_prepend_indep gconf extra assign f1 ms v1 hdisj h1
+              have ih2 := evalFormula_prepend_indep gconf extra assign f2 ms v2 hdisj h2
+              simp only [evalFormula, ih1, ih2]
+              exact heval
+  | .call name args =>
+      simp only [evalFormula] at heval
+      cases hfm : fetchMacro gconf ms name with
+      | error e => rw [hfm] at heval; simp only [] at heval; exact absurd heval (by simp)
+      | ok result =>
+          obtain ⟨m, ms'⟩ := result
+          rw [hfm] at heval
+          simp only [] at heval
+          obtain ⟨hname, hmem, hsub⟩ := fetchMacro_sound gconf ms ms' name m hfm
+          have hdisj_name : ∀ m' ∈ extra, m'.name ≠ name := by
+            intro m' hm' heq
+            exact hdisj m' hm' m hmem (heq.trans hname.symm)
+          have hfm' : fetchMacro gconf (extra ++ ms) name = Except.ok (m, ms') := by
+            rw [fetchMacro_prepend_indep gconf extra ms name hdisj_name, hfm]
+          simp only [evalFormula]
+          rw [hfm']
+          simp only []
+          cases hna : newAssignment assign args m.params with
+          | error e =>
+              rw [hna] at heval
+              simp only [] at heval
+              exact absurd heval (by simp)
+          | ok newAssign =>
+              rw [hna] at heval
+              simp only [] at heval
+              simp only []
+              exact heval
+  | .anno f1 _ =>
+      simp only [evalFormula] at heval
+      have ih1 := evalFormula_prepend_indep gconf extra assign f1 ms v hdisj heval
+      simp only [evalFormula, ih1]
+termination_by sizeOfFormula f
+decreasing_by all_goals (simp only [sizeOfFormula]; grind)
+end
+
+-- ---------------------------------------------------------------------------
+-- Dropping a name-disjoint macro from the *front* of the macro list
+-- ---------------------------------------------------------------------------
+
+/-- `fetchMacro`'s search skips straight past a prepended macro that doesn't match the name being
+    searched for -- the single-macro specialization of `fetchMacro_prepend_indep`'s hypothesis
+    direction, phrased for `::` instead of `++` since every actual use only ever prepends one
+    macro at a time. -/
+theorem fetchMacro_skip_ne {c : ZKConfig} (gconf : GlobalConfig c) (badMacro : FFMacro c)
+    (ms : List (FFMacro c)) (name : String) (hne : badMacro.name ≠ name) :
+    fetchMacro gconf (badMacro :: ms) name = fetchMacro gconf ms name := by
+  have hbeq : (badMacro.name == name) = false := by simpa using hne
+  simp only [fetchMacro, hbeq, Bool.false_eq_true, ↓reduceIte]
+
+-- `t`/`f` never directly calls a macro named `badName`, on any branch (including untaken `.ite`
+-- arms) -- unlike `wellFormedTerm`/`wellFormedFormula`, this does *not* recurse into a called
+-- macro's own body. It doesn't need to: `evalFormula`'s `.call` case always looks the callee up
+-- in whatever macro list `.call` is itself evaluated against, so once that lookup is shown to
+-- skip straight past a name-disjoint prepended macro (`fetchMacro_skip_ne`), the *remainder*
+-- list handed down to evaluate the callee's body is identical whether or not the extra macro
+-- was ever prepended -- the callee's body never sees it, so nothing about what's inside the
+-- callee needs to be known here.
+mutual
+def TermNamesBelow {c : ZKConfig} (t : FFTerm c) (badName : String) : Prop :=
+  match t with
+  | .val _ | .var _ => True
+  | .add a b | .sub a b | .mul a b => TermNamesBelow a badName ∧ TermNamesBelow b badName
+  | .neg a => TermNamesBelow a badName
+  | .ite f a b => FormulaNamesBelow f badName ∧ TermNamesBelow a badName ∧ TermNamesBelow b badName
+
+def FormulaNamesBelow {c : ZKConfig} (f : FFFormula c) (badName : String) : Prop :=
+  match f with
+  | .true | .false | .bool _ => True
+  | .range t _ _ => TermNamesBelow t badName
+  | .eq a b => TermNamesBelow a badName ∧ TermNamesBelow b badName
+  | .and a b | .or a b | .imply a b | .iff a b =>
+      FormulaNamesBelow a badName ∧ FormulaNamesBelow b badName
+  | .not a => FormulaNamesBelow a badName
+  | .ite g a b =>
+      FormulaNamesBelow g badName ∧ FormulaNamesBelow a badName ∧ FormulaNamesBelow b badName
+  | .call name _args => name ≠ badName
+  | .anno f1 _ => FormulaNamesBelow f1 badName
+end
+
+-- If `t`/`f` never directly calls `badMacro.name`, a successful evaluation against
+-- `badMacro :: ms` is also a successful evaluation (with the same result) against `ms` alone --
+-- the converse direction `evalTerm_prepend_indep`/`evalFormula_prepend_indep` don't give (those
+-- only go small-list-succeeds → big-list-succeeds, which is genuinely one-directional: a `.call`
+-- naming the prepended macro would only ever resolve given its presence). Needed for the
+-- whole-program correctness argument: shrinking a `TranslatesCorrectly` completeness hypothesis
+-- (stated over the *bigger*, already-extended `specs` list) back down to the smaller list a
+-- single function's own proof was built against.
+mutual
+theorem evalTerm_names_below_indep {c : ZKConfig} (gconf : GlobalConfig c) (badMacro : FFMacro c)
+    (ms : List (FFMacro c)) (assign : Assignment c) (t : FFTerm c) (v : FF c)
+    (hbelow : TermNamesBelow t badMacro.name)
+    (heval : evalTerm gconf assign t (badMacro :: ms) = Except.ok v) :
+    evalTerm gconf assign t ms = Except.ok v := by
+  match t with
+  | .val v' => simp only [evalTerm] at heval ⊢; exact heval
+  | .var v' => simp only [evalTerm] at heval ⊢; exact heval
+  | .add t1 t2 =>
+      simp only [TermNamesBelow] at hbelow
+      obtain ⟨hb1, hb2⟩ := hbelow
+      simp only [evalTerm] at heval
+      cases h1 : evalTerm gconf assign t1 (badMacro :: ms) with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalTerm gconf assign t2 (badMacro :: ms) with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              injection heval with heval
+              have ih1 := evalTerm_names_below_indep gconf badMacro ms assign t1 v1 hb1 h1
+              have ih2 := evalTerm_names_below_indep gconf badMacro ms assign t2 v2 hb2 h2
+              simp only [evalTerm, ih1, ih2, ← heval]
+  | .sub t1 t2 =>
+      simp only [TermNamesBelow] at hbelow
+      obtain ⟨hb1, hb2⟩ := hbelow
+      simp only [evalTerm] at heval
+      cases h1 : evalTerm gconf assign t1 (badMacro :: ms) with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalTerm gconf assign t2 (badMacro :: ms) with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              injection heval with heval
+              have ih1 := evalTerm_names_below_indep gconf badMacro ms assign t1 v1 hb1 h1
+              have ih2 := evalTerm_names_below_indep gconf badMacro ms assign t2 v2 hb2 h2
+              simp only [evalTerm, ih1, ih2, ← heval]
+  | .mul t1 t2 =>
+      simp only [TermNamesBelow] at hbelow
+      obtain ⟨hb1, hb2⟩ := hbelow
+      simp only [evalTerm] at heval
+      cases h1 : evalTerm gconf assign t1 (badMacro :: ms) with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalTerm gconf assign t2 (badMacro :: ms) with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              injection heval with heval
+              have ih1 := evalTerm_names_below_indep gconf badMacro ms assign t1 v1 hb1 h1
+              have ih2 := evalTerm_names_below_indep gconf badMacro ms assign t2 v2 hb2 h2
+              simp only [evalTerm, ih1, ih2, ← heval]
+  | .neg t1 =>
+      simp only [TermNamesBelow] at hbelow
+      simp only [evalTerm] at heval
+      cases h1 : evalTerm gconf assign t1 (badMacro :: ms) with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          injection heval with heval
+          have ih1 := evalTerm_names_below_indep gconf badMacro ms assign t1 v1 hbelow h1
+          simp only [evalTerm, ih1, ← heval]
+  | .ite g t1 t2 =>
+      simp only [TermNamesBelow] at hbelow
+      obtain ⟨hbg, hb1, hb2⟩ := hbelow
+      simp only [evalTerm] at heval
+      cases hg : evalFormula gconf assign g (badMacro :: ms) with
+      | error e => rw [hg] at heval; simp at heval
+      | ok vc =>
+          rw [hg] at heval
+          have ihg := evalFormula_names_below_indep gconf badMacro ms assign g vc hbg hg
+          simp only [evalTerm, ihg]
+          cases vc with
+          | true => exact evalTerm_names_below_indep gconf badMacro ms assign t1 v hb1 heval
+          | false => exact evalTerm_names_below_indep gconf badMacro ms assign t2 v hb2 heval
+termination_by sizeOfTerm t
+decreasing_by all_goals (simp only [sizeOfTerm]; grind)
+
+theorem evalFormula_names_below_indep {c : ZKConfig} (gconf : GlobalConfig c)
+    (badMacro : FFMacro c) (ms : List (FFMacro c)) (assign : Assignment c) (f : FFFormula c)
+    (v : Bool) (hbelow : FormulaNamesBelow f badMacro.name)
+    (heval : evalFormula gconf assign f (badMacro :: ms) = Except.ok v) :
+    evalFormula gconf assign f ms = Except.ok v := by
+  match f with
+  | .true => simp only [evalFormula] at heval ⊢; exact heval
+  | .false => simp only [evalFormula] at heval ⊢; exact heval
+  | .range t l u =>
+      simp only [FormulaNamesBelow] at hbelow
+      simp only [evalFormula] at heval
+      cases ht : evalTerm gconf assign t (badMacro :: ms) with
+      | error e => rw [ht] at heval; simp at heval
+      | ok vt =>
+          rw [ht] at heval
+          have iht := evalTerm_names_below_indep gconf badMacro ms assign t vt hbelow ht
+          simp only [evalFormula, iht]
+          exact heval
+  | .bool v' => simp only [evalFormula] at heval ⊢; exact heval
+  | .eq t1 t2 =>
+      simp only [FormulaNamesBelow] at hbelow
+      obtain ⟨hb1, hb2⟩ := hbelow
+      simp only [evalFormula] at heval
+      cases h1 : evalTerm gconf assign t1 (badMacro :: ms) with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalTerm gconf assign t2 (badMacro :: ms) with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              have ih1 := evalTerm_names_below_indep gconf badMacro ms assign t1 v1 hb1 h1
+              have ih2 := evalTerm_names_below_indep gconf badMacro ms assign t2 v2 hb2 h2
+              simp only [evalFormula, ih1, ih2]
+              exact heval
+  | .and f1 f2 =>
+      simp only [FormulaNamesBelow] at hbelow
+      obtain ⟨hb1, hb2⟩ := hbelow
+      simp only [evalFormula] at heval
+      cases h1 : evalFormula gconf assign f1 (badMacro :: ms) with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalFormula gconf assign f2 (badMacro :: ms) with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              injection heval with heval
+              have ih1 := evalFormula_names_below_indep gconf badMacro ms assign f1 v1 hb1 h1
+              have ih2 := evalFormula_names_below_indep gconf badMacro ms assign f2 v2 hb2 h2
+              simp only [evalFormula, ih1, ih2, ← heval]
+  | .or f1 f2 =>
+      simp only [FormulaNamesBelow] at hbelow
+      obtain ⟨hb1, hb2⟩ := hbelow
+      simp only [evalFormula] at heval
+      cases h1 : evalFormula gconf assign f1 (badMacro :: ms) with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalFormula gconf assign f2 (badMacro :: ms) with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              injection heval with heval
+              have ih1 := evalFormula_names_below_indep gconf badMacro ms assign f1 v1 hb1 h1
+              have ih2 := evalFormula_names_below_indep gconf badMacro ms assign f2 v2 hb2 h2
+              simp only [evalFormula, ih1, ih2, ← heval]
+  | .not f1 =>
+      simp only [FormulaNamesBelow] at hbelow
+      simp only [evalFormula] at heval
+      cases h1 : evalFormula gconf assign f1 (badMacro :: ms) with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          injection heval with heval
+          have ih1 := evalFormula_names_below_indep gconf badMacro ms assign f1 v1 hbelow h1
+          simp only [evalFormula, ih1, ← heval]
+  | .ite g f1 f2 =>
+      simp only [FormulaNamesBelow] at hbelow
+      obtain ⟨hbg, hb1, hb2⟩ := hbelow
+      simp only [evalFormula] at heval
+      cases hg : evalFormula gconf assign g (badMacro :: ms) with
+      | error e => rw [hg] at heval; simp at heval
+      | ok vc =>
+          rw [hg] at heval
+          have ihg := evalFormula_names_below_indep gconf badMacro ms assign g vc hbg hg
+          simp only [evalFormula, ihg]
+          cases vc with
+          | true => exact evalFormula_names_below_indep gconf badMacro ms assign f1 v hb1 heval
+          | false => exact evalFormula_names_below_indep gconf badMacro ms assign f2 v hb2 heval
+  | .imply f1 f2 =>
+      simp only [FormulaNamesBelow] at hbelow
+      obtain ⟨hb1, hb2⟩ := hbelow
+      simp only [evalFormula] at heval
+      cases h1 : evalFormula gconf assign f1 (badMacro :: ms) with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalFormula gconf assign f2 (badMacro :: ms) with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              have ih1 := evalFormula_names_below_indep gconf badMacro ms assign f1 v1 hb1 h1
+              have ih2 := evalFormula_names_below_indep gconf badMacro ms assign f2 v2 hb2 h2
+              simp only [evalFormula, ih1, ih2]
+              exact heval
+  | .iff f1 f2 =>
+      simp only [FormulaNamesBelow] at hbelow
+      obtain ⟨hb1, hb2⟩ := hbelow
+      simp only [evalFormula] at heval
+      cases h1 : evalFormula gconf assign f1 (badMacro :: ms) with
+      | error e => rw [h1] at heval; simp at heval
+      | ok v1 =>
+          rw [h1] at heval
+          cases h2 : evalFormula gconf assign f2 (badMacro :: ms) with
+          | error e => rw [h2] at heval; simp at heval
+          | ok v2 =>
+              rw [h2] at heval
+              have ih1 := evalFormula_names_below_indep gconf badMacro ms assign f1 v1 hb1 h1
+              have ih2 := evalFormula_names_below_indep gconf badMacro ms assign f2 v2 hb2 h2
+              simp only [evalFormula, ih1, ih2]
+              exact heval
+  | .call name args =>
+      simp only [FormulaNamesBelow] at hbelow
+      have hne : badMacro.name ≠ name := hbelow.symm
+      simp only [evalFormula] at heval
+      cases hfm : fetchMacro gconf (badMacro :: ms) name with
+      | error e => rw [hfm] at heval; simp at heval
+      | ok result =>
+          obtain ⟨m, ms'⟩ := result
+          rw [hfm] at heval
+          simp only [] at heval
+          have hfm' : fetchMacro gconf ms name = Except.ok (m, ms') := by
+            rw [← fetchMacro_skip_ne gconf badMacro ms name hne, hfm]
+          simp only [evalFormula]
+          rw [hfm']
+          simp only []
+          exact heval
+  | .anno f1 _ =>
+      simp only [FormulaNamesBelow] at hbelow
+      simp only [evalFormula] at heval ⊢
+      exact evalFormula_names_below_indep gconf badMacro ms assign f1 v hbelow heval
+termination_by sizeOfFormula f
+decreasing_by all_goals (simp only [sizeOfFormula]; grind)
+end
 
 -- ---------------------------------------------------------------------------
 -- Well-formedness (a syntactic condition sufficient for totality)
@@ -403,6 +961,7 @@ def wellFormedFormula {c : ZKConfig} (gconf : GlobalConfig c)
       | Except.error _ => False
       | Except.ok (m, ms') =>
           argsMatchParams args m.params ∧ wellFormedFormula gconf ms' m.body
+  | .anno f1 _ => wellFormedFormula gconf ms f1
 termination_by (ms.length, sizeOfFormula f)
 decreasing_by
   any_goals
@@ -588,6 +1147,10 @@ theorem evalFormula_total {c : ZKConfig}
             obtain ⟨hm, hms'⟩ := Prod.mk.injEq .. |>.mp (Except.ok.injEq .. |>.mp heq2)
             subst hm; subst hms'
             simp only [hna, hv]
+  | .anno f1 _ =>
+      simp only [wellFormedFormula] at hwf
+      obtain ⟨v1, hv1⟩ := evalFormula_total gconf ms f1 hwf rho
+      exact ⟨v1, by simp only [evalFormula, hv1]⟩
 termination_by (ms.length, sizeOfFormula f)
 decreasing_by
   any_goals
