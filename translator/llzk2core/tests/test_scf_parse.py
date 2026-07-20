@@ -1,9 +1,10 @@
 import pytest
-from llzk_dialects.scf import SCFYield, SCFCondition, SCFIf, SCFFor, SCFWhile
-from llzk_dialects.core import SSAVar, Type, TranslationContext
+from llzk_dialects.scf import SCFYield, SCFCondition, SCFIf, SCFFor, SCFWhile, _contains_function_call
+from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext, LoopIndexedName
 from llzk_dialects.felt import FeltConst, FeltBinary
 from llzk_dialects.bool import BoolCmp
 from llzk_dialects.constrain import ConstrainEq
+from llzk_dialects.function import FunctionCall
 
 
 class TestSCF:
@@ -170,6 +171,35 @@ class TestSCF:
         # Induction variable is not in var2const after the loop.
         assert "%iv" not in ctx.var2const
 
+    def test_for_to_core_unrolls_when_body_has_call(self):
+        # A body containing a function.call is unrolled into one literal
+        # copy per iteration instead of a single generic "repeat" block —
+        # so a subcomponent instantiated inside the loop can be named
+        # per-iteration (LoopIndexedName, resolved via ctx.unroll_index)
+        # instead of sharing one bare name across every iteration.
+        call = FunctionCall([SSAVar("%r")], GlobalVariable("@Sub"), [SSAVar("%iv")], None)
+        call._member_hint = LoopIndexedName("last")
+        op = SCFFor([], SSAVar("%iv"), SSAVar("%c0"), SSAVar("%c2"), SSAVar("%c1"), [], [call])
+
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+        ctx.var2const["%c2"] = 2
+        ctx.var2const["%c1"] = 1
+        ctx.llzk_func2core["@Sub"] = "Sub"
+        ctx.core_func2args["Sub"] = ([], [("@out", Type("!felt.type"))])
+
+        out = list(op.to_core(ctx))
+        assert out == [
+            "%iv = 0",
+            "call Sub(%iv) to last#0.out",
+            "%iv = 1",
+            "call Sub(%iv) to last#1.out",
+        ]
+        assert not any("repeat" in line for line in out)
+        assert "%iv" not in ctx.var2const
+        # ctx.unroll_index is restored after the loop.
+        assert ctx.unroll_index is None
+
     def test_for_to_core_missing_bound_raises(self):
         lines = [
             "scf.for %iv = %c0 to %c2 step %c1 {",
@@ -245,3 +275,111 @@ class TestSCF:
     def test_while_match(self):
         assert SCFWhile.match("scf.while (%a = %b) {") is True
         assert SCFWhile.match("scf.if %c {") is False
+
+    def _counting_while(self, call=None):
+        """
+        A minimal 2-iteration counting while loop (mirrors
+        ternary_concrete.mlir's Num2Bits_16_325-instantiating loop, stripped
+        to just the counter): %arg1 starts at 0, increments by 1 each pass,
+        stops once %arg1 >= 2. `call`, if given, is spliced into after_body
+        so _contains_function_call detects it.
+        """
+        after_body = [FeltConst(SSAVar("%c1"), 1)]
+        if call is not None:
+            after_body.append(call)
+        after_body += [
+            FeltBinary(SSAVar("%next"), "felt.add", SSAVar("%arg1"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next")], [Type("index")]),
+        ]
+        before_body = [
+            FeltConst(SSAVar("%c2"), 2),
+            BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg1"), SSAVar("%c2")),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%arg1")], [Type("index")]),
+        ]
+        return SCFWhile(
+            [], [(SSAVar("%arg1"), SSAVar("%c0"))], [[Type("index")], [Type("index")]],
+            before_body, [(SSAVar("%arg1"), Type("index"))], after_body,
+        )
+
+    def test_while_to_core_repeat_when_no_call(self):
+        # No function.call in the body: translated once, wrapped in a Core
+        # "repeat" block (today's behavior, unaffected by unrolling).
+        op = self._counting_while()
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+
+        out = list(op.to_core(ctx))
+        assert out == [
+            "%arg1 = %c0",
+            "repeat 2 {",
+            "%c1 = 1",
+            "%next = felt.add %arg1 %c1",
+            "%arg1 = %next",
+            "%c2 = 2",
+            "%cond = bool.lt %c2 %arg1",
+            "}",
+        ]
+        assert ctx.unroll_index is None
+
+    def test_while_to_core_unrolls_when_body_has_call(self):
+        # A call inside the after-body: unrolled into one literal copy per
+        # iteration (no "repeat" wrapper), each with its own resolved
+        # LoopIndexedName — mirrors ternary_concrete.mlir's
+        # Num2Bits_16_325, instantiated once per while-loop iteration.
+        call = FunctionCall([SSAVar("%r")], GlobalVariable("@Sub"), [SSAVar("%arg1")], None)
+        call._member_hint = LoopIndexedName("last")
+        op = self._counting_while(call=call)
+
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+        ctx.llzk_func2core["@Sub"] = "Sub"
+        ctx.core_func2args["Sub"] = ([], [("@out", Type("!felt.type"))])
+
+        out = list(op.to_core(ctx))
+        assert out == [
+            "%arg1 = %c0",
+            "%c1 = 1",
+            "call Sub(%arg1) to last#0.out",
+            "%next = felt.add %arg1 %c1",
+            "%arg1 = %next",
+            "%c2 = 2",
+            "%cond = bool.lt %c2 %arg1",
+            "%c1 = 1",
+            "call Sub(%arg1) to last#1.out",
+            "%next = felt.add %arg1 %c1",
+            "%arg1 = %next",
+            "%c2 = 2",
+            "%cond = bool.lt %c2 %arg1",
+        ]
+        assert not any("repeat" in line for line in out)
+        assert ctx.unroll_index is None
+
+    # ── _contains_function_call ──────────────────────────────────────────────
+
+    def test_contains_call_flat(self):
+        call = FunctionCall([], GlobalVariable("@f"), [], None)
+        assert _contains_function_call([call]) is True
+
+    def test_contains_call_absent(self):
+        assert _contains_function_call([FeltConst(SSAVar("%c"), 1)]) is False
+
+    def test_contains_call_nested_in_if(self):
+        call = FunctionCall([], GlobalVariable("@f"), [], None)
+        inner_if = SCFIf([], SSAVar("%cond"), [], [call], None)
+        assert _contains_function_call([inner_if]) is True
+
+    def test_contains_call_nested_in_for(self):
+        call = FunctionCall([], GlobalVariable("@f"), [], None)
+        loop = SCFFor([], SSAVar("%iv"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"), [], [call])
+        assert _contains_function_call([loop]) is True
+
+    def test_contains_call_nested_in_while_after_body(self):
+        call = FunctionCall([], GlobalVariable("@f"), [], None)
+        while_op = SCFWhile([], [], [[], []], [SCFCondition(SSAVar("%c"), [], [])], [], [call])
+        assert _contains_function_call([while_op]) is True
+
+    def test_contains_call_sibling_branch_without_call_is_false(self):
+        # A call in one sibling branch must not make an unrelated, call-free
+        # branch report True.
+        other_if = SCFIf([], SSAVar("%cond"), [], [FeltConst(SSAVar("%c"), 1)], None)
+        assert _contains_function_call([other_if]) is False

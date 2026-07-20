@@ -22,9 +22,9 @@ Container element types (pod, struct):
 """
 
 import re
-from typing import List, Optional, Generator, Tuple
+from typing import List, Optional, Generator, Tuple, Union
 
-from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
+from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext, LoopIndexedName
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.utils import (
     array_felt_first_dimension, array_felt_dimensions,
@@ -273,9 +273,11 @@ class ArrayRead(Operation):
         self.types = types
         # Set by struct.py's _build_component_naming_maps pre-pass (via
         # _annotate_input_array_reads) when arr_ref is a registered
-        # "$inputs" component array: "member_idx" for a compile-time
-        # constant index, or the bare "member" when the index is a genuine
-        # runtime loop variable. None until then, or when arr_ref isn't a
+        # "$inputs" component array: the plain string "member_idx" for a
+        # compile-time constant index, or LoopIndexedName("member") when the
+        # index is a genuine runtime loop variable (resolved in to_core
+        # below into "member#i" if that loop got unrolled, else bare
+        # "member"). None until the pre-pass runs, or when arr_ref isn't a
         # registered component array.
         #
         # This can't be computed here from ctx.var2const at to_core time:
@@ -286,7 +288,7 @@ class ArrayRead(Operation):
         # symbolic loop index to one specific instance. The pre-pass instead
         # resolves this with its own scope-safe static fold, once per
         # function, and stamps the result directly on this node.
-        self._semantic_base: Optional[str] = None
+        self._semantic_base: Optional[Union[str, LoopIndexedName]] = None
 
     def dialect(self) -> Dialect:
         return Dialect("array")
@@ -339,8 +341,15 @@ class ArrayRead(Operation):
             # When this array backs a named component-array member, name the
             # extracted element after that member instead of a raw
             # SSA-derived name — see the _semantic_base field comment above
-            # for how/when this is resolved.
+            # for how/when this is resolved. A LoopIndexedName means the
+            # index wasn't a compile-time constant in the source IR; resolve
+            # it against the current unroll iteration (set by SCFFor/
+            # SCFWhile.to_core when they unroll a loop for this exact
+            # reason — see scf.py's _contains_function_call), or leave it
+            # bare if this loop wasn't unrolled after all.
             semantic_base = self._semantic_base
+            if isinstance(semantic_base, LoopIndexedName):
+                semantic_base = semantic_base.resolve(ctx.unroll_index)
 
             if is_pod:
                 all_fields = _parse_pod_fields(elem_type.name)

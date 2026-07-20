@@ -24,6 +24,30 @@ from llzk_dialects.bool import BoolCmp
 from llzk_dialects.utils import translate_assignment_core, split_top_level_commas
 
 
+def _contains_function_call(ops: List[Operation]) -> bool:
+    """
+    Recursively check whether a body contains a function.call anywhere,
+    at any nesting depth (through scf.if/scf.for/scf.while sub-bodies).
+
+    Drives SCFFor/SCFWhile's choice between translating a loop as a single
+    Core "repeat N" block (no call — today's behavior) or unrolling it into
+    N literal copies (a call present — see their to_core methods): a
+    subcomponent instantiated inside a loop needs a distinct name per
+    iteration (LoopIndexedName, resolved via ctx.unroll_index), which a
+    single generic "repeat" body has no way to provide.
+    """
+    from llzk_dialects.function import FunctionCall
+
+    for op in ops:
+        if isinstance(op, FunctionCall):
+            return True
+        for attr in ('body', 'then_body', 'else_body', 'before_body', 'after_body'):
+            sub = getattr(op, attr, None)
+            if sub and _contains_function_call(sub):
+                return True
+    return False
+
+
 class SCFYield(Operation):
     """
     Yield values from an scf block (if-branch, for-body, while-body, etc.).
@@ -440,20 +464,35 @@ class SCFFor(BlockOperation):
         assert ub_val is not None, \
             f"SCFFor: upper bound {self.ub.name} must be a known constant at translation time"
 
-        steps = len(range(lb_val, ub_val, step_val))
+        # A body with no function.call is translated once, mirroring how
+        # scf.while's loop-carried variables are translated rather than
+        # unrolling into per-iteration Python-duplicated text: the induction
+        # variable is initialised once before the loop and advanced by
+        # 'step' at the end of a single (repeated) body.
+        #
+        # A body containing a call is instead unrolled into one literal copy
+        # per iteration, since a subcomponent instantiated inside the loop
+        # needs a distinct name per iteration (LoopIndexedName, resolved via
+        # ctx.unroll_index) that a single generic body has no way to give it.
+        if _contains_function_call(self.body):
+            prev_unroll_index = ctx.unroll_index
+            for i, iv_val in enumerate(range(lb_val, ub_val, step_val)):
+                ctx.var2const[self.iv.name] = iv_val
+                yield f"{self.iv.to_core()} = {iv_val}"
+                ctx.unroll_index = i
+                for op in self.body:
+                    yield from op.to_core(ctx)
+            ctx.unroll_index = prev_unroll_index
+        else:
+            steps = len(range(lb_val, ub_val, step_val))
+            ctx.var2const[self.iv.name] = lb_val
+            yield f"{self.iv.to_core()} = {lb_val}"
 
-        # The induction variable is initialised once before the loop and
-        # advanced by 'step' at the end of each repeat iteration — mirroring
-        # how scf.while's loop-carried variables are translated, rather than
-        # unrolling the body into per-iteration Python-duplicated text.
-        ctx.var2const[self.iv.name] = lb_val
-        yield f"{self.iv.to_core()} = {lb_val}"
-
-        yield f"repeat {steps} {{"
-        for op in self.body:
-            yield from op.to_core(ctx)
-        yield f"{self.iv.to_core()} = felt.add {self.iv.to_core()} {step_val}"
-        yield "}"
+            yield f"repeat {steps} {{"
+            for op in self.body:
+                yield from op.to_core(ctx)
+            yield f"{self.iv.to_core()} = felt.add {self.iv.to_core()} {step_val}"
+            yield "}"
 
         ctx.var2const.pop(self.iv.name, None)
 
@@ -640,7 +679,6 @@ class SCFWhile(BlockOperation):
         )
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
         # We first initialize the variables outside the loop
         first_region_args = self.init_args
         in_types = self.func_type[0]
@@ -660,32 +698,48 @@ class SCFWhile(BlockOperation):
         # Then, we determine the number of steps in the while loop and
         # assign it to repeat
         steps = self._extract_step(initial_values)
-        yield f"repeat {steps} {{"
 
-        # The order of the regions to synthesize is reversed, as the before body
-        # checks the condition at the end of the loop. Ignore the final yield
-        for statement in self.after_body[:-1]:
-            yield from statement.to_core(ctx)
+        def emit_iteration() -> Generator[str, None, None]:
+            # The order of the regions to synthesize is reversed, as the before body
+            # checks the condition at the end of the loop. Ignore the final yield
+            for statement in self.after_body[:-1]:
+                yield from statement.to_core(ctx)
 
-        # Then assign the yielded values to the arguments
-        yield_op = self.after_body[-1]
-        for yield_val, (before_in_arg, type_) in zip(yield_op.operands, self.init_args):
-            if yield_val.name != before_in_arg.name:
-                yield translate_assignment_core_with_ctx(before_in_arg, yield_val, type_, ctx)
+            # Then assign the yielded values to the arguments
+            yield_op = self.after_body[-1]
+            for yield_val, (before_in_arg, type_) in zip(yield_op.operands, self.init_args):
+                if yield_val.name != before_in_arg.name:
+                    yield translate_assignment_core_with_ctx(before_in_arg, yield_val, type_, ctx)
 
-        # The before body comes afterwards
-        for statement in self.before_body[:-1]:
-            yield from statement.to_core(ctx)
+            # The before body comes afterwards
+            for statement in self.before_body[:-1]:
+                yield from statement.to_core(ctx)
 
-        # Finally, assigned the returned values to the variables outside the while
-        scf_condition = self.before_body[-1]
+            # Finally, assigned the returned values to the variables outside the while
+            scf_condition = self.before_body[-1]
 
-        # We need to assign the current results of the while operation
-        ctx.scf_result = self.results
-        yield from scf_condition.to_core(ctx)
-        ctx.scf_result = []
+            # We need to assign the current results of the while operation
+            ctx.scf_result = self.results
+            yield from scf_condition.to_core(ctx)
+            ctx.scf_result = []
 
-        yield f"}}"
+        # A body with no function.call is translated once, wrapped in a
+        # Core "repeat" block (today's behavior). A body containing a call
+        # is instead unrolled into one literal copy per iteration, since a
+        # subcomponent instantiated inside the loop needs a distinct name
+        # per iteration (LoopIndexedName, resolved via ctx.unroll_index)
+        # that a single generic body has no way to give it — see
+        # _contains_function_call and SCFFor.to_core's identical branching.
+        if _contains_function_call(self.before_body) or _contains_function_call(self.after_body):
+            prev_unroll_index = ctx.unroll_index
+            for i in range(steps):
+                ctx.unroll_index = i
+                yield from emit_iteration()
+            ctx.unroll_index = prev_unroll_index
+        else:
+            yield f"repeat {steps} {{"
+            yield from emit_iteration()
+            yield f"}}"
 
     def _extract_step(self, initial_values: Dict[str, int]) -> int:
         """
