@@ -2,6 +2,7 @@ import Llzk.Language.Core.Syntax.Printer
 import Llzk.Language.Core.Syntax.Parser
 import Llzk.Basic
 import Llzk.Language.Core.Analysis.Liveness
+import Llzk.Language.Core.Analysis.Useless_commands
 import Llzk.FFConstraints.SMT
 import Llzk.SymExec.BigStep
 import Llzk.SymExec.Basic
@@ -11,6 +12,7 @@ import Cli
 open Llzk.Language.Core.Syntax.Printer
 open Llzk.Language.Core.Syntax.Parser
 open Llzk.Language.Core.Analysis.Liveness
+open Llzk.Language.Core.Analysis.Useless_commands
 open Llzk.SymExec.Basic
 open Llzk.SymExec.BigStep
 open Llzk.FFConstraints.SMT
@@ -43,6 +45,12 @@ def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Str
      let (prog,_) ← StateT.run (@parseProg c []) initialState
      IO.println s!"Adding liveness information..."
      let progWithLiveness := addLivenessProg prog
+     let progToExec ←
+       if p.hasFlag "removeuseless" then
+         IO.println s!"Removing useless commands..."
+         pure (removeUselessProg progWithLiveness)
+       else
+         pure progWithLiveness
      IO.println s!"Performing symbolic execution..."
      let mainFunc := p.flag! "main" |>.as! String
      let secfg ← match buildCfg c p with
@@ -50,7 +58,7 @@ def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Str
        | Except.error e =>
            IO.println s!"Error building symbolic execution configuration: {e}"
            return
-     match @seExecProg c secfg progWithLiveness mainFunc with
+     match @seExecProg c secfg progToExec mainFunc with
      | Except.error e =>
          IO.println s!"Error during symbolic execution: {e}"
      | Except.ok constraints =>
@@ -80,9 +88,15 @@ def prettyPrinting
      let initialState ← ParserM.fromFile inFile
      let (prog,_) ← StateT.run (@parseProg c []) initialState
      let progWithLiveness := addLivenessProg prog
+     let progToPrint ←
+       if p.hasFlag "removeuseless" then
+         IO.println s!"Removing useless commands..."
+         pure (removeUselessProg progWithLiveness)
+       else
+         pure progWithLiveness
      IO.println s!"Pretty printing the input program..."
      IO.println s!""
-     printProg fc progWithLiveness outStream
+     printProg fc progToPrint outStream
      outStream.flush
 
 
@@ -119,6 +133,7 @@ def llzkCmd : Cmd := `[Cli|
   "Translator for Core Llzk programs."
   FLAGS:
     sl, showliveness;        "Show liveness information for each command."
+    ru, removeuseless;       "Show liveness information and emove useless commands from the program."
     pp, prettyprint;         "Parse and pretty-print the input program."
     se, symbolicexec;        "Perform symbolic execution of the input program."
     zk, zkconfig : String;   "The ZKConfig to use for symbolic execution (f11,g64). Default is f11."

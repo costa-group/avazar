@@ -1,0 +1,5 @@
+func main(x:ff) -> y:ff {
+  a = felt.add x 1
+  b = felt.mul x 2
+  y = a
+}

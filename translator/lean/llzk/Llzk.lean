@@ -5,6 +5,7 @@ import Llzk.Language.Core.Syntax.Parser
 import Llzk.Language.Core.Syntax.Printer
 
 import Llzk.Language.Core.Analysis.Liveness
+import Llzk.Language.Core.Analysis.Useless_commands
 import Llzk.Language.Core.Semantics.Basic
 import Llzk.Language.Core.Semantics.BigStep
 import Llzk.Language.Core.Semantics.SmallStep
