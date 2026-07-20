@@ -1,5 +1,6 @@
 import Llzk.Basic
 import Llzk.Language.Core.Syntax.AST
+import Llzk.Language.Core.Analysis.Liveness
 import Std.Data.TreeSet.Basic
 
 /- This module implements liveness analysis for the core language. The liveness information
@@ -69,6 +70,36 @@ def listToSet (l : List VarID) : VarIDSet :=
     | [] => emptyVarIDSet
     | v :: rest => (listToSet rest).insert v
 
+/- Computing which commands are useless inside a loop body is a backward
+   dataflow problem with a back-edge (the body's own live_in feeds back into
+   its live_out, since the loop may execute the body again). A single pass
+   (as used for straight-line code and if-statements, which have no back-edge)
+   is not enough: it can under-estimate liveness and cause `removeUselessCmd`
+   to delete commands that are in fact needed by a later iteration of the
+   loop. `loopFixedPointOut` iterates the (deletion-free) liveness
+   computation from `Liveness.addLivenessCmds` until the live-out set of the
+   loop stops growing, so that the final call to `removeUselessCmds` below
+   uses a sound approximation of liveness. -/
+
+/-- The live-in set of `body` when its live-out set is `out`, without deleting
+    any commands (pure liveness propagation, reusable across fixed-point
+    iterations). -/
+def liveInOfBody {c : ZKConfig} (body : List (ComWithMD c)) (out : VarIDSet) : VarIDSet :=
+    getCmdsLiveIn (Llzk.Language.Core.Analysis.Liveness.addLivenessCmds body out) out
+
+/-- Iterates `liveInOfBody` starting from `out`, growing the live-out set on
+    each round, until it stabilizes or `fuel` runs out. The live-out set is
+    monotonically non-decreasing and bounded by the (finite) set of variables
+    mentioned in `body`, so it is safe (if imprecise) to under-run the fuel:
+    the caller should pick `fuel` at least as large as the number of commands
+    in `body`, since each additional round of propagation can extend the
+    liveness chain through at most one more command. -/
+def loopFixedPointOut {c : ZKConfig}
+    (fuel : Nat) (body : List (ComWithMD c)) (out : VarIDSet) : VarIDSet :=
+    match fuel with
+    | 0 => out
+    | fuel + 1 => loopFixedPointOut fuel body ((liveInOfBody body out).union out)
+
 mutual
 
 /- Computes the liveness information for a single command,
@@ -102,40 +133,35 @@ def removeUselessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet)
                         some (ComWithMD.mk
                           { md with liveness := { live_in := liveIn, live_out := out } } cmd')
         | .loop_exp  rep body =>
-          -- live_in = live_in of (body;body)
-          -- None of the expressions are considered since they are supposed to be constant
-          -- expressions. Also the loop variable 'idx' is not considered since it is a
-          -- constant variable. We need to iterate the loop twice to get the fixed point of the
-          -- live variables. 2 iteration are enough.
-          let body' := removeUselessCmds body out
-          let liveIn := getCmdsLiveIn body'
-          let body'' := removeUselessCmds body (liveIn.union out)
-          let liveIn' := getCmdsLiveIn body''
-          let liveIn'' := addUsedVarsSimpleExpr liveIn' rep
-          let cmd' := Com.loop_exp rep body''
+          -- live_in = live_in of (body;body), computed at a genuine fixed
+          -- point since a loop may re-execute its body arbitrarily many
+          -- times (see `loopFixedPointOut`). None of the expressions are
+          -- considered since they are supposed to be constant expressions.
+          let fuel := sizeOfComs body + 1
+          let outFix := loopFixedPointOut fuel body out
+          let body' := removeUselessCmds body outFix
           -- the loop is useless if the body is empty after removing
           -- useless commands
-          match body', body'' with
-          | [], _ => none
-          | _, [] => none
-          | _, _ =>
+          match body' with
+          | [] => none
+          | _ =>
+              let liveIn := addUsedVarsSimpleExpr (getCmdsLiveIn body' outFix) rep
+              let cmd' := Com.loop_exp rep body'
               some (ComWithMD.mk
-                { md with liveness := { live_in := liveIn'', live_out := out } } cmd')
-        | .loop _rep body =>
-          -- live_in = live_in of (body;body)
-          -- The loop variable 'idx' is not considered since it is a constant variable.
-          -- We need to iterate the loop twice to get the fixed point of the live variables.
-          let body' := removeUselessCmds   body out
-          let liveIn := getCmdsLiveIn body'
-          let body'' := removeUselessCmds body (liveIn.union out)
-          let liveIn' := getCmdsLiveIn body''
-          let cmd' := Com.loop _rep body''
-          match body', body'' with
-          | [], _ => none
-          | _, [] => none
-          | _, _ =>
+                { md with liveness := { live_in := liveIn, live_out := out } } cmd')
+        | .loop rep body =>
+          -- live_in = live_in of (body;body), computed at a genuine fixed
+          -- point (see `loopFixedPointOut`).
+          let fuel := sizeOfComs body + 1
+          let outFix := loopFixedPointOut fuel body out
+          let body' := removeUselessCmds body outFix
+          match body' with
+          | [] => none
+          | _ =>
+              let liveIn := getCmdsLiveIn body' outFix
+              let cmd' := Com.loop rep body'
               some (ComWithMD.mk
-                { md with liveness := { live_in := liveIn', live_out := out } } cmd')
+                { md with liveness := { live_in := liveIn, live_out := out } } cmd')
         | .new_array id _size =>
           -- live_in = live_out \ {id}
           -- We do not consider size since it is supposed to be a constant expression.
