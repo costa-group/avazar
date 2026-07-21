@@ -15,11 +15,11 @@ class TestArray:
         assert op.result_type == Type("!array.type<index>")
 
     def test_new_with_elements(self):
-        op = ArrayNew.parse("%a = array.new : (%x, %y) : !array.type<index>")
+        op = ArrayNew.parse("%a = array.new %x, %y : !array.type<index>")
         assert op.elements == [SSAVar("%x"), SSAVar("%y")]
 
     def test_new_single_element(self):
-        op = ArrayNew.parse("%a = array.new : (%v) : !array.type<index>")
+        op = ArrayNew.parse("%a = array.new %v : !array.type<index>")
         assert len(op.elements) == 1
 
     def test_new_match(self):
@@ -210,6 +210,31 @@ class TestArrayToCore:
         op = ArrayNew.parse("%a = array.new : !array.type<2,3,4 x !felt.type<\"bn128\">>")
         lines = list(op.to_core(self._ctx()))
         assert lines == ["array.new 24 %a"]
+
+    def test_new_to_core_with_elements(self):
+        # Format from real MLIR (babypbk_test_concrete.mlir): array.new with
+        # initial elements has no leading colon or parentheses.
+        op = ArrayNew.parse(
+            "%a = array.new %x, %y : !array.type<2 x !felt.type<\"bn128\">>"
+        )
+        lines = list(op.to_core(self._ctx()))
+        assert lines == [
+            "array.new 2 %a",
+            "array.write %x %a[0]",
+            "array.write %y %a[1]",
+        ]
+
+    def test_new_to_core_elements_count_mismatch_raises(self):
+        op = ArrayNew.parse(
+            "%a = array.new %x, %y : !array.type<3 x !felt.type<\"bn128\">>"
+        )
+        with pytest.raises(AssertionError):
+            list(op.to_core(self._ctx()))
+
+    def test_new_to_core_pod_with_elements_raises(self):
+        op = ArrayNew.parse("%a = array.new %x : <2 x !pod.type<[@in: !felt.type<\"bn128\">]>>")
+        with pytest.raises(NotImplementedError):
+            list(op.to_core(self._ctx()))
 
     # ── ArrayRead.to_core ─────────────────────────────────────────────────────
 

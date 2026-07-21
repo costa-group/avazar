@@ -3,11 +3,12 @@ SCF dialect — Structured Control Flow (standard MLIR dialect, used inside LLZK
 Prefix: scf.
 
 Operations:
-  SCFYield     — scf.yield     (yield values from a block, used in if/for/while)
-  SCFCondition — scf.condition (while-loop condition + pass-through values)
-  SCFIf        — scf.if        (BlockOperation: conditional with then/optional else)
-  SCFFor       — scf.for       (BlockOperation: counted loop with step)
-  SCFWhile     — scf.while     (BlockOperation: pre-condition loop with before/after regions)
+  SCFYield         — scf.yield         (yield values from a block, used in if/for/while)
+  SCFCondition     — scf.condition     (while-loop condition + pass-through values)
+  SCFIf            — scf.if            (BlockOperation: conditional with then/optional else)
+  SCFExecuteRegion — scf.execute_region (BlockOperation: unconditional single-region grouping)
+  SCFFor           — scf.for           (BlockOperation: counted loop with step)
+  SCFWhile         — scf.while         (BlockOperation: pre-condition loop with before/after regions)
 """
 import itertools
 import re
@@ -21,7 +22,7 @@ from llzk_dialects.definitions import Dialect
 from llzk_dialects.core_utils import translate_assignment_core_with_ctx, infer_n_repetitions_from_expressions
 from llzk_dialects.felt import FeltBinary, FeltConst
 from llzk_dialects.bool import BoolCmp
-from llzk_dialects.utils import translate_assignment_core, split_top_level_commas
+from llzk_dialects.utils import split_top_level_commas
 
 
 def _contains_function_call(ops: List[Operation]) -> bool:
@@ -92,25 +93,23 @@ class SCFYield(Operation):
         return SCFYield(operands, types)
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
-        # It uses "current_yield" inside the context to retrieve
-        # the name of the variable that is used as a result and performs
-        # all the assignments for each component
+        # Uses ctx.scf_result (set by the enclosing block op — scf.if,
+        # scf.execute_region, etc. — around this yield's own to_core call)
+        # to retrieve the result variable(s) this yield assigns into, then
+        # delegates to the same ctx-aware dispatcher used everywhere else in
+        # the codebase (plain values, structs, arrays of pod/struct) — this
+        # is what lets a yield carry a pod/struct-typed value, not just ff
+        # or a plain felt array (mirrors SCFCondition.to_core, just below).
         yield_res_index = 0
         for result in ctx.scf_result:
             for component in range(result.n_components):
-                # Retrieve the component and the yield operand at current
-                # index "yield_res_index"
-                lhs = result.to_core_component(component)
-                rhs = self._operands[yield_res_index].to_core()
+                lhs = SSAVar(result.to_core_component(component))
+                rhs = self._operands[yield_res_index]
                 type_ = self.types[yield_res_index]
 
-                to_core_type = type_.to_core()
-                assert to_core_type is not None, f"Error recognizing type inside a yield expression: {self}"
-                # Depending on whether the type corresponds to an array
-                # or to a ff, we generate a copy or a direct assignment
-                # Here, we don't consider translate_assignment_core_with_ctx because
-                # the variables are not constants (they are unfolded depending on the branch)
-                yield translate_assignment_core(lhs, rhs, to_core_type == "ff")
+                stmt = translate_assignment_core_with_ctx(lhs, rhs, type_, ctx)
+                if stmt:
+                    yield stmt
                 yield_res_index += 1
 
     @property
@@ -358,6 +357,106 @@ class SCFIf(BlockOperation):
                     if self.else_body else '')
         return (f"SCFIf({res_str}scf.if {self.condition} {{\n  {then_str}\n}}"
                 f"{else_str})")
+
+
+class SCFExecuteRegion(BlockOperation):
+    """
+    Execute a single region unconditionally, exactly once — a grouping /
+    let-binding construct with no condition or loop bound of its own. Any
+    branching is expressed by ordinary nested scf.if inside the region; any
+    looping is done by whatever scf.while/scf.for it's embedded in. Ends
+    with scf.yield, whose operands become this op's own results.
+
+    Syntax:
+      [%res[:N] =] scf.execute_region [-> (type0, type1, ...) | -> type0] {
+        <body — must end with scf.yield>
+      }
+    """
+
+    _OPS = {"scf.execute_region"}
+
+    def __init__(self, results: List[SSAVar], result_types: List[Type],
+                 body: List[Operation]):
+        self.results = results
+        self.result_types = result_types
+        self.body = body
+
+    def dialect(self) -> Dialect:
+        return Dialect("scf")
+
+    @staticmethod
+    def match(line: str) -> bool:
+        return line.split('=')[-1].strip().split()[0] in SCFExecuteRegion._OPS
+
+    @classmethod
+    def parse(cls, lines: List[str], cursor: int,
+              parse_fn: ParseFn) -> Tuple['SCFExecuteRegion', int]:
+        header = lines[cursor]
+        # [%res[:N] =] scf.execute_region [-> (types) | -> type] {
+        pattern = re.compile(
+            r"\s*(?:(?P<res>[^=]+?)\s*=\s*)?scf\.execute_region"
+            r"(?:\s*->\s*(?P<types>[^{]+?))?\s*\{"
+        )
+        m = re.match(pattern, header)
+        if not m:
+            raise ValueError(f"Failed to parse SCFExecuteRegion header: {header}")
+
+        results = (
+            [SSAVar.parse(r.strip()) for r in m["res"].split(",") if r.strip()]
+            if m["res"] else []
+        )
+        if m["types"]:
+            types_str = m["types"].strip()
+            if types_str.startswith("(") and types_str.endswith(")"):
+                types_str = types_str[1:-1]
+            result_types = [Type.parse(t.strip()) for t in split_top_level_commas(types_str)]
+        else:
+            result_types = []
+
+        # A single region with a plain trailing '}' (no sibling "else {"/
+        # "do {" construct can share its closing line), so whole-line brace
+        # counting suffices.
+        depth = header.count('{') - header.count('}')
+        end = cursor
+        while depth > 0 and end + 1 < len(lines):
+            end += 1
+            depth += lines[end].count('{') - lines[end].count('}')
+
+        body = parse_fn(cursor + 1, end)
+        return (
+            SCFExecuteRegion(results, result_types, body),
+            end + 1,
+        )
+
+    def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
+        # Unconditional, executed exactly once: no wrapper syntax needed at
+        # all in Core — just inline the body, then let the terminating
+        # scf.yield assign into this op's own result(s), the same way
+        # SCFIf._translate_branch handles one branch's final yield.
+        for statement in self.body[:-1]:
+            yield from statement.to_core(ctx)
+
+        assert len(self.results) == 0 or isinstance(self.body[-1], SCFYield), \
+            f"Last instruction of scf.execute_region must be a yield and it is {self.body[-1]}"
+
+        if len(self.body) > 0:
+            ctx.scf_result = self.results
+            yield from self.body[-1].to_core(ctx)
+            ctx.scf_result = []
+
+    def update_variables(self, rename: Dict[str, str]) -> None:
+        for r in self.results:
+            if r.name in rename:
+                r.name = rename[r.name]
+        for op in self.body:
+            op.update_variables(rename)
+
+    def __repr__(self):
+        res_str = (', '.join(repr(r) for r in self.results) + ' = ') if self.results else ''
+        types_str = (' -> (' + ', '.join(repr(t) for t in self.result_types) + ')'
+                     if self.result_types else '')
+        body_str = '\n  '.join(repr(op) for op in self.body)
+        return (f"SCFExecuteRegion({res_str}scf.execute_region{types_str} {{\n  {body_str}\n}})")
 
 
 class SCFFor(BlockOperation):
@@ -878,6 +977,9 @@ def _collect_result_names(ops: List[Operation]) -> Set[str]:
             names.update(r.name for r in op.results)
             names.update(_collect_result_names(op.before_body))
             names.update(_collect_result_names(op.after_body))
+        elif isinstance(op, SCFExecuteRegion):
+            names.update(r.name for r in op.results)
+            names.update(_collect_result_names(op.body))
         elif hasattr(op, 'body'):
             names.update(_collect_result_names(op.body))
     return names
@@ -892,5 +994,6 @@ class SCFDialect(Dialect):
         self.register(SCFCondition)
         # Block ops dispatched separately by LLZKParser
         self.register(SCFIf)
+        self.register(SCFExecuteRegion)
         self.register(SCFFor)
         self.register(SCFWhile)

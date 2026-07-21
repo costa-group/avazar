@@ -201,9 +201,9 @@ class ArrayNew(Operation):
     """
     Create a new array, optionally initialised with element values.
 
-    Syntax: %result = array.new [: ($elements)?] : type($result)
+    Syntax: %result = array.new [$elements] : type($result)
     Example (empty):    %a = array.new : !array.type<index, 4 x index>
-    Example (elements): %a = array.new : (%x, %y) : !array.type<index, 2 x index>
+    Example (elements): %a = array.new %x, %y : !array.type<index, 2 x index>
     Operands: elements (variadic), mapOperands (variadic index, for affine shapes)
     Result:   n-dimensional array
     """
@@ -225,10 +225,10 @@ class ArrayNew(Operation):
     @classmethod
     def parse(cls, line: str) -> 'ArrayNew':
         # %r = array.new : !type
-        # %r = array.new : (%e0, %e1) : !type
+        # %r = array.new %e0, %e1 : !type
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*array\.new"
-            r"(?:\s*:\s*\(\s*(?P<elems>[^)]*)\s*\))?"
+            r"(?:\s+(?P<elems>%[^\s,]+(?:\s*,\s*%[^\s,]+)*))?"
             r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
@@ -249,13 +249,26 @@ class ArrayNew(Operation):
         return list(self.elements)
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
-        if len(self.elements) > 0:
-            raise NotImplementedError("array.new not implemented with initial elements")
         type_str = self.result_type.name
         dim = array_felt_first_dimension(type_str)
         if dim is not None:
             yield f"array.new {dim} {self._result}"
+            if self.elements:
+                # Core allows a literal/known value to be written directly
+                # into an array slot, so each initial element just becomes a
+                # plain array.write at its own index.
+                assert len(self.elements) == dim, (
+                    f"ArrayNew: {len(self.elements)} initial elements given "
+                    f"for a {dim}-element array"
+                )
+                for i, elem in enumerate(self.elements):
+                    yield f"array.write {elem.to_core()} {self._result.to_core()}[{i}]"
             return
+
+        if self.elements:
+            raise NotImplementedError(
+                "array.new with initial elements is only implemented for felt arrays"
+            )
 
         if "!pod.type" in type_str or "!struct.type" in type_str:
             # Array of pod/struct (structure-of-arrays): one real flattened
@@ -268,7 +281,7 @@ class ArrayNew(Operation):
                 yield f"array.new {leaf_size} {_container_field_var(self._result.name, field_path)}"
 
     def __repr__(self):
-        elem_str = f" : ({', '.join(repr(e) for e in self.elements)})" if self.elements else ""
+        elem_str = f" {', '.join(repr(e) for e in self.elements)}" if self.elements else ""
         return f"ArrayNew({self._result} = array.new{elem_str} : {self.result_type})"
 
 

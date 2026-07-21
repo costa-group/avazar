@@ -1,5 +1,8 @@
 import pytest
-from llzk_dialects.scf import SCFYield, SCFCondition, SCFIf, SCFFor, SCFWhile, _contains_function_call
+from llzk_dialects.scf import (
+    SCFYield, SCFCondition, SCFIf, SCFExecuteRegion, SCFFor, SCFWhile,
+    _contains_function_call,
+)
 from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext, LoopIndexedName
 from llzk_dialects.felt import FeltConst, FeltBinary
 from llzk_dialects.bool import BoolCmp
@@ -102,6 +105,110 @@ class TestSCF:
     def test_if_match(self):
         assert SCFIf.match("scf.if %c {") is True
         assert SCFIf.match("scf.for %iv = %lb to %ub step %s {") is False
+
+    def test_if_to_core_yields_pod_value(self):
+        # Regression: SCFYield.to_core must dispatch through
+        # translate_assignment_core_with_ctx (not the plain, type-agnostic
+        # helper) so a pod-typed yield — as scf.execute_region's real usage
+        # requires — is handled the same way it already is for felt/array.
+        self.lines = [
+            "%r = scf.if %cond : !pod.type<[@x: !felt.type]> {",
+            "scf.yield %a : !pod.type<[@x: !felt.type]>",
+            "} else {",
+            "scf.yield %b : !pod.type<[@x: !felt.type]>",
+            "}",
+        ]
+        op, _ = SCFIf.parse(self.lines, 0, self._simple_parse_fn)
+        ctx = TranslationContext()
+        ctx.ssa2pod_var["%a"] = {"@x": ("%a_@x", Type("!felt.type"))}
+        ctx.ssa2pod_var["%b"] = {"@x": ("%b_@x", Type("!felt.type"))}
+        out = list(op.to_core(ctx))
+        assert out == [
+            "if (%cond == 1) {",
+            "%r_@x = %a_@x",
+            "}\n",
+            "else {",
+            "%r_@x = %b_@x",
+            "}",
+        ]
+        assert ctx.ssa2pod_var["%r"] == {"@x": ("%r_@x", Type("!felt.type"))}
+
+    # ── SCFExecuteRegion (BlockOperation) ─────────────────────────────────────
+
+    def test_execute_region_no_results(self):
+        self.lines = [
+            "scf.execute_region {",
+            "constrain.eq %a, %b",
+            "scf.yield",
+            "}",
+        ]
+        op, next_cur = SCFExecuteRegion.parse(self.lines, 0, self._simple_parse_fn)
+        assert op.results == []
+        assert op.result_types == []
+        assert len(op.body) == 2
+        assert next_cur == 4
+
+    def test_execute_region_single_scalar_result(self):
+        self.lines = [
+            "%x = scf.execute_region -> !felt.type<\"bn128\"> {",
+            "scf.yield %v : !felt.type<\"bn128\">",
+            "}",
+        ]
+        op, next_cur = SCFExecuteRegion.parse(self.lines, 0, self._simple_parse_fn)
+        assert op.results == [SSAVar("%x")]
+        assert op.result_types == [Type("!felt.type<\"bn128\">")]
+        assert next_cur == 3
+
+    def test_execute_region_multi_pod_result(self):
+        self.lines = [
+            "%34:2 = scf.execute_region -> (!pod.type<[@a: index]>, !pod.type<[@b: index]>) {",
+            "scf.yield %x, %y : !pod.type<[@a: index]>, !pod.type<[@b: index]>",
+            "}",
+        ]
+        op, next_cur = SCFExecuteRegion.parse(self.lines, 0, self._simple_parse_fn)
+        assert op.results == [SSAVar("%34", 2)]
+        assert op.result_types == [Type("!pod.type<[@a: index]>"), Type("!pod.type<[@b: index]>")]
+        assert next_cur == 3
+
+    def test_execute_region_match(self):
+        assert SCFExecuteRegion.match("scf.execute_region {") is True
+        assert SCFExecuteRegion.match("%x = scf.execute_region -> !felt.type<\"bn128\"> {") is True
+        assert SCFExecuteRegion.match("scf.if %c {") is False
+
+    def test_execute_region_to_core_no_results(self):
+        self.lines = [
+            "scf.execute_region {",
+            "%c = felt.const 1 : !felt.type",
+            "scf.yield",
+            "}",
+        ]
+        op, _ = SCFExecuteRegion.parse(self.lines, 0, self._simple_parse_fn)
+        ctx = TranslationContext()
+        # No wrapper syntax at all: just the inlined body statement(s).
+        assert list(op.to_core(ctx)) == ["%c = 1"]
+
+    def test_execute_region_to_core_scalar_result(self):
+        self.lines = [
+            "%x = scf.execute_region -> !felt.type<\"bn128\"> {",
+            "scf.yield %v : !felt.type<\"bn128\">",
+            "}",
+        ]
+        op, _ = SCFExecuteRegion.parse(self.lines, 0, self._simple_parse_fn)
+        ctx = TranslationContext()
+        assert list(op.to_core(ctx)) == ["%x = %v"]
+
+    def test_execute_region_to_core_pod_result_propagates_ssa2pod_var(self):
+        self.lines = [
+            "%34 = scf.execute_region -> !pod.type<[@x: !felt.type]> {",
+            "scf.yield %36 : !pod.type<[@x: !felt.type]>",
+            "}",
+        ]
+        op, _ = SCFExecuteRegion.parse(self.lines, 0, self._simple_parse_fn)
+        ctx = TranslationContext()
+        ctx.ssa2pod_var["%36"] = {"@x": ("%36_@x", Type("!felt.type"))}
+        out = list(op.to_core(ctx))
+        assert out == ["%34_@x = %36_@x"]
+        assert ctx.ssa2pod_var["%34"] == {"@x": ("%34_@x", Type("!felt.type"))}
 
     # ── SCFFor (BlockOperation) ───────────────────────────────────────────────
 

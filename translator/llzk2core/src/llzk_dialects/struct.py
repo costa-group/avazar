@@ -81,7 +81,7 @@ def _fold_index_constants(ops):
     _find_array_component_bases.
     """
     from llzk_dialects.felt import FeltConst
-    from llzk_dialects.arith import ArithConst
+    from llzk_dialects.arith import ArithConst, parse_arith_const_value
     from llzk_dialects.cast import CastToIndex, CastToFelt
 
     const_map = {}
@@ -89,7 +89,7 @@ def _fold_index_constants(ops):
         if isinstance(op, FeltConst):
             const_map[op.result.name] = op.constant
         elif isinstance(op, ArithConst):
-            const_map[op.result.name] = int(op.value)
+            const_map[op.result.name] = parse_arith_const_value(op.value)
         elif isinstance(op, (CastToIndex, CastToFelt)):
             value = const_map.get(op.value.name)
             if value is not None:
