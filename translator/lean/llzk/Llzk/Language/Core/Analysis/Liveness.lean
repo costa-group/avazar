@@ -83,8 +83,14 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
           -- live_in = (live_in_then ∪ live_in_else) ∪ usedVars(cond)
           let tb' := addLivenessCmds tb out
           let eb' := addLivenessCmds eb out
-          let liveInThen := getCmdsLiveIn tb'
-          let liveInElse := getCmdsLiveIn eb'
+          -- `out` must be passed explicitly as the default here: an `if`
+          -- with no `else` parses to an empty branch (`[]`), and an empty
+          -- branch's live-in must equal `out` (it passes every live-out
+          -- variable straight through unchanged), not `getCmdsLiveIn`'s own
+          -- default of `emptyVarIDSet` -- otherwise variables only needed on
+          -- that implicit empty path are silently dropped from live_in.
+          let liveInThen := getCmdsLiveIn tb' out
+          let liveInElse := getCmdsLiveIn eb' out
           let liveIn := addUsedVarsCond (liveInThen.union liveInElse) cond
           let cmd' := Com.if_stmt cond tb' eb'
           ComWithMD.mk { md with liveness := { live_in := liveIn, live_out := out } } cmd'

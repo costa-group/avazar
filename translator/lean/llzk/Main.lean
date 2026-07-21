@@ -138,7 +138,7 @@ def llzkCmd : Cmd := `[Cli|
   "Translator for Core Llzk programs."
   FLAGS:
     sl, showliveness;        "Show liveness information for each command."
-    ru, removeuseless;       "Show liveness information and emove useless commands from the program."
+    ru, removeuseless;       "Remove useless commands from the program."
     pp, prettyprint;         "Parse and pretty-print the input program."
     se, symbolicexec;        "Perform symbolic execution of the input program."
     zk, zkconfig : String;   "The ZKConfig to use for symbolic execution (f11,g64). Default is f11."
