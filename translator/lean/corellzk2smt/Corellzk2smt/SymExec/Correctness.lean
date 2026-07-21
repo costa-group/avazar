@@ -1276,7 +1276,7 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
         intro symEnv hbelow
         apply noop_spec_correct gconf specs sconf symEnv hbelow
         · intro env; simp only [evalCmd]; rfl
-        · simp only [seCmd]; rfl
+        · simp only [seCmd]
     | .func_call outs fname args, hshaped =>
         have heq_c : (fun env => evalCmd gconf p env (ComWithMD.mk md (Com.func_call outs fname args)))
             = (fun env => evalFuncCallCmd gconf p fname args outs env) := by

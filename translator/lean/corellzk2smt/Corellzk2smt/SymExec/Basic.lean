@@ -107,24 +107,18 @@ structure FunctionalFormula (c : ZKConfig) where
 
 
 
-/- A specification for a sequence of commands.
--/
+/- A specification for a sequence of commands. `f`'s own variables (all of them, whether they
+   trace back to `inSymEnv`/`outSymEnv` or are internal witnesses) are always recomputed on
+   demand as `specVars spec := ffVarsOfFormula spec.f ∪ bVarsOfFormula spec.f` (`Lemmas.lean`)
+   rather than tracked as separate fields here -- a hand-maintained "which vars are aux" field
+   doesn't survive composition (`seqComposition`/`mergeIfBranches`) cleanly, since a var visible
+   via an intermediate env can become aux (or vice versa) once composed away, whereas "all vars
+   of f, minus whatever the (possibly-updated) envs still explain" is robust to recomputation at
+   any point. -/
 structure CmdsSpec (c : ZKConfig) where
   inSymEnv : SymEnv c := emptySymEnv
   outSymEnv : SymEnv c := emptySymEnv
   f : FFFormula c := FFFormula.false
-  -- these are variables in f that appear in
-  -- the inSymEnv and outSymEnv. Without the parts
-  -- of the binary expansion, these always appear
-  -- as auxiliary variables so far.
-  fVars : VarSet := emptyVarSet
-  -- these are variables that are in f but not
-  -- in the inSymEnv and outSymEnv.
-  auxVars : VarSet := emptyVarSet
-
-  -- We need a proposition stating that the variables of f
-  -- are exactly the union of fVars and auxVars.
-
   nextVarId : Nat := 0
 
 structure FuncSpec (c : ZKConfig) where

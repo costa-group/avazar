@@ -184,16 +184,28 @@ structure Param where
   type : VarType
   deriving Repr, BEq, Inhabited
 
-/- Whether a list of variable names contains a duplicate. A function's `params ++ rets` must be
-   duplicate-free: each name becomes a distinct constraint-macro parameter (`SymExec/BigStep.lean`,
-   `seFunc`), and a macro can't declare the same formal parameter twice. `evalFunCall`
-   (`Semantics/BigStep.lean`) rejects a call to a function violating this too, so that concrete
-   execution and symbolic translation fail together on the same malformed functions -- see
-   `SymExec/Correctness.lean`'s `H_funcCall`-related design notes. -/
+/- Whether a list of variable names contains a duplicate. `params` and `rets` are each checked
+   independently with this (not their union): every param must have a pairwise-distinct name,
+   and every ret must too, but a param and a ret ARE allowed to share a name (e.g. a named return
+   that aliases/refines a parameter). `evalFunCall` (`Semantics/BigStep.lean`) and `seFunc`
+   (`SymExec/BigStep.lean`) both check `hasDupNames (params.map (·.name)) ||
+   hasDupNames (rets.map (·.name))`, so concrete execution and symbolic translation fail together
+   on the same malformed functions -- see `SymExec/Correctness.lean`'s `H_funcCall`-related
+   design notes. -/
 def hasDupNames (names : List VarID) : Bool :=
   match names with
   | [] => false
   | n :: rest => rest.contains n || hasDupNames rest
+
+/-- A name list with no duplicates still has none after dropping a prefix -- needed to carry a
+    whole-program "no duplicate function names" fact down to a sub-program. -/
+theorem hasDupNames_append_right (l1 l2 : List VarID) (h : hasDupNames (l1 ++ l2) = false) :
+    hasDupNames l2 = false := by
+  induction l1 with
+  | nil => simpa using h
+  | cons a l1' ih =>
+      simp only [List.cons_append, hasDupNames, Bool.or_eq_false_iff] at h
+      exact ih h.2
 
 /- A function receives input parameters `params`, executes the whole `body`,
    and returns the values of the variables in `rets`.
@@ -222,6 +234,34 @@ abbrev Prog (c : ZKConfig) := List (FuncWithMD c)
 inductive ProgWithMD (c : ZKConfig) where
   | mk (md : ProgMD) (prog : Prog c) : ProgWithMD c
   deriving Repr, BEq, Inhabited
+
+/- The name of a function within a `FuncWithMD` -- a small accessor since `Func`/`FuncWithMD` are
+   plain (single-constructor) `inductive`s, not `structure`s, so no dot-notation projection is
+   generated automatically. -/
+def funcWithMDName {c : ZKConfig} (f : FuncWithMD c) : FName :=
+  match f with | FuncWithMD.mk _ func => match func with | Func.mk name _ _ _ => name
+
+/- The body of a function within a `FuncWithMD` -- see `funcWithMDName`. -/
+def funcWithMDBody {c : ZKConfig} (f : FuncWithMD c) : List (ComWithMD c) :=
+  match f with | FuncWithMD.mk _ func => match func with | Func.mk _ _ _ body => body
+
+/- Whether a program's functions have pairwise-distinct names -- the whole-program analogue of
+   `hasDupNames` on a single function's own params/rets. -/
+def hasDupFuncNames {c : ZKConfig} (p : Prog c) : Bool :=
+  hasDupNames (p.map funcWithMDName)
+
+/-- `hasDupFuncNames`, for a sub-program at the end of a bigger one -- see
+    `hasDupNames_append_right`. -/
+theorem hasDupFuncNames_append_right {c : ZKConfig} (p1 p2 : Prog c)
+    (h : hasDupFuncNames (p1 ++ p2) = false) : hasDupFuncNames p2 = false := by
+  simp only [hasDupFuncNames, List.map_append] at h ⊢
+  exact hasDupNames_append_right _ _ h
+
+/-- `hasDupFuncNames`, for the tail of a `::` -- the `p1 := [f]` case of
+    `hasDupFuncNames_append_right`. -/
+theorem hasDupFuncNames_cons_tail {c : ZKConfig} (f : FuncWithMD c) (p : Prog c)
+    (h : hasDupFuncNames (f :: p) = false) : hasDupFuncNames p = false :=
+  hasDupFuncNames_append_right [f] p h
 
 /- Search a function by name. It returns the function and the remaining program,
    which includes the functions that can be called by it.

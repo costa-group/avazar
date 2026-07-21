@@ -1,6 +1,7 @@
 import Corellzk2smt.Basic
 import Corellzk2smt.FFConstraints.Basic
 import Corellzk2smt.Config
+import Corellzk2smt.Language.Core.Semantics.Basic
 
 /-
 This module defines executable semantics and satisfiability predicates for finite-field
@@ -10,6 +11,7 @@ namespace Corellzk2smt.FFConstraints.Satisfiability
 
 open Corellzk2smt.Config (GlobalConfig)
 open Corellzk2smt.FFConstraints.Basic
+open Corellzk2smt.Language.Core.Semantics.Basic (evalLe)
 
 /- An assignment maps variables to values. There are two types of
    variables, finite field variables and boolean variables, so we have
@@ -111,8 +113,7 @@ def evalFormula {c : ZKConfig} (gconf : GlobalConfig c)
   | .range t l u =>
       match evalTerm gconf assign t ms with
       | Except.error e => Except.error e
-      /- FIXME: this range check shouldn't use evalLE? -/
-      | Except.ok v => Except.ok (l.val <= v.val && v.val <= u.val)
+      | Except.ok v => Except.ok (evalLe l v == 1 && evalLe v u == 1)
   | .bool v   => Except.ok (assign.bool v)
   | .eq a b =>
       match evalTerm gconf assign a ms with

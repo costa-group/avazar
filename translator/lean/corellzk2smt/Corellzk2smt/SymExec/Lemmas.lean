@@ -693,8 +693,8 @@ theorem simpleValMatches_agree_iff {c : ZKConfig} (a : Assignment c) (s1 s2 : Si
       cases s2 with
       | const _ => exact absurd hagree (by simp [simpleSymValAgree])
       | ffvar vbr2 =>
-          simp only [simpleSymValAgree, beq_iff_eq] at hagree
-          simp only [simpleValMatches, hagree]
+          simp only [simpleSymValAgree, Bool.and_eq_true, beq_iff_eq] at hagree
+          simp only [simpleValMatches, hagree.1]
 
 /-- If an assignment already matches `svTb`'s value and satisfies `tbExtra` (whose own vars
     are all below `nextVarId`, i.e. `tbExtra` hasn't touched anything from `nextVarId` on --
@@ -4144,7 +4144,6 @@ theorem mergeIfBranches_sound {c : ZKConfig}
         let mergedSpec : CmdsSpec c :=
           { inSymEnv := symEnv, outSymEnv := mergedEnv,
             f := FFFormula.ite g (FFFormula.and tbSpec.f tbE) (FFFormula.and ebSpec.f ebE),
-            fVars := tbSpec.fVars ∪ ebSpec.fVars, auxVars := tbSpec.auxVars ∪ ebSpec.auxVars,
             nextVarId := nv }
         refine ⟨mergedSpec, ?_, a', ?_, ?_, ?_, ?_, ?_⟩
         · simp only [mergeIfBranches, hg, hmerge_eq, mergedSpec]
@@ -4228,7 +4227,6 @@ theorem mergeIfBranches_sound {c : ZKConfig}
         let mergedSpec : CmdsSpec c :=
           { inSymEnv := symEnv, outSymEnv := mergedEnv,
             f := FFFormula.ite g (FFFormula.and tbSpec.f tbE) (FFFormula.and ebSpec.f ebE),
-            fVars := tbSpec.fVars ∪ ebSpec.fVars, auxVars := tbSpec.auxVars ∪ ebSpec.auxVars,
             nextVarId := nv }
         refine ⟨mergedSpec, ?_, a', ?_, ?_, ?_, ?_, ?_⟩
         · simp only [mergeIfBranches, hg, hmerge_eq, mergedSpec]

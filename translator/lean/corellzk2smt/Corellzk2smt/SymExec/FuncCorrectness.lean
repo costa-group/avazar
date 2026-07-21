@@ -2695,6 +2695,7 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     (specs : List (FuncSpec c))
     (fname : FName) (md : FuncMD) (func : Func c) (p' : Prog c)
     (hfetch : fetchFunc p fname = Except.ok (FuncWithMD.mk md func, p'))
+    (hnodup_p : hasDupFuncNames p = false)
     (H_simple : ∀ (sconf : SymExecConfig c) (i : ComWithMD c),
       TranslatesCorrectly gconf sconf specs (fun env => evalSimpleCmd gconf env i)
         (fun symEnv => seSimpleCmd gconf sconf symEnv specs i))
@@ -2751,8 +2752,8 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
   cases func with
   | mk name params rets body =>
     simp only at hshaped
-    simp only [seFunc, List.map_append] at hseFunc_eq
-    cases hdup : hasDupNames (params.map (·.name) ++ rets.map (·.name)) with
+    simp only [seFunc] at hseFunc_eq
+    cases hdup : hasDupNames (params.map (·.name)) || hasDupNames (rets.map (·.name)) with
     | true => simp [hdup] at hseFunc_eq
     | false =>
       simp only [hdup] at hseFunc_eq
@@ -2816,9 +2817,9 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
             refine ⟨?_, ?_⟩
             · intro argVals hargVals outVals hev
               obtain ⟨env0, hb0, _hmatch0⟩ := hcore argVals hargVals
-              simp only [evalFunCall] at hev
+              simp only [evalFunCall, hnodup_p, Bool.false_eq_true, if_false] at hev
               rw [hfetch] at hev
-              simp only [List.map_append, hdup, hb0, Bool.false_eq_true, if_false] at hev
+              simp only [hdup, hb0, Bool.false_eq_true, if_false] at hev
               cases hec : evalCmds gconf p' env0 body with
               | error e => simp [hec] at hev
               | ok bodyEnv' =>
@@ -2966,9 +2967,9 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
               · -- soundness
                 intro retVals hev
                 obtain ⟨env0, hb0, hmatch0⟩ := hcore argVals hargVals
-                simp only [evalFunCall] at hev
+                simp only [evalFunCall, hnodup_p, Bool.false_eq_true, if_false] at hev
                 rw [hfetch] at hev
-                simp only [List.map_append, hdup, hb0, Bool.false_eq_true, if_false] at hev
+                simp only [hdup, hb0, Bool.false_eq_true, if_false] at hev
                 cases hec : evalCmds gconf p' env0 body with
                 | error e => simp [hec] at hev
                 | ok bodyEnv' =>
@@ -3023,7 +3024,7 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                             intro k hk
                             have hmem : Var.ffv k ∈ symEnvVars inSymEnv := by
                               simpa using mintFreshParams_block_mem_symEnvVars 0 params _
-                                (List.nodup_append.mp (hasDupNames_false_nodup _ hdup)).1
+                                (hasDupNames_false_nodup _ (Bool.or_eq_false_iff.mp hdup).1)
                                 nv1 paramVars inSymEnv hmp k hk
                             have heq := hagreeFF k hmem
                             simp only [hk, if_true] at heq
@@ -3569,9 +3570,9 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                         have hgOPV : getOutParamsValues env' rets = Except.ok retVals :=
                           getOutParamsValues_construct_general env' rets retVals hretVals_match
                             hgv'
-                        simp only [evalFunCall]
+                        simp only [evalFunCall, hnodup_p, Bool.false_eq_true, if_false]
                         rw [hfetch]
-                        simp only [List.map_append, hdup, hb0, Bool.false_eq_true, if_false]
+                        simp only [hdup, hb0, Bool.false_eq_true, if_false]
                         simp only [] at hec'
                         rw [hec']
                         simp only []
@@ -3617,8 +3618,8 @@ theorem seFunc_eq_shape {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (F
     (name : FName) (params rets : List Param) (body : List (ComWithMD c)) (fspec : FuncSpec c)
     (h : seFunc gconf specs (Func.mk name params rets body) = Except.ok fspec) :
     fspec.name = name ∧ fspec.params = params ∧ fspec.rets = rets := by
-  simp only [seFunc, List.map_append] at h
-  cases hdup : hasDupNames (params.map (·.name) ++ rets.map (·.name)) with
+  simp only [seFunc] at h
+  cases hdup : hasDupNames (params.map (·.name)) || hasDupNames (rets.map (·.name)) with
   | true => simp [hdup] at h
   | false =>
     simp only [hdup] at h
@@ -3665,6 +3666,7 @@ theorem seFuncCall_correct_via_seFunc {c : ZKConfig} (gconf : GlobalConfig c) (p
     (specs : List (FuncSpec c)) (sconf : SymExecConfig c)
     (fname : FName) (md : FuncMD) (func : Func c) (p' : Prog c)
     (hfetch : fetchFunc p fname = Except.ok (FuncWithMD.mk md func, p'))
+    (hnodup_p : hasDupFuncNames p = false)
     (H_simple : ∀ (sconf : SymExecConfig c) (i : ComWithMD c),
       TranslatesCorrectly gconf sconf specs (fun env => evalSimpleCmd gconf env i)
         (fun symEnv => seSimpleCmd gconf sconf symEnv specs i))
@@ -3708,8 +3710,8 @@ theorem seFuncCall_correct_via_seFunc {c : ZKConfig} (gconf : GlobalConfig c) (p
       have hspec_eq : fetchFuncSpec (fspec :: specs) fname = Except.ok fspec := by
         simp [fetchFuncSpec, hfname, hname_eq]
       obtain ⟨hspec_retsShape, H_specCorrect⟩ := seFunc_correct gconf p specs fname md
-        (Func.mk name params rets body) p' hfetch H_simple H_funcCall H_domain H_shape hshaped
-        fspec hseFunc_eq
+        (Func.mk name params rets body) p' hfetch hnodup_p H_simple H_funcCall H_domain H_shape
+        hshaped fspec hseFunc_eq
       exact seFuncCall_correct gconf p (fspec :: specs) sconf fname args outs fspec hspec_eq
         hargs_len houts_len houts_nodup hargs_defined hspec_retsShape H_specCorrect
 

@@ -79,15 +79,8 @@ def WellShapedCmds {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
 
 end
 
--- The name of a function within a `FuncWithMD` -- a small accessor since `Func`/`FuncWithMD` are
--- plain (single-constructor) `inductive`s, not `structure`s, so no dot-notation projection is
--- generated automatically.
-def funcWithMDName {c : ZKConfig} (f : FuncWithMD c) : FName :=
-  match f with | FuncWithMD.mk _ func => match func with | Func.mk name _ _ _ => name
-
--- The body of a function within a `FuncWithMD` -- see `funcWithMDName`.
-def funcWithMDBody {c : ZKConfig} (f : FuncWithMD c) : List (ComWithMD c) :=
-  match f with | FuncWithMD.mk _ func => match func with | Func.mk _ _ _ body => body
+-- `funcWithMDName`/`funcWithMDBody` now live in `Language/Core/Syntax/AST.lean` (needed there
+-- too, by `hasDupFuncNames`), and are available here via the `AST` import/open above.
 
 /-- A whole program is well-shaped: every function's body is `WellShapedCmds` against exactly the
     remainder `fetchFunc` would give it (i.e. every function-body's `p'` parameter throughout this

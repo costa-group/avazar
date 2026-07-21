@@ -165,13 +165,15 @@ def encodeCond {c : ZKConfig} (symEnv : SymEnv c) (cond : Cond c) : Except Strin
         Except.ok (FFFormula.eq (simpleSymValToTerm sv1) (simpleSymValToTerm sv2))
 
 /-- Whether two simple symbolic values are "the same" for merge purposes: same constant, or
-    the same constraint variable (ignoring any cached binary expansion -- that's cached data
-    about a variable, not part of what value it denotes, so it shouldn't affect whether two
-    occurrences of "the same" variable are considered to agree). -/
+    the same constraint variable *with* the same cached binary expansion. The cached expansion
+    is compared too (not just the variable index) because the same variable can end up with a
+    different binarization on each branch (e.g. one branch triggers a `bitify` and the other
+    doesn't, or they bitify differently), and picking one branch's cached bits unconditionally
+    would silently carry a decomposition that isn't actually valid on the other branch. -/
 def simpleSymValAgree {c : ZKConfig} (s1 s2 : SimpleSymVal c) : Bool :=
   match s1, s2 with
   | .const v1, .const v2   => v1 == v2
-  | .ffvar v1, .ffvar v2   => v1.var == v2.var
+  | .ffvar v1, .ffvar v2   => v1.var == v2.var && v1.bits == v2.bits
   | _, _                   => false
 
 /-- Merge a single scalar position from the two branches: if they agree, keep that value with
@@ -278,14 +280,12 @@ def mergeIfBranches {c : ZKConfig}
         inSymEnv := symEnv,
         outSymEnv := mergedEnv,
         f := FFFormula.ite g (FFFormula.and tbSpec.f tbExtra) (FFFormula.and ebSpec.f ebExtra),
-        fVars := tbSpec.fVars ∪ ebSpec.fVars,
-        auxVars := tbSpec.auxVars ∪ ebSpec.auxVars,
         nextVarId := nextVarId'
       }
 
-/-- Sequence two `CmdsSpec`s: conjoin their formulas, thread the first's output as the
-    second's input, and union their variable bookkeeping. Purely structural glue -- doesn't
-    need to know what either half actually computes (see `seqComposition_correct`).
+/-- Sequence two `CmdsSpec`s: conjoin their formulas and thread the first's output as the
+    second's input. Purely structural glue -- doesn't need to know what either half actually
+    computes (see `seqComposition_correct`).
 
     `cmd` is the command whose translation this composition corresponds to; it isn't used yet
     beyond annotating `cmdSpec1.f`'s conjunct with an (currently empty) description -- to be
@@ -303,8 +303,6 @@ def seqComposition {c : ZKConfig}
     inSymEnv := cmdSpec1.inSymEnv,
     outSymEnv := cmdsSpec2.outSymEnv,
     f := FFFormula.and (.anno cmdSpec1.f "") cmdsSpec2.f,
-    fVars := cmdSpec1.fVars ∪ cmdsSpec2.fVars,
-    auxVars := cmdSpec1.auxVars ∪ cmdsSpec2.auxVars,
     nextVarId := cmdsSpec2.nextVarId
   }
 
@@ -407,7 +405,7 @@ def seCmd {c : ZKConfig}
           Except.ok {
             inSymEnv := symEnv,
             outSymEnv := symEnv,
-            f := default
+            f := FFFormula.true,
             nextVarId := sconf.nextVarId
           }
       | Com.func_call outs fname args =>
@@ -447,7 +445,7 @@ def seCmds {c : ZKConfig}
   | [] => return {
       inSymEnv := symEnv,
       outSymEnv := symEnv,
-      f := default,
+      f := FFFormula.true,
       nextVarId := sconf.nextVarId,
   }
   | cmd :: rest =>
@@ -592,8 +590,8 @@ def seFunc {c : ZKConfig}
   : Except String (FuncSpec c) :=
   match f with
   | Func.mk name params rets body =>
-    if hasDupNames ((params ++ rets).map (·.name)) then
-      Except.error s!"Function '{name}' has a duplicate parameter/return name"
+    if hasDupNames (params.map (·.name)) || hasDupNames (rets.map (·.name)) then
+      Except.error s!"Function '{name}' has a duplicate parameter name or a duplicate return name"
     else
       let zeroSymEnv : SymEnv c :=
         (definedVarsOfFunc f).foldl
@@ -633,7 +631,7 @@ def seFunc {c : ZKConfig}
 
 def seExecFuncs {c : ZKConfig}
   (gconf : GlobalConfig c)
-  (p : List (FuncWithMD c)) :=
+  (p : List (FuncWithMD c)) : Except String (List (FuncSpec c)) :=
   let rec loop (funcs : List (FuncWithMD c)) (specs : List (FuncSpec c))
     : Except String (List (FuncSpec c)) := do
     match funcs with
@@ -643,7 +641,10 @@ def seExecFuncs {c : ZKConfig}
         | .mk md func =>
           let spec ← seFunc gconf specs func
           loop funcs' (spec :: specs)
-  loop p.reverse []
+  if hasDupFuncNames p then
+    Except.error "Program has two functions with the same name"
+  else
+    loop p.reverse []
 
 def seExecProg {c : ZKConfig}
   (gconf : GlobalConfig c)

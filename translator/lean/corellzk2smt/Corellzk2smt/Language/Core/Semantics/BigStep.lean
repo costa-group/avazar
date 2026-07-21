@@ -180,6 +180,9 @@ decreasing_by
 def evalFunCall {c : ZKConfig} (gconf : GlobalConfig c)
     (p : Prog c) (fname : FName) (args : List (Value c))
     : Except String (List (Value c)) :=
+  if hasDupFuncNames p then
+    Except.error "Program has two functions with the same name"
+  else
     match _h_fetch: fetchFunc p fname with
     | Except.error e => Except.error e
     | Except.ok (f, p') =>
@@ -187,8 +190,8 @@ def evalFunCall {c : ZKConfig} (gconf : GlobalConfig c)
       | .mk _ func =>
       match func with
        | Func.mk _ params rets body =>
-         if hasDupNames ((params ++ rets).map (·.name)) then
-           Except.error s!"Function '{fname}' has a duplicate parameter/return name"
+         if hasDupNames (params.map (·.name)) || hasDupNames (rets.map (·.name)) then
+           Except.error s!"Function '{fname}' has a duplicate parameter name or a duplicate return name"
          else
            match bindInParams (zeroInitEnv (definedVarsOfFunc func)) params args with
            | Except.error err => Except.error err

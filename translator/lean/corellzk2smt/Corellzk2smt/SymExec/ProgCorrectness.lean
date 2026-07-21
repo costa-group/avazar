@@ -36,8 +36,8 @@ theorem seFunc_f_name_eq {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (
     (name : FName) (params rets : List Param) (body : List (ComWithMD c)) (fspec : FuncSpec c)
     (h : seFunc gconf specs (Func.mk name params rets body) = Except.ok fspec) :
     fspec.f.name = name := by
-  simp only [seFunc, List.map_append] at h
-  cases hdup : hasDupNames (params.map (·.name) ++ rets.map (·.name)) with
+  simp only [seFunc] at h
+  cases hdup : hasDupNames (params.map (·.name)) || hasDupNames (rets.map (·.name)) with
   | true => simp [hdup] at h
   | false =>
     simp only [hdup] at h
@@ -80,9 +80,11 @@ theorem fetchFunc_skip_ne {c : ZKConfig} (badFunc : FuncWithMD c) (rest : Prog c
     -- everything downstream depends only on the lookup's *result*, so two programs whose
     `fetchFunc` behaves identically for `fname` give identical `evalFunCall` results. -/
 theorem evalFunCall_congr {c : ZKConfig} (gconf : GlobalConfig c) (p1 p2 : Prog c) (fname : FName)
-    (heq : fetchFunc p1 fname = fetchFunc p2 fname) (argVals : List (Value c)) :
+    (heq : fetchFunc p1 fname = fetchFunc p2 fname)
+    (hnodup1 : hasDupFuncNames p1 = false) (hnodup2 : hasDupFuncNames p2 = false)
+    (argVals : List (Value c)) :
     evalFunCall gconf p1 fname argVals = evalFunCall gconf p2 fname argVals := by
-  simp only [evalFunCall]
+  simp only [evalFunCall, hnodup1, hnodup2, Bool.false_eq_true, if_false]
   rw [heq]
 
 /-- `TranslatesCorrectly` only ever consumes `concrete`/`symbolic` through pointwise application,
@@ -161,6 +163,7 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c)
         ebSpec'.outSymEnv.get? id = some svEb → sameShape svTb svEb) :
     ∀ (funcs donePart : Prog c) (specs : List (FuncSpec c)),
       WellShapedProg gconf (funcs.reverse ++ donePart) →
+      hasDupFuncNames (funcs.reverse ++ donePart) = false →
       (∀ spec ∈ specs, spec.f.name = spec.name) →
       specs.map (·.name) = donePart.map funcWithMDName →
       (∀ (sconf : SymExecConfig c) (fname' : FName) (args : List (SimpleExpr c))
@@ -192,19 +195,24 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c)
   intro funcs
   induction funcs with
   | nil =>
-      intro donePart specs _hwsp hspecs_wf hnames_corr hHfc newSpecs hloop_eq
+      intro donePart specs _hwsp _hnodup hspecs_wf hnames_corr hHfc newSpecs hloop_eq
       simp only [List.reverse_nil, List.nil_append] at hloop_eq ⊢
       simp only [seExecFuncs.loop] at hloop_eq
       injection hloop_eq with hloop_eq
       exact ⟨hloop_eq ▸ hspecs_wf, hloop_eq ▸ hnames_corr, hloop_eq ▸ hHfc⟩
   | cons func funcs' ih =>
-      intro donePart specs hwsp hspecs_wf hnames_corr hHfc newSpecs hloop_eq
+      intro donePart specs hwsp hnodup hspecs_wf hnames_corr hHfc newSpecs hloop_eq
       obtain ⟨md, name, params, rets, body⟩ := func
       have hlist_eq : (FuncWithMD.mk md (Func.mk name params rets body) :: funcs').reverse ++
           donePart =
           funcs'.reverse ++ (FuncWithMD.mk md (Func.mk name params rets body) :: donePart) := by
         simp [List.reverse_cons, List.append_assoc]
-      rw [hlist_eq] at hwsp ⊢
+      rw [hlist_eq] at hwsp hnodup ⊢
+      have hnodup_head : hasDupFuncNames
+          (FuncWithMD.mk md (Func.mk name params rets body) :: donePart) = false :=
+        hasDupFuncNames_append_right funcs'.reverse _ hnodup
+      have hnodup_donePart : hasDupFuncNames donePart = false :=
+        hasDupFuncNames_cons_tail _ _ hnodup_head
       simp only [seExecFuncs.loop] at hloop_eq
       cases hseFunc_eq : seFunc gconf specs (Func.mk name params rets body) with
       | error e =>
@@ -276,6 +284,7 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c)
                 (Func.mk name params rets body) :: donePart) specs sconf name md
               (Func.mk name params rets body) donePart
               (by simp only [fetchFunc, BEq.rfl, ↓reduceIte])
+              hnodup_head
               (H_simple specs) (hHfc) (H_domain specs) (H_shape specs) hshaped
               fspec hseFunc_eq args outs (hparams_eq ▸ harglen) (hrets_eq ▸ houtlen)
               houtnodup hargsdef'
@@ -301,13 +310,14 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c)
                   rw [evalFunCall_congr gconf
                     (FuncWithMD.mk md (Func.mk name params rets body) :: donePart) donePart
                     fname' (fetchFunc_skip_ne (FuncWithMD.mk md (Func.mk name params rets body))
-                      donePart fname' (by rw [hname_eq2]; exact hcase)) argVals]
+                      donePart fname' (by rw [hname_eq2]; exact hcase))
+                    hnodup_head hnodup_donePart argVals]
             · intro symEnv
               exact (seFuncCall_prepend_indep gconf sconf symEnv fspec specs fname' args outs
                 (by rw [hname_eq]; exact hcase)).symm
         obtain ⟨hnewSpecs_wf, hnewSpecs_names, hnewSpecs_Hfc⟩ :=
           ih (FuncWithMD.mk md (Func.mk name params rets body) :: donePart) (fspec :: specs) hwsp
-            hspecs_wf' hnames_corr' hHfc' newSpecs hloop_eq
+            hnodup hspecs_wf' hnames_corr' hHfc' newSpecs hloop_eq
         exact ⟨hnewSpecs_wf, hnewSpecs_names, hnewSpecs_Hfc⟩
 
 -- ---------------------------------------------------------------------------
@@ -333,7 +343,7 @@ theorem seExecFuncs_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
       seCmds gconf sconf' symEnv' specs eb' = Except.ok ebSpec' →
       ∀ id svTb svEb, tbSpec'.outSymEnv.get? id = some svTb →
         ebSpec'.outSymEnv.get? id = some svEb → sameShape svTb svEb)
-    (hwsp : WellShapedProg gconf p)
+    (hwsp : WellShapedProg gconf p) (hnodup : hasDupFuncNames p = false)
     (specs : List (FuncSpec c)) (hspecs_eq : seExecFuncs gconf p = Except.ok specs) :
     (∀ spec ∈ specs, spec.f.name = spec.name) ∧
     specs.map (·.name) = p.map funcWithMDName ∧
@@ -348,11 +358,14 @@ theorem seExecFuncs_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
         (fun env => evalFuncCallCmd gconf p fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs)) := by
   have hloop_eq : seExecFuncs.loop gconf p.reverse [] = Except.ok specs := by
-    simp only [seExecFuncs] at hspecs_eq
+    simp only [seExecFuncs, hnodup, Bool.false_eq_true, if_false] at hspecs_eq
     exact hspecs_eq
   have hwsp' : WellShapedProg gconf (p.reverse.reverse ++ ([] : Prog c)) := by
     simp only [List.reverse_reverse, List.append_nil]
     exact hwsp
+  have hnodup' : hasDupFuncNames (p.reverse.reverse ++ ([] : Prog c)) = false := by
+    simp only [List.reverse_reverse, List.append_nil]
+    exact hnodup
   have hspecs_wf0 : ∀ spec ∈ ([] : List (FuncSpec c)), spec.f.name = spec.name :=
     fun spec hspec => absurd hspec (List.not_mem_nil)
   have hnames_corr0 : (([] : List (FuncSpec c)).map (·.name)) =
@@ -369,7 +382,7 @@ theorem seExecFuncs_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
         (fun symEnv => seFuncCall gconf sconf symEnv ([] : List (FuncSpec c)) fname' args outs) :=
     fun _ fname' _ _ _ _ _ hfetch _ _ _ _ => absurd hfetch (by simp [fetchFunc])
   obtain ⟨hspecs_wf, hnames_corr, hHfc⟩ := seExecFuncs_loop_correct gconf H_simple H_domain
-    H_shape p.reverse [] [] hwsp' hspecs_wf0 hnames_corr0 hHfc0 specs hloop_eq
+    H_shape p.reverse [] [] hwsp' hnodup' hspecs_wf0 hnames_corr0 hHfc0 specs hloop_eq
   have hp_eq : p.reverse.reverse ++ ([] : Prog c) = p := by simp
   refine ⟨hspecs_wf, ?_, ?_⟩
   · rw [hnames_corr, hp_eq]
@@ -397,7 +410,7 @@ theorem seExecProg_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : ProgWith
       ∀ id svTb svEb, tbSpec'.outSymEnv.get? id = some svTb →
         ebSpec'.outSymEnv.get? id = some svEb → sameShape svTb svEb)
     (funcs : Prog c) (hp : p = ProgWithMD.mk (match p with | ProgWithMD.mk pmd _ => pmd) funcs)
-    (hwsp : WellShapedProg gconf funcs)
+    (hwsp : WellShapedProg gconf funcs) (hnodup : hasDupFuncNames funcs = false)
     (mainFuncName : FName) (cs : FFConstraintSystem c)
     (hcs_eq : seExecProg gconf p mainFuncName = Except.ok cs) :
     ∃ specs : List (FuncSpec c),
@@ -426,6 +439,6 @@ theorem seExecProg_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : ProgWith
       simp only [Bind.bind, Except.bind, pure, Except.pure] at hcs_eq
       injection hcs_eq with hcs_eq
       refine ⟨specs, hcs_eq.symm, ?_⟩
-      exact seExecFuncs_correct gconf funcs H_simple H_domain H_shape hwsp specs hfuncSpecs
+      exact seExecFuncs_correct gconf funcs H_simple H_domain H_shape hwsp hnodup specs hfuncSpecs
 
 end Corellzk2smt.SymExec.ProgCorrectness
