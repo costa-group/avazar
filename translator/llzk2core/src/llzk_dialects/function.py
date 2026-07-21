@@ -183,18 +183,32 @@ class FunctionCall(Operation):
                                        "But {self.results} is returned instead"
         result = self.results[0]
 
-        member = self._member_hint
-        if isinstance(member, LoopIndexedName):
-            member = member.resolve(ctx.unroll_index)
+        # A pure function (no struct.def wrapping it — see poly.py's
+        # _register_pure_function) has no named struct signals to look up:
+        # its out-args are the function's own return-operand names, never
+        # '@'-prefixed (struct/pure registrations are never mixed for one
+        # callee, so checking the first out-arg is sufficient). Its result(s)
+        # are used directly downstream (e.g. array.read %40[...]), so they
+        # just take the call's own result name(s) via the standard
+        # multi-component convention — no semantic-name lookup, no
+        # ctx.ssa_to_name registration needed.
+        is_struct_style = bool(out_args) and out_args[0][0].startswith("@")
 
-        if member:
-            out_var_names = []
-            for out_arg, _ in out_args:
-                out_name = f"{member}.{out_arg[1:]}"  # strip @ from out_arg
-                ctx.ssa_to_name[f"{result.name}_{out_arg}"] = out_name
-                out_var_names.append(out_name)
+        if is_struct_style:
+            member = self._member_hint
+            if isinstance(member, LoopIndexedName):
+                member = member.resolve(ctx.unroll_index)
+
+            if member:
+                out_var_names = []
+                for out_arg, _ in out_args:
+                    out_name = f"{member}.{out_arg[1:]}"  # strip @ from out_arg
+                    ctx.ssa_to_name[f"{result.name}_{out_arg}"] = out_name
+                    out_var_names.append(out_name)
+            else:
+                out_var_names = [f"{result.name}_{out_arg}" for out_arg, _ in out_args]
         else:
-            out_var_names = [f"{result.name}_{out_arg}" for out_arg, _ in out_args]
+            out_var_names = [result.to_core_component(i) for i in range(len(out_args))]
 
         yield f"call {core_func}({args}) to {','.join(out_var_names)}"
 
@@ -288,14 +302,22 @@ class FunctionDef(BlockOperation):
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Translating a function assumes that the output (and input) information
         # is already stored in the context. This is because CORE does not exactly
-        # share the same signature (in particular, out_args are public struct members).
+        # share the same signature (in particular, out_args are usually public
+        # struct members — but for a "pure" function with no struct.def
+        # wrapping it, they're just its own function.return operand names).
         core_name = ctx.current_core_function
         in_args, out_args = ctx.core_func2args[core_name]
 
         ctx.param_arg_names.update(self.in_arg_names)
 
         signature_in = signature_args(in_args)
-        signature_out = ', '.join(f"{arg[1:]}: {type_.to_core()}" for arg, type_ in out_args)
+        # Strip a leading '@' (struct-member convention) when present; a
+        # pure function's out-arg is just its own '%'-prefixed SSA name,
+        # kept as-is — matching how its input args already keep theirs.
+        signature_out = ', '.join(
+            f"{(arg[1:] if arg.startswith('@') else arg)}: {type_.to_core()}"
+            for arg, type_ in out_args
+        )
 
         # We start with the declaration of the function and the args
         yield f"def {core_name}({signature_in}) -> {signature_out} {{\n"

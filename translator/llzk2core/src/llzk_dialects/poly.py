@@ -23,6 +23,34 @@ from llzk_dialects.core import (
     TranslationContext, ParseFn,
 )
 from llzk_dialects.definitions import Dialect
+from llzk_dialects.function import FunctionDef, FunctionReturn
+
+
+def _register_pure_function(func: FunctionDef, template_name: str, ctx: TranslationContext) -> None:
+    """
+    Register a "pure" function's signature — a poly.template whose only
+    child is a bare function.def, with no struct.def wrapping it (e.g.
+    pointAdd_1 in escalarmulw4table_concrete.mlir). Unlike a struct's
+    @compute, whose out-args come from struct.member declarations, a pure
+    function's inputs and outputs are arbitrary values: out-args are taken
+    directly from its own function.return operands, keeping their own SSA
+    names as-is (not @-prefixed struct-member names).
+
+    Idempotent (checks llzk_func2core first) so it's safe to call both from
+    a module-level pre-pass (registering forward-referenced pure functions
+    before any body is translated — see llzk.py's ModuleOp.to_core) and
+    again, redundantly, right before PolyTemplate.to_core emits its own body.
+    """
+    llzk_name = f"{template_name}::{func.sym_name.name}"
+    if llzk_name in ctx.llzk_func2core:
+        return
+    assert func.body and isinstance(func.body[-1], FunctionReturn), \
+        f"Pure function {func.sym_name} must end in function.return"
+    return_op = func.body[-1]
+    out_args_with_type = list(zip((op.name for op in return_op.operands), return_op.types))
+    core_name = func.sym_name.name
+    ctx.llzk_func2core[llzk_name] = core_name
+    ctx.core_func2args[core_name] = func.in_args, out_args_with_type
 
 
 class PolyApplyMap(Operation):
@@ -391,16 +419,30 @@ class PolyTemplate(BlockOperation):
         return PolyTemplate(GlobalVariable.parse(m["name"]), body), end + 1
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
-        # Translation to core. Assumes there is only one struct defined inside the body.
-        # Otherwise, it raises an Error so that the example can be studied in more detail.
+        # Translation to core. Assumes there is only one struct (or, for a
+        # "pure function" template, one bare function.def) defined inside
+        # the body. Otherwise, it raises an Error so that the example can be
+        # studied in more detail.
         assert len(self.body) == 1, "PolyTemplate in module poly.py assumes there is only one struct to translate"
 
         # Assign the current poly template to the context
         ctx.current_template = self.sym_name.name
 
-        # Although it is just one element, we iterate for completeness just in case
-        for struct_element in self.body:
-            yield from struct_element.to_core(ctx)
+        child = self.body[0]
+        if isinstance(child, FunctionDef):
+            # Pure function: no struct.def wraps it (e.g. pointAdd_1 in
+            # escalarmulw4table_concrete.mlir) — register it (a no-op if the
+            # module-level pre-pass in llzk.py's ModuleOp.to_core already
+            # did, for a forward-referenced pure function) and emit its body
+            # directly; there are no struct members or a separate @constrain.
+            _register_pure_function(child, self.sym_name.name, ctx)
+            ctx.current_core_function = child.sym_name.name
+            yield from child.to_core(ctx)
+            ctx.current_core_function = None
+        else:
+            # Although it is just one element, we iterate for completeness just in case
+            for struct_element in self.body:
+                yield from struct_element.to_core(ctx)
 
 
     def __repr__(self):

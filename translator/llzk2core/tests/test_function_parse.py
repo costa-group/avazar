@@ -95,6 +95,40 @@ class TestFunction:
         assert lines == ["call Sub(%x) to last#2.out"]
         assert ctx.ssa_to_name["%r_@out"] == "last#2.out"
 
+    # ── FunctionCall.to_core — pure function callee (no struct.def) ──────────
+
+    def test_call_to_core_pure_function_single_result(self):
+        # A pure function's out-args are its own function.return operand
+        # names, never '@'-prefixed (see poly.py's _register_pure_function).
+        # The call's result should just be used directly — no member/signal
+        # lookup, no ctx.ssa_to_name registration.
+        op = FunctionCall.parse(
+            "%40 = function.call @pointAdd_1::@pointAdd_1(%29, %31) "
+            ': (!felt.type, !felt.type) -> !array.type<2 x !felt.type<"bn128">>'
+        )
+        ctx = TranslationContext()
+        ctx.llzk_func2core["@pointAdd_1::@pointAdd_1"] = "@pointAdd_1"
+        ctx.core_func2args["@pointAdd_1"] = (
+            [("%arg0", Type("!felt.type")), ("%arg1", Type("!felt.type"))],
+            [("%nondet", Type('!array.type<2 x !felt.type<"bn128">>'))],
+        )
+        lines = list(op.to_core(ctx))
+        assert lines == ["call @pointAdd_1(%29,%31) to %40"]
+        assert ctx.ssa_to_name == {}
+
+    def test_call_to_core_pure_function_multi_result(self):
+        op = FunctionCall.parse(
+            "%50:2 = function.call @foo::@foo(%1) : (!felt.type) -> (!felt.type, !felt.type)"
+        )
+        ctx = TranslationContext()
+        ctx.llzk_func2core["@foo::@foo"] = "@foo"
+        ctx.core_func2args["@foo"] = (
+            [("%arg0", Type("!felt.type"))],
+            [("%r0", Type("!felt.type")), ("%r1", Type("!felt.type"))],
+        )
+        lines = list(op.to_core(ctx))
+        assert lines == ["call @foo(%1) to %50#0,%50#1"]
+
     # ── FunctionDef (BlockOperation) ─────────────────────────────────────────
 
     def _felt_parse_fn(self, start, end):
@@ -136,3 +170,25 @@ class TestFunction:
     def test_function_def_match(self):
         assert FunctionDef.match("function.def @f(%x: !felt.type) {") is True
         assert FunctionDef.match("function.call @f(%x)") is False
+
+    # ── FunctionDef.to_core — signature-out naming ───────────────────────────
+
+    def test_function_def_to_core_pure_function_keeps_percent_out_name(self):
+        # A struct out-arg ('@out') gets its '@' stripped in the signature.
+        # A pure function's out-arg is just its own SSA name ('%nondet') —
+        # not '@'-prefixed — and should be kept as-is, consistent with how
+        # its input args already keep their '%' prefix in the signature.
+        self.lines = [
+            'function.def @pointAdd_1(%arg0: !felt.type) -> !array.type<2 x !felt.type<"bn128">> {',
+            'function.return %nondet : !array.type<2 x !felt.type<"bn128">>',
+            "}",
+        ]
+        op, _ = FunctionDef.parse(self.lines, 0, self._felt_parse_fn)
+        ctx = TranslationContext()
+        ctx.current_core_function = "@pointAdd_1"
+        ctx.core_func2args["@pointAdd_1"] = (
+            [("%arg0", Type("!felt.type"))],
+            [("%nondet", Type('!array.type<2 x !felt.type<"bn128">>'))],
+        )
+        out = ''.join(op.to_core(ctx))
+        assert "def @pointAdd_1(%arg0: ff) -> %nondet: arr<2> {" in out

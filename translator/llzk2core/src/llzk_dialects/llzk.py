@@ -68,6 +68,25 @@ class ModuleOp:
         This translates a whole module. It needs to translate the complete body and then add
         the main function to invoke directly the template regarding llzk.main
         """
+        # Pre-pass: register every "pure function" template's signature (see
+        # poly.py's _register_pure_function) before any body is translated.
+        # Unlike struct-to-struct calls (which this codebase already requires
+        # to be declared before their callers, matching every prior example),
+        # a pure function may be called by a template declared earlier in the
+        # file (e.g. escalarmulw4table_concrete.mlir's EscalarMulW4Table_0,
+        # translated first, calls pointAdd_1, declared afterwards).
+        # Registration only reads the already-fully-parsed FunctionDef itself
+        # (signature + its own function.return), with no dependency on any
+        # other function being registered first, so a single unordered scan
+        # is enough — no dependency graph/topological sort needed.
+        from llzk_dialects.poly import PolyTemplate, _register_pure_function
+        from llzk_dialects.function import FunctionDef
+
+        for operation in self.body:
+            if (isinstance(operation, PolyTemplate) and len(operation.body) == 1
+                    and isinstance(operation.body[0], FunctionDef)):
+                _register_pure_function(operation.body[0], operation.sym_name.name, ctx)
+
         # Yield operation by operation
         for operation in self.body:
             yield from operation.to_core(ctx)
