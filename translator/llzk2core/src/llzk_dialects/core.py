@@ -120,6 +120,26 @@ class Type:
 
 
 @dataclass
+class LoopIndexedName:
+    """
+    A semantic base name for a component read whose index is not a
+    compile-time constant in the source IR (e.g. a real scf.for/scf.while
+    loop variable) — see struct.py's _annotate_input_array_reads /
+    _annotate_array_component_reads, which are the only producers of this.
+
+    Resolved at to_core time (ArrayRead.to_core, FunctionCall.to_core) via
+    TranslationContext.unroll_index: "{base}#{idx}" while translating the
+    current copy of a loop that got unrolled specifically to distinguish
+    this name (see scf.py's _contains_function_call), or the bare base name
+    if the loop wasn't unrolled (unroll_index is None).
+    """
+    base: str
+
+    def resolve(self, unroll_index: Optional[int]) -> str:
+        return f"{self.base}#{unroll_index}" if unroll_index is not None else self.base
+
+
+@dataclass
 class TranslationContext:
     """
     Holds all state needed during the to_core() translation pass.
@@ -168,6 +188,14 @@ class TranslationContext:
     # attribute (e.g. "%arg0" -> "c"), when the LLZK source annotates it.
     # Not yet consumed by any translation logic.
     param_arg_names: Dict[str, str] = field(default_factory=dict)
+
+    # Set (by SCFFor/SCFWhile.to_core) to the current iteration index while
+    # translating one copy of a loop that was unrolled because its body
+    # contains a function.call (see scf.py's _contains_function_call). None
+    # otherwise, including for a loop translated as a Core "repeat" block.
+    # Consumed by ArrayRead.to_core / FunctionCall.to_core to resolve a
+    # LoopIndexedName.
+    unroll_index: Optional[int] = None
 
 
 def _apply_rename(name: str, rename: Dict[str, str]) -> str:
