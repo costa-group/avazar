@@ -43,14 +43,16 @@ def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Str
      IO.println s!"Parsing {inFile}..."
      let initialState ← ParserM.fromFile inFile
      let (prog,_) ← StateT.run (@parseProg c []) initialState
-     IO.println s!"Adding liveness information..."
-     let progWithLiveness := addLivenessProg prog
+     -- removeUselessProg computes its own liveness information from scratch
+     -- (it never reads pre-existing metadata), so calling addLivenessProg
+     -- first would be redundant, wasted work when -ru is set.
      let progToExec ←
        if p.hasFlag "removeuseless" then
          IO.println s!"Removing useless commands..."
-         pure (removeUselessProg progWithLiveness)
+         pure (removeUselessProg prog)
        else
-         pure progWithLiveness
+         IO.println s!"Adding liveness information..."
+         pure (addLivenessProg prog)
      IO.println s!"Performing symbolic execution..."
      let mainFunc := p.flag! "main" |>.as! String
      let secfg ← match buildCfg c p with
@@ -87,13 +89,16 @@ def prettyPrinting
      IO.println s!"Parsing {inFile}..."
      let initialState ← ParserM.fromFile inFile
      let (prog,_) ← StateT.run (@parseProg c []) initialState
-     let progWithLiveness := addLivenessProg prog
+     -- removeUselessProg computes its own liveness information from scratch
+     -- (it never reads pre-existing metadata), so calling addLivenessProg
+     -- first would be redundant, wasted work when -ru is set.
      let progToPrint ←
        if p.hasFlag "removeuseless" then
          IO.println s!"Removing useless commands..."
-         pure (removeUselessProg progWithLiveness)
+         pure (removeUselessProg prog)
        else
-         pure progWithLiveness
+         IO.println s!"Adding liveness information..."
+         pure (addLivenessProg prog)
      IO.println s!"Pretty printing the input program..."
      IO.println s!""
      printProg fc progToPrint outStream

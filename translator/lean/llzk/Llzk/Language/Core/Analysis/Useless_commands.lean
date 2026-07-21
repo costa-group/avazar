@@ -126,8 +126,16 @@ def removeUselessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet)
           -- the if-the-else is useless if both branches are useless
           match removeUselessCmds tb out, removeUselessCmds eb out with
           | [], [] => none
-          | tb', eb' => let liveInThen := getCmdsLiveIn tb'
-                        let liveInElse := getCmdsLiveIn eb'
+          -- `out` must be passed explicitly as the default here: removing
+          -- useless commands can reduce a branch to an empty list (e.g. `eb`
+          -- was only a dead assignment), and an empty branch's live-in must
+          -- equal `out` (it passes every live-out variable straight through
+          -- unchanged), not `getCmdsLiveIn`'s own default of `emptyVarIDSet`.
+          -- Using the wrong default here would make the if-statement forget
+          -- that some variables need to survive the now-empty branch,
+          -- letting whatever produces them upstream be wrongly deleted too.
+          | tb', eb' => let liveInThen := getCmdsLiveIn tb' out
+                        let liveInElse := getCmdsLiveIn eb' out
                         let liveIn := addUsedVarsCond (liveInThen.union liveInElse) cond
                         let cmd' := Com.if_stmt cond tb' eb'
                         some (ComWithMD.mk
