@@ -354,6 +354,46 @@ class TestSCF:
         assert not any("repeat" in line for line in out)
         assert ctx.unroll_index is None
 
+    def test_while_to_core_reassigned_array_loop_carried_value_uses_array_copy(self):
+        # Regression test (ternary_modified_concrete.mlir): an array-typed
+        # loop-carried value that is genuinely reassigned each iteration
+        # (yielded back under a *different* SSA name than its own block-arg
+        # name, unlike every other loop-carried value seen so far, which are
+        # yielded back unchanged) must translate to array.copy, not a plain
+        # "=" assignment.
+        #
+        # The yield-reassignment step's per-arg type must come from
+        # in_types (positionally aligned with init_args, the same list
+        # already used correctly for the initial assignment below) —
+        # init_args' own second tuple element is the *initial-value SSAVar*,
+        # not a Type. Using it as one silently mistranslated any array into
+        # a scalar copy, since "array" in <ssa-name-string> almost never
+        # holds true by coincidence.
+        arr_type = Type("!array.type<2 x !felt.type>")
+        after_body = [
+            FeltConst(SSAVar("%c1"), 1),
+            FeltBinary(SSAVar("%next"), "felt.add", SSAVar("%arg1"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next"), SSAVar("%newarr")], [Type("index"), arr_type]),
+        ]
+        before_body = [
+            FeltConst(SSAVar("%c2"), 2),
+            BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg1"), SSAVar("%c2")),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%arg1"), SSAVar("%arg2")], [Type("index"), arr_type]),
+        ]
+        op = SCFWhile(
+            [], [(SSAVar("%arg1"), SSAVar("%c0")), (SSAVar("%arg2"), SSAVar("%init_arr"))],
+            [[Type("index"), arr_type], [Type("index"), arr_type]],
+            before_body, [(SSAVar("%arg1"), Type("index")), (SSAVar("%arg2"), arr_type)],
+            after_body,
+        )
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+
+        out = list(op.to_core(ctx))
+        assert "array.copy %init_arr %arg2" in out  # initial assignment (was already correct)
+        assert "array.copy %newarr %arg2" in out    # per-iteration reassignment (the bug)
+        assert "%arg2 = %newarr" not in out
+
     # ── _contains_function_call ──────────────────────────────────────────────
 
     def test_contains_call_flat(self):

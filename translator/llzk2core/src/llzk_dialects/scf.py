@@ -705,9 +705,16 @@ class SCFWhile(BlockOperation):
             for statement in self.after_body[:-1]:
                 yield from statement.to_core(ctx)
 
-            # Then assign the yielded values to the arguments
+            # Then assign the yielded values to the arguments. Note: the
+            # per-arg type must come from in_types (positionally aligned
+            # with init_args, same list used for the initial assignment
+            # above) — init_args' own second element is the initial-value
+            # SSAVar, not a type; using it as one silently mistranslates any
+            # array-typed loop-carried value that's genuinely reassigned
+            # each iteration (as opposed to yielded back unchanged) into a
+            # scalar copy instead of an array.copy.
             yield_op = self.after_body[-1]
-            for yield_val, (before_in_arg, type_) in zip(yield_op.operands, self.init_args):
+            for yield_val, (before_in_arg, _), type_ in zip(yield_op.operands, self.init_args, in_types):
                 if yield_val.name != before_in_arg.name:
                     yield translate_assignment_core_with_ctx(before_in_arg, yield_val, type_, ctx)
 
