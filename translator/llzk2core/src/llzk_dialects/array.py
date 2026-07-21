@@ -159,22 +159,40 @@ def _flatten_container_fields(type_str: str, ctx: TranslationContext) -> List[Tu
 
 
 def _emit_container_field_copy(src_arr: str, dest_arr: str, start: str, length: int,
-                               base: str) -> Generator[str, None, None]:
+                               base: str, offset_src: bool = False) -> Generator[str, None, None]:
     """
-    Emit a Core 'repeat' loop copying `length` contiguous elements from
-    src_arr[0..length-1] into dest_arr[start..start+length-1]. `start` is a
-    Core sexp (a variable name or integer literal). Core's repeat has no
-    implicit counter, so one is initialised before the loop and advanced
-    inside it (see CORELLZK.md's Bounded Loops).
+    Emit a Core 'repeat' loop copying `length` contiguous elements between
+    src_arr and dest_arr. `start` is a Core sexp (a variable name or integer
+    literal). Core's repeat has no implicit counter, so one is initialised
+    before the loop and advanced inside it (see CORELLZK.md's Bounded Loops).
+
+    Two shapes, depending on which side is the big (structure-of-arrays
+    backing) array and which is the small, freshly-allocated one:
+
+    - offset_src=False (default — "insert": copying a small array INTO a
+      bigger one, e.g. ArrayWrite/ArrayInsert writing one instance's value
+      back into the backing store): copies src_arr[0..length) into
+      dest_arr[start..start+length) — the offset lands on the destination.
+    - offset_src=True ("extract": copying a slice OUT OF a bigger array
+      into a freshly allocated smaller one, e.g. ArrayRead/ArrayExtract
+      reading one instance's value out of the backing store): copies
+      src_arr[start..start+length) into dest_arr[0..length) instead — the
+      offset must land on the source, or the (correctly small) destination
+      array would be written out of bounds for any start > 0.
     """
     counter = f"{base}_cp_idx"
     tmp = f"{base}_cp_tmp"
-    dest = f"{base}_cp_dest"
+    off = f"{base}_cp_src" if offset_src else f"{base}_cp_dest"
     yield f"{counter} = 0"
     yield f"repeat {length} {{"
-    yield f"array.read {src_arr}[{counter}] {tmp}"
-    yield f"{dest} = felt.add {counter} {start}"
-    yield f"array.write {tmp} {dest_arr}[{dest}]"
+    if offset_src:
+        yield f"{off} = felt.add {counter} {start}"
+        yield f"array.read {src_arr}[{off}] {tmp}"
+        yield f"array.write {tmp} {dest_arr}[{counter}]"
+    else:
+        yield f"array.read {src_arr}[{counter}] {tmp}"
+        yield f"{off} = felt.add {counter} {start}"
+        yield f"array.write {tmp} {dest_arr}[{off}]"
     yield f"{counter} = felt.add {counter} 1"
     yield "}"
 
@@ -406,7 +424,11 @@ class ArrayRead(Operation):
                     start_var = f"{dest_var}_off"
                     yield f"{start_var} = felt.mul {idx} {leaf_size}"
                     yield f"array.new {leaf_size} {dest_var}"
-                    yield from _emit_container_field_copy(src_arr, dest_var, start_var, leaf_size, dest_var)
+                    # Extracting this instance's slice out of the bigger
+                    # backing array (src_arr) into the freshly allocated
+                    # dest_var — offset belongs on the source, not dest_var.
+                    yield from _emit_container_field_copy(src_arr, dest_var, start_var, leaf_size, dest_var,
+                                                          offset_src=True)
             return
 
         if len(self.indices) <= 1:
@@ -592,8 +614,12 @@ class ArrayExtract(Operation):
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # array.extract reads a lower-rank sub-array out of arr_ref: a
         # contiguous run of the flattened source array, copied into a freshly
-        # allocated result array. Symmetric to ArrayInsert (see there for the
-        # start/length derivation).
+        # allocated result array. The start/length derivation mirrors
+        # ArrayInsert, but the copy itself runs the opposite way — this is
+        # an "extract" (offset on the source, the bigger arr_ref; the fresh,
+        # correctly-sized result is always written 0-based), not an
+        # "insert" (offset on the destination) — see
+        # _emit_container_field_copy's offset_src.
         type_str = self.arr_type.name
         dims = array_dimensions(type_str)
         assert dims is not None, \
@@ -628,11 +654,13 @@ class ArrayExtract(Operation):
                     field_start = f"{dest_arr}_start"
                     yield f"{field_start} = felt.mul {start} {leaf_mult}"
                 yield f"array.new {field_length} {dest_arr}"
-                yield from _emit_container_field_copy(src_arr, dest_arr, field_start, field_length, dest_arr)
+                yield from _emit_container_field_copy(src_arr, dest_arr, field_start, field_length, dest_arr,
+                                                      offset_src=True)
             return
 
         yield f"array.new {length} {self._result.to_core()}"
-        yield from _emit_container_field_copy(arr_core, self._result.to_core(), start, length, base)
+        yield from _emit_container_field_copy(arr_core, self._result.to_core(), start, length, base,
+                                              offset_src=True)
 
     def __repr__(self):
         idx_str = ', '.join(repr(i) for i in self.indices)

@@ -403,6 +403,140 @@ class TestArrayToCore:
         with pytest.raises(AssertionError):
             list(op.to_core(self._ctx()))
 
+    # ── container-array-of-array-typed-field copy direction (offset_src) ─────
+    #
+    # Regression coverage for a bug where extracting a per-instance slice
+    # OUT OF a bigger structure-of-arrays backing array (ArrayRead,
+    # ArrayExtract) applied the instance offset to the freshly allocated,
+    # correctly-sized destination instead of the source read — writing out
+    # of bounds on that destination for any instance past the first.
+    # Inserting a slice INTO the backing array (ArrayWrite, ArrayInsert) is
+    # the mirror operation and was already correct; included here so a
+    # future change to _emit_container_field_copy can't silently swap them.
+
+    def test_read_to_core_pod_array_field_offsets_the_source(self):
+        # Reading instance %i's "@out" (itself array-typed) out of the
+        # backing array must offset the READ from %arr_@out, and always
+        # write the freshly array.new'd %v_@out starting at 0.
+        op = ArrayRead.parse(
+            "%v = array.read %arr [%i]"
+            " : !array.type<2 x !pod.type<[@out: !array.type<2 x !felt.type<\"bn128\">>]>>,"
+            " !pod.type<[@out: !array.type<2 x !felt.type<\"bn128\">>]>"
+        )
+        lines = list(op.to_core(self._ctx()))
+        assert lines == [
+            "%v_@out_off = felt.mul %i 2",
+            "array.new 2 %v_@out",
+            "%v_@out_cp_idx = 0",
+            "repeat 2 {",
+            "%v_@out_cp_src = felt.add %v_@out_cp_idx %v_@out_off",
+            "array.read %arr_@out[%v_@out_cp_src] %v_@out_cp_tmp",
+            "array.write %v_@out_cp_tmp %v_@out[%v_@out_cp_idx]",
+            "%v_@out_cp_idx = felt.add %v_@out_cp_idx 1",
+            "}",
+        ]
+
+    def test_write_to_core_pod_array_field_offsets_the_destination(self):
+        # Mirror of the above: writing instance %i's "@out" back into the
+        # backing array offsets the WRITE into %arr_@out; the (small,
+        # already correctly sized) source %val_@out is always read from 0.
+        op = ArrayWrite.parse(
+            "array.write %arr [%i] = %val"
+            " : !array.type<2 x !pod.type<[@out: !array.type<2 x !felt.type<\"bn128\">>]>>,"
+            " !pod.type<[@out: !array.type<2 x !felt.type<\"bn128\">>]>"
+        )
+        lines = list(op.to_core(self._ctx()))
+        assert lines == [
+            "%val_@out_off = felt.mul %i 2",
+            "%val_@out_cp_idx = 0",
+            "repeat 2 {",
+            "array.read %val_@out[%val_@out_cp_idx] %val_@out_cp_tmp",
+            "%val_@out_cp_dest = felt.add %val_@out_cp_idx %val_@out_off",
+            "array.write %val_@out_cp_tmp %arr_@out[%val_@out_cp_dest]",
+            "%val_@out_cp_idx = felt.add %val_@out_cp_idx 1",
+            "}",
+        ]
+
+    def test_extract_to_core_plain_offsets_the_source(self):
+        op = ArrayExtract.parse(
+            "%r = array.extract %arr [%i] : !array.type<3,2 x !felt.type<\"bn128\">>"
+        )
+        lines = list(op.to_core(self._ctx()))
+        assert lines == [
+            "%r_s0 = 2",
+            "%r_t0 = felt.mul %i %r_s0",
+            "%r_lin = %r_t0",
+            "array.new 2 %r",
+            "%r_cp_idx = 0",
+            "repeat 2 {",
+            "%r_cp_src = felt.add %r_cp_idx %r_lin",
+            "array.read %arr[%r_cp_src] %r_cp_tmp",
+            "array.write %r_cp_tmp %r[%r_cp_idx]",
+            "%r_cp_idx = felt.add %r_cp_idx 1",
+            "}",
+        ]
+
+    def test_extract_to_core_pod_array_field_offsets_the_source(self):
+        op = ArrayExtract.parse(
+            "%r = array.extract %arr [%i]"
+            " : !array.type<3,2 x !pod.type<[@out: !array.type<2 x !felt.type<\"bn128\">>]>>"
+        )
+        lines = list(op.to_core(self._ctx()))
+        assert lines == [
+            "%r_s0 = 2",
+            "%r_t0 = felt.mul %i %r_s0",
+            "%r_lin = %r_t0",
+            "%r_@out_start = felt.mul %r_lin 2",
+            "array.new 4 %r_@out",
+            "%r_@out_cp_idx = 0",
+            "repeat 4 {",
+            "%r_@out_cp_src = felt.add %r_@out_cp_idx %r_@out_start",
+            "array.read %arr_@out[%r_@out_cp_src] %r_@out_cp_tmp",
+            "array.write %r_@out_cp_tmp %r_@out[%r_@out_cp_idx]",
+            "%r_@out_cp_idx = felt.add %r_@out_cp_idx 1",
+            "}",
+        ]
+
+    def test_insert_to_core_plain_offsets_the_destination(self):
+        op = ArrayInsert.parse(
+            "array.insert %arr [%i] = %sub"
+            " : !array.type<3,2 x !felt.type<\"bn128\">>, !array.type<2 x !felt.type<\"bn128\">>"
+        )
+        lines = list(op.to_core(self._ctx()))
+        assert lines == [
+            "%sub_s0 = 2",
+            "%sub_t0 = felt.mul %i %sub_s0",
+            "%sub_lin = %sub_t0",
+            "%sub_cp_idx = 0",
+            "repeat 2 {",
+            "array.read %sub[%sub_cp_idx] %sub_cp_tmp",
+            "%sub_cp_dest = felt.add %sub_cp_idx %sub_lin",
+            "array.write %sub_cp_tmp %arr[%sub_cp_dest]",
+            "%sub_cp_idx = felt.add %sub_cp_idx 1",
+            "}",
+        ]
+
+    def test_insert_to_core_pod_array_field_offsets_the_destination(self):
+        op = ArrayInsert.parse(
+            "array.insert %arr [%i] = %sub"
+            " : !array.type<3,2 x !pod.type<[@out: !array.type<2 x !felt.type<\"bn128\">>]>>,"
+            " !pod.type<[@out: !array.type<2 x !felt.type<\"bn128\">>]>"
+        )
+        lines = list(op.to_core(self._ctx()))
+        assert lines == [
+            "%sub_s0 = 2",
+            "%sub_t0 = felt.mul %i %sub_s0",
+            "%sub_lin = %sub_t0",
+            "%sub_@out_start = felt.mul %sub_lin 2",
+            "%sub_@out_cp_idx = 0",
+            "repeat 4 {",
+            "array.read %sub_@out[%sub_@out_cp_idx] %sub_@out_cp_tmp",
+            "%sub_@out_cp_dest = felt.add %sub_@out_cp_idx %sub_@out_start",
+            "array.write %sub_@out_cp_tmp %arr_@out[%sub_@out_cp_dest]",
+            "%sub_@out_cp_idx = felt.add %sub_@out_cp_idx 1",
+            "}",
+        ]
+
     # ── ArrayLen.to_core ──────────────────────────────────────────────────────
 
     def test_len_to_core_dim0(self):
