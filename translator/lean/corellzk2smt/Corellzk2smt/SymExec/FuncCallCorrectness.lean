@@ -373,6 +373,58 @@ theorem flattenArgVals_eq {c : ZKConfig} :
       rw [flattenArgVal_eq p.type v hpv, ih]
       simp [flattenSymValuesParams]
 
+/-- Converse of `flattenArgVal_eq`: if `flattenArgVal` succeeds, the value's shape already matched
+    the declared type -- `flattenArgVal`'s own cases are exactly `symValueMatchesType`'s, so this
+    is definitional case-matching, no extra reasoning needed. Lets `seFuncCall_correct` read the
+    shape fact straight back out of `seFuncCall`'s own success. -/
+theorem flattenArgVal_defined_of_ok {c : ZKConfig} (type : VarType) (v : SymValue c)
+    (ps : List (MacroCallParam c)) (h : flattenArgVal type v = Except.ok ps) :
+    symValueMatchesType v type := by
+  cases type with
+  | ff =>
+      cases v with
+      | simple _ => trivial
+      | array _ => simp [flattenArgVal] at h
+  | array n =>
+      cases v with
+      | simple _ => simp [flattenArgVal] at h
+      | array arr =>
+          simp only [flattenArgVal] at h
+          by_cases heq : arr.size = n
+          · simp [symValueMatchesType, heq]
+          · simp [heq] at h
+
+/-- `flattenArgVal_defined_of_ok`, for a whole `params`/`argVals` list pair: if `flattenArgVals`
+    succeeds, every value's shape already matched its declared param type, pointwise -- the
+    arity fact (`params.length = argVals.length`) follows immediately from `List.Forall₂.length_eq`
+    given this. -/
+theorem flattenArgVals_defined_of_ok {c : ZKConfig} :
+    ∀ (params : List Param) (argVals : List (SymValue c)) (ps : List (MacroCallParam c)),
+      flattenArgVals params argVals = Except.ok ps →
+      List.Forall₂ (fun (pm : Param) sv => symValueMatchesType sv pm.type) params argVals := by
+  intro params
+  induction params with
+  | nil =>
+      intro argVals ps h
+      cases argVals with
+      | nil => exact List.Forall₂.nil
+      | cons v vs => simp [flattenArgVals] at h
+  | cons p ps' ih =>
+      intro argVals psOut h
+      cases argVals with
+      | nil => simp [flattenArgVals] at h
+      | cons v vs =>
+          simp only [flattenArgVals] at h
+          cases hfv : flattenArgVal p.type v with
+          | error e => rw [hfv] at h; simp at h
+          | ok ps1 =>
+              rw [hfv] at h
+              cases hrest : flattenArgVals ps' vs with
+              | error e => rw [hrest] at h; simp at h
+              | ok ps2 =>
+                  exact List.Forall₂.cons (flattenArgVal_defined_of_ok p.type v ps1 hfv)
+                    (ih vs ps2 hrest)
+
 /-- Elimination for `flattenSymValuesParams`: every produced macro-call param came from exactly
     one of the list's own values, via that value's own `flattenSymValueParams`. -/
 theorem flattenSymValuesParams_mem_elim {c : ZKConfig} (vs : List (SymValue c))
@@ -1418,6 +1470,41 @@ theorem resolveSimpleExprsToSymValue_of_forall_general {c : ZKConfig} (symEnv : 
       simp only [resolveSimpleExprsToSymValue] at heq ⊢
       rw [List.mapM_cons, hsv, heq]
       rfl
+
+/-- Converse of `resolveSimpleExprsToSymValue_of_forall_general`: if `resolveSimpleExprsToSymValue`
+    (i.e. `args.mapM (resolveSimpleExprToSymValue symEnv)`) succeeds, every element resolved
+    individually to the corresponding output -- lets `seFuncCall_correct` read the per-element
+    resolution facts (and hence arity/shape) straight back out of `seFuncCall`'s own success,
+    instead of needing them supplied as a separate hypothesis. -/
+theorem resolveSimpleExprsToSymValue_forall_of_ok {c : ZKConfig} (symEnv : SymEnv c) :
+    ∀ (args : List (SimpleExpr c)) (argSymVals : List (SymValue c)),
+      resolveSimpleExprsToSymValue symEnv args = Except.ok argSymVals →
+      List.Forall₂ (fun s sv => resolveSimpleExprToSymValue symEnv s = Except.ok sv)
+        args argSymVals := by
+  intro args
+  induction args with
+  | nil =>
+      intro argSymVals heq
+      simp only [resolveSimpleExprsToSymValue, List.mapM_nil, pure, Except.pure,
+        Except.ok.injEq] at heq
+      rw [← heq]
+      exact List.Forall₂.nil
+  | cons a args ih =>
+      intro argSymVals heq
+      simp only [resolveSimpleExprsToSymValue] at heq
+      rw [List.mapM_cons] at heq
+      cases hsv : resolveSimpleExprToSymValue symEnv a with
+      | error e => rw [hsv] at heq; simp [Bind.bind, Except.bind] at heq
+      | ok sv =>
+          rw [hsv] at heq
+          simp only [Bind.bind, Except.bind] at heq
+          cases hrest : List.mapM (resolveSimpleExprToSymValue symEnv) args with
+          | error e => rw [hrest] at heq; simp at heq
+          | ok svs =>
+              rw [hrest] at heq
+              simp only [pure, Except.pure, Except.ok.injEq] at heq
+              rw [← heq]
+              exact List.Forall₂.cons hsv (ih svs hrest)
 
 /-- Array-capable, list-level mirror of `list_resolveSimpleExpr_correct`. -/
 theorem list_resolveSimpleExprToSymValue_correct {c : ZKConfig} (symEnv : SymEnv c) (env : Env c)

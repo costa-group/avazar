@@ -39,10 +39,7 @@ theorem seFuncCall_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     (specs : List (FuncSpec c)) (sconf : SymExecConfig c)
     (fname : FName) (args : List (SimpleExpr c)) (outs : List VarID)
     (fspec : FuncSpec c) (hspec_eq : fetchFuncSpec specs fname = Except.ok fspec)
-    (hargs_len : args.length = fspec.params.length)
     (houts_len : outs.length = fspec.rets.length)
-    (hargs_defined : ∀ (env : Env c), ∃ vs : List (Value c),
-      evalSimpleExprsToValue env args = Except.ok vs ∧ ValuesMatchParams vs fspec.params)
     (hspec_retsShape : ∀ (argVals : List (Value c)), ValuesMatchParams argVals fspec.params →
       ∀ (outVals : List (Value c)),
         evalFunCall gconf p fname argVals = Except.ok outVals →
@@ -76,40 +73,28 @@ theorem seFuncCall_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
       (fun env => evalFuncCallCmd gconf p fname args outs env)
       (fun symEnv => seFuncCall gconf sconf symEnv specs fname args outs) := by
   intro symEnv hbelow spec hspec_witness
-  obtain ⟨argSymVals, hargSV_len, hargSV_forall, hargSV_eq⟩ :
-      ∃ argSymVals : List (SymValue c), argSymVals.length = args.length ∧
-        List.Forall₂ (fun s sv => resolveSimpleExprToSymValue symEnv s = Except.ok sv)
-          args argSymVals ∧
-        resolveSimpleExprsToSymValue symEnv args = Except.ok argSymVals := by
-    apply resolveSimpleExprsToSymValue_of_forall_general
-    intro s hs
-    have hmatch := EnvMatches_decodeSymEnv (default : Assignment c) symEnv
-    obtain ⟨vs, hvs_eq, _⟩ := hargs_defined (decodeSymEnv default symEnv)
-    obtain ⟨v, hv⟩ := evalSimpleExprToValue_of_evalSimpleExprsToValue
-      (decodeSymEnv default symEnv) args vs hvs_eq s hs
-    exact resolveSimpleExprToSymValue_defined_of_evalSimpleExprToValue symEnv s _ default hmatch v
-      hv
+  have hspec_witness' := hspec_witness
+  simp only [seFuncCall, hspec_eq] at hspec_witness'
+  cases hargSV_eq : resolveSimpleExprsToSymValue symEnv args with
+  | error e => rw [hargSV_eq] at hspec_witness'; simp at hspec_witness'
+  | ok argSymVals =>
+  rw [hargSV_eq] at hspec_witness'
+  simp only [] at hspec_witness'
+  cases hinputParams_eq : flattenArgVals fspec.params argSymVals with
+  | error e => rw [hinputParams_eq] at hspec_witness'; simp at hspec_witness'
+  | ok inputParams =>
+  rw [hinputParams_eq] at hspec_witness'
+  simp only [] at hspec_witness'
+  have hargSV_forall : List.Forall₂ (fun s sv => resolveSimpleExprToSymValue symEnv s = Except.ok sv)
+      args argSymVals :=
+    resolveSimpleExprsToSymValue_forall_of_ok symEnv args argSymVals hargSV_eq
   have hargSV_vars : ∀ sv ∈ argSymVals, symValVars sv ⊆ symEnvVars symEnv := by
     intro sv hsv
     obtain ⟨s, _hs, hres⟩ := forall2_mem_right hargSV_forall sv hsv
     exact resolveSimpleExprToSymValue_vars_subset symEnv s sv hres
-  have hparams_len : fspec.params.length = argSymVals.length := hargs_len.symm.trans hargSV_len.symm
   have hshape : List.Forall₂ (fun (pm : Param) sv => symValueMatchesType sv pm.type)
-      fspec.params argSymVals := by
-    obtain ⟨vs, hvs_eq, hvsMatch⟩ := hargs_defined (decodeSymEnv default symEnv)
-    obtain ⟨vs', hvs'_eq, hvs'Match⟩ := list_resolveSimpleExprToSymValue_correct symEnv
-      (decodeSymEnv default symEnv) default (EnvMatches_decodeSymEnv default symEnv) args
-      argSymVals hargSV_forall
-    have hvv' : vs = vs' := by
-      have heqq := hvs_eq.symm.trans hvs'_eq
-      injection heqq
-    rw [hvv'] at hvsMatch
-    have hchain := forall2_chain
-      (fun sv v pm (hm : symValMatches default sv v)
-          (ht : ensureCorrectType v pm.type = Except.ok ()) =>
-        symValueMatchesType_of_symValMatches default sv v hm pm.type ht)
-      hvs'Match hvsMatch
-    exact forall2_flip hchain
+      fspec.params argSymVals :=
+    flattenArgVals_defined_of_ok fspec.params argSymVals inputParams hinputParams_eq
   have hflatten : flattenArgVals fspec.params argSymVals =
       Except.ok (flattenSymValuesParams argSymVals) :=
     flattenArgVals_eq fspec.params argSymVals hshape

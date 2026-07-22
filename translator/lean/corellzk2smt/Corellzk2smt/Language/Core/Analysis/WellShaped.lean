@@ -31,18 +31,23 @@ import Corellzk2smt.Language.Core.Semantics.BigStep
        fails via `mergeIfBranches` whenever `encodeCond` does), so it can be extracted directly
        from the success hypothesis instead of assumed up front via `encodeCond_defined`; and
    (d) every `func_call` site names a function that actually exists in the (remaining) program,
-       called with the right arity (`args`/`outs` lengths matching the callee's declared
-       `params`/`rets`), and arguments that are always concretely defined *and* already
-       shape-matched to the callee's declared param types (`ValuesMatchParams`) -- the call-site
-       well-formedness `seFuncCall_correct` (`SymExec/FuncCallCorrectness.lean`) itself needs as
-       hypotheses, now phrased once here so `H_funcCall` (`SymExec/Correctness.lean`) can be
-       discharged from it instead of assumed unconditionally (see that file's `H_funcCall` design
-       notes for why the unconditional form is never actually provable). `outs.Nodup` used to be
-       part of this clause too, but turned out to be unnecessary: `EnvMatches_setVars`
-       (`SymExec/FuncCallCorrectness.lean`) preserves `EnvMatches` across a repeated-`outs` call
-       just fine, since both the concrete and symbolic `setVars` recurse over `outs` in the same
-       left-to-right order and so resolve a repeat to "last write wins" identically on both
-       sides -- no distinctness needed for that argument to go through.
+       called with the right `outs`/`rets` arity -- the one part of the call-site well-formedness
+       `seFuncCall_correct` (`SymExec/FuncCallCorrectness.lean`) needs that genuinely isn't implied
+       by `seFuncCall` succeeding (the completeness direction constructs a concrete execution from
+       an arbitrary satisfying assignment, with no prior success to read it back out of), now
+       phrased once here so `H_funcCall` (`SymExec/Correctness.lean`) can be discharged from it
+       instead of assumed unconditionally. Three things that used to be part of this clause turned
+       out to be unnecessary, each removed once actually checked rather than assumed necessary:
+       - `outs.Nodup`: `EnvMatches_setVars` (`SymExec/FuncCallCorrectness.lean`) preserves
+         `EnvMatches` across a repeated-`outs` call just fine, since both the concrete and symbolic
+         `setVars` recurse over `outs` in the same left-to-right order and so resolve a repeat to
+         "last write wins" identically on both sides -- no distinctness needed for that argument.
+       - `args.length = params.length` (arity on the *arguments* side): `flattenArgVals`'s own
+         definition (`SymExec/BigStep.lean`) fails on a length mismatch, so `seFuncCall_correct`
+         reads this straight back out of `seFuncCall`'s own success instead of needing it supplied.
+       - the "arguments always concretely defined and shape-matched" `∀ env` clause: for the same
+         reason, `flattenArgVal`'s cases *are* `symValueMatchesType`'s cases, so a successful
+         `flattenArgVals` already proves the shape match, no separate assumption needed.
 
    The language isn't strongly typed (see `DefinedVars.lean`), so this can't be checked by a
    static type system -- it's a semantic well-formedness precondition on the *program*,
@@ -77,13 +82,10 @@ def WellShapedCom {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c) (cmd : Co
           envTb.get? id = some v1 → envEb.get? id = some v2 → sameShapeValue v1 v2
   | .loop_exp _rep body => WellShapedCmds gconf p body
   | .loop _rep body => WellShapedCmds gconf p body
-  | .func_call outs fname args =>
+  | .func_call outs fname _args =>
       ∃ md func p', fetchFunc p fname = Except.ok (FuncWithMD.mk md func, p') ∧
         match func with
-        | Func.mk _ params rets _ =>
-          args.length = params.length ∧ outs.length = rets.length ∧
-          ∀ (env : Env c), ∃ vs : List (Value c),
-            evalSimpleExprsToValue env args = Except.ok vs ∧ ValuesMatchParams vs params
+        | Func.mk _ _ rets _ => outs.length = rets.length
   | _ => True
 
 def WellShapedCmds {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)

@@ -62,10 +62,7 @@ theorem seFunc_f_params_split {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog 
     (H_funcCall : ∀ (sconf : SymExecConfig c) (fname' : FName) (args : List (SimpleExpr c))
         (outs : List VarID) (md' : FuncMD) (func' : Func c) (p'' : Prog c),
       fetchFunc p' fname' = Except.ok (FuncWithMD.mk md' func', p'') →
-      (match func' with | Func.mk _ params _ _ => args.length = params.length) →
       (match func' with | Func.mk _ _ rets _ => outs.length = rets.length) →
-      (∀ (env : Env c), ∃ vs : List (Value c), evalSimpleExprsToValue env args = Except.ok vs ∧
-        ValuesMatchParams vs (match func' with | Func.mk _ params _ _ => params)) →
       TranslatesCorrectly gconf sconf specs
         (fun env => evalFuncCallCmd gconf p' fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs))
@@ -195,10 +192,7 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     (H_funcCall : ∀ (sconf : SymExecConfig c) (fname' : FName) (args : List (SimpleExpr c))
         (outs : List VarID) (md' : FuncMD) (func' : Func c) (p'' : Prog c),
       fetchFunc p' fname' = Except.ok (FuncWithMD.mk md' func', p'') →
-      (match func' with | Func.mk _ params _ _ => args.length = params.length) →
       (match func' with | Func.mk _ _ rets _ => outs.length = rets.length) →
-      (∀ (env : Env c), ∃ vs : List (Value c), evalSimpleExprsToValue env args = Except.ok vs ∧
-        ValuesMatchParams vs (match func' with | Func.mk _ params _ _ => params)) →
       TranslatesCorrectly gconf sconf specs
         (fun env => evalFuncCallCmd gconf p' fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs))
@@ -1092,10 +1086,7 @@ theorem seFuncCall_correct_via_seFunc {c : ZKConfig} (gconf : GlobalConfig c) (p
     (H_funcCall : ∀ (sconf : SymExecConfig c) (fname' : FName) (args : List (SimpleExpr c))
         (outs : List VarID) (md' : FuncMD) (func' : Func c) (p'' : Prog c),
       fetchFunc p' fname' = Except.ok (FuncWithMD.mk md' func', p'') →
-      (match func' with | Func.mk _ params _ _ => args.length = params.length) →
       (match func' with | Func.mk _ _ rets _ => outs.length = rets.length) →
-      (∀ (env : Env c), ∃ vs : List (Value c), evalSimpleExprsToValue env args = Except.ok vs ∧
-        ValuesMatchParams vs (match func' with | Func.mk _ params _ _ => params)) →
       TranslatesCorrectly gconf sconf specs
         (fun env => evalFuncCallCmd gconf p' fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs))
@@ -1103,10 +1094,7 @@ theorem seFuncCall_correct_via_seFunc {c : ZKConfig} (gconf : GlobalConfig c) (p
     (hspecs_wf : ∀ spec ∈ specs, spec.f.name = spec.name)
     (fspec : FuncSpec c) (hseFunc_eq : seFunc gconf specs func = Except.ok fspec)
     (args : List (SimpleExpr c)) (outs : List VarID)
-    (hargs_len : args.length = fspec.params.length)
-    (houts_len : outs.length = fspec.rets.length)
-    (hargs_defined : ∀ (env : Env c), ∃ vs : List (Value c),
-      evalSimpleExprsToValue env args = Except.ok vs ∧ ValuesMatchParams vs fspec.params) :
+    (houts_len : outs.length = fspec.rets.length) :
     TranslatesCorrectly gconf sconf (fspec :: specs)
       (fun env => evalFuncCallCmd gconf p fname args outs env)
       (fun symEnv => seFuncCall gconf sconf symEnv (fspec :: specs) fname args outs) := by
@@ -1122,6 +1110,6 @@ theorem seFuncCall_correct_via_seFunc {c : ZKConfig} (gconf : GlobalConfig c) (p
         md (Func.mk name params rets body) p' hfetch hnodup_p H_simple H_funcCall
         hshaped hspecs_wf fspec hseFunc_eq
       exact seFuncCall_correct gconf p (fspec :: specs) sconf fname args outs fspec hspec_eq
-        hargs_len houts_len hargs_defined hspec_retsShape H_specCorrect
+        houts_len hspec_retsShape H_specCorrect
 
 end Corellzk2smt.SymExec.PartialCorrectness.FuncCorrectness
