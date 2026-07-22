@@ -19,7 +19,9 @@ from llzk_dialects.core import (
     TranslationContext, ParseFn,
 )
 from llzk_dialects.definitions import Dialect
-from llzk_dialects.core_utils import translate_assignment_core_with_ctx, infer_n_repetitions_from_expressions
+from llzk_dialects.core_utils import (
+    translate_assignment_core_with_ctx, infer_n_repetitions_from_expressions, SymbolicSteps,
+)
 from llzk_dialects.felt import FeltBinary, FeltConst
 from llzk_dialects.bool import BoolCmp
 from llzk_dialects.utils import split_top_level_commas
@@ -628,7 +630,8 @@ class SCFWhile(BlockOperation):
                  func_type: List[List[Type]],
                  before_body: List[Operation],
                  after_args: List[Tuple[SSAVar, Type]],
-                 after_body: List[Operation]):
+                 after_body: List[Operation],
+                 cursor: Optional[int] = None):
         self.results = results
         # init_args: list of (block_arg, initial_value) pairs
         self.init_args: List[Tuple[SSAVar, SSAVar]] = init_args
@@ -637,6 +640,12 @@ class SCFWhile(BlockOperation):
         # after_args: SSA names introduced at the start of the after region
         self.after_args = after_args
         self.after_body = after_body
+        # This while's own header line index at parse time -- used to mint a
+        # collision-free fresh Core variable name for a symbolic step count
+        # (see infer_n_repetitions_from_expressions' SymbolicSteps), the same
+        # way before_rename/after_rename already use it to disambiguate
+        # sibling whiles reusing the same LLZK-level SSA numbers.
+        self.cursor = cursor
 
     def dialect(self) -> Dialect:
         return Dialect("scf")
@@ -773,7 +782,7 @@ class SCFWhile(BlockOperation):
 
         return (
             SCFWhile(results, init_args, types,
-                     before_body, after_args, after_body),
+                     before_body, after_args, after_body, cursor),
             after_end + 1,
         )
 
@@ -796,7 +805,7 @@ class SCFWhile(BlockOperation):
 
         # Then, we determine the number of steps in the while loop and
         # assign it to repeat
-        steps = self._extract_step(initial_values)
+        steps = self._extract_step(initial_values, ctx)
 
         def emit_iteration() -> Generator[str, None, None]:
             # The order of the regions to synthesize is reversed, as the before body
@@ -836,7 +845,43 @@ class SCFWhile(BlockOperation):
         # per iteration (LoopIndexedName, resolved via ctx.unroll_index)
         # that a single generic body has no way to give it — see
         # _contains_function_call and SCFFor.to_core's identical branching.
-        if _contains_function_call(self.before_body) or _contains_function_call(self.after_body):
+        needs_unroll = _contains_function_call(self.before_body) or _contains_function_call(self.after_body)
+
+        if isinstance(steps, SymbolicSteps):
+            if needs_unroll:
+                # A symbolic count is a Core expression, not a Python int --
+                # it can't drive `for i in range(steps)`, since we don't know
+                # how many literal per-iteration copies to emit.
+                raise NotImplementedError(
+                    "Cannot unroll a while loop whose body contains a function.call "
+                    "when its iteration count is symbolic (not statically known as a "
+                    "concrete int) — the count depends on an unresolved variable and "
+                    "each iteration would need a distinct copy, which requires knowing "
+                    "how many copies to emit"
+                )
+
+            for op in steps.setup_ops:
+                yield from op.to_core(ctx)
+
+            fresh_var = f"%steps_{self.cursor}"
+            bound_core = steps.bound_var.to_core()
+
+            if steps.variable_is_lhs:
+                first_op, first_args = ("felt.sub", (bound_core, steps.initial_value))
+            else:
+                first_op, first_args = ("felt.sub", (steps.initial_value, bound_core))
+
+            if steps.op == "le":
+                pre_var = f"{fresh_var}_pre"
+                yield f"{pre_var} = {first_op} {first_args[0]} {first_args[1]}"
+                yield f"{fresh_var} = felt.add {pre_var} 1"
+            else:
+                yield f"{fresh_var} = {first_op} {first_args[0]} {first_args[1]}"
+
+            yield f"repeat {fresh_var} {{"
+            yield from emit_iteration()
+            yield f"}}"
+        elif needs_unroll:
             prev_unroll_index = ctx.unroll_index
             for i in range(steps):
                 ctx.unroll_index = i
@@ -847,7 +892,8 @@ class SCFWhile(BlockOperation):
             yield from emit_iteration()
             yield f"}}"
 
-    def _extract_step(self, initial_values: Dict[str, int]) -> int:
+    def _extract_step(self, initial_values: Dict[str, int],
+                      ctx: TranslationContext) -> Union[int, SymbolicSteps]:
         """
         Extracts how many iterations are performed in the loop
         """
@@ -905,8 +951,8 @@ class SCFWhile(BlockOperation):
                 while_variables.remove(arg_var.name)
 
         # Finally, using the information from var2expression, we can process the repeat information
-        return infer_n_repetitions_from_expressions(while_variables, var2expression,
-                                                    condition_var.name, initial_values)
+        return infer_n_repetitions_from_expressions(var2expression, condition_var.name,
+                                                    initial_values, ctx.var2const)
 
     def _process_while_variables(self, operations: List[Operation], while_variables: Set[str],
                                  var2expression: Dict[str, Union[str, Operation]]):

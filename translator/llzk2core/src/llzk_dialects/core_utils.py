@@ -2,6 +2,7 @@
 Module for useful methods applies to the classes in core.py
 """
 import re
+from dataclasses import dataclass
 from typing import List, Set, Dict, Union, Optional, Callable, Tuple
 from llzk_dialects.core import SSAVar, TranslationContext, Type, Operation
 from llzk_dialects.utils import translate_assignment_core, struct_type_name, is_array_type
@@ -111,20 +112,122 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
     return translate_assignment_core(lhs.to_core(), rhs.to_core(), is_ff)
 
 
-def infer_n_repetitions_from_expressions(ground_variables: Set[str],
-                                         var2expression: Dict[str, Union[str, Operation]],
+@dataclass
+class SymbolicSteps:
+    """
+    A while-loop iteration count that couldn't be reduced to a concrete
+    Python int at translation time -- its condition's bound depends on a
+    variable that isn't defined anywhere inside the while itself (e.g. an
+    enclosing function's own parameter) and whose value isn't known here --
+    but that can still be expressed as a Core arithmetic formula, to be
+    assigned to a fresh variable and used directly as `repeat`'s operand.
+
+    setup_ops must be translated once, in order, before the repeat statement,
+    to compute bound_var's value; bound_var.to_core() is then the bound.
+    """
+    setup_ops: List[Operation]
+    bound_var: SSAVar
+    initial_value: int
+    op: str  # "lt" or "le"
+    variable_is_lhs: bool
+
+
+def _collect_setup_ops(var: SSAVar,
+                       var2expression: Dict[str, Union[str, Operation]],
+                       seen: Set[str]) -> List[Operation]:
+    """
+    Post-order traversal collecting the operations (in dependency order) that
+    must be translated once, before a loop starts, to compute `var`'s value --
+    used to precompute a while's bound expression when it can't be reduced to
+    a concrete Python int. Mirrors construct_function_from_expressions's
+    recursion, but collects Operations instead of building a callable. A name
+    with no var2expression entry (an external free variable, e.g. an
+    enclosing function's own parameter) needs no setup: it's already a valid
+    Core identifier.
+    """
+    if var.name in seen or var.name not in var2expression:
+        return []
+
+    seen.add(var.name)
+    expression = var2expression[var.name]
+
+    if isinstance(expression, str):
+        return _collect_setup_ops(SSAVar(expression), var2expression, seen)
+
+    ops = []
+    for operand in expression.operands:
+        ops.extend(_collect_setup_ops(operand, var2expression, seen))
+    ops.append(expression)
+    return ops
+
+
+def _detect_affine_step(update_func: Callable) -> Optional[int]:
+    """
+    Probes update_func at two sample points to check whether it's an affine
+    x -> x + step recurrence, returning the step if so, None otherwise.
+    """
+    step = update_func(10) - 10
+    if update_func(1000) - 1000 != step:
+        return None
+    return step
+
+
+def _collect_free_var_names(var: SSAVar,
+                            var2expression: Dict[str, Union[str, Operation]],
+                            seen: Set[str]) -> Set[str]:
+    """
+    Walks var's expression tree (following string aliases/operation operands,
+    same recursion shape as construct_function_from_expressions) and returns
+    the names with no var2expression entry at all -- external free variables
+    referenced by the expression but not defined anywhere inside the while
+    itself (e.g. an enclosing function's own parameter).
+    """
+    if var.name in seen:
+        return set()
+    seen.add(var.name)
+
+    if var.name not in var2expression:
+        return {var.name}
+
+    expression = var2expression[var.name]
+    if isinstance(expression, str):
+        return _collect_free_var_names(SSAVar(expression), var2expression, seen)
+
+    free = set()
+    for operand in expression.operands:
+        free.update(_collect_free_var_names(operand, var2expression, seen))
+    return free
+
+
+def infer_n_repetitions_from_expressions(var2expression: Dict[str, Union[str, Operation]],
                                          condition_var_core: str,
-                                         initial_values: Dict[str, int]) -> int:
+                                         initial_values: Dict[str, int],
+                                         var2const: Optional[Dict[str, int]] = None
+                                         ) -> Union[int, SymbolicSteps]:
     """
     Using the information retrieved from all involved expressions in the condition
-    (ground_variables, var2expression and condition_var) and the initial assignments
-    (initial_args2const), detects how many iterations are performed
-    until the condition is reached
-    """
-    if len(ground_variables) > 1:
-        raise NotImplementedError("While condition relies on two expressions to be computed")
+    (var2expression and condition_var) and the initial assignments (initial_values),
+    detects how many iterations are performed until the condition is reached.
 
-    assert len(ground_variables) <= 1, "The while must depend on a linear expression"
+    The condition's bound may reference, besides the loop-carried variable
+    itself, other free variables not defined anywhere inside the while (e.g.
+    an enclosing function's own parameter). Those are resolved via var2const
+    when known (folded in as constants, same as a literal felt.const); when
+    they aren't, the iteration count is instead derived as a SymbolicSteps
+    formula, provided the loop variable's own recurrence is a simple +-1
+    step.
+
+    The loop-carried variable is identified directly from the condition's own
+    operands, via initial_values membership (only ever populated for the
+    while's own declared loop-carried arguments) -- not from the leftover set
+    SCFWhile._extract_step's backward walk produces, which is unreliable for
+    this: when the loop variable's own recurrence collapses entirely to
+    constants (e.g. it's unconditionally reset to a literal each iteration,
+    rather than incremented), that walk consumes it completely and it never
+    survives as a leftover, even though it's still a bona fide loop-carried
+    variable.
+    """
+    var2const = var2const or {}
 
     initial_comparison = var2expression[condition_var_core]
     assert isinstance(initial_comparison, BoolCmp), f"For now, only BoolCmp whiles are handled: {initial_comparison}"
@@ -143,31 +246,78 @@ def infer_n_repetitions_from_expressions(ground_variables: Set[str],
         lhs, rhs = initial_comparison.lhs, initial_comparison.rhs
         op = initial_comparison.predicate
 
-    if isinstance(var2expression[lhs.name], FeltConst):
-        variable = rhs
-        initial_value = initial_values[lhs.name]
+    assert op in ("lt", "le"), "Only inequalities are implemented"
 
-        if op == "lt":
-            compare_func = lambda x: var2expression[lhs.name].constant < x
-        else:
-            assert op == "le", "Only inequalities are implemented"
-            compare_func = lambda x: var2expression[lhs.name].constant <= x
+    lhs_is_variable = lhs.name in initial_values
+    rhs_is_variable = rhs.name in initial_values
 
+    if lhs_is_variable and rhs_is_variable:
+        raise NotImplementedError(
+            f"While condition compares two loop-carried variables directly "
+            f"('{lhs.name}', '{rhs.name}') -- not supported"
+        )
+    elif lhs_is_variable:
+        variable, bound = lhs, rhs
+        variable_is_lhs = True
+    elif rhs_is_variable:
+        variable, bound = rhs, lhs
+        variable_is_lhs = False
     else:
-        assert isinstance(var2expression[rhs.name], FeltConst), \
-            "One of the variables must be constant"
-        variable = lhs
-        initial_value = initial_values[lhs.name]
+        raise NotImplementedError(
+            f"Could not identify the loop-carried variable in the while condition: "
+            f"neither '{lhs.name}' nor '{rhs.name}' has a known initial value"
+        )
 
-        if op == "lt":
-            compare_func = lambda x: x < var2expression[rhs.name].constant
-        else:
-            assert op == "le", "Only inequalities are implemented"
-            compare_func = lambda x: x <= var2expression[rhs.name].constant
-
-    # We can deduce the update function and the original variable
+    initial_value = initial_values[variable.name]
     update_func = construct_function_from_expressions(variable, var2expression, set())
-    return count_iterations(initial_value, compare_func, update_func)
+
+    # Resolve any free variable the bound references but that isn't defined
+    # anywhere inside the while itself (e.g. an enclosing function's own
+    # parameter) via var2const, folding it in as a constant leaf, same as a
+    # literal felt.const.
+    unresolved_free_vars = set()
+    for name in _collect_free_var_names(bound, var2expression, set()):
+        if name in var2const:
+            var2expression[name] = FeltConst(SSAVar(name), var2const[name])
+        else:
+            unresolved_free_vars.add(name)
+
+    if not unresolved_free_vars:
+        # Every value the bound depends on is now known (either an original
+        # literal or a free variable just resolved via var2const above), so
+        # it can be evaluated to a concrete int, same as a bare constant.
+        bound_func = construct_function_from_expressions(bound, var2expression, set())
+        bound_value = bound_func(0)
+
+        if variable_is_lhs:
+            compare_func = (lambda x: x < bound_value) if op == "lt" else (lambda x: x <= bound_value)
+        else:
+            compare_func = (lambda x: bound_value < x) if op == "lt" else (lambda x: bound_value <= x)
+
+        return count_iterations(initial_value, compare_func, update_func)
+
+    # The bound depends on a value that isn't known here (e.g. an enclosing
+    # function's own parameter). Fall back to a symbolic Core expression for
+    # the step count -- only supported when the loop variable's own update is
+    # a simple +-1 per-iteration increment, in the direction required for the
+    # loop to actually terminate.
+    step = _detect_affine_step(update_func)
+    if step is None:
+        raise NotImplementedError(
+            f"While condition depends on unresolved variable(s) {unresolved_free_vars}, "
+            "and the loop variable's update is not a simple constant increment -- "
+            "cannot infer a symbolic step count"
+        )
+
+    if (variable_is_lhs and step != 1) or (not variable_is_lhs and step != -1):
+        raise NotImplementedError(
+            f"While condition depends on unresolved variable(s) {unresolved_free_vars} "
+            f"with a step of {step} in the {'lhs' if variable_is_lhs else 'rhs'} position -- "
+            "only a +-1 step is supported for symbolic step-count inference"
+        )
+
+    setup_ops = _collect_setup_ops(bound, var2expression, set())
+    return SymbolicSteps(setup_ops, bound, initial_value, op, variable_is_lhs)
 
 
 def construct_function_from_expressions(current_expr: SSAVar,

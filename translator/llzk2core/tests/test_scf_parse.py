@@ -501,6 +501,140 @@ class TestSCF:
         assert "array.copy %newarr %arg2" in out    # per-iteration reassignment (the bug)
         assert "%arg2 = %newarr" not in out
 
+    def _external_bound_while(self, predicate="lt", cursor=None, bound_ops=None, bound_name="%bound"):
+        """
+        A counting while (same +1 recurrence as _counting_while) whose
+        condition is checked against `bound_name`, a variable that isn't
+        defined anywhere inside the while itself -- standing in for an
+        enclosing function's own parameter (mirrors
+        escalarmulw4table_concrete.mlir's "arg3 < k*4"). `bound_ops`, if
+        given, are extra operations prepended to before_body to compute
+        `bound_name` from some other unresolved free variable (e.g. a
+        felt.mul), rather than bound_name itself being the free variable.
+        """
+        before_body = list(bound_ops or []) + [
+            BoolCmp(SSAVar("%cond"), predicate, SSAVar("%arg1"), SSAVar(bound_name)),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%arg1")], [Type("index")]),
+        ]
+        after_body = [
+            FeltConst(SSAVar("%c1"), 1),
+            FeltBinary(SSAVar("%next"), "felt.add", SSAVar("%arg1"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next")], [Type("index")]),
+        ]
+        return SCFWhile(
+            [], [(SSAVar("%arg1"), SSAVar("%c0"))], [[Type("index")], [Type("index")]],
+            before_body, [(SSAVar("%arg1"), Type("index"))], after_body, cursor,
+        )
+
+    def test_while_to_core_symbolic_steps_lt(self):
+        # The bound ("%extern") can't be resolved via ctx.var2const: the
+        # iteration count is instead computed symbolically in Core, assigned
+        # to a fresh variable, and used directly as repeat's operand.
+        op = self._external_bound_while(predicate="lt", cursor=7, bound_name="%extern")
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+
+        out = list(op.to_core(ctx))
+        assert out == [
+            "%arg1 = %c0",
+            "%steps_7 = felt.sub %extern 0",
+            "repeat %steps_7 {",
+            "%c1 = 1",
+            "%next = felt.add %arg1 %c1",
+            "%arg1 = %next",
+            "%cond = bool.lt %extern %arg1",
+            "}",
+        ]
+
+    def test_while_to_core_symbolic_steps_le(self):
+        op = self._external_bound_while(predicate="le", cursor=8, bound_name="%extern")
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+
+        out = list(op.to_core(ctx))
+        assert out == [
+            "%arg1 = %c0",
+            "%steps_8_pre = felt.sub %extern 0",
+            "%steps_8 = felt.add %steps_8_pre 1",
+            "repeat %steps_8 {",
+            "%c1 = 1",
+            "%next = felt.add %arg1 %c1",
+            "%arg1 = %next",
+            "%cond = bool.ge %extern %arg1",  # "le" -> "bool.ge" with swapped operands
+            "}",
+        ]
+
+    def test_while_to_core_symbolic_steps_setup_ops_for_expression_bound(self):
+        # Mirrors escalarmulw4table_concrete.mlir's "arg1 < k*4": the bound
+        # ("%bound") is itself computed from an unresolved free variable
+        # ("%extern") via a felt.mul -- the operations needed to compute it
+        # are translated once, before the repeat, in dependency order.
+        bound_ops = [
+            FeltConst(SSAVar("%four"), 4),
+            FeltBinary(SSAVar("%bound"), "felt.mul", SSAVar("%extern"), SSAVar("%four"), []),
+        ]
+        op = self._external_bound_while(predicate="lt", cursor=9, bound_ops=bound_ops)
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+
+        out = list(op.to_core(ctx))
+        assert out == [
+            "%arg1 = %c0",
+            "%four = 4",
+            "%bound = felt.mul %extern %four",
+            "%steps_9 = felt.sub %bound 0",
+            "repeat %steps_9 {",
+            "%c1 = 1",
+            "%next = felt.add %arg1 %c1",
+            "%arg1 = %next",
+            "%four = 4",
+            "%bound = felt.mul %extern %four",
+            "%cond = bool.lt %bound %arg1",
+            "}",
+        ]
+
+    def test_while_to_core_bound_resolved_via_var2const_stays_concrete(self):
+        # Regression coverage for the babypbk_test-style case: an external
+        # free variable IS known via ctx.var2const, so the iteration count
+        # is still a concrete int and a plain "repeat N {" is emitted --
+        # the symbolic path is only a fallback for when it can't be.
+        op = self._external_bound_while(predicate="lt", bound_name="%bound")
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+        ctx.var2const["%bound"] = 4
+
+        out = list(op.to_core(ctx))
+        assert out[1] == "repeat 4 {"
+        assert not any("steps" in line for line in out)
+
+    def test_while_to_core_symbolic_steps_raises_when_body_has_call(self):
+        # A symbolic count can't drive a Python "for i in range(steps)"
+        # unroll -- exactly the wall escalarmulw4table_concrete.mlir's while
+        # (whose body calls pointAdd_1) hits.
+        call = FunctionCall([SSAVar("%r")], GlobalVariable("@Sub"), [SSAVar("%arg1")], None)
+        call._member_hint = LoopIndexedName("last")
+        before_body = [
+            BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg1"), SSAVar("%extern")),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%arg1")], [Type("index")]),
+        ]
+        after_body = [
+            FeltConst(SSAVar("%c1"), 1),
+            call,
+            FeltBinary(SSAVar("%next"), "felt.add", SSAVar("%arg1"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next")], [Type("index")]),
+        ]
+        op = SCFWhile(
+            [], [(SSAVar("%arg1"), SSAVar("%c0"))], [[Type("index")], [Type("index")]],
+            before_body, [(SSAVar("%arg1"), Type("index"))], after_body,
+        )
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+        ctx.llzk_func2core["@Sub"] = "Sub"
+        ctx.core_func2args["Sub"] = ([], [("@out", Type("!felt.type"))])
+
+        with pytest.raises(NotImplementedError):
+            list(op.to_core(ctx))
+
     # ── _contains_function_call ──────────────────────────────────────────────
 
     def test_contains_call_flat(self):
