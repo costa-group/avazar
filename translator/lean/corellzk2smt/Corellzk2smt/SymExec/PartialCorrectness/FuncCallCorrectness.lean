@@ -39,7 +39,6 @@ theorem seFuncCall_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     (specs : List (FuncSpec c)) (sconf : SymExecConfig c)
     (fname : FName) (args : List (SimpleExpr c)) (outs : List VarID)
     (fspec : FuncSpec c) (hspec_eq : fetchFuncSpec specs fname = Except.ok fspec)
-    (houts_len : outs.length = fspec.rets.length)
     (hspec_retsShape : ∀ (argVals : List (Value c)), ValuesMatchParams argVals fspec.params →
       ∀ (outVals : List (Value c)),
         evalFunCall gconf p fname argVals = Except.ok outVals →
@@ -105,8 +104,13 @@ theorem seFuncCall_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
   have houtVals_len : outVals.length = fspec.rets.length := by
     have hh := mintFreshRets_outVals_length (c := c) sconf.nextVarId fspec.rets
     rw [hmintR] at hh; exact hh
-  obtain ⟨outSymEnv', hOutSymEnv⟩ := setVars_defined_of_length_eq outs outVals symEnv
-    (houts_len.trans houtVals_len.symm)
+  have hspec_witness2 := hspec_witness
+  simp only [seFuncCall, hspec_eq, hargSV_eq, hflatten, hmintR, hmintA] at hspec_witness2
+  cases hOutSymEnv : setVars symEnv outs outVals with
+  | error e => rw [hOutSymEnv] at hspec_witness2; simp at hspec_witness2
+  | ok outSymEnv' =>
+  have houts_len : outs.length = fspec.rets.length := by
+    rw [setVars_length_of_ok outs outVals symEnv outSymEnv' hOutSymEnv, houtVals_len]
   set cf : FFFormula c :=
     FFFormula.call fspec.f.name (flattenSymValuesParams argSymVals ++ outputParams ++ auxParams)
     with hcf

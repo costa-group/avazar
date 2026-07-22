@@ -4,82 +4,85 @@ import Corellzk2smt.Language.Core.Syntax.AST
 import Corellzk2smt.Language.Core.Semantics.Basic
 import Corellzk2smt.Language.Core.Semantics.BigStep
 
-/- A program is "well-shaped" when:
-   (a) [REMOVED 2026 -- see below] `if`-statement branches used to additionally require both
-       branches to always succeed from any environment and agree in shape on every output
-       variable. Also turned out to be unnecessary, but for a different reason than (b)/(c): it
-       isn't read straight off `seIfStmt`'s own success in the "condition doesn't fold" branch
-       via `evalFormula`/`evalCmd`-level unfolding, but one level *deeper* -- `mergeSymValue`
-       (`SymExec/BigStep.lean`) is the thing that actually enforces shape agreement while merging
-       two symbolic values, and its own cases *are* `sameShape`'s cases (array-size-mismatch and
-       scalar/array-mismatch both error, matching `sameShape`'s `False` cases exactly) -- so
-       `mergeSymEnv`'s success (itself forced by `seIfStmt`'s success, since `mergeIfBranches`
-       fails whenever `mergeSymEnv` does) already proves the shape-agreement fact `seIfStmt_correct`
-       needs for its own merge, with no reference to any concrete environment at all;
-   (b) [REMOVED 2026 -- see below] `loop_exp` used to additionally require its repetition count
-       be a syntactic literal (`SimpleExpr.val`); that turned out to be unnecessary.
-       `seCmd_correct`'s `.loop_exp` case no longer needs it: `tryEvalSimpleExprToFFValue`
-       resolving `rep` to *some* value under `symEnv` already, together with
-       `tryEvalSimpleExprToFFValue_correct` (`SymExec/Lemmas.lean` -- a `.const` symbolic binding
-       forces the matching concrete env to hold exactly that value, via `EnvMatches`), gives
-       everything needed to show the concrete side resolves `rep` to the *same* value, without
-       assuming anything about `rep`'s syntax up front;
-   (c) [REMOVED 2026 -- see below] `if`-statement conditions used to additionally require
-       `evalCond` be defined on every concrete environment; also turned out to be unnecessary, for
-       the same reason as (b): in `seIfStmt_correct`'s "condition doesn't constant-fold" branch,
-       `encodeCond symEnv cond` succeeding is *already* forced by `seIfStmt`'s own success (it
-       fails via `mergeIfBranches` whenever `encodeCond` does), so it can be extracted directly
-       from the success hypothesis instead of assumed up front via `encodeCond_defined`; and
-   (d) [REMOVED 2026 -- see below] `func_call` sites used to additionally require the named
-       function to actually exist in the (remaining) program (`∃ md func p', fetchFunc p fname =
-       Except.ok (...) ∧ ...`) -- that existence part also turned out to be unnecessary, leaving
-       only the arity fact (`outs.length = rets.length`, now phrased as a plain conditional:
-       `∀ md func p', fetchFunc p fname = Except.ok (...) → outs.length = rets.length`, since
-       there's no longer an existence witness to hang an existential on). The elimination doesn't
-       come from `seFuncCall` succeeding *at this call site* (unlike (a)-(c) -- `H_funcCall`,
-       the hypothesis `seCmd_correct`'s `.func_call` case discharges from this, has to hold before
-       any success is known, since its own conclusion is itself conditioned on success). Instead
-       it comes from a *whole-program* invariant threaded in as a new hypothesis, `hspecs_cover :
-       ∀ fname', fname' ∈ specs.map (·.name) → fname' ∈ p.map funcWithMDName` (added to
-       `seCmd_correct`/`seCmds_correct`/`seIfStmt_correct`, `seFunc_correct` and friends, and
-       the `seCmd_names_below`/`seCmds_names_below`/`seIfStmt_names_below` family in
-       `SymExec/Correctness.lean`): every function whose spec has already been accumulated into
-       `specs` really is a function of the (remaining) program. `seCmd_correct`'s `.func_call` case
-       proves this by casing on `fetchFuncSpec specs fname` (a plain, non-monadic first step of
-       `seFuncCall`'s definition, decidable independent of the surrounding success): if it errors,
-       `seFuncCall` inherits the error and the goal is vacuous; if it succeeds with some `fspec`,
-       `fetchFuncSpec_sound` (`SymExec/Correctness.lean`) gives `fname ∈ specs.map (·.name)`,
-       `hspecs_cover` lifts that to `fname ∈ p.map funcWithMDName`, and `fetchFunc_of_mem`
-       (`Language/Core/Syntax/AST.lean`) turns that membership into the actual `fetchFunc`
-       witness -- at which point the arity fact above supplies the rest. `hspecs_cover` itself is
-       discharged, with no new proof content, at `seExecFuncs_loop_correct`'s level
-       (`SymExec/PartialCorrectness/ProgCorrectness.lean`) directly from the already-proven
-       `hnames_corr : specs.map (·.name) = donePart.map funcWithMDName` (an equality, hence
-       trivially a one-directional membership implication too). Three other things that used to be
-       part of this clause turned out unnecessary the same way, each removed once actually checked
-       rather than assumed necessary:
-       - `outs.Nodup`: `EnvMatches_setVars` (`SymExec/FuncCallCorrectness.lean`) preserves
-         `EnvMatches` across a repeated-`outs` call just fine, since both the concrete and symbolic
-         `setVars` recurse over `outs` in the same left-to-right order and so resolve a repeat to
-         "last write wins" identically on both sides -- no distinctness needed for that argument.
-       - `args.length = params.length` (arity on the *arguments* side): `flattenArgVals`'s own
-         definition (`SymExec/BigStep.lean`) fails on a length mismatch, so `seFuncCall_correct`
-         reads this straight back out of `seFuncCall`'s own success instead of needing it supplied.
-       - the "arguments always concretely defined and shape-matched" `∀ env` clause: for the same
-         reason, `flattenArgVal`'s cases *are* `symValueMatchesType`'s cases, so a successful
-         `flattenArgVals` already proves the shape match, no separate assumption needed.
+/- `WellShapedCom`/`WellShapedCmds` originally captured a handful of semantic well-formedness
+   preconditions a command tree needs for symbolic execution's correctness proof to go through --
+   things that, at first glance, looked like genuine assumptions about the *program* (not checkable
+   by the language's weak static typing, see `DefinedVars.lean`), needed alongside a successful
+   `seCmd`/`seCmds`/`seIfStmt`/`seFuncCall` run.
 
-   The language isn't strongly typed (see `DefinedVars.lean`), so this can't be checked by a
-   static type system -- it's a semantic well-formedness precondition on the *program*,
-   assumed rather than verified, exactly mirroring the precondition `mergeSymValue`
-   (`SymExec/BigStep.lean`) already requires to merge two branches' values at all: shape
-   disagreement makes merging undefined, not just unproven.
+   As of 2026, EVERY one of those conjuncts has turned out to be unnecessary -- each one is either
+   already forced by the symbolic execution having succeeded (readable straight back out of that
+   success), or by a whole-program invariant that's cheap to thread and discharge once, elsewhere.
+   `WellShapedCom`/`WellShapedCmds` are consequently now pure structural recursion with no
+   remaining side condition at all (`if_stmt`/`loop_exp`/`loop` just recurse into their sub-lists;
+   everything else, including `func_call`, is `True`) -- i.e. every command tree is trivially
+   well-shaped. The predicate is kept (rather than deleted outright) only because it's still
+   threaded through every proof in `SymExec/PartialCorrectness/*` as a formal parameter; nothing
+   about its *content* does any work anymore.
 
-   This is checked structurally the same way `DefinedVarsCom`/`DefinedVarsCmds` are (mirroring
-   their recursion shape one-for-one) -- it doesn't need to descend into a called function's own
-   body (that's a separate, whole-program-level well-shapedness concern -- see
-   `SymExec/FuncCorrectness.lean`'s whole-program correctness notes), only check the call *site*
-   itself.
+   What each removed conjunct was, and why it turned out unnecessary:
+   - `if`-statement branches used to require both branches to always succeed from any environment
+     and agree in shape on every output variable. Not read off `seIfStmt`'s own success via
+     `evalFormula`/`evalCmd`-level unfolding, but one level *deeper* -- `mergeSymValue`
+     (`SymExec/BigStep.lean`) is what actually enforces shape agreement while merging two symbolic
+     values, and its own error cases *are* `sameShape`'s `False` cases exactly (array-size-mismatch,
+     scalar/array cross-mismatch) -- so `mergeSymEnv`'s success (itself forced by `seIfStmt`'s
+     success, since `mergeIfBranches` fails whenever `mergeSymEnv` does) already proves the
+     shape-agreement fact `seIfStmt_correct` needs, with no reference to any concrete environment.
+   - `loop_exp` used to require its repetition count be a syntactic literal (`SimpleExpr.val`).
+     `tryEvalSimpleExprToFFValue` resolving `rep` to *some* value under `symEnv`, together with
+     `tryEvalSimpleExprToFFValue_correct` (`SymExec/Lemmas.lean` -- a `.const` symbolic binding
+     forces the matching concrete env to hold exactly that value, via `EnvMatches`), gives
+     everything needed without assuming anything about `rep`'s syntax up front.
+   - `if`-statement conditions used to require `evalCond` be defined on every concrete environment.
+     In `seIfStmt_correct`'s "condition doesn't constant-fold" branch, `encodeCond symEnv cond`
+     succeeding is *already* forced by `seIfStmt`'s own success (`mergeIfBranches` fails whenever
+     `encodeCond` does), extractable directly from the success hypothesis.
+   - `func_call` sites used to require: `outs.Nodup` (unnecessary -- `EnvMatches_setVars`,
+     `SymExec/FuncCallCorrectness.lean`, preserves `EnvMatches` across a repeated-`outs` call fine,
+     since concrete/symbolic `setVars` both recurse over `outs` in the same left-to-right order, so
+     a repeat resolves to "last write wins" identically on both sides); `args.length =
+     params.length` and "arguments always concretely defined and shape-matched" (both unnecessary
+     -- `flattenArgVals`'s own definition, `SymExec/BigStep.lean`, fails on a length mismatch and
+     its error cases *are* `symValueMatchesType`'s cases, so `seFuncCall_correct` reads both facts
+     straight back out of `seFuncCall`'s own success); the named function actually existing in the
+     (remaining) program (unnecessary -- see below); and `outs.length = rets.length` arity against
+     that function's actual signature (unnecessary too, once existence is -- see below).
+
+   The last two (existence, arity) are the subtlest, since neither is readable off `seFuncCall`
+   succeeding *at the call site itself* the way the others are: `H_funcCall`, the hypothesis
+   `seCmd_correct`'s `.func_call` case discharges from this, has to hold *before* any success is
+   known (its own conclusion, `TranslatesCorrectly`, is itself conditioned on a future success).
+   Both are instead derived from whole-program invariants threaded as two new hypotheses,
+   `hspecs_cover`/`hspecs_rets_cover`, added everywhere `WellShapedCom`/`H_funcCall` used to be
+   consumed (`seCmd_correct`/`seCmds_correct`/`seIfStmt_correct`, `seFunc_correct` and friends, and
+   the `seCmd_names_below`/`seCmds_names_below`/`seIfStmt_names_below` family in
+   `SymExec/Correctness.lean`):
+   - `hspecs_cover : ∀ fname', fname' ∈ specs.map (·.name) → fname' ∈ p.map funcWithMDName` --
+     every function whose spec has already been accumulated into `specs` really is a function of
+     the (remaining) program.
+   - `hspecs_rets_cover : ∀ fname' fspec, fetchFuncSpec specs fname' = Except.ok fspec → ∀ md func
+     p', fetchFunc p fname' = Except.ok (...) → fspec.rets.length = (func's own rets).length` --
+     whenever a spec and the concrete function it names both resolve, their return-arity agrees.
+
+   `seCmd_correct`'s `.func_call` case derives both by casing on `fetchFuncSpec specs fname` (a
+   plain, non-monadic first step of `seFuncCall`'s definition, decidable independent of the
+   surrounding success): if it errors, `seFuncCall` inherits the error and the goal is vacuous; if
+   it succeeds with some `fspec`, `fetchFuncSpec_sound` (`SymExec/Correctness.lean`) gives `fname ∈
+   specs.map (·.name)`, `hspecs_cover` lifts that to `fname ∈ p.map funcWithMDName`, and
+   `fetchFunc_of_mem` (`Language/Core/Syntax/AST.lean`) turns that membership into the actual
+   `fetchFunc` witness; a second unfold of the same success (through `resolveSimpleExprsToSymValue`/
+   `flattenArgVals`/`mintFreshRets`/`setVars`, using the new `setVars_length_of_ok`,
+   `SymExec/FuncCallCorrectness.lean`) gives `outs.length = fspec.rets.length`, and
+   `hspecs_rets_cover` bridges that to the concrete function's own `rets.length`. Both new
+   hypotheses are discharged, with no deep new proof content, at `seExecFuncs_loop_correct`'s level
+   (`SymExec/PartialCorrectness/ProgCorrectness.lean`): `hspecs_cover` directly from the
+   already-proven `hnames_corr : specs.map (·.name) = donePart.map funcWithMDName` (an equality,
+   hence trivially a one-directional membership implication too); `hspecs_rets_cover` by a small
+   induction mirroring `hnames_corr`'s own threading, using `seFunc_eq_shape`'s `hrets_eq : fspec.
+   rets = rets` (a purely structural fact about `seFunc`'s own construction, no execution needed)
+   for the newly-added function at each step, and the inherited old `hspecs_rets_cover` fact
+   (via `fetchFuncSpec_prepend_indep`/`fetchFunc_skip_ne`) for every function already accumulated.
 -/
 
 namespace Corellzk2smt.Language.Core.Analysis.WellShaped
@@ -96,10 +99,6 @@ def WellShapedCom {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c) (cmd : Co
   | .if_stmt _cond tb eb => WellShapedCmds gconf p tb ∧ WellShapedCmds gconf p eb
   | .loop_exp _rep body => WellShapedCmds gconf p body
   | .loop _rep body => WellShapedCmds gconf p body
-  | .func_call outs fname _args =>
-      ∀ md func p', fetchFunc p fname = Except.ok (FuncWithMD.mk md func, p') →
-        match func with
-        | Func.mk _ _ rets _ => outs.length = rets.length
   | _ => True
 
 def WellShapedCmds {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
