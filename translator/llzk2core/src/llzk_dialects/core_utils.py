@@ -47,7 +47,13 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
     if alias is not None:
         rhs = SSAVar(alias)
 
-    if "!struct" in type_.name:
+    # Anchored to the outermost type, not a plain substring check: a pod that
+    # merely CONTAINS a struct-typed field somewhere inside (e.g.
+    # "!pod.type<[@comp: !struct.type<...>, ...]>") is not itself a struct
+    # result and must not be treated as one -- that would silently emit a
+    # copy of the wrong (Ark_0-shaped) fields and skip pod registration
+    # entirely for the actual (pod-shaped) value.
+    if type_.name.strip().startswith("!struct.type"):
         llzk_func = f"{struct_type_name(type_.name)}::@compute"
         core_func = ctx.llzk_func2core[llzk_func]
         _, output_args = ctx.core_func2args[core_func]

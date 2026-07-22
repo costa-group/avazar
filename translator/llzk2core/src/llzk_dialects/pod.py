@@ -44,6 +44,38 @@ def _parse_pod_fields(pod_type_str: str) -> Dict[str, Type]:
     return result
 
 
+def _register_nested_pod_vars(ctx: TranslationContext, var_name: str, type_str: str) -> None:
+    """
+    Register ctx.ssa2pod_var[var_name] for a pod-typed variable, then recurse
+    into any field that is itself pod-typed (pod nested inside another pod).
+
+    Callers (PodNew, ArrayRead) already register the *first* level of a pod's
+    fields, using either an SSA-derived "<base>_<field>" name or, when the pod
+    backs a struct member, a semantic "<member>.<field>" name (see
+    _semantic_field_var). Without this recursive step, a nested pod field's
+    own var name is only ever used to name ITS leaves (via
+    _flatten_container_fields) -- it never becomes a key of ctx.ssa2pod_var
+    itself, so a later pod.read/pod.write chained through that intermediate
+    pod (e.g. `pod.read (pod.read %p[@a])[@b]`) finds nothing and either
+    KeyErrors or silently falls through to an unregistered plain copy.
+    """
+    if "!pod.type" not in type_str:
+        return
+    fields = _parse_pod_fields(type_str)
+    is_semantic = not var_name.startswith("%")
+
+    def child_name(field: str) -> str:
+        return f"{var_name}_{field[1:]}" if is_semantic else f"{var_name}_{field}"
+
+    ctx.ssa2pod_var[var_name] = {
+        field: (child_name(field), field_type)
+        for field, field_type in fields.items()
+    }
+    for field, field_type in fields.items():
+        if "!pod.type" in field_type.name:
+            _register_nested_pod_vars(ctx, child_name(field), field_type.name)
+
+
 class PodNew(Operation):
     """
     Create a new pod struct, optionally initialising named records.
@@ -156,6 +188,8 @@ class PodNew(Operation):
                     f"PodNew: a pod field that is itself an array of struct/pod "
                     f"({record}: {type_}) is not yet supported"
                 )
+                if "!pod.type" in type_.name:
+                    _register_nested_pod_vars(ctx, var_name, type_.name)
                 for field_path, leaf_type in _flatten_container_fields(type_.name, ctx):
                     leaf_size = array_total_size(leaf_type.name)
                     field_var = _container_field_var(var_name, field_path)
@@ -235,7 +269,6 @@ class PodRead(Operation):
         return [self.pod_ref]
 
     def to_core(self, ctx: TranslationContext) -> str:
-        print(self.result, self.pod_ref)
         variable_name, var_type = ctx.ssa2pod_var[self.pod_ref.name][self.record_name.name]
 
         assert self.result_type is None or self.result_type == var_type, "Pod.read must match the type inside the dict ssa2pod_var"

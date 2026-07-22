@@ -240,3 +240,110 @@ class TestPodToCore:
         lines = list(read.to_core(ctx))
         assert lines == []
         assert ctx.ssa2pod_var.get("%13") == {}
+
+    # ── Pod-in-pod, non-empty nested field (regression) ───────────────────────
+    #
+    # Previously, PodNew/ArrayRead only registered ctx.ssa2pod_var for the
+    # *first* level of a pod's fields -- a non-empty pod nested inside another
+    # pod never became a key itself (only its ultimate leaf got real
+    # storage), so a later pod.read/pod.write chained through that
+    # intermediate pod (pod-in-pod, e.g. inside an scf.while combining pods)
+    # found nothing and KeyError'd. See _register_nested_pod_vars.
+
+    def test_new_nonempty_nested_pod_field_registers_recursively(self):
+        ctx = self._ctx()
+        op = PodNew.parse(
+            "%p = pod.new : !pod.type<[@f: !pod.type<[@in: !felt.type]>]>"
+        )
+        list(op.to_core(ctx))
+        assert ctx.ssa2pod_var["%p_@f"]["@in"][0] == "%p_@f_@in"
+
+    def test_new_nested_pod_field_with_array_leaf_not_misread_as_array(self):
+        # Exact real-world shape that originally triggered the bug: an
+        # unanchored array_felt_dimensions search matched the "<3 x
+        # !felt.type<...>>" pattern nested inside @f's own type, making
+        # PodNew treat @f itself as a plain felt array (emitting
+        # "array.new 3 %p_@f") instead of recursing into it as a pod.
+        ctx = self._ctx()
+        op = PodNew.parse(
+            "%p = pod.new : "
+            "!pod.type<[@f: !pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>]>"
+        )
+        lines = list(op.to_core(ctx))
+        assert "array.new 3 %p_@f" not in lines
+        assert "array.new 3 %p_@f_@in" in lines
+        assert ctx.ssa2pod_var["%p_@f"]["@in"][0] == "%p_@f_@in"
+
+    def test_new_member_pod_nonempty_nested_field_registers_recursively(self):
+        # Mirrors the real "ark.idx_0" shape from
+        # poseidon3_test_concrete.mlir: a $inputs pod for a struct member
+        # (semantic naming), with a non-empty nested pod field.
+        ctx = self._ctx()
+        ctx.input_pod_to_member["%p"] = "ark"
+        op = PodNew.parse(
+            "%p = pod.new : "
+            "!pod.type<[@idx_0: !pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>]>"
+        )
+        list(op.to_core(ctx))
+        assert ctx.ssa2pod_var["%p"]["@idx_0"][0] == "ark.idx_0"
+        assert ctx.ssa2pod_var["ark.idx_0"]["@in"][0] == "ark.idx_0_in"
+
+    def test_pod_in_pod_chain_nonempty_field_resolves_without_keyerror(self):
+        # Mirrors the poseidon3_test_concrete.mlir shape that originally
+        # crashed inside an scf.while combining pods inside pods:
+        #   %outer = pod.new : <[@idx_0: !pod.type<[@in: !array.type<3 x ff>]>]>
+        #   %573 = pod.read %outer[@idx_0]
+        #   %574 = pod.read %573[@in]
+        ctx = self._ctx()
+
+        outer = PodNew.parse(
+            "%outer = pod.new : "
+            "!pod.type<[@idx_0: !pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>]>"
+        )
+        list(outer.to_core(ctx))
+
+        read_nested_pod = PodRead.parse(
+            "%573 = pod.read %outer [@idx_0] : "
+            "!pod.type<[@idx_0: !pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>]>, "
+            "!pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>"
+        )
+        lines = list(read_nested_pod.to_core(ctx))
+        assert lines == ["array.copy %outer_@idx_0_@in %573_@in"]
+        assert ctx.ssa2pod_var["%573"]["@in"][0] == "%573_@in"
+
+        read_leaf = PodRead.parse(
+            "%574 = pod.read %573 [@in] : "
+            "!pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>, "
+            "!array.type<3 x !felt.type<\"bn128\">>"
+        )
+        lines = list(read_leaf.to_core(ctx))  # previously: KeyError on "%573"
+        assert lines == ["array.copy %573_@in %574"]
+
+    def test_new_init_pod_field_with_nested_struct_field_uses_pod_branch(self):
+        # Regression: translate_assignment_core_with_ctx's struct-type check
+        # was a plain "!struct" substring test, which also matched a POD type
+        # that merely contains a struct-typed field (e.g. @comp below) --
+        # treating the whole pod as if it were itself that struct's output
+        # and looking up a bogus "<Struct>::@compute" entry keyed off a
+        # nonsense name, instead of taking the pod-propagation branch. This
+        # is the same shape as poseidon3_test_concrete.mlir's
+        # "%pod_35 = pod.new {@idx_0 = %pod_20, ...}" (@idx_0's type contains
+        # a @comp: !struct.type<...> field).
+        ctx = self._ctx()
+        ctx.llzk_func2core["@S::@S::@compute"] = "S"
+        ctx.core_func2args["S"] = ([], [("@out", Type("!felt.type"))])
+
+        src = PodNew.parse(
+            "%src = pod.new {@count = %c, @comp = %s} : "
+            "!pod.type<[@count: index, @comp: !struct.type<@S::@S<[]>>]>"
+        )
+        list(src.to_core(ctx))
+
+        outer = PodNew.parse(
+            "%outer = pod.new {@idx_0 = %src} : "
+            "!pod.type<[@idx_0: !pod.type<[@count: index, @comp: !struct.type<@S::@S<[]>>]>]>"
+        )
+        list(outer.to_core(ctx))
+
+        assert ctx.ssa2pod_var["%outer_@idx_0"]["@count"][0] == "%outer_@idx_0_@count"
+        assert ctx.ssa2pod_var["%outer_@idx_0"]["@comp"][0] == "%outer_@idx_0_@comp"

@@ -31,7 +31,7 @@ from llzk_dialects.utils import (
     array_dimensions, array_total_size, split_top_level_commas,
     struct_type_name,
 )
-from llzk_dialects.pod import _parse_pod_fields
+from llzk_dialects.pod import _parse_pod_fields, _register_nested_pod_vars
 
 
 def _lin_var(base: str, n_dims: int) -> str:
@@ -394,21 +394,20 @@ class ArrayRead(Operation):
                         field: (f"{self._result.name}_{field}", field_type)
                         for field, field_type in all_fields.items()
                     }
-                # An empty pod-typed field (e.g. @params: !pod.type<[]>)
-                # contributes no leaves to _flatten_container_fields below, so
-                # its storage name would otherwise never be independently
-                # registered. A pod created via pod.new gets this for free
-                # (PodNew's own initial-value assignment chain registers it
-                # when the source is itself a registered pod), but a pod
-                # extracted from an array has no such chain — register it
-                # explicitly here so a later pod.read of that field finds a
-                # registered (empty) source instead of falling through to the
-                # generic array.copy fallback with an undefined variable.
+                # A pod-typed field (e.g. @idx_0: !pod.type<[@in: ...]>, or an
+                # empty @params: !pod.type<[]>) needs its OWN ctx.ssa2pod_var
+                # entry, not just leaf storage from _flatten_container_fields
+                # below — otherwise a later pod.read chained through this
+                # nested pod (pod-in-pod) finds no registered source. A pod
+                # created via pod.new gets this for free (PodNew's own
+                # initial-value assignment chain registers it when the source
+                # is itself a registered pod), but a pod extracted from an
+                # array has no such chain — register it explicitly here.
                 for field, field_type in all_fields.items():
-                    if "!pod.type" in field_type.name and not _parse_pod_fields(field_type.name):
+                    if "!pod.type" in field_type.name:
                         key = (_semantic_field_var(semantic_base, [field])
                                if semantic_base is not None else f"{self._result.name}_{field}")
-                        ctx.ssa2pod_var[key] = {}
+                        _register_nested_pod_vars(ctx, key, field_type.name)
 
             if len(self.indices) <= 1:
                 idx = self.indices[0].to_core() if self.indices else "0"
