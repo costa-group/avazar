@@ -19,7 +19,7 @@ import re
 from typing import List, Optional, TYPE_CHECKING, Generator
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
-from llzk_dialects.utils import array_felt_first_dimension
+from llzk_dialects.utils import is_array_type, array_total_size
 from llzk_dialects.core_utils import signature_args, invocation_args
 
 if TYPE_CHECKING:
@@ -178,16 +178,32 @@ class LLZKNondet(Operation):
         return []
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
-        # Initializes value. In our case, it is only relevant for arrays,
-        # but for finite elements, we initialize it to zero
-        # TODO: ask Albert?
-        array_dim = array_felt_first_dimension(self.result_type.name)
-        if array_dim is not None:
-            yield f"array.new {array_dim} {self._result.name}"
-        elif "!felt.type" in self.result_type.name:
+        # A non-deterministic value has no operand to derive an initial value
+        # from, so it just gets a defined placeholder (0, or an array of
+        # zeros) for downstream code to read before it's actually constrained.
+        #
+        # Anchored to the outermost type (startswith, not a plain "in"
+        # substring check) for the same reason as is_array_type itself: an
+        # array of felt (e.g. "!array.type<3 x !felt.type<...>>>") contains
+        # "!felt.type" as a substring too, so an unanchored check would wrongly
+        # take the scalar branch for it instead of the array one.
+        type_name = self.result_type.name
+        if type_name.strip().startswith("!felt.type"):
             yield f"{self._result.name} = 0"
+        elif is_array_type(type_name):
+            array_dim = array_total_size(type_name)
+            yield f"array.new {array_dim} {self._result.name}"
+        elif type_name.strip().startswith("!pod.type"):
+            # A pod-typed nondet value has no operand of its own (unlike
+            # pod.new) to derive its fields' values from -- treat every
+            # field as if pod.new had been given no initial value for it,
+            # recursing through nested pod fields (pod-in-pod) the same way.
+            from llzk_dialects.pod import register_and_allocate_pod
+            yield from register_and_allocate_pod(ctx, self._result.name, type_name)
         else:
-            raise ValueError(f"llzk.nondet transformation for not recognized expression: {self.result_type.name}")
+            raise NotImplementedError(
+                f"llzk.nondet transformation for not recognized expression: {type_name}"
+            )
 
     def __repr__(self):
         return f"LLZKNondet({self._result} = llzk.nondet : {self.result_type})"

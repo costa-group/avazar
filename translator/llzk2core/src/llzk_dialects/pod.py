@@ -15,7 +15,7 @@ Operations:
 """
 
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Generator
 
 from llzk_dialects.core import Operation, SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
@@ -74,6 +74,89 @@ def _register_nested_pod_vars(ctx: TranslationContext, var_name: str, type_str: 
     for field, field_type in fields.items():
         if "!pod.type" in field_type.name:
             _register_nested_pod_vars(ctx, child_name(field), field_type.name)
+
+
+def _register_pod_top_level(ctx: TranslationContext, var_name: str,
+                            fields: Dict[str, Type]) -> None:
+    """
+    Register ctx.ssa2pod_var[var_name] for a pod's own (first-level) fields.
+    When this pod is an inputs pod for a struct member, use semantic names
+    (e.g. "last1.in1_last") instead of the default SSA-derived names (e.g.
+    "%pod_5_@in1_last"). Shared by PodNew and any other pod-typed value with
+    no operand of its own to copy field names from (e.g. llzk.nondet).
+    """
+    member = ctx.input_pod_to_member.get(var_name)
+    if member:
+        ctx.ssa2pod_var[var_name] = {
+            record: (f"{member}.{record[1:]}", type_)
+            for record, type_ in fields.items()
+        }
+    else:
+        ctx.ssa2pod_var[var_name] = {
+            record: (f"{var_name}_{record}", type_)
+            for record, type_ in fields.items()
+        }
+
+
+def _allocate_pod_field_storage(ctx: TranslationContext, var_name: str,
+                                type_: Type) -> Generator[str, None, None]:
+    """
+    Allocate real placeholder storage for one pod field with no known
+    initial value. A plain felt/index array gets a direct array.new. A
+    struct/pod-typed field recurses into its own leaves (structure-of-arrays)
+    so that a later copy into/out of it (e.g. via array.write on an array of
+    this pod type) reads from real, defined storage rather than an undefined
+    variable — even though the field's actual value may still be unset until
+    a later pod.write (e.g. a struct field only computed once a counter
+    reaches zero). A pod-typed field is also recursively registered in
+    ctx.ssa2pod_var (see _register_nested_pod_vars) so a later pod.read/
+    pod.write chained through it (pod-in-pod) resolves correctly. Shared by
+    PodNew (a field with no init value) and llzk.nondet (a pod-typed
+    nondet value, which never has an initial value for any field).
+    """
+    first_dim = array_felt_first_dimension(type_.name)
+    if first_dim is not None:
+        yield f"array.new {first_dim} {var_name}"
+    elif "!struct.type" in type_.name or "!pod.type" in type_.name:
+        from llzk_dialects.array import _flatten_container_fields, _container_field_var
+        from llzk_dialects.utils import is_array_type
+
+        assert not is_array_type(type_.name), (
+            f"Pod field storage allocation: a field that is itself an array "
+            f"of struct/pod ({var_name}: {type_}) is not yet supported"
+        )
+        if "!pod.type" in type_.name:
+            _register_nested_pod_vars(ctx, var_name, type_.name)
+        for field_path, leaf_type in _flatten_container_fields(type_.name, ctx):
+            leaf_size = array_total_size(leaf_type.name)
+            field_var = _container_field_var(var_name, field_path)
+            if leaf_size is None:
+                # Scalar leaf (e.g. a struct's felt-typed output member): no
+                # array to allocate, just a placeholder value so a later
+                # read/copy from it (before the field is actually computed)
+                # reads a defined variable instead of an undefined one.
+                yield f"{field_var} = 0"
+            else:
+                yield f"array.new {leaf_size} {field_var}"
+    # A plain scalar (felt/index) field with no initial value gets no
+    # placeholder here -- matches PodNew's existing behavior for this case.
+
+
+def register_and_allocate_pod(ctx: TranslationContext, var_name: str,
+                              type_str: str) -> Generator[str, None, None]:
+    """
+    Register ctx.ssa2pod_var and allocate placeholder storage for a pod-typed
+    value with no initial value for ANY of its fields -- e.g. llzk.nondet's
+    result, which (unlike pod.new) has no operands at all to derive field
+    values from. Equivalent to what PodNew does for a field it wasn't given
+    an initial value for, generalized to the pod's own top level, and
+    recursing through nested pod fields (pod-in-pod) exactly the same way.
+    """
+    fields = _parse_pod_fields(type_str)
+    _register_pod_top_level(ctx, var_name, fields)
+    for record, type_ in fields.items():
+        field_var, _ = ctx.ssa2pod_var[var_name][record]
+        yield from _allocate_pod_field_storage(ctx, field_var, type_)
 
 
 class PodNew(Operation):
@@ -138,20 +221,8 @@ class PodNew(Operation):
         return list(self.init_records.values())
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # Build the field-variable mapping. When this pod is an inputs pod for a
-        # struct member, use semantic names (e.g. "last1.in1_last") instead of
-        # the default SSA-derived names (e.g. "%pod_5_@in1_last").
-        member = ctx.input_pod_to_member.get(self._result.name)
-        if member:
-            ctx.ssa2pod_var[self._result.name] = {
-                record: (f"{member}.{record[1:]}", type_)
-                for record, type_ in self.result_type.items()
-            }
-        else:
-            ctx.ssa2pod_var[self._result.name] = {
-                record: (f"{self._result.name}_{record}", type_)
-                for record, type_ in self.result_type.items()
-            }
+        # Build the field-variable mapping (see _register_pod_top_level).
+        _register_pod_top_level(ctx, self._result.name, self.result_type)
 
         # Emit assignments for records that have an initial value
         for record, initial_value in self.init_records.items():
@@ -165,43 +236,13 @@ class PodNew(Operation):
             if result:
                 yield result
 
-        # Allocate real storage for fields not given an initial value above.
-        # A plain felt/index array gets a direct array.new. A struct/pod-typed
-        # field recurses into its own leaves (structure-of-arrays) so that a
-        # later copy into/out of it (e.g. via array.write on an array of this
-        # pod type) reads from real, defined storage rather than an undefined
-        # variable — even though the field's actual value may still be unset
-        # until a later pod.write (e.g. a struct field only computed once a
-        # counter reaches zero).
+        # Allocate real storage for fields not given an initial value above
+        # (see _allocate_pod_field_storage).
         for record, type_ in self.result_type.items():
             if record in self.init_records:
                 continue
             var_name, _ = ctx.ssa2pod_var[self._result.name][record]
-            first_dim = array_felt_first_dimension(type_.name)
-            if first_dim is not None:
-                yield f"array.new {first_dim} {var_name}"
-            elif "!struct.type" in type_.name or "!pod.type" in type_.name:
-                from llzk_dialects.array import _flatten_container_fields, _container_field_var
-                from llzk_dialects.utils import is_array_type
-
-                assert not is_array_type(type_.name), (
-                    f"PodNew: a pod field that is itself an array of struct/pod "
-                    f"({record}: {type_}) is not yet supported"
-                )
-                if "!pod.type" in type_.name:
-                    _register_nested_pod_vars(ctx, var_name, type_.name)
-                for field_path, leaf_type in _flatten_container_fields(type_.name, ctx):
-                    leaf_size = array_total_size(leaf_type.name)
-                    field_var = _container_field_var(var_name, field_path)
-                    if leaf_size is None:
-                        # Scalar leaf (e.g. a struct's felt-typed output
-                        # member): no array to allocate, just a placeholder
-                        # value so a later read/copy from it (before the
-                        # field is actually computed) reads a defined
-                        # variable instead of an undefined one.
-                        yield f"{field_var} = 0"
-                    else:
-                        yield f"array.new {leaf_size} {field_var}"
+            yield from _allocate_pod_field_storage(ctx, var_name, type_)
 
     def __repr__(self):
         inits = ', '.join(f"{k} = {v}" for k, v in self.init_records.items())
