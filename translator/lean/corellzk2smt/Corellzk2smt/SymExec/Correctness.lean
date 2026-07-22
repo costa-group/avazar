@@ -93,7 +93,7 @@ theorem seIfStmt_prepend_indep {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog
     (hshaped : WellShapedCom gconf p (Com.if_stmt cond tb eb)) :
     seIfStmt gconf sconf symEnv (fspec_new :: specs) md cond tb eb =
       seIfStmt gconf sconf symEnv specs md cond tb eb := by
-  obtain ⟨hshapedTb, hshapedEb, _hshapeAgree⟩ := hshaped
+  obtain ⟨hshapedTb, hshapedEb⟩ := hshaped
   have ihTb := seCmds_prepend_indep gconf p fspec_new hunreach sconf symEnv specs tb hshapedTb
   have ihEb := seCmds_prepend_indep gconf p fspec_new hunreach sconf symEnv specs eb hshapedEb
   simp only [seIfStmt, ihTb, ihEb, mergeIfBranches]
@@ -426,7 +426,7 @@ theorem seIfStmt_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c
     (hshaped : WellShapedCom gconf p (Com.if_stmt cond tb eb))
     (spec : CmdsSpec c) (hspec_eq : seIfStmt gconf sconf symEnv specs md cond tb eb = Except.ok spec) :
     FormulaNamesBelow spec.f badName := by
-  obtain ⟨hshapedTb, hshapedEb, _hshapeAgree⟩ := hshaped
+  obtain ⟨hshapedTb, hshapedEb⟩ := hshaped
   simp only [seIfStmt] at hspec_eq
   cases hcv : tryEvalCondToConcreteValue gconf sconf symEnv md cond with
   | error e =>

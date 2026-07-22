@@ -77,7 +77,7 @@ theorem seIfStmt_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
       (fun symEnv => ∀ id, id ∈ definedVarsCmds (definedVarsCmds vars tb) eb → symEnv.contains id)
       (fun env => evalIfStmt gconf p env md cond tb eb)
       (fun symEnv => seIfStmt gconf sconf symEnv specs md cond tb eb) := by
-  obtain ⟨hshapedTb, hshapedEb, hshapeAgree⟩ := hshaped
+  obtain ⟨hshapedTb, hshapedEb⟩ := hshaped
   intro symEnv hbelow hdef spec hspec_eq
   have htb_pre : ∀ id, id ∈ definedVarsCmds vars tb → symEnv.contains id :=
     fun id hid => hdef id (definedVarsCmds_mono eb (definedVarsCmds vars tb) id hid)
@@ -193,19 +193,22 @@ theorem seIfStmt_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
           ((hdom_contains id).trans (contains_iff_get?_isSome ebSpec.outSymEnv id))
       have hshape : ∀ id svTb svEb, tbSpec.outSymEnv.get? id = some svTb →
           ebSpec.outSymEnv.get? id = some svEb → sameShape svTb svEb := by
+        have hspec_eq' := hspec_eq
+        simp only [seIfStmt, htry, htbSpec_eq, hebSpec_eq, mergeIfBranches, hg] at hspec_eq'
+        cases hmergeR : mergeSymEnv (max tbSpec.nextVarId ebSpec.nextVarId) tbSpec.outSymEnv
+            ebSpec.outSymEnv with
+        | error e => rw [hmergeR] at hspec_eq'; simp at hspec_eq'
+        | ok mres =>
+        have hmergeKeys : mergeSymEnvKeys (max tbSpec.nextVarId ebSpec.nextVarId)
+            tbSpec.outSymEnv ebSpec.outSymEnv FFFormula.true FFFormula.true
+            tbSpec.outSymEnv.keys = Except.ok mres := by
+          rw [← hmergeR]; simp only [mergeSymEnv]
         intro id svTb svEb hsvTb hsvEb
-        have hmatch0 : EnvMatches (default : Assignment c) symEnv (decodeSymEnv default symEnv) :=
-          EnvMatches_decodeSymEnv default symEnv
-        obtain ⟨envTb, envEb, hevalTb, hevalEb, hshapeAgree⟩ :=
-          hshapeAgree (decodeSymEnv default symEnv)
-        obtain ⟨assignTb, _, _, _, _, hmatchTb⟩ :=
-          htbSpec_sound' (decodeSymEnv default symEnv) default hmatch0 envTb hevalTb
-        obtain ⟨assignEb, _, _, _, _, hmatchEb⟩ :=
-          hebSpec_sound' (decodeSymEnv default symEnv) default hmatch0 envEb hevalEb
-        obtain ⟨v1, hv1, hm1⟩ := hmatchTb.2 id svTb hsvTb
-        obtain ⟨v2, hv2, hm2⟩ := hmatchEb.2 id svEb hsvEb
-        exact sameShape_of_symValMatches assignTb assignEb svTb svEb v1 v2 hm1 hm2
-          (hshapeAgree id v1 v2 hv1 hv2)
+        apply mergeSymEnvKeys_defined_of_ok (max tbSpec.nextVarId ebSpec.nextVarId)
+          tbSpec.outSymEnv ebSpec.outSymEnv FFFormula.true FFFormula.true tbSpec.outSymEnv.keys
+          mres hmergeKeys id ((mem_keys_iff_get?_isSome tbSpec.outSymEnv id).mpr ⟨svTb, hsvTb⟩)
+          svTb svEb ((getVar_eq_ok_iff tbSpec.outSymEnv id svTb).mpr hsvTb)
+          ((getVar_eq_ok_iff ebSpec.outSymEnv id svEb).mpr hsvEb)
       have htbEnvFresh : varSetBelow (symEnvVars tbSpec.outSymEnv)
           (max tbSpec.nextVarId ebSpec.nextVarId) :=
         varSetBelow_mono (le_max_left _ _) htbSpec_outbelow

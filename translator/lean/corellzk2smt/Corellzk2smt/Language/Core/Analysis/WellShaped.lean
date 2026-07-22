@@ -5,17 +5,17 @@ import Corellzk2smt.Language.Core.Semantics.Basic
 import Corellzk2smt.Language.Core.Semantics.BigStep
 
 /- A program is "well-shaped" when:
-   (a) at every `if`-statement it contains, *both* branches always succeed from any starting
-       environment (run independently of one another and of `cond`'s actual value -- this is a
-       hypothetical "would both branches typecheck" check, not a claim about the branch actually
-       taken at runtime), and never disagree on a variable's shape (scalar vs. array, or array
-       length) -- i.e. a variable is never a scalar coming out of one branch and an array (or a
-       differently-sized array) coming out of the other. Phrased as an unconditional `∃`
-       (guaranteeing success) rather than a conditional `∀ ... → ... → ...` (only constraining
-       shape *if* both happen to succeed) so that `SymExec/PartialCorrectness/Correctness.lean`'s
-       `seIfStmt_correct` can derive the *symbolic* shape-agreement fact it needs (for merging)
-       from this one alone, instead of assuming it separately -- a conditional form can be
-       vacuously true with no real content, which doesn't give anything to derive from;
+   (a) [REMOVED 2026 -- see below] `if`-statement branches used to additionally require both
+       branches to always succeed from any environment and agree in shape on every output
+       variable. Also turned out to be unnecessary, but for a different reason than (b)/(c): it
+       isn't read straight off `seIfStmt`'s own success in the "condition doesn't fold" branch
+       via `evalFormula`/`evalCmd`-level unfolding, but one level *deeper* -- `mergeSymValue`
+       (`SymExec/BigStep.lean`) is the thing that actually enforces shape agreement while merging
+       two symbolic values, and its own cases *are* `sameShape`'s cases (array-size-mismatch and
+       scalar/array-mismatch both error, matching `sameShape`'s `False` cases exactly) -- so
+       `mergeSymEnv`'s success (itself forced by `seIfStmt`'s success, since `mergeIfBranches`
+       fails whenever `mergeSymEnv` does) already proves the shape-agreement fact `seIfStmt_correct`
+       needs for its own merge, with no reference to any concrete environment at all;
    (b) [REMOVED 2026 -- see below] `loop_exp` used to additionally require its repetition count
        be a syntactic literal (`SimpleExpr.val`); that turned out to be unnecessary.
        `seCmd_correct`'s `.loop_exp` case no longer needs it: `tryEvalSimpleExprToFFValue`
@@ -73,13 +73,7 @@ mutual
 
 def WellShapedCom {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c) (cmd : Com c) : Prop :=
   match cmd with
-  | .if_stmt _cond tb eb =>
-      WellShapedCmds gconf p tb ∧ WellShapedCmds gconf p eb ∧
-      ∀ (env : Env c), ∃ envTb envEb,
-        evalCmds gconf p env tb = Except.ok envTb ∧
-        evalCmds gconf p env eb = Except.ok envEb ∧
-        ∀ (id : VarID) (v1 v2 : Value c),
-          envTb.get? id = some v1 → envEb.get? id = some v2 → sameShapeValue v1 v2
+  | .if_stmt _cond tb eb => WellShapedCmds gconf p tb ∧ WellShapedCmds gconf p eb
   | .loop_exp _rep body => WellShapedCmds gconf p body
   | .loop _rep body => WellShapedCmds gconf p body
   | .func_call outs fname _args =>

@@ -2801,6 +2801,75 @@ theorem mergeSymValue_succeeds_of_sameShape {c : ZKConfig}
           simp only [mergeSymValue, hshape, if_true]
           exact ⟨_, rfl⟩
 
+/-- Converse of `mergeSymValue_succeeds_of_sameShape`: if `mergeSymValue` succeeds, the two values
+    were already `sameShape` -- `mergeSymValue`'s own cases are exactly `sameShape`'s cases (an
+    array-size check that fails on mismatch, a scalar/array cross-case that always fails), so this
+    is definitional case-matching, same pattern as `flattenArgVal_defined_of_ok`. Lets
+    `seIfStmt_correct` read the symbolic shape-agreement fact straight back out of `seIfStmt`'s own
+    success instead of needing `WellShapedCom`'s concrete clause to supply it. -/
+theorem mergeSymValue_defined_of_ok {c : ZKConfig}
+    (nextVarId : Nat) (tbExtra ebExtra : FFFormula c) (svTb svEb : SymValue c)
+    (result : SymValue c × Nat × FFFormula c × FFFormula c)
+    (h : mergeSymValue nextVarId tbExtra ebExtra svTb svEb = Except.ok result) :
+    sameShape svTb svEb := by
+  cases svTb with
+  | simple _ =>
+      cases svEb with
+      | simple _ => trivial
+      | array _ => simp [mergeSymValue] at h
+  | array arrTb =>
+      cases svEb with
+      | simple _ => simp [mergeSymValue] at h
+      | array arrEb =>
+          simp only [mergeSymValue] at h
+          by_cases heq : arrTb.size = arrEb.size
+          · simp [sameShape, heq]
+          · simp [heq] at h
+
+/-- `mergeSymValue_defined_of_ok`, for a whole key list: if `mergeSymEnvKeys` succeeds, every key
+    bound on both sides has `sameShape` values -- lets `seIfStmt_correct` read the shape-agreement
+    fact it needs for its own merge straight out of `mergeSymEnv`'s (hence `seIfStmt`'s) own
+    success. -/
+theorem mergeSymEnvKeys_defined_of_ok {c : ZKConfig} :
+    ∀ (nextVarId : Nat) (tbEnv ebEnv : SymEnv c) (tbExtra ebExtra : FFFormula c)
+      (keys : List VarID) (result : SymEnv c × Nat × FFFormula c × FFFormula c),
+      mergeSymEnvKeys nextVarId tbEnv ebEnv tbExtra ebExtra keys = Except.ok result →
+      ∀ id ∈ keys, ∀ svTb svEb, getVar tbEnv id = Except.ok svTb → getVar ebEnv id = Except.ok svEb →
+        sameShape svTb svEb := by
+  intro nextVarId tbEnv ebEnv tbExtra ebExtra keys
+  induction keys generalizing nextVarId tbExtra ebExtra with
+  | nil => intro result h id hid; simp at hid
+  | cons k rest ih =>
+      intro result h id hid svTb svEb hgetTb hgetEb
+      simp only [mergeSymEnvKeys] at h
+      cases hgTb : getVar tbEnv k with
+      | error e => rw [hgTb] at h; simp at h
+      | ok svTbK =>
+      rw [hgTb] at h
+      simp only [] at h
+      cases hgEb : getVar ebEnv k with
+      | error e => rw [hgEb] at h; simp at h
+      | ok svEbK =>
+      rw [hgEb] at h
+      simp only [] at h
+      cases hmv : mergeSymValue nextVarId tbExtra ebExtra svTbK svEbK with
+      | error e => rw [hmv] at h; simp at h
+      | ok mres =>
+      rw [hmv] at h
+      simp only [] at h
+      cases hrest : mergeSymEnvKeys mres.2.1 tbEnv ebEnv mres.2.2.1 mres.2.2.2 rest with
+      | error e => rw [hrest] at h; simp at h
+      | ok rres =>
+      rcases List.mem_cons.mp hid with heq | hid'
+      · subst heq
+        rw [hgetTb] at hgTb
+        rw [hgetEb] at hgEb
+        injection hgTb with hgTb'
+        injection hgEb with hgEb'
+        rw [hgTb', hgEb']
+        exact mergeSymValue_defined_of_ok nextVarId tbExtra ebExtra svTbK svEbK mres hmv
+      · exact ih mres.2.1 mres.2.2.1 mres.2.2.2 rres hrest id hid' svTb svEb hgetTb hgetEb
+
 /-- Bridges `SymExec.Basic.getVar`'s success to `Std.TreeMap.get?` returning `some`. -/
 theorem getVar_eq_ok_iff {c : ZKConfig} (env : SymEnv c) (id : VarID) (sv : SymValue c) :
     Corellzk2smt.SymExec.Basic.getVar env id = Except.ok sv ↔ env.get? id = some sv := by
