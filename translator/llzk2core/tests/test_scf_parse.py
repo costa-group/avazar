@@ -5,7 +5,7 @@ from llzk_dialects.scf import (
 )
 from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext, LoopIndexedName
 from llzk_dialects.felt import FeltConst, FeltBinary
-from llzk_dialects.bool import BoolCmp
+from llzk_dialects.bool import BoolCmp, BoolBinary
 from llzk_dialects.constrain import ConstrainEq
 from llzk_dialects.function import FunctionCall
 
@@ -634,6 +634,35 @@ class TestSCF:
 
         with pytest.raises(NotImplementedError):
             list(op.to_core(ctx))
+
+    def test_while_to_core_bool_and_condition_takes_min(self):
+        # A condition of the form bool.and(arg1 < 5, arg1 < 3): the loop
+        # stops as soon as either half first goes false, so the smaller
+        # bound (3) wins -- not touching scf.py at all, since the existing
+        # backward-walk in _process_while_variables is already generic over
+        # BoolBinary.operands, same as any other operation.
+        before_body = [
+            FeltConst(SSAVar("%b1"), 5),
+            BoolCmp(SSAVar("%c1cond"), "lt", SSAVar("%arg1"), SSAVar("%b1")),
+            FeltConst(SSAVar("%b2"), 3),
+            BoolCmp(SSAVar("%c2cond"), "lt", SSAVar("%arg1"), SSAVar("%b2")),
+            BoolBinary(SSAVar("%cond"), "bool.and", SSAVar("%c1cond"), SSAVar("%c2cond")),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%arg1")], [Type("index")]),
+        ]
+        after_body = [
+            FeltConst(SSAVar("%c1"), 1),
+            FeltBinary(SSAVar("%next"), "felt.add", SSAVar("%arg1"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next")], [Type("index")]),
+        ]
+        op = SCFWhile(
+            [], [(SSAVar("%arg1"), SSAVar("%c0"))], [[Type("index")], [Type("index")]],
+            before_body, [(SSAVar("%arg1"), Type("index"))], after_body,
+        )
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+
+        out = list(op.to_core(ctx))
+        assert out[1] == "repeat 3 {"
 
     # ── _contains_function_call ──────────────────────────────────────────────
 

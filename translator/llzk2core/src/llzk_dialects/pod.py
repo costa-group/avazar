@@ -235,6 +235,7 @@ class PodRead(Operation):
         return [self.pod_ref]
 
     def to_core(self, ctx: TranslationContext) -> str:
+        print(self.result, self.pod_ref)
         variable_name, var_type = ctx.ssa2pod_var[self.pod_ref.name][self.record_name.name]
 
         assert self.result_type is None or self.result_type == var_type, "Pod.read must match the type inside the dict ssa2pod_var"

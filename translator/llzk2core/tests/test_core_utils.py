@@ -7,14 +7,19 @@ from llzk_dialects.core_utils import (
     _collect_setup_ops,
     _collect_free_var_names,
     _detect_affine_step,
+    _combine_min_steps,
 )
 from llzk_dialects.core import SSAVar
 from llzk_dialects.felt import FeltConst, FeltBinary
-from llzk_dialects.bool import BoolCmp
+from llzk_dialects.bool import BoolCmp, BoolBinary
 
 
 def _felt_const(name, value):
     return FeltConst(SSAVar(name), value)
+
+
+def _bool_and(name, lhs, rhs):
+    return BoolBinary(SSAVar(name), "bool.and", SSAVar(lhs), SSAVar(rhs))
 
 
 def _felt_binary(name, op, lhs, rhs):
@@ -218,3 +223,98 @@ class TestCollectHelpers:
         }
         update_func = construct_function_from_expressions(SSAVar("%arg1"), var2expression, set())
         assert _detect_affine_step(update_func) is None
+
+
+class TestBoolAndCondition:
+    """
+    A while condition that is bool.and(cmp1, cmp2): each half is inferred
+    independently (as if it were the whole condition) and the smaller count
+    wins, since the loop stops as soon as either half first goes false.
+    """
+
+    def test_same_loop_variable_takes_min(self):
+        # Both halves track the same loop variable, with different bounds.
+        var2expression = {
+            "%cond": _bool_and("%cond", "%c1cond", "%c2cond"),
+            "%c1cond": BoolCmp(SSAVar("%c1cond"), "lt", SSAVar("%arg1"), SSAVar("%b1")),
+            "%b1": _felt_const("%b1", 5),
+            "%c2cond": BoolCmp(SSAVar("%c2cond"), "lt", SSAVar("%arg1"), SSAVar("%b2")),
+            "%b2": _felt_const("%b2", 3),
+            "%arg1": "%next",
+            "%next": _felt_binary("%next", "felt.add", "%arg1", "%c1"),
+            "%c1": _felt_const("%c1", 1),
+        }
+        result = infer_n_repetitions_from_expressions(var2expression, "%cond", {"%arg1": 0})
+        assert result == 3
+
+    def test_different_loop_variables_takes_min(self):
+        # Each half tracks a DIFFERENT loop-carried variable -- the min is
+        # still correct, since each count already fully accounts for its own
+        # condition's failure point in isolation.
+        var2expression = {
+            "%cond": _bool_and("%cond", "%acond", "%bcond"),
+            "%acond": BoolCmp(SSAVar("%acond"), "lt", SSAVar("%a"), SSAVar("%boundA")),
+            "%boundA": _felt_const("%boundA", 7),
+            "%a": "%a_next",
+            "%a_next": _felt_binary("%a_next", "felt.add", "%a", "%c1"),
+            "%bcond": BoolCmp(SSAVar("%bcond"), "lt", SSAVar("%b"), SSAVar("%boundB")),
+            "%boundB": _felt_const("%boundB", 2),
+            "%b": "%b_next",
+            "%b_next": _felt_binary("%b_next", "felt.add", "%b", "%c1"),
+            "%c1": _felt_const("%c1", 1),
+        }
+        result = infer_n_repetitions_from_expressions(
+            var2expression, "%cond", {"%a": 0, "%b": 0}
+        )
+        assert result == 2
+
+    def test_gt_ge_normalized_combined_with_lt(self):
+        var2expression = {
+            "%cond": _bool_and("%cond", "%c1cond", "%c2cond"),
+            # "gt" gets swapped to the equivalent "lt" form.
+            "%c1cond": BoolCmp(SSAVar("%c1cond"), "gt", SSAVar("%b1"), SSAVar("%arg1")),
+            "%b1": _felt_const("%b1", 5),
+            "%c2cond": BoolCmp(SSAVar("%c2cond"), "lt", SSAVar("%arg1"), SSAVar("%b2")),
+            "%b2": _felt_const("%b2", 3),
+            "%arg1": "%next",
+            "%next": _felt_binary("%next", "felt.add", "%arg1", "%c1"),
+            "%c1": _felt_const("%c1", 1),
+        }
+        result = infer_n_repetitions_from_expressions(var2expression, "%cond", {"%arg1": 0})
+        assert result == 3
+
+    def test_raises_when_either_half_symbolic(self):
+        # One half's bound is unresolved -- combining a symbolic count with
+        # anything via min() is out of scope (would need a Core-level
+        # conditional to pick the smaller at runtime).
+        var2expression = {
+            "%cond": _bool_and("%cond", "%c1cond", "%c2cond"),
+            "%c1cond": BoolCmp(SSAVar("%c1cond"), "lt", SSAVar("%arg1"), SSAVar("%extern")),
+            "%c2cond": BoolCmp(SSAVar("%c2cond"), "lt", SSAVar("%arg1"), SSAVar("%b2")),
+            "%b2": _felt_const("%b2", 3),
+            "%arg1": "%next",
+            "%next": _felt_binary("%next", "felt.add", "%arg1", "%c1"),
+            "%c1": _felt_const("%c1", 1),
+        }
+        with pytest.raises(NotImplementedError):
+            infer_n_repetitions_from_expressions(var2expression, "%cond", {"%arg1": 0})
+
+    def test_raises_when_operand_not_boolcmp(self):
+        var2expression = {
+            "%cond": _bool_and("%cond", "%nested_and", "%c2cond"),
+            "%nested_and": _bool_and("%nested_and", "%c1cond", "%c1cond"),
+            "%c1cond": BoolCmp(SSAVar("%c1cond"), "lt", SSAVar("%arg1"), SSAVar("%b1")),
+            "%b1": _felt_const("%b1", 5),
+            "%c2cond": BoolCmp(SSAVar("%c2cond"), "lt", SSAVar("%arg1"), SSAVar("%b2")),
+            "%b2": _felt_const("%b2", 3),
+        }
+        with pytest.raises(AssertionError):
+            infer_n_repetitions_from_expressions(var2expression, "%cond", {"%arg1": 0})
+
+    def test_combine_min_steps_both_int(self):
+        assert _combine_min_steps(5, 3) == 3
+
+    def test_combine_min_steps_raises_with_symbolic(self):
+        symbolic = SymbolicSteps([], SSAVar("%bound"), 0, "lt", True)
+        with pytest.raises(NotImplementedError):
+            _combine_min_steps(5, symbolic)

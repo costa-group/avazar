@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import List, Set, Dict, Union, Optional, Callable, Tuple
 from llzk_dialects.core import SSAVar, TranslationContext, Type, Operation
 from llzk_dialects.utils import translate_assignment_core, struct_type_name, is_array_type
-from llzk_dialects.bool import BoolCmp
+from llzk_dialects.bool import BoolCmp, BoolBinary
 from llzk_dialects.felt import FeltConst, FeltBinary
 
 
@@ -209,6 +209,60 @@ def infer_n_repetitions_from_expressions(var2expression: Dict[str, Union[str, Op
     (var2expression and condition_var) and the initial assignments (initial_values),
     detects how many iterations are performed until the condition is reached.
 
+    Handles a condition that is a single BoolCmp directly (see
+    _infer_from_comparison), or a bool.and of two BoolCmp sub-conditions: each
+    half is inferred independently and the smaller of the two counts is
+    returned, since the loop stops as soon as either half first goes false
+    (correct regardless of whether the two halves reference the same or
+    different loop-carried variables -- each count already fully accounts for
+    its own condition's failure point in isolation).
+    """
+    var2const = var2const or {}
+
+    condition = var2expression[condition_var_core]
+
+    if isinstance(condition, BoolCmp):
+        return _infer_from_comparison(condition, var2expression, initial_values, var2const)
+
+    if isinstance(condition, BoolBinary) and condition.op == "bool.and":
+        lhs_condition = var2expression[condition.lhs.name]
+        rhs_condition = var2expression[condition.rhs.name]
+        assert isinstance(lhs_condition, BoolCmp) and isinstance(rhs_condition, BoolCmp), \
+            f"For now, a bool.and while condition must combine two BoolCmp: {condition}"
+
+        lhs_steps = _infer_from_comparison(lhs_condition, var2expression, initial_values, var2const)
+        rhs_steps = _infer_from_comparison(rhs_condition, var2expression, initial_values, var2const)
+        return _combine_min_steps(lhs_steps, rhs_steps)
+
+    raise NotImplementedError(
+        f"For now, only BoolCmp or bool.and-of-BoolCmp whiles are handled: {condition}"
+    )
+
+
+def _combine_min_steps(a: Union[int, SymbolicSteps], b: Union[int, SymbolicSteps]) -> Union[int, SymbolicSteps]:
+    """
+    Combines two independently-inferred while-condition step counts (from the
+    two halves of a bool.and) by taking the smaller -- the loop stops as soon
+    as either half first goes false.
+    """
+    if isinstance(a, int) and isinstance(b, int):
+        return min(a, b)
+
+    raise NotImplementedError(
+        "Combining a bool.and condition where either half's iteration count is "
+        "symbolic (not a concrete int) is not supported -- would require emitting "
+        "a Core-level conditional to pick the smaller at runtime"
+    )
+
+
+def _infer_from_comparison(initial_comparison: BoolCmp,
+                           var2expression: Dict[str, Union[str, Operation]],
+                           initial_values: Dict[str, int],
+                           var2const: Dict[str, int]) -> Union[int, SymbolicSteps]:
+    """
+    Infers the number of iterations a while's exit condition allows, given a
+    single BoolCmp (one half of a bool.and, or the whole condition).
+
     The condition's bound may reference, besides the loop-carried variable
     itself, other free variables not defined anywhere inside the while (e.g.
     an enclosing function's own parameter). Those are resolved via var2const
@@ -227,11 +281,6 @@ def infer_n_repetitions_from_expressions(var2expression: Dict[str, Union[str, Op
     survives as a leftover, even though it's still a bona fide loop-carried
     variable.
     """
-    var2const = var2const or {}
-
-    initial_comparison = var2expression[condition_var_core]
-    assert isinstance(initial_comparison, BoolCmp), f"For now, only BoolCmp whiles are handled: {initial_comparison}"
-
     # For now, we only handle lt, le, gt and ge
     # TODO: cover more cases if needed
 
