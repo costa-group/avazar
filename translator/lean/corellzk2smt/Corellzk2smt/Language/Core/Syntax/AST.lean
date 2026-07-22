@@ -257,6 +257,32 @@ theorem hasDupFuncNames_append_right {c : ZKConfig} (p1 p2 : Prog c)
   simp only [hasDupFuncNames, List.map_append] at h ⊢
   exact hasDupNames_append_right _ _ h
 
+/-- A name list with no duplicates has its two halves (around any split point) pairwise
+    disjoint -- the general form of what `hasDupFuncNames_cons_disjoint`-style reasoning needs,
+    for an arbitrary prefix rather than just a single head element. -/
+theorem hasDupNames_append_disjoint (l1 l2 : List VarID) (h : hasDupNames (l1 ++ l2) = false) :
+    ∀ x ∈ l1, x ∉ l2 := by
+  induction l1 with
+  | nil => intro x hx; exact absurd hx List.not_mem_nil
+  | cons a l1' ih =>
+      simp only [List.cons_append, hasDupNames, Bool.or_eq_false_iff] at h
+      intro x hx hxl2
+      rcases List.mem_cons.mp hx with heq | hmem
+      · subst heq
+        have hmemapp : x ∈ l1' ++ l2 := List.mem_append_right _ hxl2
+        have hcontains : (l1' ++ l2).contains x = true := List.contains_iff_mem.mpr hmemapp
+        rw [h.1] at hcontains
+        exact absurd hcontains (by simp)
+      · exact ih h.2 x hmem hxl2
+
+/-- `hasDupNames_append_disjoint`, lifted to whole-program function names. -/
+theorem hasDupFuncNames_append_disjoint {c : ZKConfig} (p1 p2 : Prog c)
+    (h : hasDupFuncNames (p1 ++ p2) = false) :
+    ∀ f ∈ p1, funcWithMDName f ∉ p2.map funcWithMDName := by
+  simp only [hasDupFuncNames, List.map_append] at h
+  intro f hf
+  exact hasDupNames_append_disjoint _ _ h (funcWithMDName f) (List.mem_map_of_mem hf)
+
 /-- `hasDupFuncNames`, for the tail of a `::` -- the `p1 := [f]` case of
     `hasDupFuncNames_append_right`. -/
 theorem hasDupFuncNames_cons_tail {c : ZKConfig} (f : FuncWithMD c) (p : Prog c)
@@ -310,6 +336,32 @@ theorem fetchLT {c : ZKConfig}
           apply Nat.lt_of_lt_of_le h2
           apply Nat.le_succ
 
+/-- `fetchFunc` succeeds for any name actually present among the program's function names --
+    the converse of what a success witness already gives (`fetchFunc`'s result is always *some*
+    function named `fname`), needed to turn "`fname` is a name in this program" into an actual
+    fetch witness without separately assuming the fetch succeeds. -/
+theorem fetchFunc_of_mem {c : ZKConfig} (p : Prog c) (fname : FName)
+    (h : fname ∈ p.map funcWithMDName) :
+    ∃ (md : FuncMD) (func : Func c) (p' : Prog c),
+      fetchFunc p fname = Except.ok (FuncWithMD.mk md func, p') := by
+  induction p with
+  | nil => simp at h
+  | cons f fs ih =>
+      obtain ⟨md, func⟩ := f
+      cases func with
+      | mk name params rets body =>
+          simp only [fetchFunc]
+          by_cases hcase : name = fname
+          · subst hcase
+            simp only [BEq.rfl, ↓reduceIte]
+            exact ⟨md, Func.mk name params rets body, fs, rfl⟩
+          · have hbeq : (name == fname) = false := by simpa using hcase
+            simp only [hbeq, Bool.false_eq_true, ↓reduceIte]
+            apply ih
+            simp only [List.map_cons, funcWithMDName] at h
+            rcases List.mem_cons.mp h with h1 | h2
+            · exact absurd h1.symm hcase
+            · exact h2
 
 /- Size of a command and list of commands. They are used to prove termination of
    functions that manipulate programs. The only "tricky" parts are thos of loop_exp

@@ -148,6 +148,25 @@ def fetchFuncSpec {c : ZKConfig} (specs : List (FuncSpec c)) (fname : FName)
   | [] => Except.error s!"Function spec for '{fname}' not found"
   | spec :: rest => if spec.name == fname then Except.ok spec else fetchFuncSpec rest fname
 
+/-- `fetchFuncSpec` succeeds for any name actually present among the specs' own names -- the
+    `FuncSpec` mirror of `fetchFunc_of_mem` (`Language/Core/Syntax/AST.lean`). -/
+theorem fetchFuncSpec_of_mem {c : ZKConfig} (specs : List (FuncSpec c)) (fname : FName)
+    (h : fname ∈ specs.map (·.name)) :
+    ∃ fspec : FuncSpec c, fetchFuncSpec specs fname = Except.ok fspec := by
+  induction specs with
+  | nil => simp at h
+  | cons spec rest ih =>
+      simp only [fetchFuncSpec]
+      by_cases hcase : spec.name = fname
+      · simp [hcase]
+      · have hbeq : (spec.name == fname) = false := by simpa using hcase
+        simp only [hbeq, Bool.false_eq_true, ↓reduceIte]
+        apply ih
+        simp only [List.map_cons] at h
+        rcases List.mem_cons.mp h with h1 | h2
+        · exact absurd h1.symm hcase
+        · exact h2
+
 /-
 
 structure ExprSpec (c : ZKConfig) where

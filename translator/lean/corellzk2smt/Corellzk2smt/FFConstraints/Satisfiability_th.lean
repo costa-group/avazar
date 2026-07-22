@@ -890,6 +890,27 @@ termination_by sizeOfFormula f
 decreasing_by all_goals (simp only [sizeOfFormula]; grind)
 end
 
+/-- List version of `evalFormula_names_below_indep`: peel a whole prepended list off at once,
+    one macro at a time, given `f` avoids every name in `extra`. The `evalFormula_prepend_indep`
+    counterpart (forward direction, small-list-succeeds ⇒ big-list-succeeds) already takes a
+    whole list `extra` directly; this is the missing reverse-direction analogue, needed to shrink
+    a fact stated over a whole-program's *final* macro list back down to whatever smaller list a
+    single macro's own body was actually built against. -/
+theorem evalFormula_names_below_indep_list {c : ZKConfig} (gconf : GlobalConfig c) :
+    ∀ (extra : List (FFMacro c)) (ms : List (FFMacro c)) (assign : Assignment c) (f : FFFormula c)
+      (v : Bool), (∀ m ∈ extra, FormulaNamesBelow f m.name) →
+      evalFormula gconf assign f (extra ++ ms) = Except.ok v →
+      evalFormula gconf assign f ms = Except.ok v := by
+  intro extra
+  induction extra with
+  | nil => intro ms assign f v _hbelow heval; simpa using heval
+  | cons m extra' ih =>
+      intro ms assign f v hbelow heval
+      simp only [List.cons_append] at heval
+      have hstep := evalFormula_names_below_indep gconf m (extra' ++ ms) assign f v
+        (hbelow m (List.mem_cons_self ..)) heval
+      exact ih ms assign f v (fun m' hm' => hbelow m' (List.mem_cons_of_mem _ hm')) hstep
+
 -- ---------------------------------------------------------------------------
 -- Well-formedness (a syntactic condition sufficient for totality)
 -- ---------------------------------------------------------------------------

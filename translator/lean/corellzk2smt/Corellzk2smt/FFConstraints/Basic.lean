@@ -21,7 +21,7 @@ abbrev BoolVar := ℕ
 inductive Var where
   | ffv (v : FFVar) : Var
   | boolv (v : BoolVar) : Var
-  deriving Repr, BEq, Inhabited
+  deriving Repr, BEq, Inhabited, DecidableEq
 
 /- Metadata for FF variables -/
 structure VarMetaData where
@@ -152,6 +152,21 @@ def lookupVarInfo (v : Var) (vi : VarInfo) : Option VarMetaData :=
   vi.get? v
 /- -/
 
+
+/-- `compare`-based strict order on `Var` implies plain disequality -- lets a
+    `List.Pairwise (fun a b => compare a b = .lt)` fact (e.g. from `VarSet.toList`) be turned
+    into a `List.Nodup` fact without re-deriving it from scratch at each call site. -/
+theorem var_compare_lt_ne {a b : Var} (h : compare a b = Ordering.lt) : a ≠ b := by
+  intro heq
+  subst heq
+  rw [Std.ReflCmp.compare_self (cmp := (compare : Var → Var → Ordering))] at h
+  exact absurd h (by decide)
+
+/-- `List.Nodup` companion to `var_compare_lt_ne`: any `compare`-sorted list of `Var`s has no
+    duplicates. -/
+theorem var_pairwise_lt_nodup {l : List Var}
+    (h : l.Pairwise (fun a b => compare a b = Ordering.lt)) : l.Nodup :=
+  h.imp var_compare_lt_ne
 
 /- Var set -/
 abbrev VarSet := Std.TreeSet Var compare

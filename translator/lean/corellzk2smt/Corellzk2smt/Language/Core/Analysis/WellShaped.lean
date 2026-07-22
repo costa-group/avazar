@@ -5,26 +5,44 @@ import Corellzk2smt.Language.Core.Semantics.Basic
 import Corellzk2smt.Language.Core.Semantics.BigStep
 
 /- A program is "well-shaped" when:
-   (a) at every `if`-statement it contains, the two branches never disagree on a variable's
-       shape (scalar vs. array, or array length) -- i.e. a variable is never a scalar coming
-       out of one branch and an array (or a differently-sized array) coming out of the other,
-       for any concrete starting environment that reaches that `if`-statement;
-   (b) every `loop_exp`'s repetition count is a syntactic literal (`SimpleExpr.val`) -- so
-       symbolic execution's unrolling (`tryEvalSimpleExprToFFValue`) never depends on a
-       variable's runtime value, matching `AST.lean`'s own comment that a loop/array bound
-       "is supposed to be a constant expression";
-   (c) every `if`-statement's condition is defined on any concrete environment reaching it --
-       i.e. `evalCond` never errors out (a missing/mistyped variable), which is what lets
-       `encodeCond` be shown to always succeed symbolically too (`encodeCond_defined`,
-       `SymExec/Lemmas.lean`), mirroring (b)'s role for `loop_exp`; and
+   (a) at every `if`-statement it contains, *both* branches always succeed from any starting
+       environment (run independently of one another and of `cond`'s actual value -- this is a
+       hypothetical "would both branches typecheck" check, not a claim about the branch actually
+       taken at runtime), and never disagree on a variable's shape (scalar vs. array, or array
+       length) -- i.e. a variable is never a scalar coming out of one branch and an array (or a
+       differently-sized array) coming out of the other. Phrased as an unconditional `∃`
+       (guaranteeing success) rather than a conditional `∀ ... → ... → ...` (only constraining
+       shape *if* both happen to succeed) so that `SymExec/PartialCorrectness/Correctness.lean`'s
+       `seIfStmt_correct` can derive the *symbolic* shape-agreement fact it needs (for merging)
+       from this one alone, instead of assuming it separately -- a conditional form can be
+       vacuously true with no real content, which doesn't give anything to derive from;
+   (b) [REMOVED 2026 -- see below] `loop_exp` used to additionally require its repetition count
+       be a syntactic literal (`SimpleExpr.val`); that turned out to be unnecessary.
+       `seCmd_correct`'s `.loop_exp` case no longer needs it: `tryEvalSimpleExprToFFValue`
+       resolving `rep` to *some* value under `symEnv` already, together with
+       `tryEvalSimpleExprToFFValue_correct` (`SymExec/Lemmas.lean` -- a `.const` symbolic binding
+       forces the matching concrete env to hold exactly that value, via `EnvMatches`), gives
+       everything needed to show the concrete side resolves `rep` to the *same* value, without
+       assuming anything about `rep`'s syntax up front;
+   (c) [REMOVED 2026 -- see below] `if`-statement conditions used to additionally require
+       `evalCond` be defined on every concrete environment; also turned out to be unnecessary, for
+       the same reason as (b): in `seIfStmt_correct`'s "condition doesn't constant-fold" branch,
+       `encodeCond symEnv cond` succeeding is *already* forced by `seIfStmt`'s own success (it
+       fails via `mergeIfBranches` whenever `encodeCond` does), so it can be extracted directly
+       from the success hypothesis instead of assumed up front via `encodeCond_defined`; and
    (d) every `func_call` site names a function that actually exists in the (remaining) program,
        called with the right arity (`args`/`outs` lengths matching the callee's declared
-       `params`/`rets`), no-repeat `outs`, and arguments that are always concretely defined *and*
-       already shape-matched to the callee's declared param types (`ValuesMatchParams`) -- the
-       call-site well-formedness `seFuncCall_correct` (`SymExec/FuncCallCorrectness.lean`) itself
-       needs as hypotheses, now phrased once here so `H_funcCall` (`SymExec/Correctness.lean`)
-       can be discharged from it instead of assumed unconditionally (see that file's `H_funcCall`
-       design notes for why the unconditional form is never actually provable).
+       `params`/`rets`), and arguments that are always concretely defined *and* already
+       shape-matched to the callee's declared param types (`ValuesMatchParams`) -- the call-site
+       well-formedness `seFuncCall_correct` (`SymExec/FuncCallCorrectness.lean`) itself needs as
+       hypotheses, now phrased once here so `H_funcCall` (`SymExec/Correctness.lean`) can be
+       discharged from it instead of assumed unconditionally (see that file's `H_funcCall` design
+       notes for why the unconditional form is never actually provable). `outs.Nodup` used to be
+       part of this clause too, but turned out to be unnecessary: `EnvMatches_setVars`
+       (`SymExec/FuncCallCorrectness.lean`) preserves `EnvMatches` across a repeated-`outs` call
+       just fine, since both the concrete and symbolic `setVars` recurse over `outs` in the same
+       left-to-right order and so resolve a repeat to "last write wins" identically on both
+       sides -- no distinctness needed for that argument to go through.
 
    The language isn't strongly typed (see `DefinedVars.lean`), so this can't be checked by a
    static type system -- it's a semantic well-formedness precondition on the *program*,
@@ -50,21 +68,20 @@ mutual
 
 def WellShapedCom {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c) (cmd : Com c) : Prop :=
   match cmd with
-  | .if_stmt cond tb eb =>
-      (∀ (env : Env c), ∃ b, evalCond env cond = Except.ok b) ∧
+  | .if_stmt _cond tb eb =>
       WellShapedCmds gconf p tb ∧ WellShapedCmds gconf p eb ∧
-      ∀ (env envTb envEb : Env c),
-        evalCmds gconf p env tb = Except.ok envTb →
-        evalCmds gconf p env eb = Except.ok envEb →
+      ∀ (env : Env c), ∃ envTb envEb,
+        evalCmds gconf p env tb = Except.ok envTb ∧
+        evalCmds gconf p env eb = Except.ok envEb ∧
         ∀ (id : VarID) (v1 v2 : Value c),
           envTb.get? id = some v1 → envEb.get? id = some v2 → sameShapeValue v1 v2
-  | .loop_exp rep body => (∃ v, rep = SimpleExpr.val v) ∧ WellShapedCmds gconf p body
+  | .loop_exp _rep body => WellShapedCmds gconf p body
   | .loop _rep body => WellShapedCmds gconf p body
   | .func_call outs fname args =>
       ∃ md func p', fetchFunc p fname = Except.ok (FuncWithMD.mk md func, p') ∧
         match func with
         | Func.mk _ params rets _ =>
-          args.length = params.length ∧ outs.length = rets.length ∧ outs.Nodup ∧
+          args.length = params.length ∧ outs.length = rets.length ∧
           ∀ (env : Env c), ∃ vs : List (Value c),
             evalSimpleExprsToValue env args = Except.ok vs ∧ ValuesMatchParams vs params
   | _ => True

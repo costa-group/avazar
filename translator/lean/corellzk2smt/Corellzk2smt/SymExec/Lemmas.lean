@@ -6,6 +6,7 @@ import Corellzk2smt.SymExec.BigStep
 import Corellzk2smt.FFConstraints.Basic
 import Corellzk2smt.FFConstraints.Satisfiability
 import Corellzk2smt.FFConstraints.Satisfiability_th
+import Corellzk2smt.Language.Core.Analysis.DefinedVars
 
 
 namespace Corellzk2smt.SymExec.Lemmas
@@ -19,6 +20,7 @@ open Corellzk2smt.SymExec.BigStep
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
+open Corellzk2smt.Language.Core.Analysis.DefinedVars
 
 -- ---------------------------------------------------------------------------
 -- Environment / assignment correspondence
@@ -66,6 +68,38 @@ theorem contains_insert_iff {β : Type} (env : Std.TreeMap VarID β) (id0 id : V
   · subst h; simp
   · have hne : id0 ≠ id := Ne.symm h
     simp [h, hne]
+
+/-- `setVars`'s output has exactly `ids ++ (env's own domain)` as its domain -- every id it
+    processes gets set exactly once (via `setVar`/`.insert`), and nothing else changes. Needed to
+    characterize `seFuncCall`'s domain effect (its `outs` list only ever adds those specific
+    names, on top of whatever `symEnv` already had). -/
+theorem setVars_contains_iff {c : ZKConfig} :
+    ∀ (env : SymEnv c) (ids : List VarID) (vs : List (SymValue c)) (env' : SymEnv c),
+      Corellzk2smt.SymExec.Basic.setVars env ids vs = Except.ok env' →
+      ∀ id, env'.contains id ↔ (id ∈ ids ∨ env.contains id) := by
+  intro env ids
+  induction ids generalizing env with
+  | nil =>
+      intro vs env' heq id
+      cases vs with
+      | nil =>
+          simp only [Corellzk2smt.SymExec.Basic.setVars, Except.ok.injEq] at heq
+          rw [← heq]; simp
+      | cons _ _ => simp [Corellzk2smt.SymExec.Basic.setVars] at heq
+  | cons id0 rest ih =>
+      intro vs env' heq id
+      cases vs with
+      | nil => simp [Corellzk2smt.SymExec.Basic.setVars] at heq
+      | cons v vs' =>
+          cases hrec : Corellzk2smt.SymExec.Basic.setVars (Corellzk2smt.SymExec.Basic.setVar env id0 v) rest vs' with
+          | error e =>
+              simp only [Corellzk2smt.SymExec.Basic.setVars, hrec] at heq
+              exact absurd heq (by simp)
+          | ok env'' =>
+              simp only [Corellzk2smt.SymExec.Basic.setVars, hrec, Except.ok.injEq] at heq
+              rw [← heq, ih (Corellzk2smt.SymExec.Basic.setVar env id0 v) vs' env'' hrec id]
+              simp only [Corellzk2smt.SymExec.Basic.setVar, contains_insert_iff, List.mem_cons]
+              tauto
 
 /-- The concrete value a simple symbolic value denotes under a given assignment: a constant
     decodes to itself; a symbolic variable decodes to whatever the assignment gives it. This is
@@ -318,90 +352,6 @@ def varSetBelow (vs : VarSet) (n : Nat) : Prop :=
 def specVars {c : ZKConfig} (spec : CmdsSpec c) : VarSet :=
   ffVarsOfFormula spec.f ∪ bVarsOfFormula spec.f
 
-/-- `TranslatesCorrectly gconf sconf specs concrete symbolic` says that `symbolic` (some
-    piece of symbolic execution, as a function of the input `SymEnv`) is a sound *and*
-    complete translation of `concrete` (the corresponding piece of concrete big-step
-    semantics, as a function of the input `Env`) -- for every symbolic environment whose
-    vars are already "old" w.r.t. `sconf`'s counter (so translating it is safe to mint fresh
-    vars from that counter onward):
-
-    1. `symbolic` always succeeds (this is what makes the notion useful even for envs where
-       `concrete` errors out -- see the docstring below for why this is the right shape).
-    2. The produced spec's `inSymEnv` is exactly the input, and `nextVarId` only grows.
-    3. **Freshness**: every variable the formula mentions is either one already used by the
-       input `symEnv` (carried through, e.g. because it's an input/output program variable),
-       or is genuinely new -- at or above the counter this translation started from. Together
-       with the fact that everything is below the new counter, and that `outSymEnv`'s own
-       vars are too, this is exactly what lets two independently-produced specs be combined
-       (`seqComposition`, `mergeIfBranches`) without their private variables colliding, using
-       nothing more than arithmetic on `nextVarId` (no separate disjointness side-conditions
-       need to be threaded by hand -- see `functionalCompose`/`functionalDisjunction` in
-       `FFConstraints/FunctionalFormula.lean` for the analogous, formula-only version of this
-       argument, which needed those side-conditions supplied externally). The same freshness
-       property also holds of `outSymEnv`'s own vars (not just the formula's): every constraint
-       variable an output entry mentions is either one already present in `symEnv`, or genuinely
-       new. This is what lets a *second* translation step, started from this one's `outSymEnv`,
-       inherit "old vars of my input are old vars of the very first `symEnv`, or already fresh"
-       transitively -- exactly the fact `seqComposition`'s own combinator needs to restate its
-       conclusion in terms of the composition's original input rather than its intermediate one.
-    4. **Soundness, with a frame condition**: for any concrete env matching a given
-       assignment, if `concrete env` succeeds with `env'`, there is an assignment extending
-       the given one -- agreeing with it on every var `symEnv` mentions, *and* everywhere
-       outside the formula's own vars (`specVars`) -- that satisfies the produced formula and
-       whose decoded output (`outSymEnv`) is exactly `env'`. The frame part (agreement outside
-       `specVars`) is what lets composition show a var untouched by one half's formula is
-       preserved by the other's satisfying assignment, mirroring conditions (2)-(3) of
-       `isFunctionalFormula`.
-    5. **Completeness**: for any concrete env matching a given assignment, if some extension of
-       that assignment (agreeing with it on every var `symEnv` mentions) satisfies the produced
-       formula, then `concrete env` succeeds with some `env'` decoded (via `EnvMatches`) from
-       that same extension. Note this is phrased as producing a *fresh* `env'`, never as
-       comparing against a pre-given one -- `Env` is a `Std.TreeMap`, and two `Std.TreeMap`s
-       that agree on every key/value aren't necessarily the same Lean term (balanced-tree
-       shapes aren't canonical), so nothing here could discharge an obligation like `env = env'`
-       for some independently-given `env'` even if it wanted to. This mirrors exactly how
-       `seqComposition_complete`/`mergeIfBranches_complete` are shaped: completeness always
-       *produces* a witness `env'`, never receives one to match against.
-
-    On why (1) has to be an unconditional existential rather than "if `symbolic` succeeds,
-    then ...": a `SymEnv` only fixes *which* program variables are constant vs. symbolic, not
-    the concrete values behind the symbolic ones -- those are supplied by `assignment`, i.e.
-    genuinely unknown at the time `symbolic` runs. So `concrete env` might succeed for some
-    matching envs and fail for others (e.g. an out-of-bounds array read whose index is a
-    symbolic var) while `symbolic` only gets to run once, before that's decided. Soundness
-    +completeness handles this correctly *only* if `symbolic` always produces a formula: the
-    formula must then be unsatisfiable exactly for the assignments where `concrete` would
-    have failed (no witnessing assignment' can correspond to a nonexistent `env'`), not
-    "translation itself fails" -- that would let `symbolic` off the hook for the very inputs
-    where it has the most to prove. -/
-def TranslatesCorrectly {c : ZKConfig} (gconf : GlobalConfig c) (sconf : SymExecConfig c)
-    (specs : List (FuncSpec c))
-    (concrete : Env c → Except String (Env c))
-    (symbolic : SymEnv c → Except String (CmdsSpec c)) : Prop :=
-  ∀ (symEnv : SymEnv c),
-    varSetBelow (symEnvVars symEnv) sconf.nextVarId →
-    ∃ spec, symbolic symEnv = Except.ok spec ∧
-      spec.inSymEnv = symEnv ∧
-      sconf.nextVarId ≤ spec.nextVarId ∧
-      (∀ v ∈ specVars spec, v ∈ symEnvVars symEnv ∨ sconf.nextVarId ≤ varIndex v) ∧
-      varSetBelow (specVars spec) spec.nextVarId ∧
-      varSetBelow (symEnvVars spec.outSymEnv) spec.nextVarId ∧
-      (∀ v ∈ symEnvVars spec.outSymEnv, v ∈ symEnvVars symEnv ∨ sconf.nextVarId ≤ varIndex v) ∧
-      (∀ (env : Env c) (assignment : Assignment c),
-        EnvMatches assignment symEnv env →
-        ∀ env', concrete env = Except.ok env' →
-          ∃ assignment',
-            agreesOnFF (symEnvVars symEnv) assignment assignment' ∧
-            agreesOnBool (symEnvVars symEnv) assignment assignment' ∧
-            (∀ n, Var.ffv n ∉ specVars spec → assignment'.ff n = assignment.ff n) ∧
-            (∀ n, Var.boolv n ∉ specVars spec → assignment'.bool n = assignment.bool n) ∧
-            evalFormula gconf assignment' spec.f (specs.map (·.f)) = Except.ok true ∧
-            EnvMatches assignment' spec.outSymEnv env') ∧
-      (∀ (env : Env c) (assignment : Assignment c),
-        EnvMatches assignment symEnv env →
-        ∀ assignment', agreesOnFF (symEnvVars symEnv) assignment assignment' →
-          evalFormula gconf assignment' spec.f (specs.map (·.f)) = Except.ok true →
-          ∃ env', concrete env = Except.ok env' ∧ EnvMatches assignment' spec.outSymEnv env')
 
 -- ---------------------------------------------------------------------------
 -- Correctness of the constant-folding helpers
@@ -2789,6 +2739,51 @@ def sameShape {c : ZKConfig} (s1 s2 : SymValue c) : Prop :=
   | .array a1, .array a2 => a1.size = a2.size
   | _, _ => False
 
+/-- `symValMatches` pins a symbolic value's own shape to whatever concrete value it matches
+    (`.simple` only ever matches `.scalar`, `.array` only ever matches a same-length `.array`) --
+    so two symbolic values that respectively match a `sameShapeValue`-related pair of concrete
+    values must themselves be `sameShape`. The two `symValMatches` facts are allowed to use
+    *different* assignments (`assignment1`/`assignment2`) -- the proof never inspects the
+    assignment's actual values, only the structural shape pinning, so nothing ties them together.
+    Lets `seIfStmt_correct` derive the *symbolic* shape-agreement it needs for merging directly
+    from `WellShapedCom`'s concrete one, instead of assuming it separately (see
+    `Language/Core/Analysis/WellShaped.lean`'s `.if_stmt` case). -/
+theorem sameShape_of_symValMatches {c : ZKConfig} (assignment1 assignment2 : Assignment c)
+    (sv1 sv2 : SymValue c) (v1 v2 : Value c)
+    (hm1 : symValMatches assignment1 sv1 v1) (hm2 : symValMatches assignment2 sv2 v2)
+    (hshapeValue : sameShapeValue v1 v2) : sameShape sv1 sv2 := by
+  cases sv1 with
+  | simple _ =>
+      cases v1 with
+      | scalar _ =>
+          cases sv2 with
+          | simple _ => simp only [sameShape]
+          | array a2 =>
+              cases v2 with
+              | scalar _ => simp only [symValMatches] at hm2
+              | array _ => simp only [sameShapeValue] at hshapeValue
+      | array _ => simp only [symValMatches] at hm1
+  | array a1 =>
+      cases v1 with
+      | scalar _ => simp only [symValMatches] at hm1
+      | array a1' =>
+          cases sv2 with
+          | simple _ =>
+              cases v2 with
+              | scalar _ => simp only [sameShapeValue] at hshapeValue
+              | array _ => simp only [symValMatches] at hm2
+          | array a2 =>
+              cases v2 with
+              | scalar _ => simp only [symValMatches] at hm2
+              | array a2' =>
+                  simp only [symValMatches] at hm1 hm2
+                  simp only [sameShapeValue] at hshapeValue
+                  simp only [sameShape]
+                  have h1 : a1.toList.length = a1'.toList.length := hm1.length_eq
+                  have h2 : a2.toList.length = a2'.toList.length := hm2.length_eq
+                  simp only [Array.length_toList] at h1 h2
+                  omega
+
 theorem mergeSymValue_succeeds_of_sameShape {c : ZKConfig}
     (nextVarId : Nat) (tbExtra ebExtra : FFFormula c) (svTb svEb : SymValue c)
     (hshape : sameShape svTb svEb) :
@@ -4659,5 +4654,306 @@ theorem encodeCond_defined {c : ZKConfig} (symEnv : SymEnv c) (cond : Cond c)
               (default : Assignment c) hmatch val2 hc2
           refine ⟨FFFormula.eq (simpleSymValToTerm sv1) (simpleSymValToTerm sv2), ?_⟩
           simp only [encodeCond, hsv1, hsv2]
+
+-- ---------------------------------------------------------------------------
+-- `H_domain` is not vacuous the way `H_shape` was: `seFuncCall`'s `setVars` call can grow
+-- a symbolic environment's domain (nothing rules that out from `seCmds` succeeding alone). But
+-- given every variable a command could ever write is already in the environment's domain before
+-- execution starts (`definedVarsCom`/`definedVarsCmds`, `Language/Core/Analysis/DefinedVars.lean`
+-- -- exactly what `seFunc_correct`'s `inSymEnv` construction already guarantees), the domain
+-- genuinely never changes. This mirrors `seCmd_correct`/`seCmds_correct`/`seIfStmt_correct`'s own
+-- mutual recursion/termination measure exactly (same case structure, same decreasing proofs --
+-- copied verbatim), but proves a much narrower fact (no `EnvMatches`/soundness/completeness
+-- bookkeeping needed) so it stands alone rather than reusing that induction.
+--
+-- NOT YET WIRED IN: `H_domain` in `PartialCorrectness/Correctness.lean`/`FuncCorrectness.lean`/
+-- `ProgCorrectness.lean` still remains a permanently-assumed hypothesis, unchanged. Actually
+-- replacing it would mean threading a `vars`/precondition parameter (mirroring this theorem's
+-- own `vars`/`hpre`) through `seCmd_correct`/`seCmds_correct`/`seIfStmt_correct`'s *existing*
+-- recursion (interleaved with their `EnvMatches`/soundness/completeness bookkeeping), then
+-- supplying the actual witness at `seFunc_correct`'s level from how `inSymEnv` is built
+-- (`definedVarsOfFunc`-based pre-population) -- a comparable-sized follow-up, deferred for now.
+-- ---------------------------------------------------------------------------
+
+mutual
+
+theorem seIfStmt_domain_of_defined {c : ZKConfig} (gconf : GlobalConfig c) (sconf : SymExecConfig c)
+    (symEnv : SymEnv c) (specs : List (FuncSpec c)) (vars : VarIDSet) (md : CmdMD) (cond : Cond c)
+    (tb eb : List (ComWithMD c))
+    (hpre : ∀ id, id ∈ definedVarsCmds (definedVarsCmds vars tb) eb → symEnv.contains id)
+    (spec : CmdsSpec c)
+    (heq : seIfStmt gconf sconf symEnv specs md cond tb eb = Except.ok spec) :
+    ∀ id, symEnv.contains id ↔ spec.outSymEnv.contains id := by
+  have htb_pre : ∀ id, id ∈ definedVarsCmds vars tb → symEnv.contains id :=
+    fun id hid => hpre id (definedVarsCmds_mono eb (definedVarsCmds vars tb) id hid)
+  have heb_pre : ∀ id, id ∈ definedVarsCmds vars eb → symEnv.contains id :=
+    fun id hid => hpre id
+      (definedVarsCmds_subset_mono eb vars (definedVarsCmds vars tb)
+        (fun id' hid' => definedVarsCmds_mono tb vars id' hid') id hid)
+  cases htry : tryEvalCondToConcreteValue gconf sconf symEnv md cond with
+  | ok condVal =>
+      cases condVal with
+      | true =>
+          have h : seIfStmt gconf sconf symEnv specs md cond tb eb =
+              seCmds gconf sconf symEnv specs tb := by simp only [seIfStmt, htry, if_true]
+          rw [h] at heq
+          exact seCmds_domain_of_defined gconf sconf symEnv specs vars tb htb_pre spec heq
+      | false =>
+          have h : seIfStmt gconf sconf symEnv specs md cond tb eb =
+              seCmds gconf sconf symEnv specs eb := by
+            simp only [seIfStmt, htry, Bool.false_eq_true, if_false]
+          rw [h] at heq
+          exact seCmds_domain_of_defined gconf sconf symEnv specs vars eb heb_pre spec heq
+  | error e =>
+      cases htbSpec_eq : seCmds gconf sconf symEnv specs tb with
+      | error e2 => simp [seIfStmt, htry, htbSpec_eq] at heq
+      | ok tbSpec =>
+      cases hebSpec_eq : seCmds gconf sconf symEnv specs eb with
+      | error e2 => simp [seIfStmt, htry, htbSpec_eq, hebSpec_eq] at heq
+      | ok ebSpec =>
+      have htbDom := seCmds_domain_of_defined gconf sconf symEnv specs vars tb htb_pre tbSpec
+        htbSpec_eq
+      have hmerge_eq : mergeIfBranches gconf sconf symEnv specs md tbSpec ebSpec cond =
+          Except.ok spec := by
+        have h : seIfStmt gconf sconf symEnv specs md cond tb eb =
+            mergeIfBranches gconf sconf symEnv specs md tbSpec ebSpec cond := by
+          simp only [seIfStmt, htry, htbSpec_eq, hebSpec_eq]
+        rw [← h]; exact heq
+      intro id
+      rw [htbDom id]
+      simp only [mergeIfBranches] at hmerge_eq
+      cases hg : encodeCond symEnv cond with
+      | error e2 => rw [hg] at hmerge_eq; simp at hmerge_eq
+      | ok g =>
+        rw [hg] at hmerge_eq
+        simp only [] at hmerge_eq
+        cases hms : mergeSymEnv (max tbSpec.nextVarId ebSpec.nextVarId) tbSpec.outSymEnv
+            ebSpec.outSymEnv with
+        | error e2 => rw [hms] at hmerge_eq; simp at hmerge_eq
+        | ok result =>
+          obtain ⟨mergedEnv, nv', tbE', ebE'⟩ := result
+          rw [hms] at hmerge_eq
+          simp only [Except.ok.injEq] at hmerge_eq
+          have hspec_out : spec.outSymEnv = mergedEnv := by rw [← hmerge_eq]
+          rw [hspec_out]
+          exact (mergeSymEnv_domain (max tbSpec.nextVarId ebSpec.nextVarId) tbSpec.outSymEnv
+            ebSpec.outSymEnv mergedEnv nv' tbE' ebE' hms id).symm
+termination_by (numOfLoopExpComs tb + numOfLoopExpComs eb, sizeOfComs tb + sizeOfComs eb)
+decreasing_by
+  all_goals first
+  | (have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+     rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
+     · apply Prod.Lex.left
+       exact h_less
+     · rw [← h_equal]
+       apply Prod.Lex.right
+       exact sizeOfComs_a_lt_a_plus_b tb eb)
+  | (have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+     rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
+     · apply Prod.Lex.left
+       exact h_less
+     · rw [← h_equal]
+       apply Prod.Lex.right
+       rw [← Nat.add_comm]
+       exact sizeOfComs_a_lt_a_plus_b eb tb)
+
+theorem seCmd_domain_of_defined {c : ZKConfig} (gconf : GlobalConfig c) (sconf : SymExecConfig c)
+    (symEnv : SymEnv c) (specs : List (FuncSpec c)) (vars : VarIDSet) (md : CmdMD) (cmd : Com c)
+    (hpre : ∀ id, id ∈ definedVarsCom vars cmd → symEnv.contains id)
+    (spec : CmdsSpec c)
+    (heq : seCmd gconf sconf symEnv specs (ComWithMD.mk md cmd) = Except.ok spec) :
+    ∀ id, symEnv.contains id ↔ spec.outSymEnv.contains id := by
+  match cmd, hpre with
+  | .if_stmt cond tb eb, hpre =>
+      have h : seCmd gconf sconf symEnv specs (ComWithMD.mk md (Com.if_stmt cond tb eb)) =
+          seIfStmt gconf sconf symEnv specs md cond tb eb := by simp only [seCmd]
+      rw [h] at heq
+      have hpre' : ∀ id, id ∈ definedVarsCmds (definedVarsCmds vars tb) eb → symEnv.contains id :=
+        fun id hid => hpre id (by simp only [definedVarsCom]; exact hid)
+      exact seIfStmt_domain_of_defined gconf sconf symEnv specs vars md cond tb eb hpre' spec heq
+  | .loop_exp repSExp body, hpre =>
+      cases htry : tryEvalSimpleExprToFFValue symEnv repSExp with
+      | error e => simp [seCmd, htry] at heq
+      | ok repVal =>
+          have h : seCmd gconf sconf symEnv specs (ComWithMD.mk md (Com.loop_exp repSExp body)) =
+              seCmd gconf sconf symEnv specs (ComWithMD.mk md (Com.loop repVal.val body)) := by
+            simp only [seCmd, htry]
+          rw [h] at heq
+          have hpre' : ∀ id, id ∈ definedVarsCom vars (Com.loop repVal.val body) →
+              symEnv.contains id :=
+            fun id hid => hpre id (by simp only [definedVarsCom] at hid ⊢; exact hid)
+          exact seCmd_domain_of_defined gconf sconf symEnv specs vars md (Com.loop repVal.val body)
+            hpre' spec heq
+  | .loop (rep+1) body, hpre =>
+      cases hfirstSpec_eq : seCmds gconf { nextVarId := sconf.nextVarId } symEnv specs body with
+      | error e => simp [seCmd, hfirstSpec_eq] at heq
+      | ok firstSpec =>
+      have hbody_pre : ∀ id, id ∈ definedVarsCmds vars body → symEnv.contains id :=
+        fun id hid => hpre id (by simp only [definedVarsCom] at hid ⊢; exact hid)
+      have hfirstDom := seCmds_domain_of_defined gconf { nextVarId := sconf.nextVarId } symEnv specs
+        vars body hbody_pre firstSpec hfirstSpec_eq
+      cases hrestSpec_eq : seCmd gconf { sconf with nextVarId := firstSpec.nextVarId }
+          firstSpec.outSymEnv specs (ComWithMD.mk md (Com.loop rep body)) with
+      | error e => simp [seCmd, hfirstSpec_eq, hrestSpec_eq] at heq
+      | ok restSpec =>
+      have hrest_pre : ∀ id, id ∈ definedVarsCom vars (Com.loop rep body) →
+          firstSpec.outSymEnv.contains id := by
+        intro id hid
+        rw [← hfirstDom id]
+        exact hbody_pre id (by simp only [definedVarsCom] at hid; exact hid)
+      have hrestDom := seCmd_domain_of_defined gconf { sconf with nextVarId := firstSpec.nextVarId }
+        firstSpec.outSymEnv specs vars md (Com.loop rep body) hrest_pre restSpec hrestSpec_eq
+      have hspecComposed_eq :
+          seqComposition gconf sconf (ComWithMD.mk md (Com.loop (rep+1) body)) firstSpec
+            restSpec = Except.ok spec := by
+        have h : seCmd gconf sconf symEnv specs (ComWithMD.mk md (Com.loop (rep+1) body)) =
+            seqComposition gconf sconf (ComWithMD.mk md (Com.loop (rep+1) body)) firstSpec
+              restSpec := by
+          simp only [seCmd, hfirstSpec_eq, hrestSpec_eq]
+        rw [← h]; exact heq
+      simp only [seqComposition, Except.ok.injEq] at hspecComposed_eq
+      have hout_eq : spec.outSymEnv = restSpec.outSymEnv := by rw [← hspecComposed_eq]
+      intro id
+      rw [hfirstDom id, hrestDom id, hout_eq]
+  | .loop 0 _body, _hpre =>
+      simp only [seCmd, Except.ok.injEq] at heq
+      intro id
+      rw [← heq]
+  | .func_call outs fname args, hpre =>
+      have h : seCmd gconf sconf symEnv specs (ComWithMD.mk md (Com.func_call outs fname args)) =
+          seFuncCall gconf sconf symEnv specs fname args outs := by simp only [seCmd]
+      rw [h] at heq
+      simp only [seFuncCall] at heq
+      cases hfs : fetchFuncSpec specs fname with
+      | error e => rw [hfs] at heq; simp at heq
+      | ok fspec =>
+      rw [hfs] at heq
+      simp only [] at heq
+      cases hargs : resolveSimpleExprsToSymValue symEnv args with
+      | error e => rw [hargs] at heq; simp at heq
+      | ok argVals =>
+      rw [hargs] at heq
+      simp only [] at heq
+      cases hflat : flattenArgVals fspec.params argVals with
+      | error e => rw [hflat] at heq; simp at heq
+      | ok inputParams =>
+      rw [hflat] at heq
+      simp only [] at heq
+      cases hsv : Corellzk2smt.SymExec.Basic.setVars symEnv outs
+          (mintFreshRets sconf.nextVarId fspec.rets).2.2 with
+      | error e => rw [hsv] at heq; simp at heq
+      | ok outSymEnv' =>
+      rw [hsv] at heq
+      simp only [Except.ok.injEq] at heq
+      have hspec_out : spec.outSymEnv = outSymEnv' := by rw [← heq]
+      intro id
+      rw [hspec_out, setVars_contains_iff symEnv outs _ outSymEnv' hsv id]
+      constructor
+      · intro h; exact Or.inr h
+      · rintro (hout | hsymc)
+        · exact hpre id (by
+            simp only [definedVarsCom]
+            exact mem_foldl_insert_var outs vars id hout)
+        · exact hsymc
+  | .assign out e, _hpre =>
+      simp [seCmd, seSimpleCmd] at heq
+  | .new_array out size, _hpre =>
+      simp [seCmd, seSimpleCmd] at heq
+  | .read_array out arr idx, _hpre =>
+      simp [seCmd, seSimpleCmd] at heq
+  | .write_array arr idx value, _hpre =>
+      simp [seCmd, seSimpleCmd] at heq
+  | .copy_array out arr, _hpre =>
+      simp [seCmd, seSimpleCmd] at heq
+termination_by (numOfLoopExpCom (ComWithMD.mk md cmd), sizeOfCom (ComWithMD.mk md cmd))
+decreasing_by
+  all_goals first
+    | (simp only [numOfLoopExpCom]; apply Prod.Lex.left; grind)
+    | (apply Prod.Lex.right; simp only [sizeOfCom]; grind)
+
+theorem seCmds_domain_of_defined {c : ZKConfig} (gconf : GlobalConfig c) (sconf : SymExecConfig c)
+    (symEnv : SymEnv c) (specs : List (FuncSpec c)) (vars : VarIDSet) (cmds : List (ComWithMD c))
+    (hpre : ∀ id, id ∈ definedVarsCmds vars cmds → symEnv.contains id)
+    (spec : CmdsSpec c)
+    (heq : seCmds gconf sconf symEnv specs cmds = Except.ok spec) :
+    ∀ id, symEnv.contains id ↔ spec.outSymEnv.contains id := by
+  cases cmds with
+  | nil =>
+      simp only [seCmds] at heq
+      injection heq with heq'
+      intro id
+      rw [← heq']
+  | cons cmd rest =>
+      cases cmd with
+      | mk md cmd' =>
+        have hcmd_pre : ∀ id, id ∈ definedVarsCom vars cmd' → symEnv.contains id :=
+          fun id hid => hpre id (by
+            simp only [definedVarsCmds]
+            exact definedVarsCmds_mono rest (definedVarsCom vars cmd') id hid)
+        cases hcmdSpec_eq : seCmd gconf sconf symEnv specs (ComWithMD.mk md cmd') with
+        | error e => simp [seCmds, hcmdSpec_eq] at heq
+        | ok cmdSpec =>
+        have hcmdDom := seCmd_domain_of_defined gconf sconf symEnv specs vars md cmd' hcmd_pre
+          cmdSpec hcmdSpec_eq
+        have hrest_pre : ∀ id, id ∈ definedVarsCmds vars rest → cmdSpec.outSymEnv.contains id := by
+          intro id hid
+          rw [← hcmdDom id]
+          exact hpre id (by
+            simp only [definedVarsCmds]
+            exact definedVarsCmds_subset_mono rest vars (definedVarsCom vars cmd')
+              (fun id' hid' => definedVarsCom_mono cmd' vars id' hid') id hid)
+        cases hcmdsSpec_eq : seCmds gconf { sconf with nextVarId := cmdSpec.nextVarId }
+            cmdSpec.outSymEnv specs rest with
+        | error e => simp [seCmds, hcmdSpec_eq, hcmdsSpec_eq] at heq
+        | ok cmdsSpec =>
+        have hrestDom := seCmds_domain_of_defined gconf
+          { sconf with nextVarId := cmdSpec.nextVarId } cmdSpec.outSymEnv specs vars rest
+          hrest_pre cmdsSpec hcmdsSpec_eq
+        have hspecComposed_eq :
+            seqComposition gconf sconf (ComWithMD.mk md cmd') cmdSpec cmdsSpec =
+              Except.ok spec := by
+          have h : seCmds gconf sconf symEnv specs (ComWithMD.mk md cmd' :: rest) =
+              seqComposition gconf sconf (ComWithMD.mk md cmd') cmdSpec cmdsSpec := by
+            simp only [seCmds, hcmdSpec_eq, hcmdsSpec_eq]
+          rw [← h]; exact heq
+        simp only [seqComposition, Except.ok.injEq] at hspecComposed_eq
+        have hout_eq : spec.outSymEnv = cmdsSpec.outSymEnv := by rw [← hspecComposed_eq]
+        intro id
+        rw [hcmdDom id, hrestDom id, hout_eq]
+termination_by (numOfLoopExpComs cmds, sizeOfComs cmds)
+decreasing_by
+  -- cross-call into seCmd_domain_of_defined, on the head `cmd'`
+  · have hcmds_eq : cmds = ComWithMD.mk md cmd' :: rest := by
+      rw [‹cmds = cmd :: rest›, ‹cmd = ComWithMD.mk md cmd'›]
+    rw [hcmds_eq]
+    have h1 : numOfLoopExpCom (ComWithMD.mk md cmd') ≤
+        numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by grind
+    rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
+    · apply Prod.Lex.left
+      simp only [numOfLoopExpComs]
+      exact h_less
+    · simp only [numOfLoopExpComs]
+      rw [← h_equal]
+      apply Prod.Lex.right
+      simp only [sizeOfComs]
+      grind
+  -- recursive call into seCmds_domain_of_defined itself, on `rest`
+  · have hcmds_eq : cmds = ComWithMD.mk md cmd' :: rest := by
+      rw [‹cmds = cmd :: rest›, ‹cmd = ComWithMD.mk md cmd'›]
+    have h1 : numOfLoopExpComs rest ≤
+        numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by grind
+    rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
+    · apply Prod.Lex.left
+      rw [hcmds_eq]
+      simp only [numOfLoopExpComs]
+      exact h_less
+    · rw [hcmds_eq]
+      simp only [numOfLoopExpComs]
+      rw [← h_equal]
+      apply Prod.Lex.right
+      simp only [sizeOfComs]
+      grind
+
+end
 
 end Corellzk2smt.SymExec.Lemmas
