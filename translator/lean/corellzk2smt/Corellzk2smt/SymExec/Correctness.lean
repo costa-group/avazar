@@ -72,162 +72,6 @@ theorem seFuncCall_prepend_indep {c : ZKConfig} (gconf : GlobalConfig c) (sconf 
       seFuncCall gconf sconf symEnv specs fname args outs := by
   simp only [seFuncCall, fetchFuncSpec_prepend_indep fspec_new specs fname hne]
 
-/-- If `fspec_new.name` isn't reachable from `p` at all (`fetchFunc` fails on it), then within
-    any `WellShapedCom`/`WellShapedCmds`-checked command tree against `p` (which requires every
-    `func_call` site to have `fetchFunc p fname` actually succeed), no `func_call`'s own `fname`
-    can ever equal `fspec_new.name` -- the two facts would force `fetchFunc p fspec_new.name` to
-    both succeed and fail. -/
-theorem funcCall_name_ne_of_unreachable {c : ZKConfig} (p : Prog c) (fspec_new : FuncSpec c)
-    (hunreach : ∀ r, fetchFunc p fspec_new.name ≠ Except.ok r)
-    (fname : FName) (md : FuncMD) (func : Func c) (p' : Prog c)
-    (hfetch : fetchFunc p fname = Except.ok (FuncWithMD.mk md func, p')) :
-    fspec_new.name ≠ fname := by
-  intro heq
-  exact hunreach (FuncWithMD.mk md func, p') (heq ▸ hfetch)
-
-mutual
-theorem seIfStmt_prepend_indep {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
-    (fspec_new : FuncSpec c) (hunreach : ∀ r, fetchFunc p fspec_new.name ≠ Except.ok r)
-    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
-    (md : CmdMD) (cond : Cond c) (tb eb : List (ComWithMD c))
-    (hshaped : WellShapedCom gconf p (Com.if_stmt cond tb eb)) :
-    seIfStmt gconf sconf symEnv (fspec_new :: specs) md cond tb eb =
-      seIfStmt gconf sconf symEnv specs md cond tb eb := by
-  obtain ⟨hshapedTb, hshapedEb⟩ := hshaped
-  have ihTb := seCmds_prepend_indep gconf p fspec_new hunreach sconf symEnv specs tb hshapedTb
-  have ihEb := seCmds_prepend_indep gconf p fspec_new hunreach sconf symEnv specs eb hshapedEb
-  simp only [seIfStmt, ihTb, ihEb, mergeIfBranches]
-termination_by (numOfLoopExpComs tb + numOfLoopExpComs eb, sizeOfComs tb + sizeOfComs eb)
-decreasing_by
-  · have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
-    rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
-    · exact Prod.Lex.left _ _ h_less
-    · rw [← h_equal]; exact Prod.Lex.right _ (sizeOfComs_a_lt_a_plus_b tb eb)
-  · have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
-    rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
-    · exact Prod.Lex.left _ _ h_less
-    · rw [← h_equal, ← Nat.add_comm]; exact Prod.Lex.right _ (sizeOfComs_a_lt_a_plus_b eb tb)
-
-theorem seCmd_prepend_indep {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
-    (fspec_new : FuncSpec c) (hunreach : ∀ r, fetchFunc p fspec_new.name ≠ Except.ok r)
-    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
-    (i : ComWithMD c) (hshaped : WellShapedCom gconf p (match i with | .mk _ cmd => cmd)) :
-    seCmd gconf sconf symEnv (fspec_new :: specs) i = seCmd gconf sconf symEnv specs i := by
-  match i, hshaped with
-  | .mk md cmd, hshaped =>
-    match cmd, hshaped with
-    | .if_stmt cond tb eb, hshaped =>
-        simp only [seCmd]
-        exact seIfStmt_prepend_indep gconf p fspec_new hunreach sconf symEnv specs md cond tb eb
-          hshaped
-    | .loop_exp repSExp body, hshaped =>
-        have hshapedBody : WellShapedCmds gconf p body := hshaped
-        simp only [seCmd]
-        cases tryEvalSimpleExprToFFValue symEnv repSExp with
-        | error e => rfl
-        | ok rep =>
-            exact seCmd_prepend_indep gconf p fspec_new hunreach sconf symEnv specs
-              (ComWithMD.mk md (Com.loop rep.val body)) hshapedBody
-    | .loop (rep + 1) body, hshaped =>
-        have hshapedBody : WellShapedCmds gconf p body := hshaped
-        simp only [seCmd]
-        have ihBody := seCmds_prepend_indep gconf p fspec_new hunreach sconf symEnv specs body
-          hshapedBody
-        rw [ihBody]
-        cases seCmds gconf sconf symEnv specs body with
-        | error e => rfl
-        | ok specFirstIter =>
-            have ihRest := seCmd_prepend_indep gconf p fspec_new hunreach
-              { sconf with nextVarId := specFirstIter.nextVarId } specFirstIter.outSymEnv specs
-              (ComWithMD.mk md (Com.loop rep body)) hshapedBody
-            simp only [seqComposition]
-            rw [ihRest]
-    | .loop 0 _body, _hshaped => simp only [seCmd]
-    | .func_call outs fname args, hshaped =>
-        obtain ⟨md', func, p', hfetch, _⟩ := hshaped
-        have hne : fspec_new.name ≠ fname :=
-          funcCall_name_ne_of_unreachable p fspec_new hunreach fname md' func p' hfetch
-        simp only [seCmd]
-        exact seFuncCall_prepend_indep gconf sconf symEnv fspec_new specs fname args outs hne
-    | .assign _ _, _hshaped => simp only [seCmd, seSimpleCmd]
-    | .new_array _ _, _hshaped => simp only [seCmd, seSimpleCmd]
-    | .read_array _ _ _, _hshaped => simp only [seCmd, seSimpleCmd]
-    | .write_array _ _ _, _hshaped => simp only [seCmd, seSimpleCmd]
-    | .copy_array _ _, _hshaped => simp only [seCmd, seSimpleCmd]
-termination_by (numOfLoopExpCom i, sizeOfCom i)
-decreasing_by
-  -- recursive call seIfStmt_prepend_indep
-  · simp only [numOfLoopExpCom]
-    apply Prod.Lex.right
-    simp only [sizeOfCom]
-    grind
-  -- the case of loop_exp
-  · simp only [numOfLoopExpCom]
-    apply Prod.Lex.left
-    grind
-  -- the case of loop with concrete repetitions -- first iteration
-  · simp only [numOfLoopExpCom]
-    apply Prod.Lex.right
-    simp only [sizeOfCom]
-    grind
-  -- the case of loop with concrete repetitions -- rest of iterations
-  · simp only [numOfLoopExpCom]
-    apply Prod.Lex.right
-    simp only [sizeOfCom]
-    grind
-
-theorem seCmds_prepend_indep {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
-    (fspec_new : FuncSpec c) (hunreach : ∀ r, fetchFunc p fspec_new.name ≠ Except.ok r)
-    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
-    (cmds : List (ComWithMD c)) (hshaped : WellShapedCmds gconf p cmds) :
-    seCmds gconf sconf symEnv (fspec_new :: specs) cmds = seCmds gconf sconf symEnv specs cmds := by
-  match cmds, hshaped with
-  | [], _hshaped => simp only [seCmds]
-  | cmd :: rest, hshaped =>
-    match cmd, hshaped with
-    | ComWithMD.mk md cmd', hshaped =>
-      obtain ⟨hshapedCmd, hshapedRest⟩ := hshaped
-      have ihCmd := seCmd_prepend_indep gconf p fspec_new hunreach sconf symEnv specs
-        (ComWithMD.mk md cmd') hshapedCmd
-      simp only [seCmds]
-      rw [ihCmd]
-      cases seCmd gconf sconf symEnv specs (ComWithMD.mk md cmd') with
-      | error e => rfl
-      | ok cmdSpec =>
-          have ihRest := seCmds_prepend_indep gconf p fspec_new hunreach
-            { sconf with nextVarId := cmdSpec.nextVarId } cmdSpec.outSymEnv specs rest hshapedRest
-          simp only [seqComposition]
-          rw [ihRest]
-termination_by (numOfLoopExpComs cmds, sizeOfComs cmds)
-decreasing_by
-  -- recursive call on cmd
-  · have h1 : numOfLoopExpCom (ComWithMD.mk md cmd') ≤
-        numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by
-      grind
-    rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
-    · apply Prod.Lex.left
-      simp only [numOfLoopExpComs]
-      exact h_less
-    · simp only [numOfLoopExpComs]
-      rw [← h_equal]
-      apply Prod.Lex.right
-      simp only [sizeOfComs]
-      grind
-  -- recursive call on rest
-  · have h1 : numOfLoopExpComs rest ≤
-        numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by
-      grind
-    rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
-    · apply Prod.Lex.left
-      simp only [numOfLoopExpComs]
-      exact h_less
-    · simp only [numOfLoopExpComs]
-      rw [← h_equal]
-      apply Prod.Lex.right
-      simp only [sizeOfComs]
-      grind
-end
-
 -- ---------------------------------------------------------------------------
 -- `seCmd`/`seCmds`/`seIfStmt`/`seFuncCall`'s output formula never directly calls a name that
 -- isn't reachable from `p` -- together with `evalFormula_names_below_indep`, this is what lets
@@ -422,6 +266,7 @@ theorem seIfStmt_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c
     (badName : String) (hunreach : ∀ r, fetchFunc p badName ≠ Except.ok r)
     (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
     (hspecs_wf : ∀ spec ∈ specs, spec.f.name = spec.name)
+    (hspecs_cover : ∀ fname', fname' ∈ specs.map (·.name) → fname' ∈ p.map funcWithMDName)
     (md : CmdMD) (cond : Cond c) (tb eb : List (ComWithMD c))
     (hshaped : WellShapedCom gconf p (Com.if_stmt cond tb eb))
     (spec : CmdsSpec c) (hspec_eq : seIfStmt gconf sconf symEnv specs md cond tb eb = Except.ok spec) :
@@ -443,9 +288,9 @@ theorem seIfStmt_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c
               rw [heb] at hspec_eq
               simp only [] at hspec_eq
               have ihTb := seCmds_names_below gconf p badName hunreach sconf symEnv specs
-                hspecs_wf tb hshapedTb tbSpec htb
+                hspecs_wf hspecs_cover tb hshapedTb tbSpec htb
               have ihEb := seCmds_names_below gconf p badName hunreach sconf symEnv specs
-                hspecs_wf eb hshapedEb ebSpec heb
+                hspecs_wf hspecs_cover eb hshapedEb ebSpec heb
               simp only [mergeIfBranches] at hspec_eq
               cases hg : encodeCond symEnv cond with
               | error e => rw [hg] at hspec_eq; simp at hspec_eq
@@ -471,12 +316,12 @@ theorem seIfStmt_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c
       cases condVal with
       | true =>
           simp only [↓reduceIte] at hspec_eq
-          exact seCmds_names_below gconf p badName hunreach sconf symEnv specs hspecs_wf tb
-            hshapedTb spec hspec_eq
+          exact seCmds_names_below gconf p badName hunreach sconf symEnv specs hspecs_wf
+            hspecs_cover tb hshapedTb spec hspec_eq
       | false =>
           simp only [Bool.false_eq_true, ↓reduceIte] at hspec_eq
-          exact seCmds_names_below gconf p badName hunreach sconf symEnv specs hspecs_wf eb
-            hshapedEb spec hspec_eq
+          exact seCmds_names_below gconf p badName hunreach sconf symEnv specs hspecs_wf
+            hspecs_cover eb hshapedEb spec hspec_eq
 termination_by (numOfLoopExpComs tb + numOfLoopExpComs eb, sizeOfComs tb + sizeOfComs eb)
 decreasing_by
   · have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
@@ -500,6 +345,7 @@ theorem seCmd_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     (badName : String) (hunreach : ∀ r, fetchFunc p badName ≠ Except.ok r)
     (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
     (hspecs_wf : ∀ spec ∈ specs, spec.f.name = spec.name)
+    (hspecs_cover : ∀ fname', fname' ∈ specs.map (·.name) → fname' ∈ p.map funcWithMDName)
     (i : ComWithMD c) (hshaped : WellShapedCom gconf p (match i with | .mk _ cmd => cmd))
     (spec : CmdsSpec c) (hspec_eq : seCmd gconf sconf symEnv specs i = Except.ok spec) :
     FormulaNamesBelow spec.f badName := by
@@ -508,8 +354,8 @@ theorem seCmd_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     match cmd, hshaped with
     | .if_stmt cond tb eb, hshaped =>
         simp only [seCmd] at hspec_eq
-        exact seIfStmt_names_below gconf p badName hunreach sconf symEnv specs hspecs_wf md cond
-          tb eb hshaped spec hspec_eq
+        exact seIfStmt_names_below gconf p badName hunreach sconf symEnv specs hspecs_wf
+          hspecs_cover md cond tb eb hshaped spec hspec_eq
     | .loop_exp repSExp body, hshaped =>
         have hshapedBody : WellShapedCmds gconf p body := hshaped
         simp only [seCmd] at hspec_eq
@@ -519,7 +365,7 @@ theorem seCmd_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
             rw [hrep] at hspec_eq
             simp only [] at hspec_eq
             exact seCmd_names_below gconf p badName hunreach sconf symEnv specs hspecs_wf
-              (ComWithMD.mk md (Com.loop rep.val body)) hshapedBody spec hspec_eq
+              hspecs_cover (ComWithMD.mk md (Com.loop rep.val body)) hshapedBody spec hspec_eq
     | .loop (rep + 1) body, hshaped =>
         have hshapedBody : WellShapedCmds gconf p body := hshaped
         simp only [seCmd] at hspec_eq
@@ -529,7 +375,7 @@ theorem seCmd_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
             rw [hfirst] at hspec_eq
             simp only [] at hspec_eq
             have ihFirst := seCmds_names_below gconf p badName hunreach sconf symEnv specs
-              hspecs_wf body hshapedBody specFirstIter hfirst
+              hspecs_wf hspecs_cover body hshapedBody specFirstIter hfirst
             cases hrest : seCmd gconf { sconf with nextVarId := specFirstIter.nextVarId }
                 specFirstIter.outSymEnv specs (ComWithMD.mk md (Com.loop rep body)) with
             | error msg => rw [hrest] at hspec_eq; simp at hspec_eq
@@ -538,7 +384,8 @@ theorem seCmd_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                 simp only [] at hspec_eq
                 have ihRest := seCmd_names_below gconf p badName hunreach
                   { sconf with nextVarId := specFirstIter.nextVarId } specFirstIter.outSymEnv specs
-                  hspecs_wf (ComWithMD.mk md (Com.loop rep body)) hshapedBody specRestIter hrest
+                  hspecs_wf hspecs_cover (ComWithMD.mk md (Com.loop rep body)) hshapedBody
+                  specRestIter hrest
                 simp only [seqComposition] at hspec_eq
                 injection hspec_eq with hspec_eq
                 simp only [FormulaNamesBelow, ← hspec_eq]
@@ -548,11 +395,7 @@ theorem seCmd_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
         injection hspec_eq with hspec_eq
         rw [← hspec_eq]
         exact default_names_below badName
-    | .func_call outs fname args, hshaped =>
-        obtain ⟨md', func, p', hfetch, _⟩ := hshaped
-        have hne : badName ≠ fname := by
-          intro heq
-          exact hunreach (FuncWithMD.mk md' func, p') (heq ▸ hfetch)
+    | .func_call outs fname args, _hshaped =>
         simp only [seCmd] at hspec_eq
         simp only [seFuncCall] at hspec_eq
         cases hfetchSpec : fetchFuncSpec specs fname with
@@ -560,6 +403,15 @@ theorem seCmd_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
         | ok fspec =>
             rw [hfetchSpec] at hspec_eq
             simp only [] at hspec_eq
+            obtain ⟨hspecname, hspecmem⟩ :=
+              fetchFuncSpec_sound specs fname fspec hfetchSpec
+            have hmem_specs : fname ∈ specs.map (·.name) := by
+              rw [← hspecname]; exact List.mem_map_of_mem hspecmem
+            obtain ⟨md', func, p', hfetch⟩ :=
+              fetchFunc_of_mem p fname (hspecs_cover fname hmem_specs)
+            have hne : badName ≠ fname := by
+              intro heq
+              exact hunreach (FuncWithMD.mk md' func, p') (heq ▸ hfetch)
             cases hargs : resolveSimpleExprsToSymValue symEnv args with
             | error e => rw [hargs] at hspec_eq; simp at hspec_eq
             | ok argVals =>
@@ -577,8 +429,6 @@ theorem seCmd_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                         rw [hsv] at hspec_eq
                         simp only [] at hspec_eq
                         injection hspec_eq with hspec_eq
-                        obtain ⟨hspecname, hspecmem⟩ :=
-                          fetchFuncSpec_sound specs fname fspec hfetchSpec
                         have hfname_eq : fspec.f.name = fname := by
                           rw [hspecs_wf fspec hspecmem, hspecname]
                         simp only [FormulaNamesBelow, ← hspec_eq]
@@ -616,6 +466,7 @@ theorem seCmds_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     (badName : String) (hunreach : ∀ r, fetchFunc p badName ≠ Except.ok r)
     (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
     (hspecs_wf : ∀ spec ∈ specs, spec.f.name = spec.name)
+    (hspecs_cover : ∀ fname', fname' ∈ specs.map (·.name) → fname' ∈ p.map funcWithMDName)
     (cmds : List (ComWithMD c)) (hshaped : WellShapedCmds gconf p cmds)
     (spec : CmdsSpec c) (hspec_eq : seCmds gconf sconf symEnv specs cmds = Except.ok spec) :
     FormulaNamesBelow spec.f badName := by
@@ -636,7 +487,7 @@ theorem seCmds_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
           rw [hcmd] at hspec_eq
           simp only [] at hspec_eq
           have ihCmd := seCmd_names_below gconf p badName hunreach sconf symEnv specs hspecs_wf
-            (ComWithMD.mk md cmd') hshapedCmd cmdSpec hcmd
+            hspecs_cover (ComWithMD.mk md cmd') hshapedCmd cmdSpec hcmd
           cases hrest : seCmds gconf { sconf with nextVarId := cmdSpec.nextVarId }
               cmdSpec.outSymEnv specs rest with
           | error e => rw [hrest] at hspec_eq; simp at hspec_eq
@@ -645,7 +496,7 @@ theorem seCmds_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
               simp only [] at hspec_eq
               have ihRest := seCmds_names_below gconf p badName hunreach
                 { sconf with nextVarId := cmdSpec.nextVarId } cmdSpec.outSymEnv specs hspecs_wf
-                rest hshapedRest cmdsSpec hrest
+                hspecs_cover rest hshapedRest cmdsSpec hrest
               simp only [seqComposition] at hspec_eq
               injection hspec_eq with hspec_eq
               simp only [FormulaNamesBelow, ← hspec_eq]

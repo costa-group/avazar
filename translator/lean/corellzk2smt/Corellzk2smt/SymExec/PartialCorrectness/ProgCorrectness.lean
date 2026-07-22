@@ -369,6 +369,8 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
           have hspec_wf := hspecs_wf spec hspec
           apply hBdisj f hfmem
           rw [hfeq, ← hspec_wf, ← heq, hfname_eq]
+        have hspecs_cover_here : ∀ fname'', fname'' ∈ specs.map (·.name) →
+            fname'' ∈ donePart.map funcWithMDName := fun _ h => hnames_corr ▸ h
         -- H_funcCall for (thisFunc :: donePart) / (fspec :: specs)
         have hHfc' : ∀ (sconf : SymExecConfig c) (fname' : FName) (args : List (SimpleExpr c))
             (outs : List VarID) (md' : FuncMD) (func'' : Func c) (p'' : Prog c),
@@ -393,7 +395,7 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
               (Func.mk name params rets body) donePart
               (by simp only [fetchFunc, BEq.rfl, ↓reduceIte])
               hnodup_head
-              (H_simple_holds gconf specs) hHfc hshaped hspecs_wf
+              (H_simple_holds gconf specs) hHfc hspecs_cover_here hshaped hspecs_wf
               fspec hseFunc_eq args outs (hrets_eq ▸ houtlen)
           · have hbeq : (name == fname') = false := by simpa using hcase
             simp only [hbeq, Bool.false_eq_true, ↓reduceIte] at hfetch
@@ -490,12 +492,13 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
                 (FuncWithMD.mk md (Func.mk name params rets body) :: donePart) specs name md
                 (Func.mk name params rets body) donePart
                 (by simp only [fetchFunc, BEq.rfl, ↓reduceIte])
-                (H_simple_holds gconf specs) hHfc hshaped fspec hseFunc_eq
+                (H_simple_holds gconf specs) hHfc hspecs_cover_here hshaped fspec hseFunc_eq
             obtain ⟨hspec_retsShape, _hnamesBelow, H_specCorrect⟩ :=
               seFunc_correct gconf (FuncWithMD.mk md (Func.mk name params rets body) :: donePart)
                 specs name md (Func.mk name params rets body) donePart
                 (by simp only [fetchFunc, BEq.rfl, ↓reduceIte])
-                hnodup_head (H_simple_holds gconf specs) hHfc hshaped hspecs_wf fspec hseFunc_eq
+                hnodup_head (H_simple_holds gconf specs) hHfc hspecs_cover_here hshaped hspecs_wf
+                fspec hseFunc_eq
             refine ⟨hparams_split_new, hspec_retsShape, ?_⟩
             simpa only [List.map_cons] using H_specCorrect
           · have hbeq : (name == fname') = false := by simpa using hcase

@@ -30,14 +30,34 @@ import Corellzk2smt.Language.Core.Semantics.BigStep
        `encodeCond symEnv cond` succeeding is *already* forced by `seIfStmt`'s own success (it
        fails via `mergeIfBranches` whenever `encodeCond` does), so it can be extracted directly
        from the success hypothesis instead of assumed up front via `encodeCond_defined`; and
-   (d) every `func_call` site names a function that actually exists in the (remaining) program,
-       called with the right `outs`/`rets` arity -- the one part of the call-site well-formedness
-       `seFuncCall_correct` (`SymExec/FuncCallCorrectness.lean`) needs that genuinely isn't implied
-       by `seFuncCall` succeeding (the completeness direction constructs a concrete execution from
-       an arbitrary satisfying assignment, with no prior success to read it back out of), now
-       phrased once here so `H_funcCall` (`SymExec/Correctness.lean`) can be discharged from it
-       instead of assumed unconditionally. Three things that used to be part of this clause turned
-       out to be unnecessary, each removed once actually checked rather than assumed necessary:
+   (d) [REMOVED 2026 -- see below] `func_call` sites used to additionally require the named
+       function to actually exist in the (remaining) program (`∃ md func p', fetchFunc p fname =
+       Except.ok (...) ∧ ...`) -- that existence part also turned out to be unnecessary, leaving
+       only the arity fact (`outs.length = rets.length`, now phrased as a plain conditional:
+       `∀ md func p', fetchFunc p fname = Except.ok (...) → outs.length = rets.length`, since
+       there's no longer an existence witness to hang an existential on). The elimination doesn't
+       come from `seFuncCall` succeeding *at this call site* (unlike (a)-(c) -- `H_funcCall`,
+       the hypothesis `seCmd_correct`'s `.func_call` case discharges from this, has to hold before
+       any success is known, since its own conclusion is itself conditioned on success). Instead
+       it comes from a *whole-program* invariant threaded in as a new hypothesis, `hspecs_cover :
+       ∀ fname', fname' ∈ specs.map (·.name) → fname' ∈ p.map funcWithMDName` (added to
+       `seCmd_correct`/`seCmds_correct`/`seIfStmt_correct`, `seFunc_correct` and friends, and
+       the `seCmd_names_below`/`seCmds_names_below`/`seIfStmt_names_below` family in
+       `SymExec/Correctness.lean`): every function whose spec has already been accumulated into
+       `specs` really is a function of the (remaining) program. `seCmd_correct`'s `.func_call` case
+       proves this by casing on `fetchFuncSpec specs fname` (a plain, non-monadic first step of
+       `seFuncCall`'s definition, decidable independent of the surrounding success): if it errors,
+       `seFuncCall` inherits the error and the goal is vacuous; if it succeeds with some `fspec`,
+       `fetchFuncSpec_sound` (`SymExec/Correctness.lean`) gives `fname ∈ specs.map (·.name)`,
+       `hspecs_cover` lifts that to `fname ∈ p.map funcWithMDName`, and `fetchFunc_of_mem`
+       (`Language/Core/Syntax/AST.lean`) turns that membership into the actual `fetchFunc`
+       witness -- at which point the arity fact above supplies the rest. `hspecs_cover` itself is
+       discharged, with no new proof content, at `seExecFuncs_loop_correct`'s level
+       (`SymExec/PartialCorrectness/ProgCorrectness.lean`) directly from the already-proven
+       `hnames_corr : specs.map (·.name) = donePart.map funcWithMDName` (an equality, hence
+       trivially a one-directional membership implication too). Three other things that used to be
+       part of this clause turned out unnecessary the same way, each removed once actually checked
+       rather than assumed necessary:
        - `outs.Nodup`: `EnvMatches_setVars` (`SymExec/FuncCallCorrectness.lean`) preserves
          `EnvMatches` across a repeated-`outs` call just fine, since both the concrete and symbolic
          `setVars` recurse over `outs` in the same left-to-right order and so resolve a repeat to
@@ -77,7 +97,7 @@ def WellShapedCom {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c) (cmd : Co
   | .loop_exp _rep body => WellShapedCmds gconf p body
   | .loop _rep body => WellShapedCmds gconf p body
   | .func_call outs fname _args =>
-      ∃ md func p', fetchFunc p fname = Except.ok (FuncWithMD.mk md func, p') ∧
+      ∀ md func p', fetchFunc p fname = Except.ok (FuncWithMD.mk md func, p') →
         match func with
         | Func.mk _ _ rets _ => outs.length = rets.length
   | _ => True

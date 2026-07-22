@@ -66,6 +66,7 @@ theorem seFunc_f_params_split {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog 
       TranslatesCorrectly gconf sconf specs
         (fun env => evalFuncCallCmd gconf p' fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs))
+    (hspecs_cover : ∀ fname'', fname'' ∈ specs.map (·.name) → fname'' ∈ p'.map funcWithMDName)
     (hshaped : WellShapedCmds gconf p' (match func with | Func.mk _ _ _ body => body))
     (fspec : FuncSpec c) (hseFunc_eq : seFunc gconf specs func = Except.ok fspec) :
     ∃ (retsOffset : Nat) (auxVarsList : List Var),
@@ -119,7 +120,7 @@ theorem seFunc_f_params_split {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog 
               exact mintFreshParams_contains_mono 0 params _ nv1 paramVars inSymEnv hmp id hzero
             obtain ⟨_hbs_in, hbs_mono, _hbs_fresh, _hbs_below,
               _hbs_outbelow, _hbs_outfresh, _hbs_sound, _hbs_complete⟩ :=
-              seCmds_correct gconf p' specs H_simple H_funcCall
+              seCmds_correct gconf p' specs H_simple H_funcCall hspecs_cover
                 (params.foldl (fun acc pm => acc.insert pm.name) emptyVarIDSet)
                 { nextVarId := nv1 } body hshaped inSymEnv hinSymEnv_below hbody_pre bodySpec hbs
             set paramVarSet : VarSet := paramVars.foldl (fun acc v => acc.insert v) emptyVarSet
@@ -196,6 +197,7 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
       TranslatesCorrectly gconf sconf specs
         (fun env => evalFuncCallCmd gconf p' fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs))
+    (hspecs_cover : ∀ fname'', fname'' ∈ specs.map (·.name) → fname'' ∈ p'.map funcWithMDName)
     (hshaped : WellShapedCmds gconf p' (match func with | Func.mk _ _ _ body => body))
     (hspecs_wf : ∀ spec ∈ specs, spec.f.name = spec.name)
     (fspec : FuncSpec c) (hseFunc_eq : seFunc gconf specs func = Except.ok fspec) :
@@ -273,7 +275,7 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
               exact mintFreshParams_contains_mono 0 params _ nv1 paramVars inSymEnv hmp id hzero
             obtain ⟨hbs_in, hbs_mono, hbs_fresh, hbs_below,
               hbs_outbelow, hbs_outfresh, hbs_sound, hbs_complete⟩ :=
-              seCmds_correct gconf p' specs H_simple H_funcCall
+              seCmds_correct gconf p' specs H_simple H_funcCall hspecs_cover
                 (params.foldl (fun acc pm => acc.insert pm.name) emptyVarIDSet)
                 { nextVarId := nv1 } body hshaped inSymEnv hinSymEnv_below hbody_pre bodySpec hbs
             have hcore : ∀ (argVals : List (Value c)), ValuesMatchParams argVals params →
@@ -319,7 +321,7 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
             · intro badName hunreach
               show FormulaNamesBelow (FFFormula.and bodySpec.f retEqFormula) badName
               exact ⟨seCmds_names_below gconf p' badName hunreach { nextVarId := nv1 } inSymEnv
-                  specs hspecs_wf body hshaped bodySpec hbs,
+                  specs hspecs_wf hspecs_cover body hshaped bodySpec hbs,
                 mintFreshRetsWithEq_names_below bodySpec.nextVarId bodySpec.outSymEnv rets nv2
                   retVars retBinds retEqFormula hmr badName⟩
             · intro argVals hargVals
@@ -1090,6 +1092,7 @@ theorem seFuncCall_correct_via_seFunc {c : ZKConfig} (gconf : GlobalConfig c) (p
       TranslatesCorrectly gconf sconf specs
         (fun env => evalFuncCallCmd gconf p' fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs))
+    (hspecs_cover : ∀ fname'', fname'' ∈ specs.map (·.name) → fname'' ∈ p'.map funcWithMDName)
     (hshaped : WellShapedCmds gconf p' (match func with | Func.mk _ _ _ body => body))
     (hspecs_wf : ∀ spec ∈ specs, spec.f.name = spec.name)
     (fspec : FuncSpec c) (hseFunc_eq : seFunc gconf specs func = Except.ok fspec)
@@ -1107,7 +1110,7 @@ theorem seFuncCall_correct_via_seFunc {c : ZKConfig} (gconf : GlobalConfig c) (p
       have hspec_eq : fetchFuncSpec (fspec :: specs) fname = Except.ok fspec := by
         simp [fetchFuncSpec, hfname, hname_eq]
       obtain ⟨hspec_retsShape, _hnamesBelow, H_specCorrect⟩ := seFunc_correct gconf p specs fname
-        md (Func.mk name params rets body) p' hfetch hnodup_p H_simple H_funcCall
+        md (Func.mk name params rets body) p' hfetch hnodup_p H_simple H_funcCall hspecs_cover
         hshaped hspecs_wf fspec hseFunc_eq
       exact seFuncCall_correct gconf p (fspec :: specs) sconf fname args outs fspec hspec_eq
         houts_len hspec_retsShape H_specCorrect
