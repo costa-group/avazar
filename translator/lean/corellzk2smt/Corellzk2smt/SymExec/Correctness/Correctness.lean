@@ -1,12 +1,12 @@
-import Corellzk2smt.SymExec.PartialCorrectness.Lemmas
+import Corellzk2smt.SymExec.Correctness.Lemmas
 import Corellzk2smt.Language.Core.Analysis.WellShaped
-import Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
+import Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
 
 /-
 This file merges what used to be two files: `SymExec/Correctness.lean` ("shared machinery" for
 `seCmd`/`seCmds`/`seIfStmt`/`seFuncCall` correctness, not stated in terms of `TranslatesCorrectly`
 at all -- `evalFuncCallCmd`, the `_prepend_indep`/`_names_below` families, `noop_spec_correct`,
-`seqComposition_correct`, `fetchFuncSpec_sound`, etc.) and `SymExec/PartialCorrectness/
+`seqComposition_correct`, `fetchFuncSpec_sound`, etc.) and `SymExec/Correctness/
 Correctness.lean` (the actual `seIfStmt_correct`/`seCmd_correct`/`seCmds_correct` theorems built on
 top of it). They were originally separate because the shared machinery was meant to be reusable by
 both an unconditional and a conditional (`TranslatesCorrectly`) formalization; the unconditional one
@@ -58,7 +58,7 @@ this file manufactures the witness on the spot via `trivialWSCom`/`trivialWSCmds
 (`Language/Core/Analysis/WellShaped.lean`) instead of proving one, so nothing further up the chain
 is burdened by this -- it's purely an internal implementation detail of this one file's proof.
 -/
-namespace Corellzk2smt.SymExec.PartialCorrectness.Correctness
+namespace Corellzk2smt.SymExec.Correctness.Correctness
 
 open Corellzk2smt.Config
 open Corellzk2smt.Language.Core.Syntax.AST
@@ -71,8 +71,8 @@ open Corellzk2smt.SymExec.BigStep
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
-open Corellzk2smt.SymExec.PartialCorrectness.Lemmas
-open Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
+open Corellzk2smt.SymExec.Correctness.Lemmas
+open Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
 
 -- ---------------------------------------------------------------------------
 -- `seCmd`/`seCmds`/`seIfStmt`/`seFuncCall`'s symbolic *output* is unaffected by prepending a
@@ -1475,4 +1475,4 @@ decreasing_by
 end
 
 
-end Corellzk2smt.SymExec.PartialCorrectness.Correctness
+end Corellzk2smt.SymExec.Correctness.Correctness

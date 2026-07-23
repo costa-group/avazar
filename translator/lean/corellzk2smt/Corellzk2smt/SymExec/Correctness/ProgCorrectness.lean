@@ -1,4 +1,4 @@
-import Corellzk2smt.SymExec.PartialCorrectness.FuncCorrectness
+import Corellzk2smt.SymExec.Correctness.FuncCorrectness
 import Corellzk2smt.Language.Core.Analysis.DefinedVars
 
 /-
@@ -9,7 +9,7 @@ recursion -- `seExecFuncs_loop_specs_suffix` (the spec accumulator only ever gro
 and `seExecFuncs_loop_params_split` (every macro's `params : List Var` field decomposes into a
 params range / a rets range / an opaque aux list, exposing `seFunc_f_params_split_basic`'s per-
 function fact at the whole-program level), none of it stated in terms of `TranslatesCorrectly`)
-and `SymExec/PartialCorrectness/ProgCorrectness.lean` (`seExecFuncs_loop_correct`/
+and `SymExec/Correctness/ProgCorrectness.lean` (`seExecFuncs_loop_correct`/
 `seExecFuncs_correct`, and the final top-level theorem `seExecProg_call_correct`, built on top).
 They were separate because the shared machinery was meant to be reusable by both an unconditional
 and a conditional (`TranslatesCorrectly`) formalization; the unconditional one was deleted once
@@ -18,7 +18,7 @@ one file/namespace now that there's only one consumer.
 
 Partial-correctness analogue of whole-program correctness for `seExecFuncs`/`seExecProg`, built on
 the conditional `seFunc_correct`/`seFuncCall_correct_via_seFunc` (earlier in this same file, was
-`PartialCorrectness/FuncCorrectness.lean`).
+`Correctness/FuncCorrectness.lean`).
 
 Three genuine (not merely mechanical) changes from the old file, per the session's investigation
 into what the conditional `TranslatesCorrectly` actually buys at the whole-program level:
@@ -41,7 +41,7 @@ into what the conditional `TranslatesCorrectly` actually buys at the whole-progr
    they added nothing `WellShapedCmds` alone didn't already say. `WellShapedCom`/`WellShapedCmds`
    themselves (`Language/Core/Analysis/WellShaped.lean`) are still *defined* -- pure structural
    recursion reducing to `True` for every command/program -- and still threaded as real parameters
-   through `PartialCorrectness/Correctness.lean`'s `seIfStmt_correct`/`seCmd_correct`/
+   through `Correctness/Correctness.lean`'s `seIfStmt_correct`/`seCmd_correct`/
    `seCmds_correct` (a `mutual` block whose termination proof turned out to be sensitive to that
    exact parameter/match shape -- see that file's own header and `feedback_lean_slow_build_
    diagnosis` for why it's not worth touching). This file's own calls into `FuncCorrectness.lean`
@@ -56,7 +56,7 @@ into what the conditional `TranslatesCorrectly` actually buys at the whole-progr
    turned out to be false as originally stated (blanket-quantified over arbitrary, unrelated
    command lists/environments), and both are now discharged internally instead:
    - `H_shape`'s correctly-scoped, per-if-statement replacement is derived inline inside
-     `seIfStmt_correct` (`PartialCorrectness/Correctness.lean`), straight from `mergeSymEnv`'s own
+     `seIfStmt_correct` (`Correctness/Correctness.lean`), straight from `mergeSymEnv`'s own
      success via `sameShape_of_symValMatches` (`SymExec/Lemmas.lean`).
    - `H_domain`'s replacement, `seCmds_domain_of_defined`/`seCmd_domain_of_defined`/
      `seIfStmt_domain_of_defined` (`SymExec/Lemmas.lean`), needs an extra premise (every variable
@@ -64,7 +64,7 @@ into what the conditional `TranslatesCorrectly` actually buys at the whole-progr
      `definedVarsCom`/`definedVarsCmds`, `Language/Core/Analysis/DefinedVars.lean`) -- so
      `seCmd_correct`/`seCmds_correct`/`seIfStmt_correct` gained a `vars : VarIDSet` parameter and
      their conclusion changed from plain `TranslatesCorrectly` to `TranslatesCorrectlyGiven ...
-     guard ...` (`PartialCorrectness/Lemmas.lean`), threading that premise through their own
+     guard ...` (`Correctness/Lemmas.lean`), threading that premise through their own
      recursion. `seFunc_correct` (earlier in this same file) discharges the premise itself, using
      `zeroSymEnv_contains`/`mintFreshParams_contains_mono` (also earlier in this same file) to
      show its own `inSymEnv` construction already satisfies it -- so nothing needs threading any
@@ -84,7 +84,7 @@ into what the conditional `TranslatesCorrectly` actually buys at the whole-progr
    proved was either subsumed by `seExecFuncs_correct` or re-derived independently anyway.
 -/
 
-namespace Corellzk2smt.SymExec.PartialCorrectness.ProgCorrectness
+namespace Corellzk2smt.SymExec.Correctness.ProgCorrectness
 
 open Corellzk2smt.Config
 open Corellzk2smt.Language.Core.Syntax.AST
@@ -97,10 +97,10 @@ open Corellzk2smt.SymExec.BigStep
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
-open Corellzk2smt.SymExec.PartialCorrectness.Lemmas
-open Corellzk2smt.SymExec.PartialCorrectness.Correctness
-open Corellzk2smt.SymExec.PartialCorrectness.FuncCorrectness
-open Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
+open Corellzk2smt.SymExec.Correctness.Lemmas
+open Corellzk2smt.SymExec.Correctness.Correctness
+open Corellzk2smt.SymExec.Correctness.FuncCorrectness
+open Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
 
 /-- `seFunc`'s output spec's macro name (`fspec.f.name`) is exactly the translated function's own
     name -- mirrors `seFunc_eq_shape`'s exact proof shape (same unfolding sequence), just also
@@ -1484,4 +1484,4 @@ theorem seExecProg_call_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Pro
           hauxBool_len hauxDisjoint H_specCorrect argVals hshape_arg retVals hevalFC
         exact ⟨assign, hcs_macros ▸ hLHS, heq1, heq2⟩
 
-end Corellzk2smt.SymExec.PartialCorrectness.ProgCorrectness
+end Corellzk2smt.SymExec.Correctness.ProgCorrectness

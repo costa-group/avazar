@@ -1,11 +1,11 @@
-import Corellzk2smt.SymExec.PartialCorrectness.Lemmas
+import Corellzk2smt.SymExec.Correctness.Lemmas
 
 /-
 This file merges what used to be two files: `SymExec/FuncCallCorrectness.lean` ("shared
 machinery" for `seFuncCall` correctness, array-general -- callee params/rets may be
 `.array`-typed, flattened via `flattenArgVals`/`flattenSymValuesParams`: the
 `constifyMacroCallParam`/`mintFreshRets`/`mintFreshAuxParams` families and their many supporting
-lemmas, none of it stated in terms of `TranslatesCorrectly`) and `SymExec/PartialCorrectness/
+lemmas, none of it stated in terms of `TranslatesCorrectly`) and `SymExec/Correctness/
 FuncCallCorrectness.lean` (the actual `seFuncCall_correct` theorem built on top of it). They were
 separate because the shared machinery was meant to be reusable by both an unconditional and a
 conditional (`TranslatesCorrectly`) formalization; the unconditional one was deleted once the
@@ -22,7 +22,7 @@ surrounding `TranslatesCorrectly` is conditional or not, it's all just facts abo
 `injection`/`subst` from `hspec_witness` against the freshly-computed `hseFuncCall_eq`, instead of
 supplying the same literal as an existential witness).
 -/
-namespace Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
+namespace Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
 
 open Corellzk2smt.Config
 open Corellzk2smt.Language.Core.Syntax.AST
@@ -33,7 +33,7 @@ open Corellzk2smt.SymExec.BigStep
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
-open Corellzk2smt.SymExec.PartialCorrectness.Lemmas
+open Corellzk2smt.SymExec.Correctness.Lemmas
 
 /-- Replace every `.var`-referencing macro-call argument with a `.const` holding whatever
     value it currently denotes under `assign` -- doesn't change what `newAssignment'` builds,
@@ -2788,4 +2788,4 @@ theorem seFuncCall_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
   subst hspec2
   exact ⟨rfl, hmono, hfresh, hbelowProof, houtbelow, houtfresh, hsound, hcomplete⟩
 
-end Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
+end Corellzk2smt.SymExec.Correctness.FuncCallCorrectness

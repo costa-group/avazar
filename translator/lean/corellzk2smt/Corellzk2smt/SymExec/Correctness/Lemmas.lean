@@ -13,13 +13,13 @@ This file merges what used to be two files: `SymExec/Lemmas.lean` (the bulk of t
 execution correctness support library -- environment/assignment correspondence (`EnvMatches`,
 `agreesOnFF`/`agreesOnBool`), freshness/domain bookkeeping, `mergeSymEnv`'s own correctness, and
 many more structural lemmas, none of it stated in terms of `TranslatesCorrectly`) and
-`SymExec/PartialCorrectness/Lemmas.lean` (the `TranslatesCorrectly`/`TranslatesCorrectlyGiven`
+`SymExec/Correctness/Lemmas.lean` (the `TranslatesCorrectly`/`TranslatesCorrectlyGiven`
 definitions themselves). They were separate because the shared library was meant to be reusable by
 both an unconditional and a conditional (`TranslatesCorrectly`) formalization; the unconditional
 one was deleted once the conditional one fully superseded it, leaving the split purely historical
 -- merged back into one file/namespace now that there's only one consumer (confirmed via import
 graph: nothing in the actual symbolic-execution implementation, `SymExec/Basic.lean`/`BigStep.lean`
-etc., ever imports this file -- only the `PartialCorrectness/*` correctness proofs do).
+etc., ever imports this file -- only the `Correctness/*` correctness proofs do).
 
 Partial-correctness reformulation of `TranslatesCorrectly` (defined below, alongside everything it
 depends on): the original required `symbolic` to *always* succeed (an unconditional,
@@ -43,13 +43,13 @@ the `symEnv` in question (`∀ spec, symbolic symEnv = Except.ok spec → ...`).
    becomes a genuine `sorry`-free theorem -- one that automatically says something stronger, with
    no restatement needed anywhere downstream, as more of the stub gets implemented.
 
-See `PartialCorrectness/ProgCorrectness.lean`'s header for the full rationale, including which
+See `Correctness/ProgCorrectness.lean`'s header for the full rationale, including which
 parts of the old development (`EnvMatches`, `agreesOnFF`/`agreesOnBool`, `mergeSymEnv`'s own
 correctness, `seqComposition_correct`, `noop_spec_correct`, ...) are orthogonal to this change and
 get reused unchanged (now living earlier in this same file).
 -/
 
-namespace Corellzk2smt.SymExec.PartialCorrectness.Lemmas
+namespace Corellzk2smt.SymExec.Correctness.Lemmas
 
 open Corellzk2smt.Config (GlobalConfig)
 open Corellzk2smt.Language.Core.Syntax.AST
@@ -4776,7 +4776,7 @@ theorem encodeCond_defined {c : ZKConfig} (symEnv : SymEnv c) (cond : Cond c)
 -- copied verbatim), but proves a much narrower fact (no `EnvMatches`/soundness/completeness
 -- bookkeeping needed) so it stands alone rather than reusing that induction.
 --
--- NOT YET WIRED IN: `H_domain` in `PartialCorrectness/Correctness.lean`/`FuncCorrectness.lean`/
+-- NOT YET WIRED IN: `H_domain` in `Correctness/Correctness.lean`/`FuncCorrectness.lean`/
 -- `ProgCorrectness.lean` still remains a permanently-assumed hypothesis, unchanged. Actually
 -- replacing it would mean threading a `vars`/precondition parameter (mirroring this theorem's
 -- own `vars`/`hpre`) through `seCmd_correct`/`seCmds_correct`/`seIfStmt_correct`'s *existing*
@@ -5120,7 +5120,7 @@ def TranslatesCorrectly {c : ZKConfig} (gconf : GlobalConfig c) (sconf : SymExec
 
 /-- `TranslatesCorrectly`, but additionally conditioned on an extra `guard symEnv` hypothesis
     (alongside the existing `varSetBelow`/success ones) before the payload has to hold. Used by
-    `seCmd_correct`/`seCmds_correct`/`seIfStmt_correct` (`PartialCorrectness/Correctness.lean`) to
+    `seCmd_correct`/`seCmds_correct`/`seIfStmt_correct` (`Correctness/Correctness.lean`) to
     state their domain-preservation precondition (`∀ id, id ∈ definedVarsCmds vars cmds →
     symEnv.contains id`, from `Language/Core/Analysis/DefinedVars.lean`) -- the replacement for
     the old, permanently-assumed (and, as stated, false) `H_domain` hypothesis. `TranslatesCorrectly
@@ -5157,4 +5157,4 @@ theorem TranslatesCorrectlyGiven_of_TranslatesCorrectly {c : ZKConfig} (gconf : 
   exact h symEnv hbelow spec hspec_eq
 
 
-end Corellzk2smt.SymExec.PartialCorrectness.Lemmas
+end Corellzk2smt.SymExec.Correctness.Lemmas

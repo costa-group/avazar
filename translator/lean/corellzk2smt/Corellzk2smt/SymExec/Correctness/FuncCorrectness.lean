@@ -1,7 +1,7 @@
-import Corellzk2smt.SymExec.PartialCorrectness.Correctness
-import Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
+import Corellzk2smt.SymExec.Correctness.Correctness
+import Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
 import Corellzk2smt.Language.Core.Analysis.DefinedVars
-import Corellzk2smt.SymExec.PartialCorrectness.Lemmas
+import Corellzk2smt.SymExec.Correctness.Lemmas
 
 /-
 This file merges what used to be two files: `SymExec/FuncCorrectness.lean` ("shared machinery"
@@ -9,7 +9,7 @@ for `seFunc` correctness, array-general -- function params/rets may be `.array`-
 `mintFreshParam`/`mintFreshParams`/`mintFreshRetsWithEq` families,
 `EnvMatches_mintFreshParams_bindInParams_general`, `getOutParamsValues_construct_general`,
 `fetchFunc_name_eq`/`seFunc_eq_shape`, and their many supporting lemmas, none of it stated in
-terms of `TranslatesCorrectly`) and `SymExec/PartialCorrectness/FuncCorrectness.lean` (the actual
+terms of `TranslatesCorrectly`) and `SymExec/Correctness/FuncCorrectness.lean` (the actual
 `seFunc_correct`/`seFuncCall_correct_via_seFunc` theorems built on top of it). They were separate
 because the shared machinery was meant to be reusable by both an unconditional and a conditional
 (`TranslatesCorrectly`) formalization; the unconditional one was deleted once the conditional one
@@ -24,7 +24,7 @@ a fact the bare `seFunc` definition doesn't encode syntactically). Both are stil
 different callers in `ProgCorrectness.lean`.
 -/
 
-namespace Corellzk2smt.SymExec.PartialCorrectness.FuncCorrectness
+namespace Corellzk2smt.SymExec.Correctness.FuncCorrectness
 
 open Corellzk2smt.Config
 open Corellzk2smt.Language.Core.Syntax.AST
@@ -37,9 +37,9 @@ open Corellzk2smt.SymExec.BigStep
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
-open Corellzk2smt.SymExec.PartialCorrectness.Lemmas
-open Corellzk2smt.SymExec.PartialCorrectness.Correctness
-open Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
+open Corellzk2smt.SymExec.Correctness.Lemmas
+open Corellzk2smt.SymExec.Correctness.Correctness
+open Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
 
 /-- `mintFreshParam` mints exactly `typeSize type` consecutive fresh `.ffv`s, in closed form --
     unconditionally (unlike the old FF-only version, `mintFreshParam` never errors any more). -/
@@ -2923,7 +2923,7 @@ theorem seFunc_eq_shape {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (F
     some *other* contiguous range starting at an (unexposed, existentially-hidden) offset, and
     everything else is an opaque `auxVarsList` whose ff/bool split matches `numAuxFFVars`/
     `numAuxBoolVars`. Needed to decode an arbitrary `Assignment` back into `argVals`/`retVals`/
-    `auxFF`/`auxBool` at the whole-program level (`PartialCorrectness/ProgCorrectness.lean`),
+    `auxFF`/`auxBool` at the whole-program level (`Correctness/ProgCorrectness.lean`),
     without needing to inspect `seFunc_correct`'s ~900-line proof directly. -/
 theorem seFunc_f_params_split_basic {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
     (name : FName) (params rets : List Param) (body : List (ComWithMD c)) (fspec : FuncSpec c)
@@ -4064,4 +4064,4 @@ theorem seFuncCall_correct_via_seFunc {c : ZKConfig} (gconf : GlobalConfig c) (p
       exact seFuncCall_correct gconf p (fspec :: specs) sconf fname args outs fspec hspec_eq
         hspec_retsShape H_specCorrect
 
-end Corellzk2smt.SymExec.PartialCorrectness.FuncCorrectness
+end Corellzk2smt.SymExec.Correctness.FuncCorrectness

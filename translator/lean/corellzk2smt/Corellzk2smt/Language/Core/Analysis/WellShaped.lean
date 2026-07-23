@@ -20,7 +20,7 @@ import Corellzk2smt.Language.Core.Semantics.BigStep
 
    Kept around (rather than deleted, and every call site's `hshaped`/`hwsp` parameter along with
    them) for a purely practical reason: the mutual, well-founded-recursive proofs in
-   `SymExec/PartialCorrectness/Correctness.lean` (`seIfStmt_correct`/`seCmd_correct`/
+   `SymExec/Correctness/Correctness.lean` (`seIfStmt_correct`/`seCmd_correct`/
    `seCmds_correct`) turn out to be extremely sensitive to their own case-split/parameter shape --
    removing the `hshaped` parameter and its `match cmd, hshaped with`-style destructuring from
    those specific proofs (confirmed via careful bisection against the git history) made Lean's
@@ -31,7 +31,7 @@ import Corellzk2smt.Language.Core.Semantics.BigStep
    `_names_below`/`_prepend_indep`-style family in `SymExec/Correctness.lean`) keep their
    `hshaped`/`WellShapedCom`/`WellShapedCmds` parameters completely unchanged. What's actually
    removed is the *assumption burden* on every caller: every external call site (in
-   `SymExec/PartialCorrectness/FuncCorrectness.lean` and `ProgCorrectness.lean`) now manufactures
+   `SymExec/Correctness/FuncCorrectness.lean` and `ProgCorrectness.lean`) now manufactures
    the (trivially provable) witness on the spot via `trivialWSCom`/`trivialWSCmds` below, instead
    of requiring a caller-supplied proof threaded all the way from the top of the program. -/
 
