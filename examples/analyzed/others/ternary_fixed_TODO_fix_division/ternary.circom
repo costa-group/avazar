@@ -20,7 +20,7 @@ template Num2Ternary(n) {
 }
 
 
-template Num2Bits(https://as.com/futbol/atletico-de-madrid/n) {
+template Num2Bits(n) {
     signal input in;
     signal output out[n];
     var lc1=0;
