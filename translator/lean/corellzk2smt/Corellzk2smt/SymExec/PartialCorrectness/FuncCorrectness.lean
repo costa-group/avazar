@@ -37,10 +37,9 @@ open Corellzk2smt.SymExec.BigStep
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
-open Corellzk2smt.SymExec.Lemmas
+open Corellzk2smt.SymExec.PartialCorrectness.Lemmas
 open Corellzk2smt.SymExec.PartialCorrectness.Correctness
 open Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
-open Corellzk2smt.SymExec.PartialCorrectness.Lemmas
 
 /-- `mintFreshParam` mints exactly `typeSize type` consecutive fresh `.ffv`s, in closed form --
     unconditionally (unlike the old FF-only version, `mintFreshParam` never errors any more). -/

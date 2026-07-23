@@ -1,4 +1,3 @@
-import Corellzk2smt.SymExec.Lemmas
 import Corellzk2smt.SymExec.PartialCorrectness.Lemmas
 
 /-
@@ -34,7 +33,6 @@ open Corellzk2smt.SymExec.BigStep
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
-open Corellzk2smt.SymExec.Lemmas
 open Corellzk2smt.SymExec.PartialCorrectness.Lemmas
 
 /-- Replace every `.var`-referencing macro-call argument with a `.const` holding whatever

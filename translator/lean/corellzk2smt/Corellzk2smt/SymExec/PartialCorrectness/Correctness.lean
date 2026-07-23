@@ -1,6 +1,5 @@
-import Corellzk2smt.SymExec.Lemmas
-import Corellzk2smt.Language.Core.Analysis.WellShaped
 import Corellzk2smt.SymExec.PartialCorrectness.Lemmas
+import Corellzk2smt.Language.Core.Analysis.WellShaped
 import Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
 
 /-
@@ -72,9 +71,8 @@ open Corellzk2smt.SymExec.BigStep
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
-open Corellzk2smt.SymExec.Lemmas
-open Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
 open Corellzk2smt.SymExec.PartialCorrectness.Lemmas
+open Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
 
 -- ---------------------------------------------------------------------------
 -- `seCmd`/`seCmds`/`seIfStmt`/`seFuncCall`'s symbolic *output* is unaffected by prepending a

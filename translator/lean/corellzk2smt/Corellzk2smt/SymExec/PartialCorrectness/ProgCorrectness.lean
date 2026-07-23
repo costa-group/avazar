@@ -97,11 +97,10 @@ open Corellzk2smt.SymExec.BigStep
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
-open Corellzk2smt.SymExec.Lemmas
+open Corellzk2smt.SymExec.PartialCorrectness.Lemmas
 open Corellzk2smt.SymExec.PartialCorrectness.Correctness
 open Corellzk2smt.SymExec.PartialCorrectness.FuncCorrectness
 open Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
-open Corellzk2smt.SymExec.PartialCorrectness.Lemmas
 
 /-- `seFunc`'s output spec's macro name (`fspec.f.name`) is exactly the translated function's own
     name -- mirrors `seFunc_eq_shape`'s exact proof shape (same unfolding sequence), just also
