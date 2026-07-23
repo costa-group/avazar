@@ -34,22 +34,21 @@ into what the conditional `TranslatesCorrectly` actually buys at the whole-progr
    statement of `TranslatesCorrectly` for `seSimpleCmd`/`evalSimpleCmd` instead of ever unfolding
    `seSimpleCmd` directly to reach its error case.
 
-2. [REMOVED 2026] `WellShapedProg`/`WellShapedProgBodies` and every `hshaped`/`hwsp` *parameter*
-   are gone from this file's whole public API (`seExecFuncs_loop_correct`/`seExecFuncs_correct`
-   down to `seExecProg_call_correct`) -- no caller anywhere has to prove or thread down a
-   well-shapedness fact. `WellShapedProg` (whole-program name-uniqueness + per-function shape) and
-   `WellShapedProgBodies` (the shape-only remainder) are both gone as *definitions* too, since
-   they added nothing `WellShapedCmds` alone didn't already say. `WellShapedCom`/`WellShapedCmds`
-   themselves (`Language/Core/Analysis/WellShaped.lean`) are still *defined* -- pure structural
-   recursion reducing to `True` for every command/program -- and still threaded as real parameters
-   through `Correctness/Correctness.lean`'s `seIfStmt_correct`/`seCmd_correct`/
-   `seCmds_correct` (a `mutual` block whose termination proof turned out to be sensitive to that
-   exact parameter/match shape -- see that file's own header and `feedback_lean_slow_build_
-   diagnosis` for why it's not worth touching). This file's own calls into `FuncCorrectness.lean`
-   no longer need to supply anything, since `FuncCorrectness.lean` manufactures the (trivially
-   provable) witness itself via `trivialWSCmds` at the point of use. Whole-program pairwise
-   function-name uniqueness is given directly by `hasDupFuncNames` (already threaded into every
-   relevant theorem, see `FuncCorrectness.lean`/`FuncCallCorrectness.lean`);
+2. [REMOVED 2026] `WellShapedCom`/`WellShapedCmds`/`WellShapedProg`/`WellShapedProgBodies` and
+   every `hshaped`/`hwsp` *parameter* are gone entirely -- both the definitions themselves
+   (`Language/Core/Analysis/WellShaped.lean` deleted) and every parameter threaded from them, all
+   the way from `seIfStmt_correct`/`seCmd_correct`/`seCmds_correct` (`Correctness/Lemmas.lean`'s
+   mutual block) up through `FuncCorrectness.lean` to this file's own
+   `seExecFuncs_loop_correct`/`seExecFuncs_correct`/`seExecProg_call_correct` -- no caller anywhere
+   has to prove or thread down a well-shapedness fact. The predicate had been kept around
+   (parameter still real, but always trivially provable) past the point it stopped asserting
+   anything, specifically because removing it from that one mutual block previously triggered a
+   severe elaborator blowup (see `feedback_lean_slow_build_diagnosis`); the actual fix turned out
+   to be replacing a few `by grind` calls inside that block's `decreasing_by` (proving simple facts
+   like `a ≤ a + b`) with direct proof terms once the surrounding context got large enough for
+   `grind`'s search to blow up -- not a fundamental obstruction to removing the parameter itself.
+   Whole-program pairwise function-name uniqueness is given directly by `hasDupFuncNames` (already
+   threaded into every relevant theorem, see `FuncCorrectness.lean`/`FuncCallCorrectness.lean`);
    `hasDupFuncNames_cons_disjoint` (below) recovers the one specific disjointness fact the
    induction actually consumes (`hBdisj`) from it.
 
@@ -92,7 +91,6 @@ open Corellzk2smt.Language.Core.Syntax.AST
 open Corellzk2smt.Language.Core.Syntax.Lemmas
 open Corellzk2smt.Language.Core.Semantics.Basic
 open Corellzk2smt.Language.Core.Semantics.BigStep
-open Corellzk2smt.Language.Core.Analysis.WellShaped
 open Corellzk2smt.Language.Core.Analysis.DefinedVars
 open Corellzk2smt.SymExec.Basic
 open Corellzk2smt.SymExec.BigStep

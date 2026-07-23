@@ -31,7 +31,6 @@ open Corellzk2smt.Language.Core.Syntax.AST
 open Corellzk2smt.Language.Core.Syntax.Lemmas
 open Corellzk2smt.Language.Core.Semantics.Basic
 open Corellzk2smt.Language.Core.Semantics.BigStep
-open Corellzk2smt.Language.Core.Analysis.WellShaped
 open Corellzk2smt.Language.Core.Analysis.DefinedVars
 open Corellzk2smt.SymExec.Basic
 open Corellzk2smt.SymExec.BigStep
@@ -3067,7 +3066,7 @@ theorem seFunc_f_params_split {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog 
               _hbs_outbelow, _hbs_outfresh, _hbs_sound, _hbs_complete⟩ :=
               seCmds_correct gconf p' specs H_simple H_funcCall hspecs_cover hspecs_rets_cover
                 (params.foldl (fun acc pm => acc.insert pm.name) emptyVarIDSet)
-                { nextVarId := nv1 } body (trivialWSCmds gconf p' body) inSymEnv hinSymEnv_below
+                { nextVarId := nv1 } body inSymEnv hinSymEnv_below
                 hbody_pre bodySpec hbs
             set paramVarSet : VarSet := paramVars.foldl (fun acc v => acc.insert v) emptyVarSet
               with hParamVarSet_def
@@ -3224,7 +3223,7 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
               hbs_outbelow, hbs_outfresh, hbs_sound, hbs_complete⟩ :=
               seCmds_correct gconf p' specs H_simple H_funcCall hspecs_cover hspecs_rets_cover
                 (params.foldl (fun acc pm => acc.insert pm.name) emptyVarIDSet)
-                { nextVarId := nv1 } body (trivialWSCmds gconf p' body) inSymEnv hinSymEnv_below
+                { nextVarId := nv1 } body inSymEnv hinSymEnv_below
                 hbody_pre bodySpec hbs
             have hcore : ∀ (argVals : List (Value c)), ValuesMatchParams argVals params →
                 ∃ env0, bindInParams
@@ -3269,7 +3268,7 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
             · intro badName hunreach
               show FormulaNamesBelow (FFFormula.and bodySpec.f retEqFormula) badName
               exact ⟨seCmds_names_below gconf p' badName hunreach { nextVarId := nv1 } inSymEnv
-                  specs hspecs_wf hspecs_cover body (trivialWSCmds gconf p' body) bodySpec hbs,
+                  specs hspecs_wf hspecs_cover body bodySpec hbs,
                 mintFreshRetsWithEq_names_below bodySpec.nextVarId bodySpec.outSymEnv rets nv2
                   retVars retBinds retEqFormula hmr badName⟩
             · intro argVals hargVals

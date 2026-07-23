@@ -1,7 +1,6 @@
 import Corellzk2smt.Basic
 import Corellzk2smt.Language.Core.Semantics.Basic
 import Corellzk2smt.Language.Core.Semantics.BigStep
-import Corellzk2smt.Language.Core.Analysis.WellShaped
 import Corellzk2smt.SymExec.Basic
 import Corellzk2smt.SymExec.BigStep
 import Corellzk2smt.FFConstraints.Basic
@@ -61,7 +60,6 @@ open Corellzk2smt.Language.Core.Syntax.AST
 open Corellzk2smt.Language.Core.Syntax.Lemmas
 open Corellzk2smt.Language.Core.Semantics.Basic
 open Corellzk2smt.Language.Core.Semantics.BigStep
-open Corellzk2smt.Language.Core.Analysis.WellShaped
 open Corellzk2smt.SymExec.Basic
 open Corellzk2smt.SymExec.BigStep
 open Corellzk2smt.FFConstraints.Basic
@@ -2889,8 +2887,8 @@ def sameShape {c : ZKConfig} (s1 s2 : SymValue c) : Prop :=
     *different* assignments (`assignment1`/`assignment2`) -- the proof never inspects the
     assignment's actual values, only the structural shape pinning, so nothing ties them together.
     Lets `seIfStmt_correct` derive the *symbolic* shape-agreement it needs for merging directly
-    from `WellShapedCom`'s concrete one, instead of assuming it separately (see
-    `Language/Core/Analysis/WellShaped.lean`'s `.if_stmt` case). -/
+    from a concrete one, instead of assuming it separately (originally stated in terms of
+    `WellShapedCom`'s now-deleted `.if_stmt` clause). -/
 theorem sameShape_of_symValMatches {c : ZKConfig} (assignment1 assignment2 : Assignment c)
     (sv1 sv2 : SymValue c) (v1 v2 : Value c)
     (hm1 : symValMatches assignment1 sv1 v1) (hm2 : symValMatches assignment2 sv2 v2)
@@ -5488,10 +5486,8 @@ theorem seIfStmt_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c
     (hspecs_wf : ∀ spec ∈ specs, spec.f.name = spec.name)
     (hspecs_cover : ∀ fname', fname' ∈ specs.map (·.name) → fname' ∈ p.map funcWithMDName)
     (md : CmdMD) (cond : Cond c) (tb eb : List (ComWithMD c))
-    (hshaped : WellShapedCom gconf p (Com.if_stmt cond tb eb))
     (spec : CmdsSpec c) (hspec_eq : seIfStmt gconf sconf symEnv specs md cond tb eb = Except.ok spec) :
     FormulaNamesBelow spec.f badName := by
-  obtain ⟨hshapedTb, hshapedEb⟩ := hshaped
   simp only [seIfStmt] at hspec_eq
   cases hcv : tryEvalCondToConcreteValue gconf sconf symEnv md cond with
   | error e =>
@@ -5508,9 +5504,9 @@ theorem seIfStmt_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c
               rw [heb] at hspec_eq
               simp only [] at hspec_eq
               have ihTb := seCmds_names_below gconf p badName hunreach sconf symEnv specs
-                hspecs_wf hspecs_cover tb hshapedTb tbSpec htb
+                hspecs_wf hspecs_cover tb tbSpec htb
               have ihEb := seCmds_names_below gconf p badName hunreach sconf symEnv specs
-                hspecs_wf hspecs_cover eb hshapedEb ebSpec heb
+                hspecs_wf hspecs_cover eb ebSpec heb
               simp only [mergeIfBranches] at hspec_eq
               cases hg : encodeCond symEnv cond with
               | error e => rw [hg] at hspec_eq; simp at hspec_eq
@@ -5537,11 +5533,11 @@ theorem seIfStmt_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c
       | true =>
           simp only [↓reduceIte] at hspec_eq
           exact seCmds_names_below gconf p badName hunreach sconf symEnv specs hspecs_wf
-            hspecs_cover tb hshapedTb spec hspec_eq
+            hspecs_cover tb spec hspec_eq
       | false =>
           simp only [Bool.false_eq_true, ↓reduceIte] at hspec_eq
           exact seCmds_names_below gconf p badName hunreach sconf symEnv specs hspecs_wf
-            hspecs_cover eb hshapedEb spec hspec_eq
+            hspecs_cover eb spec hspec_eq
 termination_by (numOfLoopExpComs tb + numOfLoopExpComs eb, sizeOfComs tb + sizeOfComs eb)
 decreasing_by
   · have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
@@ -5566,18 +5562,17 @@ theorem seCmd_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
     (hspecs_wf : ∀ spec ∈ specs, spec.f.name = spec.name)
     (hspecs_cover : ∀ fname', fname' ∈ specs.map (·.name) → fname' ∈ p.map funcWithMDName)
-    (i : ComWithMD c) (hshaped : WellShapedCom gconf p (match i with | .mk _ cmd => cmd))
+    (i : ComWithMD c)
     (spec : CmdsSpec c) (hspec_eq : seCmd gconf sconf symEnv specs i = Except.ok spec) :
     FormulaNamesBelow spec.f badName := by
-  match i, hshaped with
-  | .mk md cmd, hshaped =>
-    match cmd, hshaped with
-    | .if_stmt cond tb eb, hshaped =>
+  match i with
+  | .mk md cmd =>
+    match cmd with
+    | .if_stmt cond tb eb =>
         simp only [seCmd] at hspec_eq
         exact seIfStmt_names_below gconf p badName hunreach sconf symEnv specs hspecs_wf
-          hspecs_cover md cond tb eb hshaped spec hspec_eq
-    | .loop_exp repSExp body, hshaped =>
-        have hshapedBody : WellShapedCmds gconf p body := hshaped
+          hspecs_cover md cond tb eb spec hspec_eq
+    | .loop_exp repSExp body =>
         simp only [seCmd] at hspec_eq
         cases hrep : tryEvalSimpleExprToFFValue symEnv repSExp with
         | error e => rw [hrep] at hspec_eq; simp at hspec_eq
@@ -5585,9 +5580,8 @@ theorem seCmd_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
             rw [hrep] at hspec_eq
             simp only [] at hspec_eq
             exact seCmd_names_below gconf p badName hunreach sconf symEnv specs hspecs_wf
-              hspecs_cover (ComWithMD.mk md (Com.loop rep.val body)) hshapedBody spec hspec_eq
-    | .loop (rep + 1) body, hshaped =>
-        have hshapedBody : WellShapedCmds gconf p body := hshaped
+              hspecs_cover (ComWithMD.mk md (Com.loop rep.val body)) spec hspec_eq
+    | .loop (rep + 1) body =>
         simp only [seCmd] at hspec_eq
         cases hfirst : seCmds gconf sconf symEnv specs body with
         | error msg => rw [hfirst] at hspec_eq; simp at hspec_eq
@@ -5595,7 +5589,7 @@ theorem seCmd_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
             rw [hfirst] at hspec_eq
             simp only [] at hspec_eq
             have ihFirst := seCmds_names_below gconf p badName hunreach sconf symEnv specs
-              hspecs_wf hspecs_cover body hshapedBody specFirstIter hfirst
+              hspecs_wf hspecs_cover body specFirstIter hfirst
             cases hrest : seCmd gconf { sconf with nextVarId := specFirstIter.nextVarId }
                 specFirstIter.outSymEnv specs (ComWithMD.mk md (Com.loop rep body)) with
             | error msg => rw [hrest] at hspec_eq; simp at hspec_eq
@@ -5604,18 +5598,18 @@ theorem seCmd_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                 simp only [] at hspec_eq
                 have ihRest := seCmd_names_below gconf p badName hunreach
                   { sconf with nextVarId := specFirstIter.nextVarId } specFirstIter.outSymEnv specs
-                  hspecs_wf hspecs_cover (ComWithMD.mk md (Com.loop rep body)) hshapedBody
+                  hspecs_wf hspecs_cover (ComWithMD.mk md (Com.loop rep body))
                   specRestIter hrest
                 simp only [seqComposition] at hspec_eq
                 injection hspec_eq with hspec_eq
                 simp only [FormulaNamesBelow, ← hspec_eq]
                 exact ⟨ihFirst, ihRest⟩
-    | .loop 0 _body, _hshaped =>
+    | .loop 0 _body =>
         simp only [seCmd] at hspec_eq
         injection hspec_eq with hspec_eq
         rw [← hspec_eq]
         exact default_names_below badName
-    | .func_call outs fname args, _hshaped =>
+    | .func_call outs fname args =>
         simp only [seCmd] at hspec_eq
         simp only [seFuncCall] at hspec_eq
         cases hfetchSpec : fetchFuncSpec specs fname with
@@ -5654,15 +5648,15 @@ theorem seCmd_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                         simp only [FormulaNamesBelow, ← hspec_eq]
                         rw [hfname_eq]
                         exact fun heq => hne heq.symm
-    | .assign _ _, _hshaped =>
+    | .assign _ _ =>
         simp only [seCmd, seSimpleCmd] at hspec_eq; simp at hspec_eq
-    | .new_array _ _, _hshaped =>
+    | .new_array _ _ =>
         simp only [seCmd, seSimpleCmd] at hspec_eq; simp at hspec_eq
-    | .read_array _ _ _, _hshaped =>
+    | .read_array _ _ _ =>
         simp only [seCmd, seSimpleCmd] at hspec_eq; simp at hspec_eq
-    | .write_array _ _ _, _hshaped =>
+    | .write_array _ _ _ =>
         simp only [seCmd, seSimpleCmd] at hspec_eq; simp at hspec_eq
-    | .copy_array _ _, _hshaped =>
+    | .copy_array _ _ =>
         simp only [seCmd, seSimpleCmd] at hspec_eq; simp at hspec_eq
 termination_by (numOfLoopExpCom i, sizeOfCom i)
 decreasing_by
@@ -5687,19 +5681,18 @@ theorem seCmds_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
     (hspecs_wf : ∀ spec ∈ specs, spec.f.name = spec.name)
     (hspecs_cover : ∀ fname', fname' ∈ specs.map (·.name) → fname' ∈ p.map funcWithMDName)
-    (cmds : List (ComWithMD c)) (hshaped : WellShapedCmds gconf p cmds)
+    (cmds : List (ComWithMD c))
     (spec : CmdsSpec c) (hspec_eq : seCmds gconf sconf symEnv specs cmds = Except.ok spec) :
     FormulaNamesBelow spec.f badName := by
-  match cmds, hshaped with
-  | [], _hshaped =>
+  match cmds with
+  | [] =>
       simp only [seCmds] at hspec_eq
       injection hspec_eq with hspec_eq
       rw [← hspec_eq]
       exact default_names_below badName
-  | cmd :: rest, hshaped =>
-    match cmd, hshaped with
-    | ComWithMD.mk md cmd', hshaped =>
-      obtain ⟨hshapedCmd, hshapedRest⟩ := hshaped
+  | cmd :: rest =>
+    match cmd with
+    | ComWithMD.mk md cmd' =>
       simp only [seCmds] at hspec_eq
       cases hcmd : seCmd gconf sconf symEnv specs (ComWithMD.mk md cmd') with
       | error e => rw [hcmd] at hspec_eq; simp at hspec_eq
@@ -5707,7 +5700,7 @@ theorem seCmds_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
           rw [hcmd] at hspec_eq
           simp only [] at hspec_eq
           have ihCmd := seCmd_names_below gconf p badName hunreach sconf symEnv specs hspecs_wf
-            hspecs_cover (ComWithMD.mk md cmd') hshapedCmd cmdSpec hcmd
+            hspecs_cover (ComWithMD.mk md cmd') cmdSpec hcmd
           cases hrest : seCmds gconf { sconf with nextVarId := cmdSpec.nextVarId }
               cmdSpec.outSymEnv specs rest with
           | error e => rw [hrest] at hspec_eq; simp at hspec_eq
@@ -5716,7 +5709,7 @@ theorem seCmds_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
               simp only [] at hspec_eq
               have ihRest := seCmds_names_below gconf p badName hunreach
                 { sconf with nextVarId := cmdSpec.nextVarId } cmdSpec.outSymEnv specs hspecs_wf
-                hspecs_cover rest hshapedRest cmdsSpec hrest
+                hspecs_cover rest cmdsSpec hrest
               simp only [seqComposition] at hspec_eq
               injection hspec_eq with hspec_eq
               simp only [FormulaNamesBelow, ← hspec_eq]
@@ -5938,6 +5931,7 @@ theorem seqComposition_correct {c : ZKConfig} (gconf : GlobalConfig c) (sconf : 
 -- seIfStmt_correct / seCmd_correct / seCmds_correct
 -- ---------------------------------------------------------------------------
 
+
 mutual
 
 theorem seIfStmt_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
@@ -5958,12 +5952,11 @@ theorem seIfStmt_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
         match func with | Func.mk _ _ rets _ => fspec.rets.length = rets.length)
     (vars : VarIDSet)
     (sconf : SymExecConfig c) (md : CmdMD) (cond : Cond c)
-    (tb eb : List (ComWithMD c)) (hshaped : WellShapedCom gconf p (Com.if_stmt cond tb eb)) :
+    (tb eb : List (ComWithMD c)) :
     TranslatesCorrectlyGiven gconf sconf specs
       (fun symEnv => ∀ id, id ∈ definedVarsCmds (definedVarsCmds vars tb) eb → symEnv.contains id)
       (fun env => evalIfStmt gconf p env md cond tb eb)
       (fun symEnv => seIfStmt gconf sconf symEnv specs md cond tb eb) := by
-  obtain ⟨hshapedTb, hshapedEb⟩ := hshaped
   intro symEnv hbelow hdef spec hspec_eq
   have htb_pre : ∀ id, id ∈ definedVarsCmds vars tb → symEnv.contains id :=
     fun id hid => hdef id (definedVarsCmds_mono eb (definedVarsCmds vars tb) id hid)
@@ -5981,7 +5974,7 @@ theorem seIfStmt_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
             rw [← h]; exact hspec_eq
           obtain ⟨htbSpec_in, htbSpec_mono, htbSpec_fresh, htbSpec_below,
             htbSpec_outbelow, htbSpec_outfresh, htbSpec_sound, htbSpec_complete⟩ :=
-            seCmds_correct gconf p specs H_simple H_funcCall hspecs_cover hspecs_rets_cover vars sconf tb hshapedTb
+            seCmds_correct gconf p specs H_simple H_funcCall hspecs_cover hspecs_rets_cover vars sconf tb
               symEnv hbelow htb_pre spec hspec_eq'
           refine ⟨htbSpec_in, htbSpec_mono, htbSpec_fresh, htbSpec_below,
             htbSpec_outbelow, htbSpec_outfresh, ?_, ?_⟩
@@ -6008,7 +6001,7 @@ theorem seIfStmt_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
             rw [← h]; exact hspec_eq
           obtain ⟨hebSpec_in, hebSpec_mono, hebSpec_fresh, hebSpec_below,
             hebSpec_outbelow, hebSpec_outfresh, hebSpec_sound, hebSpec_complete⟩ :=
-            seCmds_correct gconf p specs H_simple H_funcCall hspecs_cover hspecs_rets_cover vars sconf eb hshapedEb
+            seCmds_correct gconf p specs H_simple H_funcCall hspecs_cover hspecs_rets_cover vars sconf eb
               symEnv hbelow heb_pre spec hspec_eq'
           refine ⟨hebSpec_in, hebSpec_mono, hebSpec_fresh, hebSpec_below,
             hebSpec_outbelow, hebSpec_outfresh, ?_, ?_⟩
@@ -6036,11 +6029,11 @@ theorem seIfStmt_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
       | ok ebSpec =>
       obtain ⟨htbSpec_in, htbSpec_mono, htbSpec_fresh, htbSpec_below,
         htbSpec_outbelow, htbSpec_outfresh, htbSpec_sound, htbSpec_complete⟩ :=
-        seCmds_correct gconf p specs H_simple H_funcCall hspecs_cover hspecs_rets_cover vars sconf tb hshapedTb
+        seCmds_correct gconf p specs H_simple H_funcCall hspecs_cover hspecs_rets_cover vars sconf tb
           symEnv hbelow htb_pre tbSpec htbSpec_eq
       obtain ⟨hebSpec_in, hebSpec_mono, hebSpec_fresh, hebSpec_below,
         hebSpec_outbelow, hebSpec_outfresh, hebSpec_sound, hebSpec_complete⟩ :=
-        seCmds_correct gconf p specs H_simple H_funcCall hspecs_cover hspecs_rets_cover vars sconf eb hshapedEb
+        seCmds_correct gconf p specs H_simple H_funcCall hspecs_cover hspecs_rets_cover vars sconf eb
           symEnv hbelow heb_pre ebSpec hebSpec_eq
       have htbSpec_sound' : ∀ env assignment, EnvMatches assignment symEnv env →
           ∀ env', evalCmds gconf p env tb = Except.ok env' →
@@ -6219,14 +6212,14 @@ decreasing_by
   -- four recursive calls into seCmds_correct (error branch: tb and eb; condVal = true: tb;
   -- condVal = false: eb) -- order-independent, each proved via `first`
   all_goals first
-  | (have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+  | (have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := Nat.le_add_right (numOfLoopExpComs tb) (numOfLoopExpComs eb)
      rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
      · apply Prod.Lex.left
        exact h_less
      · rw [← h_equal]
        apply Prod.Lex.right
        exact sizeOfComs_a_lt_a_plus_b tb eb)
-  | (have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+  | (have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := Nat.le_add_left (numOfLoopExpComs eb) (numOfLoopExpComs tb)
      rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
      · apply Prod.Lex.left
        exact h_less
@@ -6252,13 +6245,13 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
       ∀ md func p'', fetchFunc p fname'' = Except.ok (FuncWithMD.mk md func, p'') →
         match func with | Func.mk _ _ rets _ => fspec.rets.length = rets.length)
     (vars : VarIDSet)
-    (sconf : SymExecConfig c) (md : CmdMD) (cmd : Com c) (hshaped : WellShapedCom gconf p cmd) :
+    (sconf : SymExecConfig c) (md : CmdMD) (cmd : Com c) :
     TranslatesCorrectlyGiven gconf sconf specs
       (fun symEnv => ∀ id, id ∈ definedVarsCom vars cmd → symEnv.contains id)
       (fun env => evalCmd gconf p env (ComWithMD.mk md cmd))
       (fun symEnv => seCmd gconf sconf symEnv specs (ComWithMD.mk md cmd)) := by
-    match cmd, hshaped with
-    | .if_stmt cond tb eb, hshaped =>
+    match cmd with
+    | .if_stmt cond tb eb =>
         have heq_c : (fun env => evalCmd gconf p env (ComWithMD.mk md (Com.if_stmt cond tb eb)))
             = (fun env => evalIfStmt gconf p env md cond tb eb) := by
           funext env; simp only [evalCmd]
@@ -6268,8 +6261,8 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
           funext symEnv; simp only [seCmd]
         rw [heq_c, heq_s]
         exact seIfStmt_correct gconf p specs H_simple H_funcCall hspecs_cover hspecs_rets_cover vars sconf md cond
-          tb eb hshaped
-    | .loop_exp repSExp body, hshaped =>
+          tb eb
+    | .loop_exp repSExp body =>
         intro symEnv hbelow hdef spec hspec_eq
         simp only [seCmd] at hspec_eq
         cases htry : tryEvalSimpleExprToFFValue symEnv repSExp with
@@ -6281,7 +6274,7 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                 symEnv.contains id := hdef
             obtain ⟨hin, hmono, hfresh, hbel, houtbel, houtfresh, hsound, hcomplete⟩ :=
               seCmd_correct gconf p specs H_simple H_funcCall hspecs_cover hspecs_rets_cover vars sconf md
-                (Com.loop repVal.val body) hshaped symEnv hbelow hdef' spec hspec_eq
+                (Com.loop repVal.val body) symEnv hbelow hdef' spec hspec_eq
             refine ⟨hin, hmono, hfresh, hbel, houtbel, houtfresh, ?_, ?_⟩
             · intro env assignment hmatch env' hconcrete
               have heval_eq : evalSimpleExprToFFValue env repSExp = Except.ok repVal :=
@@ -6297,7 +6290,7 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
               refine ⟨env', ?_, hmatch'⟩
               simp only [evalCmd, heval_eq]
               exact hconcrete'
-    | .loop (rep+1) body, hshaped =>
+    | .loop (rep+1) body =>
         intro symEnv hbelow hdef spec hspec_eq
         have hbody_pre : ∀ id, id ∈ definedVarsCmds vars body → symEnv.contains id := hdef
         cases hfirstSpec_eq : seCmds gconf { nextVarId := sconf.nextVarId } symEnv specs body with
@@ -6307,7 +6300,7 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
           hfirstSpec_below, hfirstSpec_outbelow, hfirstSpec_outfresh, hfirstSpec_sound,
           hfirstSpec_complete⟩ :=
           seCmds_correct gconf p specs H_simple H_funcCall hspecs_cover hspecs_rets_cover vars { nextVarId := sconf.nextVarId }
-            body hshaped symEnv hbelow hbody_pre firstSpec hfirstSpec_eq
+            body symEnv hbelow hbody_pre firstSpec hfirstSpec_eq
         have hfirstDom := seCmds_domain_of_defined gconf { nextVarId := sconf.nextVarId } symEnv
           specs vars body hbody_pre firstSpec hfirstSpec_eq
         rw [← hfirstSpec_in] at hfirstSpec_sound hfirstSpec_complete
@@ -6324,7 +6317,7 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
           hrestSpec_below, hrestSpec_outbelow, hrestSpec_outfresh, hrestSpec_sound,
           hrestSpec_complete⟩ :=
           seCmd_correct gconf p specs H_simple H_funcCall hspecs_cover hspecs_rets_cover vars
-            { sconf with nextVarId := firstSpec.nextVarId } md (Com.loop rep body) hshaped
+            { sconf with nextVarId := firstSpec.nextVarId } md (Com.loop rep body)
             firstSpec.outSymEnv hfirstSpec_outbelow hrest_pre restSpec hrestSpec_eq
         rw [← hrestSpec_in] at hrestSpec_sound hrestSpec_complete hrestSpec_fresh hrestSpec_outfresh
         have hfirstSpec_sound' : ∀ env assignment, EnvMatches assignment firstSpec.inSymEnv env →
@@ -6372,7 +6365,7 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
           hfirstSpec_outfresh hfirstSpec_sound' hfirstSpec_complete restSpec hrestSpec_in
           hrestSpec_mono hrestSpec_fresh hrestSpec_below hrestSpec_outbelow hrestSpec_outfresh
           hrestSpec_sound' hrestSpec_complete spec hspecComposed_eq
-    | .loop 0 _body, _hshaped =>
+    | .loop 0 _body =>
         intro symEnv hbelow _hdef spec hspec_eq
         obtain ⟨spec2, hspec2_eq, hin, hmono, hfresh, hbel, houtbel, houtfresh, hsound,
           hcomplete⟩ :=
@@ -6384,7 +6377,7 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
         have hspec2 : spec = spec2 := by injection (hspec_eq.symm.trans hspec2_eq)
         subst hspec2
         exact ⟨hin, hmono, hfresh, hbel, houtbel, houtfresh, hsound, hcomplete⟩
-    | .func_call outs fname args, _hshaped =>
+    | .func_call outs fname args =>
         have heq_c : (fun env => evalCmd gconf p env
               (ComWithMD.mk md (Com.func_call outs fname args)))
             = (fun env => evalFuncCallCmd gconf p fname args outs env) := by
@@ -6441,7 +6434,7 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                   (Func.mk fname' params rets body) p' hfetch
               exact H_funcCall sconf fname args outs md' (Func.mk fname' params rets body) p'
                 hfetch harity symEnv hbelow spec hspec_eq
-    | .assign out e, _hshaped =>
+    | .assign out e =>
         have heq_c : (fun env => evalCmd gconf p env (ComWithMD.mk md (Com.assign out e)))
             = (fun env => evalSimpleCmd gconf env (ComWithMD.mk md (Com.assign out e))) := by
           funext env; simp only [evalCmd]
@@ -6453,7 +6446,7 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
         rw [heq_c, heq_s]
         exact TranslatesCorrectlyGiven_of_TranslatesCorrectly _ _ _ _ _ _
           (H_simple sconf (ComWithMD.mk md (Com.assign out e)))
-    | .new_array out size, _hshaped =>
+    | .new_array out size =>
         have heq_c : (fun env => evalCmd gconf p env (ComWithMD.mk md (Com.new_array out size)))
             = (fun env => evalSimpleCmd gconf env (ComWithMD.mk md (Com.new_array out size))) := by
           funext env; simp only [evalCmd]
@@ -6465,7 +6458,7 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
         rw [heq_c, heq_s]
         exact TranslatesCorrectlyGiven_of_TranslatesCorrectly _ _ _ _ _ _
           (H_simple sconf (ComWithMD.mk md (Com.new_array out size)))
-    | .read_array out arr idx, _hshaped =>
+    | .read_array out arr idx =>
         have heq_c : (fun env => evalCmd gconf p env
               (ComWithMD.mk md (Com.read_array out arr idx)))
             = (fun env => evalSimpleCmd gconf env
@@ -6479,7 +6472,7 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
         rw [heq_c, heq_s]
         exact TranslatesCorrectlyGiven_of_TranslatesCorrectly _ _ _ _ _ _
           (H_simple sconf (ComWithMD.mk md (Com.read_array out arr idx)))
-    | .write_array arr idx value, _hshaped =>
+    | .write_array arr idx value =>
         have heq_c : (fun env => evalCmd gconf p env
               (ComWithMD.mk md (Com.write_array arr idx value)))
             = (fun env => evalSimpleCmd gconf env
@@ -6493,7 +6486,7 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
         rw [heq_c, heq_s]
         exact TranslatesCorrectlyGiven_of_TranslatesCorrectly _ _ _ _ _ _
           (H_simple sconf (ComWithMD.mk md (Com.write_array arr idx value)))
-    | .copy_array out arr, _hshaped =>
+    | .copy_array out arr =>
         have heq_c : (fun env => evalCmd gconf p env (ComWithMD.mk md (Com.copy_array out arr)))
             = (fun env => evalSimpleCmd gconf env (ComWithMD.mk md (Com.copy_array out arr))) := by
           funext env; simp only [evalCmd]
@@ -6507,9 +6500,20 @@ theorem seCmd_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
           (H_simple sconf (ComWithMD.mk md (Com.copy_array out arr)))
 termination_by (numOfLoopExpCom (ComWithMD.mk md cmd), sizeOfCom (ComWithMD.mk md cmd))
 decreasing_by
-  all_goals first
-    | (simp only [numOfLoopExpCom]; apply Prod.Lex.left; grind)
-    | (apply Prod.Lex.right; simp only [sizeOfCom]; grind)
+  all_goals
+    simp only [numOfLoopExpCom, sizeOfCom]
+    have a_lt_1_plus_1 (a : Nat) : a < 1+a := by
+      rw [Nat.add_comm];
+      apply Nat.lt_succ_self
+  · apply Prod.Lex.right
+    rw [Nat.add_assoc]
+    exact a_lt_1_plus_1 (sizeOfComs tb + sizeOfComs eb)
+  · apply Prod.Lex.left
+    exact a_lt_1_plus_1 (numOfLoopExpComs body)
+  · apply Prod.Lex.right
+    grind
+  · apply Prod.Lex.right
+    grind
 
 theorem seCmds_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     (specs : List (FuncSpec c))
@@ -6528,7 +6532,7 @@ theorem seCmds_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
       ∀ md func p'', fetchFunc p fname'' = Except.ok (FuncWithMD.mk md func, p'') →
         match func with | Func.mk _ _ rets _ => fspec.rets.length = rets.length)
     (vars : VarIDSet)
-    (sconf : SymExecConfig c) (cmds : List (ComWithMD c)) (hshaped : WellShapedCmds gconf p cmds) :
+    (sconf : SymExecConfig c) (cmds : List (ComWithMD c)) :
     TranslatesCorrectlyGiven gconf sconf specs
       (fun symEnv => ∀ id, id ∈ definedVarsCmds vars cmds → symEnv.contains id)
       (fun env => evalCmds gconf p env cmds)
@@ -6548,8 +6552,6 @@ theorem seCmds_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
   | cons cmd rest =>
       cases cmd with
       | mk md cmd' =>
-        simp only [WellShapedCmds] at hshaped
-        obtain ⟨hshapedHead, hshapedRest⟩ := hshaped
         intro symEnv hbelow hdef spec hspec_eq
         have hcmd_pre : ∀ id, id ∈ definedVarsCom vars cmd' → symEnv.contains id :=
           fun id hid => hdef id (by
@@ -6561,7 +6563,7 @@ theorem seCmds_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
         obtain ⟨hcmdSpec_in, hcmdSpec_mono, hcmdSpec_fresh, hcmdSpec_below,
           hcmdSpec_outbelow, hcmdSpec_outfresh, hcmdSpec_sound, hcmdSpec_complete⟩ :=
           seCmd_correct gconf p specs H_simple H_funcCall hspecs_cover hspecs_rets_cover vars sconf md cmd'
-            hshapedHead symEnv hbelow hcmd_pre cmdSpec hcmdSpec_eq
+            symEnv hbelow hcmd_pre cmdSpec hcmdSpec_eq
         have hcmdDom := seCmd_domain_of_defined gconf sconf symEnv specs vars md cmd' hcmd_pre
           cmdSpec hcmdSpec_eq
         rw [← hcmdSpec_in] at hcmdSpec_sound hcmdSpec_complete
@@ -6580,7 +6582,7 @@ theorem seCmds_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
           hcmdsSpec_below, hcmdsSpec_outbelow, hcmdsSpec_outfresh, hcmdsSpec_sound,
           hcmdsSpec_complete⟩ :=
           seCmds_correct gconf p specs H_simple H_funcCall hspecs_cover hspecs_rets_cover vars
-            { sconf with nextVarId := cmdSpec.nextVarId } rest hshapedRest
+            { sconf with nextVarId := cmdSpec.nextVarId } rest
             cmdSpec.outSymEnv hcmdSpec_outbelow hrest_pre cmdsSpec hcmdsSpec_eq
         rw [← hcmdsSpec_in] at hcmdsSpec_sound hcmdsSpec_complete hcmdsSpec_fresh hcmdsSpec_outfresh
         have hcmdSpec_sound' : ∀ env assignment, EnvMatches assignment cmdSpec.inSymEnv env →
@@ -6631,7 +6633,6 @@ decreasing_by
   -- cross-call into seCmd_correct, on the head `cmd'`
   · have hcmds_eq : cmds = ComWithMD.mk md cmd' :: rest := by
       rw [‹cmds = cmd :: rest›, ‹cmd = ComWithMD.mk md cmd'›]
-    rw [hcmds_eq]
     have h1 : numOfLoopExpCom (ComWithMD.mk md cmd') ≤
         numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by grind
     rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
@@ -6650,11 +6651,9 @@ decreasing_by
         numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by grind
     rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
     · apply Prod.Lex.left
-      rw [hcmds_eq]
       simp only [numOfLoopExpComs]
       exact h_less
-    · rw [hcmds_eq]
-      simp only [numOfLoopExpComs]
+    · simp only [numOfLoopExpComs]
       rw [← h_equal]
       apply Prod.Lex.right
       simp only [sizeOfComs]
