@@ -1,4 +1,5 @@
 import Corellzk2smt.SymExec.Correctness.FuncCorrectness
+import Corellzk2smt.SymExec.Correctness.SimpleCmdCorrectness
 import Corellzk2smt.Language.Core.Analysis.DefinedVars
 import Corellzk2smt.Language.Core.Syntax.Lemmas
 
@@ -24,9 +25,10 @@ the conditional `seFunc_correct`/`seFuncCall_correct_via_seFunc` (earlier in thi
 Three genuine (not merely mechanical) changes from the old file, per the session's investigation
 into what the conditional `TranslatesCorrectly` actually buys at the whole-program level:
 
-1. `H_simple` drops out as a *parameter* entirely, replaced by `H_simple_holds` below -- kept as a
-   theorem (not reintroduced as an assumed parameter) so every call site still just invokes it by
-   name, but its proof is an honest `sorry`: `seSimpleCmd` is currently a permanent `"TBD"` stub,
+1. `H_simple` drops out as a *parameter* entirely, replaced by `H_simple_holds`
+   (`SimpleCmdCorrectness.lean`) -- kept as a theorem (not reintroduced as an assumed parameter)
+   so every call site still just invokes it by name, but its proof is an honest `sorry`:
+   `seSimpleCmd` is currently a permanent `"TBD"` stub,
    so it *could* be discharged vacuously (the success hypothesis inside `TranslatesCorrectly` can
    never fire), but proving it that way would be proving the wrong thing -- true only because
    nothing is implemented yet, not because simple commands actually translate correctly. Leaving
@@ -100,6 +102,7 @@ open Corellzk2smt.FFConstraints.Lemmas
 open Corellzk2smt.SymExec.Correctness.Lemmas
 open Corellzk2smt.SymExec.Correctness.FuncCorrectness
 open Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
+open Corellzk2smt.SymExec.Correctness.SimpleCmdCorrectness
 
 /-- `seFunc`'s output spec's macro name (`fspec.f.name`) is exactly the translated function's own
     name -- mirrors `seFunc_eq_shape`'s exact proof shape (same unfolding sequence), just also
@@ -314,19 +317,6 @@ theorem hasDupFuncNames_cons_disjoint {c : ZKConfig} (f : FuncWithMD c) (rest : 
     rw [List.contains_iff_mem]; exact hmem
   rw [h.1] at hcontains
   exact absurd hcontains (by simp)
-
-/-- `H_simple`'s conditional-form statement, kept as a theorem (not an assumed parameter) so every
-    consumer calls it by name rather than ever unfolding `seSimpleCmd` directly. Genuinely open:
-    `seSimpleCmd` is currently a permanent `"TBD"` stub, under which this would be vacuously
-    provable (the success hypothesis inside `TranslatesCorrectly` can never fire) -- but that
-    proves the wrong thing, so it's left as an honest `sorry` instead. See this file's header.
-    Once `seSimpleCmd` is actually implemented, this is the one place that needs a real proof;
-    nothing else in the development should need to change. -/
-theorem H_simple_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
-    (sconf : SymExecConfig c) (i : ComWithMD c) :
-    TranslatesCorrectly gconf sconf specs (fun env => evalSimpleCmd gconf env i)
-      (fun symEnv => seSimpleCmd gconf sconf symEnv specs i) := by
-  sorry
 
 /-- `TranslatesCorrectly` (conditional form) only ever consumes `concrete`/`symbolic` through
     pointwise application, so equal-as-functions replacements carry a fact across -- identical
