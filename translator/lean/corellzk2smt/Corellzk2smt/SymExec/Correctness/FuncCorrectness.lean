@@ -3142,14 +3142,15 @@ theorem seFunc_f_params_split {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog 
     (specs : List (FuncSpec c))
     (fname : FName) (md : FuncMD) (func : Func c) (p' : Prog c)
     (hfetch : fetchFunc p fname = Except.ok (FuncWithMD.mk md func, p'))
-    (H_simple : ∀ (sconf : SymExecConfig c) (i : ComWithMD c),
-      TranslatesCorrectly gconf sconf specs (fun env => evalSimpleCmd gconf env i)
+    (H_simple : ∀ (sconf : SymExecConfig c) (ctx : FFFormula c) (i : ComWithMD c),
+      TranslatesCorrectly gconf sconf specs ctx (fun env => evalSimpleCmd gconf env i)
         (fun symEnv => seSimpleCmd gconf sconf symEnv specs i))
-    (H_funcCall : ∀ (sconf : SymExecConfig c) (fname' : FName) (args : List (SimpleExpr c))
+    (H_funcCall : ∀ (sconf : SymExecConfig c) (ctx : FFFormula c) (fname' : FName)
+        (args : List (SimpleExpr c))
         (outs : List VarID) (md' : FuncMD) (func' : Func c) (p'' : Prog c),
       fetchFunc p' fname' = Except.ok (FuncWithMD.mk md' func', p'') →
       (match func' with | Func.mk _ _ rets _ => outs.length = rets.length) →
-      TranslatesCorrectly gconf sconf specs
+      TranslatesCorrectly gconf sconf specs ctx
         (fun env => evalFuncCallCmd gconf p' fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs))
     (hspecs_cover : ∀ fname'', fname'' ∈ specs.map (·.name) → fname'' ∈ p'.map funcWithMDName)
@@ -3206,10 +3207,12 @@ theorem seFunc_f_params_split {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog 
                 (definedVarsOfFunc (Func.mk name params rets body)) id hid
               exact mintFreshParams_contains_mono 0 params _ nv1 paramVars inSymEnv hmp id hzero
             obtain ⟨_hbs_in, hbs_mono, _hbs_fresh, _hbs_below,
-              _hbs_outbelow, _hbs_outfresh, _hbs_sound, _hbs_complete⟩ :=
+              _hbs_outbelow, _hbs_outfresh, _hbs_validBinRep, _hbs_sound, _hbs_complete⟩ :=
               seCmds_correct gconf p' specs H_simple H_funcCall hspecs_cover hspecs_rets_cover
                 (params.foldl (fun acc pm => acc.insert pm.name) emptyVarIDSet)
-                { nextVarId := nv1 } body inSymEnv hinSymEnv_below
+                { nextVarId := nv1 } FFFormula.true body inSymEnv hinSymEnv_below
+                (seFunc_inSymEnv_validBinRep gconf params
+                  (definedVarsOfFunc (Func.mk name params rets body)) nv1 paramVars inSymEnv hmp)
                 hbody_pre bodySpec hbs
             set paramVarSet : VarSet := paramVars.foldl (fun acc v => acc.insert v) emptyVarSet
               with hParamVarSet_def
@@ -3275,14 +3278,15 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     (fname : FName) (md : FuncMD) (func : Func c) (p' : Prog c)
     (hfetch : fetchFunc p fname = Except.ok (FuncWithMD.mk md func, p'))
     (hnodup_p : hasDupFuncNames p = false)
-    (H_simple : ∀ (sconf : SymExecConfig c) (i : ComWithMD c),
-      TranslatesCorrectly gconf sconf specs (fun env => evalSimpleCmd gconf env i)
+    (H_simple : ∀ (sconf : SymExecConfig c) (ctx : FFFormula c) (i : ComWithMD c),
+      TranslatesCorrectly gconf sconf specs ctx (fun env => evalSimpleCmd gconf env i)
         (fun symEnv => seSimpleCmd gconf sconf symEnv specs i))
-    (H_funcCall : ∀ (sconf : SymExecConfig c) (fname' : FName) (args : List (SimpleExpr c))
+    (H_funcCall : ∀ (sconf : SymExecConfig c) (ctx : FFFormula c) (fname' : FName)
+        (args : List (SimpleExpr c))
         (outs : List VarID) (md' : FuncMD) (func' : Func c) (p'' : Prog c),
       fetchFunc p' fname' = Except.ok (FuncWithMD.mk md' func', p'') →
       (match func' with | Func.mk _ _ rets _ => outs.length = rets.length) →
-      TranslatesCorrectly gconf sconf specs
+      TranslatesCorrectly gconf sconf specs ctx
         (fun env => evalFuncCallCmd gconf p' fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs))
     (hspecs_cover : ∀ fname'', fname'' ∈ specs.map (·.name) → fname'' ∈ p'.map funcWithMDName)
@@ -3363,10 +3367,12 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                 (definedVarsOfFunc (Func.mk name params rets body)) id hid
               exact mintFreshParams_contains_mono 0 params _ nv1 paramVars inSymEnv hmp id hzero
             obtain ⟨hbs_in, hbs_mono, hbs_fresh, hbs_below,
-              hbs_outbelow, hbs_outfresh, hbs_sound, hbs_complete⟩ :=
+              hbs_outbelow, hbs_outfresh, _hbs_validBinRep, hbs_sound, hbs_complete⟩ :=
               seCmds_correct gconf p' specs H_simple H_funcCall hspecs_cover hspecs_rets_cover
                 (params.foldl (fun acc pm => acc.insert pm.name) emptyVarIDSet)
-                { nextVarId := nv1 } body inSymEnv hinSymEnv_below
+                { nextVarId := nv1 } FFFormula.true body inSymEnv hinSymEnv_below
+                (seFunc_inSymEnv_validBinRep gconf params
+                  (definedVarsOfFunc (Func.mk name params rets body)) nv1 paramVars inSymEnv hmp)
                 hbody_pre bodySpec hbs
             have hcore : ∀ (argVals : List (Value c)), ValuesMatchParams argVals params →
                 ∃ env0, bindInParams
@@ -4168,18 +4174,19 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     bookkeeping to begin with; only the referenced theorems (and hence the conclusion's own
     `TranslatesCorrectly`) are the new, conditional ones. -/
 theorem seFuncCall_correct_via_seFunc {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
-    (specs : List (FuncSpec c)) (sconf : SymExecConfig c)
+    (specs : List (FuncSpec c)) (sconf : SymExecConfig c) (ctx : FFFormula c)
     (fname : FName) (md : FuncMD) (func : Func c) (p' : Prog c)
     (hfetch : fetchFunc p fname = Except.ok (FuncWithMD.mk md func, p'))
     (hnodup_p : hasDupFuncNames p = false)
-    (H_simple : ∀ (sconf : SymExecConfig c) (i : ComWithMD c),
-      TranslatesCorrectly gconf sconf specs (fun env => evalSimpleCmd gconf env i)
+    (H_simple : ∀ (sconf : SymExecConfig c) (ctx : FFFormula c) (i : ComWithMD c),
+      TranslatesCorrectly gconf sconf specs ctx (fun env => evalSimpleCmd gconf env i)
         (fun symEnv => seSimpleCmd gconf sconf symEnv specs i))
-    (H_funcCall : ∀ (sconf : SymExecConfig c) (fname' : FName) (args : List (SimpleExpr c))
+    (H_funcCall : ∀ (sconf : SymExecConfig c) (ctx : FFFormula c) (fname' : FName)
+        (args : List (SimpleExpr c))
         (outs : List VarID) (md' : FuncMD) (func' : Func c) (p'' : Prog c),
       fetchFunc p' fname' = Except.ok (FuncWithMD.mk md' func', p'') →
       (match func' with | Func.mk _ _ rets _ => outs.length = rets.length) →
-      TranslatesCorrectly gconf sconf specs
+      TranslatesCorrectly gconf sconf specs ctx
         (fun env => evalFuncCallCmd gconf p' fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs))
     (hspecs_cover : ∀ fname'', fname'' ∈ specs.map (·.name) → fname'' ∈ p'.map funcWithMDName)
@@ -4189,7 +4196,7 @@ theorem seFuncCall_correct_via_seFunc {c : ZKConfig} (gconf : GlobalConfig c) (p
     (hspecs_wf : ∀ spec ∈ specs, spec.f.name = spec.name)
     (fspec : FuncSpec c) (hseFunc_eq : seFunc gconf specs func = Except.ok fspec)
     (args : List (SimpleExpr c)) (outs : List VarID) :
-    TranslatesCorrectly gconf sconf (fspec :: specs)
+    TranslatesCorrectly gconf sconf (fspec :: specs) ctx
       (fun env => evalFuncCallCmd gconf p fname args outs env)
       (fun symEnv => seFuncCall gconf sconf symEnv (fspec :: specs) fname args outs) := by
   cases func with
@@ -4203,7 +4210,7 @@ theorem seFuncCall_correct_via_seFunc {c : ZKConfig} (gconf : GlobalConfig c) (p
       obtain ⟨hspec_retsShape, _hnamesBelow, H_specCorrect⟩ := seFunc_correct gconf p specs fname
         md (Func.mk name params rets body) p' hfetch hnodup_p H_simple H_funcCall hspecs_cover
         hspecs_rets_cover hspecs_wf fspec hseFunc_eq
-      exact seFuncCall_correct gconf p (fspec :: specs) sconf fname args outs fspec hspec_eq
+      exact seFuncCall_correct gconf p (fspec :: specs) sconf ctx fname args outs fspec hspec_eq
         hspec_retsShape H_specCorrect
 
 end Corellzk2smt.SymExec.Correctness.FuncCorrectness

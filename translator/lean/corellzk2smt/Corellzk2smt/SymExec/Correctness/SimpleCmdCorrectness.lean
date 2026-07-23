@@ -19,6 +19,7 @@ open Corellzk2smt.Language.Core.Semantics.Basic
 open Corellzk2smt.Language.Core.Semantics.BigStep
 open Corellzk2smt.SymExec.Basic
 open Corellzk2smt.SymExec.BigStep
+open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.SymExec.Correctness.Lemmas
 open Corellzk2smt.SymExec.Correctness.AssignmentCorrectness
 open Corellzk2smt.SymExec.Correctness.ArrayCmdsCorrectness
@@ -30,8 +31,8 @@ open Corellzk2smt.SymExec.Correctness.ArrayCmdsCorrectness
     unreachable in practice (the caller already filters to simple commands only) and is discharged
     vacuously, since both `evalSimpleCmd`/`seSimpleCmd` error on it. -/
 theorem H_simple_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
-    (sconf : SymExecConfig c) (i : ComWithMD c) :
-    TranslatesCorrectly gconf sconf specs (fun env => evalSimpleCmd gconf env i)
+    (sconf : SymExecConfig c) (ctx : FFFormula c) (i : ComWithMD c) :
+    TranslatesCorrectly gconf sconf specs ctx (fun env => evalSimpleCmd gconf env i)
       (fun symEnv => seSimpleCmd gconf sconf symEnv specs i) := by
   match i with
   | .mk md cmd =>
@@ -45,7 +46,7 @@ theorem H_simple_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (Fu
             = (fun symEnv => seEvalAssignment md gconf sconf symEnv specs id e) := by
           funext symEnv; simp only [seSimpleCmd]
         rw [heq_c, heq_s]
-        exact seEvalAssignment_correct gconf specs sconf md id e
+        exact seEvalAssignment_correct gconf specs sconf ctx md id e
     | .new_array id size =>
         have heq_c : (fun env => evalSimpleCmd gconf env (ComWithMD.mk md (Com.new_array id size)))
             = (fun env => evalNewArray md gconf env id size) := by
@@ -55,7 +56,7 @@ theorem H_simple_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (Fu
             = (fun symEnv => seNewArray md gconf sconf symEnv specs id size) := by
           funext symEnv; simp only [seSimpleCmd]
         rw [heq_c, heq_s]
-        exact seNewArray_correct gconf specs sconf md id size
+        exact seNewArray_correct gconf specs sconf ctx md id size
     | .read_array out a index =>
         have heq_c : (fun env => evalSimpleCmd gconf env
               (ComWithMD.mk md (Com.read_array out a index)))
@@ -66,7 +67,7 @@ theorem H_simple_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (Fu
             = (fun symEnv => seReadArray md gconf sconf symEnv specs out a index) := by
           funext symEnv; simp only [seSimpleCmd]
         rw [heq_c, heq_s]
-        exact seReadArray_correct gconf specs sconf md out a index
+        exact seReadArray_correct gconf specs sconf ctx md out a index
     | .write_array a index value =>
         have heq_c : (fun env => evalSimpleCmd gconf env
               (ComWithMD.mk md (Com.write_array a index value)))
@@ -77,7 +78,7 @@ theorem H_simple_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (Fu
             = (fun symEnv => seWriteArray md gconf sconf symEnv specs a index value) := by
           funext symEnv; simp only [seSimpleCmd]
         rw [heq_c, heq_s]
-        exact seWriteArray_correct gconf specs sconf md a index value
+        exact seWriteArray_correct gconf specs sconf ctx md a index value
     | .copy_array out a =>
         have heq_c : (fun env => evalSimpleCmd gconf env (ComWithMD.mk md (Com.copy_array out a)))
             = (fun env => evalCopyArray md gconf env out a) := by
@@ -87,9 +88,9 @@ theorem H_simple_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (Fu
             = (fun symEnv => seCopyArray md gconf sconf symEnv specs out a) := by
           funext symEnv; simp only [seSimpleCmd]
         rw [heq_c, heq_s]
-        exact seCopyArray_correct gconf specs sconf md out a
+        exact seCopyArray_correct gconf specs sconf ctx md out a
     | .if_stmt .. | .loop_exp .. | .loop .. | .func_call .. =>
-        intro symEnv _hbelow spec hspec_eq
+        intro symEnv _hbelow _hvalid spec hspec_eq
         simp only [seSimpleCmd] at hspec_eq
         simp at hspec_eq
 

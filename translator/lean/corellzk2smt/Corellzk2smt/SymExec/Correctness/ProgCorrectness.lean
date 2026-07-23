@@ -323,12 +323,13 @@ theorem hasDupFuncNames_cons_disjoint {c : ZKConfig} (f : FuncWithMD c) (rest : 
     proof to the old `SymExec.ProgCorrectness.TranslatesCorrectly_congr`, restated for the new
     `TranslatesCorrectly`. -/
 theorem TranslatesCorrectly_congr {c : ZKConfig} (gconf : GlobalConfig c) (sconf : SymExecConfig c)
-    (specs : List (FuncSpec c)) (concrete1 concrete2 : Env c → Except String (Env c))
+    (specs : List (FuncSpec c)) (ctx : FFFormula c)
+    (concrete1 concrete2 : Env c → Except String (Env c))
     (symbolic1 symbolic2 : SymEnv c → Except String (CmdsSpec c))
     (hconcrete : ∀ env, concrete1 env = concrete2 env)
     (hsymbolic : ∀ symEnv, symbolic1 symEnv = symbolic2 symEnv)
-    (h : TranslatesCorrectly gconf sconf specs concrete1 symbolic1) :
-    TranslatesCorrectly gconf sconf specs concrete2 symbolic2 := by
+    (h : TranslatesCorrectly gconf sconf specs ctx concrete1 symbolic1) :
+    TranslatesCorrectly gconf sconf specs ctx concrete2 symbolic2 := by
   have hc : concrete1 = concrete2 := funext hconcrete
   have hs : symbolic1 = symbolic2 := funext hsymbolic
   rw [hc, hs] at h
@@ -342,21 +343,23 @@ theorem TranslatesCorrectly_congr {c : ZKConfig} (gconf : GlobalConfig c) (sconf
     given rather than producing them existentially, so there is no `obtain ⟨spec, hsym, ...⟩`
     step -- applying `h symEnv hvarSetBelow spec hsym` directly yields the conjuncts. -/
 theorem TranslatesCorrectly_prepend {c : ZKConfig} (gconf : GlobalConfig c)
-    (sconf : SymExecConfig c) (specs : List (FuncSpec c)) (fspec_new : FuncSpec c)
+    (sconf : SymExecConfig c) (specs : List (FuncSpec c)) (ctx : FFFormula c)
+    (fspec_new : FuncSpec c)
     (hne : ∀ spec ∈ specs, fspec_new.f.name ≠ spec.f.name)
     (concrete : Env c → Except String (Env c))
     (symbolic : SymEnv c → Except String (CmdsSpec c))
     (hnb : ∀ (symEnv : SymEnv c) (spec : CmdsSpec c), symbolic symEnv = Except.ok spec →
       FormulaNamesBelow spec.f fspec_new.f.name)
-    (h : TranslatesCorrectly gconf sconf specs concrete symbolic) :
-    TranslatesCorrectly gconf sconf (fspec_new :: specs) concrete symbolic := by
-  intro symEnv hvarSetBelow spec hsym
-  obtain ⟨hin, hnext, hspecVars1, hspecVars2, houtVars1, houtVars2, hsound, hcomplete⟩ :=
-    h symEnv hvarSetBelow spec hsym
+    (h : TranslatesCorrectly gconf sconf specs ctx concrete symbolic) :
+    TranslatesCorrectly gconf sconf (fspec_new :: specs) ctx concrete symbolic := by
+  intro symEnv hvarSetBelow hvalid spec hsym
+  obtain ⟨hin, hnext, hspecVars1, hspecVars2, houtVars1, houtVars2, hvalidBinRep, hsound,
+    hcomplete⟩ :=
+    h symEnv hvarSetBelow hvalid spec hsym
   have hnb_spec := hnb symEnv spec hsym
   have hmap : ((fspec_new :: specs).map (·.f) : List (FFMacro c)) =
       fspec_new.f :: specs.map (·.f) := List.map_cons ..
-  refine ⟨hin, hnext, hspecVars1, hspecVars2, houtVars1, houtVars2, ?_, ?_⟩
+  refine ⟨hin, hnext, hspecVars1, hspecVars2, houtVars1, houtVars2, hvalidBinRep, ?_, ?_⟩
   · intro env assignment hmatch env' hconcrete
     obtain ⟨assignment', hagreeFF, hagreeBool, hffout, hboolout, hformula, hmatch'⟩ :=
       hsound env assignment hmatch env' hconcrete
@@ -387,11 +390,12 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
       (∀ fname'' fspec', fetchFuncSpec specs fname'' = Except.ok fspec' →
         ∀ md func p'', fetchFunc donePart fname'' = Except.ok (FuncWithMD.mk md func, p'') →
           match func with | Func.mk _ _ rets _ => fspec'.rets.length = rets.length) →
-      (∀ (sconf : SymExecConfig c) (fname' : FName) (args : List (SimpleExpr c))
+      (∀ (sconf : SymExecConfig c) (ctx : FFFormula c) (fname' : FName)
+          (args : List (SimpleExpr c))
           (outs : List VarID) (md' : FuncMD) (func' : Func c) (p'' : Prog c),
         fetchFunc donePart fname' = Except.ok (FuncWithMD.mk md' func', p'') →
         (match func' with | Func.mk _ _ rets _ => outs.length = rets.length) →
-        TranslatesCorrectly gconf sconf specs
+        TranslatesCorrectly gconf sconf specs ctx
           (fun env => evalFuncCallCmd gconf donePart fname' args outs env)
           (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs)) →
       (∀ (fname' : FName) (md' : FuncMD) (func' : Func c) (p'' : Prog c),
@@ -441,12 +445,13 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
           ∀ md func p'', fetchFunc (funcs.reverse ++ donePart) fname'' =
               Except.ok (FuncWithMD.mk md func, p'') →
             match func with | Func.mk _ _ rets _ => fspec'.rets.length = rets.length) ∧
-        (∀ (sconf : SymExecConfig c) (fname' : FName) (args : List (SimpleExpr c))
+        (∀ (sconf : SymExecConfig c) (ctx : FFFormula c) (fname' : FName)
+            (args : List (SimpleExpr c))
             (outs : List VarID) (md' : FuncMD) (func' : Func c) (p'' : Prog c),
           fetchFunc (funcs.reverse ++ donePart) fname' =
               Except.ok (FuncWithMD.mk md' func', p'') →
           (match func' with | Func.mk _ _ rets _ => outs.length = rets.length) →
-          TranslatesCorrectly gconf sconf newSpecs
+          TranslatesCorrectly gconf sconf newSpecs ctx
             (fun env => evalFuncCallCmd gconf (funcs.reverse ++ donePart) fname' args outs env)
             (fun symEnv => seFuncCall gconf sconf symEnv newSpecs fname' args outs)) ∧
         (∀ (fname' : FName) (md' : FuncMD) (func' : Func c) (p'' : Prog c),
@@ -581,17 +586,18 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
               rwa [fetchFuncSpec_prepend_indep fspec specs fname'' (hname_eq ▸ hcase)] at hspec'_eq
             exact hrets_corr fname'' fspec' hspec'_eq_old md'' func p'' hfetch'
         -- H_funcCall for (thisFunc :: donePart) / (fspec :: specs)
-        have hHfc' : ∀ (sconf : SymExecConfig c) (fname' : FName) (args : List (SimpleExpr c))
+        have hHfc' : ∀ (sconf : SymExecConfig c) (ctx : FFFormula c) (fname' : FName)
+            (args : List (SimpleExpr c))
             (outs : List VarID) (md' : FuncMD) (func'' : Func c) (p'' : Prog c),
             fetchFunc (FuncWithMD.mk md (Func.mk name params rets body) :: donePart) fname' =
                 Except.ok (FuncWithMD.mk md' func'', p'') →
             (match func'' with | Func.mk _ _ rs _ => outs.length = rs.length) →
-            TranslatesCorrectly gconf sconf (fspec :: specs)
+            TranslatesCorrectly gconf sconf (fspec :: specs) ctx
               (fun env => evalFuncCallCmd gconf
                 (FuncWithMD.mk md (Func.mk name params rets body) :: donePart) fname' args outs
                 env)
               (fun symEnv => seFuncCall gconf sconf symEnv (fspec :: specs) fname' args outs) := by
-          intro sconf fname' args outs md'' func'' p'' hfetch houtlen
+          intro sconf ctx fname' args outs md'' func'' p'' hfetch houtlen
           simp only [fetchFunc] at hfetch
           by_cases hcase : name = fname'
           · subst hcase
@@ -599,7 +605,7 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
             obtain ⟨hfeq, hpeq⟩ := hfetch
             injection hfeq with hmdeq hfunceq
             exact seFuncCall_correct_via_seFunc gconf (FuncWithMD.mk md
-                (Func.mk name params rets body) :: donePart) specs sconf name md
+                (Func.mk name params rets body) :: donePart) specs sconf ctx name md
               (Func.mk name params rets body) donePart
               (by simp only [fetchFunc, BEq.rfl, ↓reduceIte])
               hnodup_head
@@ -607,16 +613,16 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
               fspec hseFunc_eq args outs
           · have hbeq : (name == fname') = false := by simpa using hcase
             simp only [hbeq, Bool.false_eq_true, ↓reduceIte] at hfetch
-            have hspec_old := hHfc sconf fname' args outs md'' func'' p'' hfetch houtlen
+            have hspec_old := hHfc sconf ctx fname' args outs md'' func'' p'' hfetch houtlen
             have hnb : ∀ (symEnv : SymEnv c) (spec : CmdsSpec c),
                 seFuncCall gconf sconf symEnv specs fname' args outs = Except.ok spec →
                 FormulaNamesBelow spec.f fspec.f.name :=
               fun symEnv spec heq =>
                 seFuncCall_names_below gconf sconf symEnv specs fname' args outs fspec.f.name
                   (by rw [hfname_eq]; exact hcase) hspecs_wf spec heq
-            have hlifted := TranslatesCorrectly_prepend gconf sconf specs fspec hne_specs _ _
+            have hlifted := TranslatesCorrectly_prepend gconf sconf specs ctx fspec hne_specs _ _
               hnb hspec_old
-            apply TranslatesCorrectly_congr gconf sconf (fspec :: specs) _ _ _ _ ?_ ?_ hlifted
+            apply TranslatesCorrectly_congr gconf sconf (fspec :: specs) ctx _ _ _ _ ?_ ?_ hlifted
             · intro env
               simp only [evalFuncCallCmd]
               cases evalSimpleExprsToValue env args with
@@ -786,11 +792,12 @@ theorem seExecFuncs_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     (specs : List (FuncSpec c)) (hspecs_eq : seExecFuncs gconf p = Except.ok specs) :
     (∀ spec ∈ specs, spec.f.name = spec.name) ∧
     specs.map (·.name) = p.map funcWithMDName ∧
-    (∀ (sconf : SymExecConfig c) (fname' : FName) (args : List (SimpleExpr c))
+    (∀ (sconf : SymExecConfig c) (ctx : FFFormula c) (fname' : FName)
+        (args : List (SimpleExpr c))
         (outs : List VarID) (md' : FuncMD) (func' : Func c) (p'' : Prog c),
       fetchFunc p fname' = Except.ok (FuncWithMD.mk md' func', p'') →
       (match func' with | Func.mk _ _ rs _ => outs.length = rs.length) →
-      TranslatesCorrectly gconf sconf specs
+      TranslatesCorrectly gconf sconf specs ctx
         (fun env => evalFuncCallCmd gconf p fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs)) ∧
     (∀ (fname' : FName) (md' : FuncMD) (func' : Func c) (p'' : Prog c),
@@ -851,14 +858,15 @@ theorem seExecFuncs_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
       ∀ md func p'', fetchFunc ([] : Prog c) fname'' = Except.ok (FuncWithMD.mk md func, p'') →
         match func with | Func.mk _ _ rets _ => fspec'.rets.length = rets.length :=
     fun fname' _ hspec_eq => absurd hspec_eq (by simp [fetchFuncSpec])
-  have hHfc0 : ∀ (sconf : SymExecConfig c) (fname' : FName) (args : List (SimpleExpr c))
+  have hHfc0 : ∀ (sconf : SymExecConfig c) (ctx : FFFormula c) (fname' : FName)
+      (args : List (SimpleExpr c))
       (outs : List VarID) (md' : FuncMD) (func' : Func c) (p'' : Prog c),
       fetchFunc ([] : Prog c) fname' = Except.ok (FuncWithMD.mk md' func', p'') →
       (match func' with | Func.mk _ _ rs _ => outs.length = rs.length) →
-      TranslatesCorrectly gconf sconf ([] : List (FuncSpec c))
+      TranslatesCorrectly gconf sconf ([] : List (FuncSpec c)) ctx
         (fun env => evalFuncCallCmd gconf ([] : Prog c) fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv ([] : List (FuncSpec c)) fname' args outs) :=
-    fun _ fname' _ _ _ _ _ hfetch _ _ _ _ => absurd hfetch (by simp [fetchFunc])
+    fun _ _ fname' _ _ _ _ _ hfetch _ _ _ _ => absurd hfetch (by simp [fetchFunc])
   have hSpecC0 : ∀ (fname' : FName) (md' : FuncMD) (func' : Func c) (p'' : Prog c),
       fetchFunc ([] : Prog c) fname' = Except.ok (FuncWithMD.mk md' func', p'') →
       ∀ fspec' : FuncSpec c, fetchFuncSpec ([] : List (FuncSpec c)) fname' = Except.ok fspec' →
@@ -904,10 +912,10 @@ theorem seExecFuncs_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
   have hp_eq : p.reverse.reverse ++ ([] : Prog c) = p := by simp
   refine ⟨hspecs_wf, ?_, ?_, ?_⟩
   · rw [hnames_corr, hp_eq]
-  · intro sconf fname' args outs md' func' p'' hfetch houtlen
+  · intro sconf ctx fname' args outs md' func' p'' hfetch houtlen
     have hfetch' : fetchFunc (p.reverse.reverse ++ ([] : Prog c)) fname' =
         Except.ok (FuncWithMD.mk md' func', p'') := by rw [hp_eq]; exact hfetch
-    have := hHfc sconf fname' args outs md' func' p'' hfetch' houtlen
+    have := hHfc sconf ctx fname' args outs md' func' p'' hfetch' houtlen
     simpa [hp_eq] using this
   · intro fname' md' func' p'' hfetch fspec' hspec'_eq
     have hfetch' : fetchFunc (p.reverse.reverse ++ ([] : Prog c)) fname' =

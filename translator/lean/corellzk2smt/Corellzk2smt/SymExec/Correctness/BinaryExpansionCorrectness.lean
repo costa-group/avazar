@@ -113,4 +113,39 @@ theorem ValidBinRep_of_noBits {c : ZKConfig} (gconf : GlobalConfig c) (ctx : FFF
   intro assignment _hctx id v hv
   exact ValidBinRepValue_of_noBits gconf assignment v (h id v hv)
 
+-- ---------------------------------------------------------------------------
+-- `ValidBinRep` is, as of today, unconditionally true -- `BinRep` is still the placeholder
+-- `FFFormula.true`, and `evalFormula`'s `.true` case is `Except.ok true` regardless of the
+-- assignment, so `ValidBinRepSimple`'s `some bs` branch holds no matter what `bs` actually is.
+-- This will stop being true once `BinRep` gets its real definition -- every call site below
+-- should be revisited then.
+-- ---------------------------------------------------------------------------
+
+/-- `ValidBinRepSimple` holds for *any* `sv`/`assignment`, as of today -- see the section header
+    above. -/
+theorem ValidBinRepSimple_trivial {c : ZKConfig} (gconf : GlobalConfig c)
+    (assignment : Assignment c) (sv : SimpleSymVal c) : ValidBinRepSimple gconf assignment sv := by
+  cases sv with
+  | const _ => trivial
+  | ffvar vbr =>
+      simp only [ValidBinRepSimple]
+      cases vbr.bits with
+      | none => trivial
+      | some bs => simp [BinRep, evalFormula]
+
+/-- `ValidBinRepValue_trivial`, lifted from `ValidBinRepSimple_trivial`. -/
+theorem ValidBinRepValue_trivial {c : ZKConfig} (gconf : GlobalConfig c)
+    (assignment : Assignment c) (v : SymValue c) : ValidBinRepValue gconf assignment v := by
+  cases v with
+  | simple sv => exact ValidBinRepSimple_trivial gconf assignment sv
+  | array arr => intro sv _hsv; exact ValidBinRepSimple_trivial gconf assignment sv
+
+/-- `ValidBinRep` holds for *any* `ctx`/`symEnv`, as of today -- see the section header above.
+    The one-line discharge every new `ValidBinRep` proof obligation introduced by threading `ctx`
+    through `TranslatesCorrectly` can use, until `BinRep` gets its real definition. -/
+theorem ValidBinRep_trivial {c : ZKConfig} (gconf : GlobalConfig c) (ctx : FFFormula c)
+    (symEnv : SymEnv c) : ValidBinRep gconf ctx symEnv := by
+  intro assignment _hctx id v _hv
+  exact ValidBinRepValue_trivial gconf assignment v
+
 end Corellzk2smt.SymExec.Correctness.BinaryExpansionCorrectness

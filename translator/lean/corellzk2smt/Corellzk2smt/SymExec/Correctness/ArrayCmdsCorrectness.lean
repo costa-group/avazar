@@ -15,14 +15,15 @@ open Corellzk2smt.Language.Core.Syntax.AST
 open Corellzk2smt.Language.Core.Semantics.Basic
 open Corellzk2smt.SymExec.Basic
 open Corellzk2smt.SymExec.BigStep
+open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.SymExec.Correctness.Lemmas
 
 /-- `seNewArray` correctly translates `evalNewArray`. Genuinely open, same reason as
     `seEvalAssignment_correct` (`AssignmentCorrectness.lean`): `seNewArray` is currently a
     permanent `"TBD"` stub. -/
 theorem seNewArray_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
-    (sconf : SymExecConfig c) (md : CmdMD) (id : VarID) (size : SimpleExpr c) :
-    TranslatesCorrectly gconf sconf specs
+    (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD) (id : VarID) (size : SimpleExpr c) :
+    TranslatesCorrectly gconf sconf specs ctx
       (fun env => evalNewArray md gconf env id size)
       (fun symEnv => seNewArray md gconf sconf symEnv specs id size) := by
   sorry
@@ -30,8 +31,9 @@ theorem seNewArray_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List
 /-- `seReadArray` correctly translates `evalReadArray`. Genuinely open, same reason as
     `seEvalAssignment_correct`. -/
 theorem seReadArray_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
-    (sconf : SymExecConfig c) (md : CmdMD) (out a : VarID) (index : SimpleExpr c) :
-    TranslatesCorrectly gconf sconf specs
+    (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD) (out a : VarID)
+    (index : SimpleExpr c) :
+    TranslatesCorrectly gconf sconf specs ctx
       (fun env => evalReadArray md gconf env out a index)
       (fun symEnv => seReadArray md gconf sconf symEnv specs out a index) := by
   sorry
@@ -39,8 +41,9 @@ theorem seReadArray_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : Lis
 /-- `seWriteArray` correctly translates `evalWriteArray`. Genuinely open, same reason as
     `seEvalAssignment_correct`. -/
 theorem seWriteArray_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
-    (sconf : SymExecConfig c) (md : CmdMD) (a : VarID) (index value : SimpleExpr c) :
-    TranslatesCorrectly gconf sconf specs
+    (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD) (a : VarID)
+    (index value : SimpleExpr c) :
+    TranslatesCorrectly gconf sconf specs ctx
       (fun env => evalWriteArray md gconf env a index value)
       (fun symEnv => seWriteArray md gconf sconf symEnv specs a index value) := by
   sorry
@@ -48,8 +51,8 @@ theorem seWriteArray_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : Li
 /-- `seCopyArray` correctly translates `evalCopyArray`. Genuinely open, same reason as
     `seEvalAssignment_correct`. -/
 theorem seCopyArray_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
-    (sconf : SymExecConfig c) (md : CmdMD) (out a : VarID) :
-    TranslatesCorrectly gconf sconf specs
+    (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD) (out a : VarID) :
+    TranslatesCorrectly gconf sconf specs ctx
       (fun env => evalCopyArray md gconf env out a)
       (fun symEnv => seCopyArray md gconf sconf symEnv specs out a) := by
   sorry

@@ -34,6 +34,7 @@ open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Lemmas
 open Corellzk2smt.SymExec.Correctness.Lemmas
+open Corellzk2smt.SymExec.Correctness.BinaryExpansionCorrectness
 
 /-- Replace every `.var`-referencing macro-call argument with a `.const` holding whatever
     value it currently denotes under `assign` -- doesn't change what `newAssignment'` builds,
@@ -2201,7 +2202,7 @@ theorem mintFreshRets_outVals_vars_below {c : ZKConfig} :
 -- ---------------------------------------------------------------------------
 
 theorem seFuncCall_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
-    (specs : List (FuncSpec c)) (sconf : SymExecConfig c)
+    (specs : List (FuncSpec c)) (sconf : SymExecConfig c) (ctx : FFFormula c)
     (fname : FName) (args : List (SimpleExpr c)) (outs : List VarID)
     (fspec : FuncSpec c) (hspec_eq : fetchFuncSpec specs fname = Except.ok fspec)
     (hspec_retsShape : ∀ (argVals : List (Value c)), ValuesMatchParams argVals fspec.params →
@@ -2233,10 +2234,10 @@ theorem seFuncCall_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                  auxBool.map (fun v => MacroCallParam.const (Const.boolc v))))
               (specs.map (·.f)) = Except.ok true) →
           evalFunCall gconf p fname argVals = Except.ok retVals)) :
-    TranslatesCorrectly gconf sconf specs
+    TranslatesCorrectly gconf sconf specs ctx
       (fun env => evalFuncCallCmd gconf p fname args outs env)
       (fun symEnv => seFuncCall gconf sconf symEnv specs fname args outs) := by
-  intro symEnv hbelow spec hspec_witness
+  intro symEnv hbelow _hvalid spec hspec_witness
   have hspec_witness' := hspec_witness
   simp only [seFuncCall, hspec_eq] at hspec_witness'
   cases hargSV_eq : resolveSimpleExprsToSymValue symEnv args with
@@ -2746,6 +2747,7 @@ theorem seFuncCall_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
       spec = { inSymEnv := symEnv, outSymEnv := outSymEnv', f := cf, nextVarId := nv2 } := by
     injection (hspec_witness.symm.trans hseFuncCall_eq)
   subst hspec2
-  exact ⟨rfl, hmono, hfresh, hbelowProof, houtbelow, houtfresh, hsound, hcomplete⟩
+  exact ⟨rfl, hmono, hfresh, hbelowProof, houtbelow, houtfresh, ValidBinRep_trivial gconf _ _,
+    hsound, hcomplete⟩
 
 end Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
