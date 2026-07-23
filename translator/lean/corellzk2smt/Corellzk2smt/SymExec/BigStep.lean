@@ -5,8 +5,6 @@ import Corellzk2smt.SymExec.Common
 import Corellzk2smt.FFConstraints.Basic
 import Corellzk2smt.Language.Core.Syntax.AST
 import Corellzk2smt.Language.Core.Analysis.DefinedVars
-import Corellzk2smt.Language.Core.Semantics.Basic
-import Corellzk2smt.Language.Core.Semantics.BigStep
 
 
 namespace Corellzk2smt.SymExec.BigStep
@@ -14,8 +12,6 @@ namespace Corellzk2smt.SymExec.BigStep
 
 open Corellzk2smt.Config (GlobalConfig)
 open Corellzk2smt.Language.Core.Syntax.AST
-open Corellzk2smt.Language.Core.Semantics.Basic
-open Corellzk2smt.Language.Core.Semantics.BigStep
 open Corellzk2smt.SymExec.Basic
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.Language.Core.Analysis.DefinedVars
@@ -130,92 +126,6 @@ def seFuncCall {c : ZKConfig}
             f := FFFormula.call spec.f.name (inputParams ++ outputParams ++ auxParams),
             nextVarId := nv2
           }
-
-/-- The concrete counterpart of `seFuncCall`: evaluate the arguments, call the function, bind
-    the results into the outputs. Mirrors `evalCmd`'s `Com.func_call` case exactly (no monadic
-    `.bind`, per house style). -/
-def evalFuncCallCmd {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c) (fname : FName)
-    (args : List (SimpleExpr c)) (outs : List VarID) (env : Env c) : Except String (Env c) :=
-  match evalSimpleExprsToValue env args with
-  | Except.error err => Except.error err
-  | Except.ok argVals =>
-    match evalFunCall gconf p fname argVals with
-    | Except.error err => Except.error err
-    | Except.ok outVals =>
-      match setVars env outs outVals with
-      | Except.error err => Except.error err
-      | Except.ok vars_env => Except.ok vars_env
-
-/-- The number of constraint-variable slots a single `.ff`/`.array size` type occupies: 1 for
-    `.ff`, `size` for `.array size` -- matches `mintFreshParam`/`mintFreshRetWithEq`'s own
-    var-minting counts (`mintFreshRetParam`/`flattenArgVal`, used at a *call site*, mint/consume
-    exactly this many slots too). Shared between `FuncCorrectness.lean` and
-    `FuncCallCorrectness.lean` (neither can import the other), hence living here. -/
-def typeSize (t : VarType) : Nat := match t with | .ff => 1 | .array n => n
-
-/-- `Param`-level convenience wrapper for `typeSize`. -/
-def paramSize (p : Param) : Nat := typeSize p.type
-
-/-- Total flattened constraint-variable count for a list of params (sum of each one's
-    `paramSize`) -- what `mintFreshParams`/`mintFreshRetsWithEq`/`mintFreshRets`/`flattenArgVals`
-    actually advance `nextVarId` by / how many flattened elements they produce or consume. -/
-def totalParamSize (params : List Param) : Nat := (params.map paramSize).sum
-
-@[simp] theorem totalParamSize_nil : totalParamSize ([] : List Param) = 0 := rfl
-
-@[simp] theorem totalParamSize_cons (p : Param) (ps : List Param) :
-    totalParamSize (p :: ps) = paramSize p + totalParamSize ps := by
-  simp [totalParamSize]
-
-/-- The fresh symbolic value a single `.ff`/`.array size` type gets minted, starting at
-    `nextVarId` -- the shared closed form both `mintFreshParam` (this file, entry env for a
-    function's own params/rets) and `mintFreshRetParam` (call-site fresh output vars) produce for
-    a single param/ret, letting both be characterized against ONE definition instead of two
-    independent ones. -/
-def freshRetSymValue {c : ZKConfig} (nextVarId : Nat) (type : VarType) : SymValue c :=
-  match type with
-  | .ff => SymValue.simple (SimpleSymVal.ffvar { var := nextVarId, bits := none })
-  | .array size => SymValue.array ((List.range size).map (fun i =>
-      SimpleSymVal.ffvar { var := nextVarId + i, bits := none })).toArray
-
-/-- `mintFreshRets` produces exactly one output value per return parameter -- regardless of
-    its type (an array-typed ret still contributes a single `SymValue.array` entry), so this
-    holds unconditionally, not just in the FF-only case. -/
-theorem mintFreshRets_outVals_length {c : ZKConfig} :
-    ∀ (nextVarId : Nat) (rets : List Param),
-      (mintFreshRets (c := c) nextVarId rets).2.2.length = rets.length := by
-  intro nextVarId rets
-  induction rets generalizing nextVarId with
-  | nil => rfl
-  | cons r rest ih =>
-      simp only [mintFreshRets]
-      obtain ⟨nv1, params1, val1⟩ := mintFreshRetParam (c := c) nextVarId r.type
-      simp only [List.length_cons, ih nv1]
-
-/-- `setVars` only ever succeeds when the id list and value list have matching lengths -- its
-    own definition falls to the mismatched-lengths error case otherwise. -/
-theorem setVars_length_of_ok {c : ZKConfig} :
-    ∀ (ids : List VarID) (vs : List (SymValue c)) (env env' : SymEnv c),
-      Corellzk2smt.SymExec.Basic.setVars env ids vs = Except.ok env' → ids.length = vs.length := by
-  intro ids
-  induction ids with
-  | nil =>
-      intro vs env env' h
-      cases vs with
-      | nil => rfl
-      | cons v vs => simp [Corellzk2smt.SymExec.Basic.setVars] at h
-  | cons id ids ih =>
-      intro vs env env' h
-      cases vs with
-      | nil => simp [Corellzk2smt.SymExec.Basic.setVars] at h
-      | cons v vs =>
-          simp only [Corellzk2smt.SymExec.Basic.setVars] at h
-          cases hrec : Corellzk2smt.SymExec.Basic.setVars
-              (Corellzk2smt.SymExec.Basic.setVar env id v) ids vs with
-          | error e => rw [hrec] at h; simp at h
-          | ok env'' =>
-              simp only [List.length_cons]
-              exact congrArg (· + 1) (ih vs (Corellzk2smt.SymExec.Basic.setVar env id v) env'' hrec)
 
 /-- Try to decide a condition without generating a formula, by constant-folding both sides
     (mirrors `evalCond`, but via `tryEvalSimpleExprToFFValue` -- so it only succeeds when both
