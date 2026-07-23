@@ -1,0 +1,45 @@
+{
+  "timing": {
+    "graph_construction": 0.0,
+    "clustering": 0.0,
+    "dag_construction": 0.0,
+    "equivalency": 0.0,
+    "total": 0.0
+  },
+  "nodes": [
+    {
+      "node_name": "SignFp()",
+      "component_name": "",
+      "node_id": 0,
+      "constraints": [
+        0,
+        1
+      ],
+      "input_signals": [
+        2
+      ],
+      "output_signals": [
+        1
+      ],
+      "signals": [
+        1,
+        2,
+        3
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [],
+      "predecessors": []
+    }
+  ],
+  "equivalency_local": [
+    [
+      0
+    ]
+  ],
+  "equivalency_structural": [
+    [
+      0
+    ]
+  ]
+}

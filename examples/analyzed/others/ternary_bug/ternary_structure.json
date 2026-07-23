@@ -1,0 +1,124 @@
+{
+  "timing": {
+    "graph_construction": 0.0,
+    "clustering": 0.0,
+    "dag_construction": 0.0,
+    "equivalency": 0.0,
+    "total": 0.0
+  },
+  "nodes": [
+    {
+      "node_name": "Num2Ternary(2)",
+      "component_name": "",
+      "node_id": 0,
+      "constraints": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "input_signals": [
+        5
+      ],
+      "output_signals": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "signals": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [
+        1,
+        2
+      ],
+      "predecessors": []
+    },
+    {
+      "node_name": "Num2Bits(2)",
+      "component_name": "Num2Bits_16_325#0",
+      "node_id": 1,
+      "constraints": [
+        7,
+        8,
+        9
+      ],
+      "input_signals": [
+        10
+      ],
+      "output_signals": [
+        8,
+        9
+      ],
+      "signals": [
+        8,
+        9,
+        10
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [],
+      "predecessors": [
+        0
+      ]
+    },
+    {
+      "node_name": "Num2Bits(2)",
+      "component_name": "Num2Bits_16_325#1",
+      "node_id": 2,
+      "constraints": [
+        10,
+        11,
+        12
+      ],
+      "input_signals": [
+        13
+      ],
+      "output_signals": [
+        11,
+        12
+      ],
+      "signals": [
+        11,
+        12,
+        13
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [],
+      "predecessors": [
+        0
+      ]
+    }
+  ],
+  "equivalency_local": [
+    [
+      0
+    ],
+    [
+      1,
+      2
+    ]
+  ],
+  "equivalency_structural": [
+    [
+      0
+    ],
+    [
+      1,
+      2
+    ]
+  ]
+}

@@ -1,0 +1,11 @@
+def @SignFp_0(%arg0: ff) -> sign: ff {
+  %felt_const_2 = 2
+  %0 = felt.uimod %arg0 %felt_const_2
+  sign = %0
+  %felt_const_2_0 = 2
+  %1 = felt.uidiv %arg0 %felt_const_2_0
+  q = %1
+}
+def main(%arg0: ff) -> sign: ff {
+  call @SignFp_0(%arg0) to sign
+}
