@@ -1,5 +1,5 @@
 import Corellzk2smt.SymExec.PartialCorrectness.Correctness
-import Corellzk2smt.SymExec.FuncCallCorrectness
+import Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
 import Corellzk2smt.Language.Core.Analysis.DefinedVars
 
 /- Shared machinery for `seFunc` correctness (array-general -- function params/rets may be
@@ -29,7 +29,7 @@ open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
 open Corellzk2smt.SymExec.Lemmas
 open Corellzk2smt.SymExec.PartialCorrectness.Correctness
-open Corellzk2smt.SymExec.FuncCallCorrectness
+open Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
 
 /-- `mintFreshParam` mints exactly `typeSize type` consecutive fresh `.ffv`s, in closed form --
     unconditionally (unlike the old FF-only version, `mintFreshParam` never errors any more). -/

@@ -1,7 +1,7 @@
 import Corellzk2smt.SymExec.Lemmas
 import Corellzk2smt.Language.Core.Analysis.WellShaped
 import Corellzk2smt.SymExec.PartialCorrectness.Lemmas
-import Corellzk2smt.SymExec.FuncCallCorrectness
+import Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
 
 /-
 This file merges what used to be two files: `SymExec/Correctness.lean` ("shared machinery" for
@@ -73,7 +73,7 @@ open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
 open Corellzk2smt.SymExec.Lemmas
-open Corellzk2smt.SymExec.FuncCallCorrectness
+open Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
 open Corellzk2smt.SymExec.PartialCorrectness.Lemmas
 
 -- ---------------------------------------------------------------------------
