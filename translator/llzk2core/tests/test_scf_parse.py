@@ -8,6 +8,8 @@ from llzk_dialects.felt import FeltConst, FeltBinary
 from llzk_dialects.bool import BoolCmp, BoolBinary
 from llzk_dialects.constrain import ConstrainEq
 from llzk_dialects.function import FunctionCall
+from llzk_dialects.pod import PodRead
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx
 
 
 class TestSCF:
@@ -49,6 +51,37 @@ class TestSCF:
     def test_condition_match(self):
         assert SCFCondition.match("scf.condition(%c)") is True
         assert SCFCondition.match("scf.yield") is False
+
+    # ── SCFCondition.to_core ──────────────────────────────────────────────────
+
+    def test_condition_to_core_felt(self):
+        op = SCFCondition(SSAVar("%cond"), [SSAVar("%v")], [Type("!felt.type")])
+        ctx = TranslationContext()
+        ctx.scf_result = [SSAVar("%result")]
+        lines = list(op.to_core(ctx))
+        assert lines == ["%result = %v"]
+
+    def test_condition_to_core_pod_and_felt_args(self):
+        # Regression: SCFCondition.to_core used to compute type_.to_core()
+        # and assert it wasn't None before calling
+        # translate_assignment_core_with_ctx -- which already dispatches on
+        # pod/struct/array types on its own, independent of Type.to_core()
+        # (which only recognizes a felt scalar or a felt array). A
+        # scf.while whose condition carries a pod-typed loop-carried value
+        # (e.g. combining pods inside pods, as in
+        # poseidon3_test_concrete.mlir) crashed on that dead check even
+        # though the actual translation call worked fine.
+        ctx = TranslationContext()
+        ctx.ssa2pod_var["%pod_src"] = {"@x": ("%pod_src_@x", Type("!felt.type"))}
+        op = SCFCondition(
+            SSAVar("%cond"),
+            [SSAVar("%pod_src"), SSAVar("%v")],
+            [Type("!pod.type<[@x: !felt.type]>"), Type("!felt.type")],
+        )
+        ctx.scf_result = [SSAVar("%pod_result"), SSAVar("%felt_result")]
+        lines = list(op.to_core(ctx))  # previously: AssertionError
+        assert lines == ["%pod_result_@x = %pod_src_@x", "%felt_result = %v"]
+        assert ctx.ssa2pod_var["%pod_result"]["@x"][0] == "%pod_result_@x"
 
     # ── SCFIf (BlockOperation) ────────────────────────────────────────────────
 
@@ -219,7 +252,9 @@ class TestSCF:
             "}",
         ]
         op, next_cur = SCFFor.parse(self.lines, 0, self._simple_parse_fn)
-        assert op.iv == SSAVar("%iv")
+        # %iv is cursor-tagged (SCFFor.parse's own block-arg rename) since it's
+        # used as a literal ctx dict key, just like scf.while's own block args.
+        assert op.iv == SSAVar("%iv_f0")
         assert op.lb == SSAVar("%lb")
         assert op.ub == SSAVar("%ub")
         assert op.step == SSAVar("%s")
@@ -234,7 +269,8 @@ class TestSCF:
         ]
         op, _ = SCFFor.parse(self.lines, 0, self._simple_parse_fn)
         assert len(op.iter_args) == 1
-        assert op.iter_args[0][0] == SSAVar("%acc")
+        assert op.iter_args[0][0] == SSAVar("%acc_f0")
+        # init (the incoming value from the enclosing scope) is untouched.
         assert op.iter_args[0][1] == SSAVar("%init")
 
     def test_for_match(self):
@@ -268,15 +304,19 @@ class TestSCF:
         ctx.var2const["%c1"] = 1
 
         out = list(op.to_core(ctx))
+        # %iv and %x (a body-computed result) are both cursor-tagged by
+        # SCFFor.parse's own rename (mirroring SCFWhile's), since they're
+        # used as literal ctx dict keys elsewhere; %arg0 is an external,
+        # unbound reference and stays untouched.
         assert out == [
-            "%iv = 0",
+            "%iv_f0 = 0",
             "repeat 3 {",
-            "%x = felt.add %iv %arg0",
-            "%iv = felt.add %iv 1",
+            "%x_f0 = felt.add %iv_f0 %arg0",
+            "%iv_f0 = felt.add %iv_f0 1",
             "}",
         ]
         # Induction variable is not in var2const after the loop.
-        assert "%iv" not in ctx.var2const
+        assert "%iv_f0" not in ctx.var2const
 
     def test_for_to_core_unrolls_when_body_has_call(self):
         # A body containing a function.call is unrolled into one literal
@@ -344,7 +384,9 @@ class TestSCF:
             "}",
         ]
         op, next_cur = SCFWhile.parse(self.lines, 0, self._while_parse_fn)
-        assert op.init_args == [(SSAVar("%arg"), SSAVar("%init"))]
+        # %arg (the while's own block arg) is cursor-tagged since it's used
+        # as a literal ctx dict key; %init (the incoming value) is untouched.
+        assert op.init_args == [(SSAVar("%arg_w0"), SSAVar("%init"))]
         assert len(op.before_body) == 1
         assert len(op.after_body) == 1
         assert next_cur == 6
@@ -361,9 +403,13 @@ class TestSCF:
             '}',
         ]
         op, next_cur = SCFWhile.parse(self.lines, 0, self._while_parse_fn)
+        # after_args' own block-arg names ("%arg2"/"%arg3" here, distinct
+        # from init_args' "%arg0"/"%arg1" in this synthetic example) are also
+        # cursor-tagged -- independently of init_args', since they're a
+        # different raw name in this test.
         assert len(op.after_args) == 2
-        assert op.after_args[0] == (SSAVar('%arg2'), Type('!felt.type<"bn128">'))
-        assert op.after_args[1] == (SSAVar('%arg3'), Type('!felt.type<"bn128">'))
+        assert op.after_args[0] == (SSAVar('%arg2_w0'), Type('!felt.type<"bn128">'))
+        assert op.after_args[1] == (SSAVar('%arg3_w0'), Type('!felt.type<"bn128">'))
         assert len(op.before_body) == 1
         assert len(op.after_body) == 1
         assert next_cur == 7
@@ -693,3 +739,179 @@ class TestSCF:
         # branch report True.
         other_if = SCFIf([], SSAVar("%cond"), [], [FeltConst(SSAVar("%c"), 1)], None)
         assert _contains_function_call([other_if]) is False
+
+    # ── Block-arg name collisions across sibling/nested while/for occurrences ─
+    #
+    # Regression coverage for poseidon3_test_concrete.mlir's KeyError: '@count'
+    # (see PROGRESS.md): scf.while's/scf.for's own block-arg (init_args'/
+    # after_args'/iter_args') and induction-variable names were never
+    # cursor-tagged the way body-computed result names already are
+    # (before_rename/after_rename), so two sibling or nested loop occurrences
+    # reusing the same raw LLZK block-arg text (very common -- block-arg
+    # numbering isn't globally unique) silently clobbered each other's
+    # ctx.ssa2pod_var/ctx.var2const/ctx.ssa_to_name registration.
+
+    def _pod_while_parse_fn(self, start, end):
+        ops = []
+        for i in range(start, end):
+            line = self.lines[i].strip()
+            if not line or line in ("}", "do {"):
+                continue
+            if PodRead.match(line):
+                ops.append(PodRead.parse(line))
+            elif SCFYield.match(line):
+                ops.append(SCFYield.parse(line))
+            elif SCFCondition.match(line):
+                ops.append(SCFCondition.parse(line))
+        return ops
+
+    def test_while_parse_sibling_reuse_of_block_arg_name_gets_distinct_suffix(self):
+        self.lines = [
+            'scf.while (%arg8 = %p_a) : (!pod.type<[@x: !felt.type]>) -> (!pod.type<[@x: !felt.type]>) {',
+            'scf.condition(%cond1) %arg8 : !pod.type<[@x: !felt.type]>',
+            '}',
+            'do {',
+            'scf.yield %arg8 : !pod.type<[@x: !felt.type]>',
+            '}',
+            'scf.while (%arg8 = %p_b) : (!pod.type<[@y: !felt.type]>) -> (!pod.type<[@y: !felt.type]>) {',
+            'scf.condition(%cond2) %arg8 : !pod.type<[@y: !felt.type]>',
+            '}',
+            'do {',
+            'scf.yield %arg8 : !pod.type<[@y: !felt.type]>',
+            '}',
+        ]
+        op1, next1 = SCFWhile.parse(self.lines, 0, self._pod_while_parse_fn)
+        op2, _ = SCFWhile.parse(self.lines, next1, self._pod_while_parse_fn)
+
+        assert op1.init_args[0][0].name == "%arg8_w0"
+        assert op2.init_args[0][0].name == f"%arg8_w{next1}"
+        assert op1.init_args[0][0].name != op2.init_args[0][0].name
+
+        # References inside each while's own body were renamed consistently
+        # with that same while's init_args (the scf.condition/scf.yield
+        # operand, not just the init_args tuple itself).
+        assert op1.before_body[0].args[0].name == "%arg8_w0"
+        assert op1.after_body[0].operands[0].name == "%arg8_w0"
+        assert op2.before_body[0].args[0].name == f"%arg8_w{next1}"
+        assert op2.after_body[0].operands[0].name == f"%arg8_w{next1}"
+
+    def _recursive_while_parse_fn(self, start, end):
+        ops = []
+        i = start
+        while i < end:
+            line = self.lines[i].strip()
+            if not line or line in ("}", "do {"):
+                i += 1
+                continue
+            if SCFWhile.match(line):
+                op, next_i = SCFWhile.parse(self.lines, i, self._recursive_while_parse_fn)
+                ops.append(op)
+                i = next_i
+                continue
+            if SCFYield.match(line):
+                ops.append(SCFYield.parse(line))
+            elif SCFCondition.match(line):
+                ops.append(SCFCondition.parse(line))
+            i += 1
+        return ops
+
+    def test_while_parse_nested_reuse_of_block_arg_name_gets_distinct_suffix(self):
+        self.lines = [
+            'scf.while (%arg8 = %outer_init) : (index) -> (index) {',   # 0
+            'scf.condition(%cond1) %arg8',                              # 1
+            '}',                                                        # 2
+            'do {',                                                     # 3
+            'scf.while (%arg8 = %inner_init) : (index) -> (index) {',   # 4
+            'scf.condition(%cond2) %arg8',                              # 5
+            '}',                                                        # 6
+            'do {',                                                     # 7
+            'scf.yield %arg8 : index',                                  # 8
+            '}',                                                        # 9
+            'scf.yield %arg8 : index',                                  # 10
+            '}',                                                        # 11
+        ]
+        outer, _ = SCFWhile.parse(self.lines, 0, self._recursive_while_parse_fn)
+        inner = outer.after_body[0]
+        assert isinstance(inner, SCFWhile)
+
+        assert outer.init_args[0][0].name == "%arg8_w0"
+        assert inner.init_args[0][0].name == "%arg8_w4"
+        assert outer.before_body[0].args[0].name == "%arg8_w0"
+        assert inner.before_body[0].args[0].name == "%arg8_w4"
+        # The outer's own trailing yield (after the nested while) still
+        # references the outer's own (renamed) block arg, not the inner's.
+        assert outer.after_body[-1].operands[0].name == "%arg8_w0"
+
+    def test_for_parse_sibling_reuse_of_iv_gets_distinct_suffix(self):
+        self.lines = [
+            "scf.for %iv = %lb to %ub step %s {",
+            "scf.yield",
+            "}",
+            "scf.for %iv = %lb to %ub step %s {",
+            "scf.yield",
+            "}",
+        ]
+        op1, next1 = SCFFor.parse(self.lines, 0, self._simple_parse_fn)
+        op2, _ = SCFFor.parse(self.lines, next1, self._simple_parse_fn)
+        assert op1.iv.name == "%iv_f0"
+        assert op2.iv.name == f"%iv_f{next1}"
+        assert op1.iv.name != op2.iv.name
+
+    def test_while_to_core_sibling_block_arg_reuse_does_not_collide_in_ssa2pod_var(self):
+        # End-to-end reproduction (in miniature) of the poseidon3_test_
+        # concrete.mlir crash: two sibling while occurrences both name their
+        # own block arg "%arg8", bound to differently-shaped pods. Before
+        # the fix, registering the second while's "%arg8" would silently
+        # overwrite the first's entry in the flat ctx.ssa2pod_var dict, so a
+        # later read of the FIRST while's own field (here "@x") would
+        # KeyError against the SECOND while's (here "@y"-shaped) mapping.
+        self.lines = [
+            'scf.while (%arg8 = %p_a) : (!pod.type<[@x: !felt.type]>) -> (!pod.type<[@x: !felt.type]>) {',
+            'scf.condition(%cond1) %arg8 : !pod.type<[@x: !felt.type]>',
+            '}',
+            'do {',
+            '%r1 = pod.read %arg8 [@x] : !pod.type<[@x: !felt.type]>, !felt.type',
+            'scf.yield %arg8 : !pod.type<[@x: !felt.type]>',
+            '}',
+            'scf.while (%arg8 = %p_b) : (!pod.type<[@y: !felt.type]>) -> (!pod.type<[@y: !felt.type]>) {',
+            'scf.condition(%cond2) %arg8 : !pod.type<[@y: !felt.type]>',
+            '}',
+            'do {',
+            '%r2 = pod.read %arg8 [@y] : !pod.type<[@y: !felt.type]>, !felt.type',
+            'scf.yield %arg8 : !pod.type<[@y: !felt.type]>',
+            '}',
+        ]
+        op1, next1 = SCFWhile.parse(self.lines, 0, self._pod_while_parse_fn)
+        op2, _ = SCFWhile.parse(self.lines, next1, self._pod_while_parse_fn)
+
+        ctx = TranslationContext()
+        ctx.ssa2pod_var["%p_a"] = {"@x": ("%p_a_@x", Type("!felt.type"))}
+        ctx.ssa2pod_var["%p_b"] = {"@y": ("%p_b_@y", Type("!felt.type"))}
+
+        # Mirrors SCFWhile.to_core's own first registration loop for each
+        # while, in program order (op1 first, then op2 -- the ordering that
+        # would clobber a shared, un-suffixed "%arg8" key).
+        for type_, (lhs, rhs) in zip(op1.func_type[0], op1.init_args):
+            translate_assignment_core_with_ctx(lhs, rhs, type_, ctx)
+        for type_, (lhs, rhs) in zip(op2.func_type[0], op2.init_args):
+            translate_assignment_core_with_ctx(lhs, rhs, type_, ctx)
+
+        assert op1.init_args[0][0].name in ctx.ssa2pod_var
+        assert op2.init_args[0][0].name in ctx.ssa2pod_var
+        assert op1.init_args[0][0].name != op2.init_args[0][0].name
+
+        pod_read_1 = op1.after_body[0]
+        pod_read_2 = op2.after_body[0]
+        assert isinstance(pod_read_1, PodRead) and isinstance(pod_read_2, PodRead)
+
+        # Previously: op1's own read (of "@x") would KeyError here, since
+        # op2's registration had overwritten the shared "%arg8" key with an
+        # "@y"-only mapping. (Result names %r1/%r2 are also cursor-tagged by
+        # the existing after_rename mechanism, since they're body-computed;
+        # the copied-through variable names derive from each while's own
+        # renamed block-arg, per translate_assignment_core_with_ctx's
+        # "{lhs.name}_{record}" convention.)
+        lines_1 = list(pod_read_1.to_core(ctx))
+        lines_2 = list(pod_read_2.to_core(ctx))
+        assert lines_1 == ["%r1_aft0 = %arg8_w0_@x"]
+        assert lines_2 == [f"%r2_aft{next1} = %arg8_w{next1}_@y"]

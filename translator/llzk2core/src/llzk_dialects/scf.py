@@ -179,19 +179,11 @@ class SCFCondition(Operation):
         cond_res_index = 0
         for result in ctx.scf_result:
             for component in range(result.n_components):
-                # Retrieve the component and the yield operand at current
-                # index "yield_res_index"
+                # Retrieve the component and the condition operand at the
+                # current index "cond_res_index"
                 lhs = SSAVar(result.to_core_component(component))
                 rhs = self.args[cond_res_index]
                 type_ = self.types[cond_res_index]
-
-                to_core_type = type_.to_core()
-                assert to_core_type is not None, f"Error recognizing type inside a cond expression: {self}"
-
-                # Depending on whether the type corresponds to an array
-                # or to a ff, we generate a copy or a direct assignment
-                # Here, we don't consider translate_assignment_core_with_ctx because
-                # the variables are not constants (they are unfolded depending on the branch)
 
                 yield translate_assignment_core_with_ctx(lhs, rhs, type_, ctx)
                 cond_res_index += 1
@@ -531,8 +523,45 @@ class SCFFor(BlockOperation):
             depth += lines[end].count('{') - lines[end].count('}')
 
         body = parse_fn(cursor + 1, end)
+
+        # Disambiguate this for's own body-computed result names across
+        # sibling/nested scf.for occurrences, mirroring SCFWhile.parse's
+        # before_rename/after_rename (see its comment for the rationale --
+        # sibling/nested loops can independently reuse the same LLZK-level
+        # SSA numbers). SCFFor previously had no such tagging at all; a
+        # nested scf.for only got disambiguated incidentally, if it happened
+        # to sit inside an enclosing scf.while whose own rename recursed
+        # into it.
+        body_rename: Dict[str, str] = {
+            name: name + f"_f{cursor}"
+            for name in _collect_result_names(body)
+        }
+        for op in body:
+            op.update_variables(body_rename)
+
+        # Same collision risk as SCFWhile's init_args/after_args (see there):
+        # this for's own induction variable and iter_args' block-arg names
+        # are used as literal keys into ctx.ssa2pod_var/ctx.var2const, flat
+        # dicts spanning the whole function. Tag them with this for's own
+        # cursor too. Independent dict from body_rename above -- a name is
+        # either a block-arg binding or an op result, never both, so the two
+        # dicts' keys can't collide.
+        iv = SSAVar.parse(m["iv"])
+        own_arg_names: Set[str] = {iv.name} | {a.name for a, _ in iter_args}
+        block_arg_rename: Dict[str, str] = {
+            name: name + f"_f{cursor}"
+            for name in own_arg_names
+        }
+        for op in body:
+            op.update_variables(block_arg_rename)
+        if iv.name in block_arg_rename:
+            iv.name = block_arg_rename[iv.name]
+        for block_arg, _init_val in iter_args:
+            if block_arg.name in block_arg_rename:
+                block_arg.name = block_arg_rename[block_arg.name]
+
         return (
-            SCFFor(results, SSAVar.parse(m["iv"]),
+            SCFFor(results, iv,
                    SSAVar.parse(m["lb"]), SSAVar.parse(m["ub"]),
                    SSAVar.parse(m["step"]), iter_args, body),
             end + 1,
@@ -779,6 +808,42 @@ class SCFWhile(BlockOperation):
         }
         for op in after_body:
             op.update_variables(after_rename)
+
+        # The above only disambiguates body-COMPUTED names. This while's own
+        # block-argument names (init_args'/after_args' own SSAVars, e.g.
+        # "%arg8") are untouched by before_rename/after_rename (that's the
+        # point of after_arg_names, above) -- but they are still used as
+        # literal keys into ctx.ssa2pod_var/ctx.var2const/ctx.ssa_to_name,
+        # which are flat dicts spanning the whole function. Two sibling or
+        # nested scf.while occurrences that happen to reuse the same raw
+        # block-arg name (very common -- LLZK's block-arg numbering isn't
+        # globally unique) but bind it to completely different values would
+        # silently clobber each other's registration. Tag with this while's
+        # own cursor, exactly like before_rename/after_rename do for result
+        # names, so every occurrence's block-arg names become unique too.
+        own_arg_names: Set[str] = (
+            {v.name for v, _ in init_args} | {v.name for v, _ in after_args}
+        )
+        block_arg_rename: Dict[str, str] = {
+            name: name + f"_w{cursor}"
+            for name in own_arg_names
+        }
+        for op in before_body:
+            op.update_variables(block_arg_rename)
+        for op in after_body:
+            op.update_variables(block_arg_rename)
+
+        # init_args/after_args are plain tuples, not Operations --
+        # update_variables never reaches these SSAVar objects directly, so
+        # mutate them here. init_val (the incoming value from the enclosing
+        # scope) is deliberately left untouched -- it isn't this while's own
+        # binder.
+        for block_arg, _init_val in init_args:
+            if block_arg.name in block_arg_rename:
+                block_arg.name = block_arg_rename[block_arg.name]
+        for arg_var, _type in after_args:
+            if arg_var.name in block_arg_rename:
+                arg_var.name = block_arg_rename[arg_var.name]
 
         return (
             SCFWhile(results, init_args, types,
