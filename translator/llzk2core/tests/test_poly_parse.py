@@ -206,6 +206,25 @@ class TestPoly:
         # Cleared after emitting its body, mirroring StructDef.to_core.
         assert ctx.current_core_function is None
 
+    def test_poly_template_to_core_pure_function_nd_array_return(self):
+        # Regression (poseidon3_test_concrete.mlir's @POSEIDON_M_2): a pure
+        # function returning an N-D array. FunctionReturn.parse previously
+        # split its type string on every comma, including the array's own
+        # dimension-list comma ("17,17"), corrupting the type and leaking
+        # the literal string "None" into the emitted signature.
+        self.lines = [
+            "poly.template @POSEIDON_M_2 {",
+            'function.def @POSEIDON_M_2(%arg0: !felt.type) -> !array.type<17,17 x !felt.type<"bn128">> {',
+            'function.return %1 : !array.type<17,17 x !felt.type<"bn128">>',
+            "}",
+            "}",
+        ]
+        op, _ = PolyTemplate.parse(self.lines, 0, self._pure_function_template_parse_fn)
+        ctx = TranslationContext()
+        out = ''.join(op.to_core(ctx))
+        assert "None" not in out
+        assert "def @POSEIDON_M_2(%arg0: ff) -> %1: arr<289> {" in out
+
     def test_register_pure_function_idempotent(self):
         func = FunctionDef(
             GlobalVariable("@f"), "(%arg0: !felt.type) -> !felt.type",

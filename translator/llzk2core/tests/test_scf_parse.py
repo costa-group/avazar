@@ -978,3 +978,76 @@ class TestSCF:
         lines_2 = list(pod_read_2.to_core(ctx))
         assert lines_1 == ["%r1_aft0 = %arg8_w0_@x"]
         assert lines_2 == [f"%r2_aft{next1} = %arg8_w{next1}_@y"]
+
+    def test_while_to_core_member_backed_pod_arg_preserves_semantic_dest_across_init_and_yield(self):
+        # End-to-end reproduction of the poseidon3_test_concrete.mlir crash:
+        # a pod-typed while block arg ("%arg9") backs a struct member
+        # ("ark"), and each of its fields is ITSELF a nested pod (one level
+        # deep). The arg's *initial* value comes from a plain raw-SSA pod
+        # (mirroring an llzk.nondet result) -- previously, copying that in
+        # would derive a throwaway "%arg9_..._@idx_7" name instead of the
+        # semantic "ark.idx_7", and the SAME clobbering happened again on
+        # the yield-back, eventually stranding a name nothing could resolve
+        # through. A pod.read/pod.read chain inside the body
+        # (%598 = pod.read %arg9[@idx_7]; %599 = pod.read %598[@in]) is the
+        # exact shape that KeyError'd.
+        pod_type_str = "!pod.type<[@idx_7: !pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>]>"
+        nested_type_str = "!pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>"
+        array_type_str = "!array.type<3 x !felt.type<\"bn128\">>"
+        self.lines = [
+            f'scf.while (%arg9 = %nondet_p) : ({pod_type_str}) -> ({pod_type_str}) {{',
+            f'scf.condition(%cond) %arg9 : {pod_type_str}',
+            '}',
+            'do {',
+            f'%598 = pod.read %arg9 [@idx_7] : {pod_type_str}, {nested_type_str}',
+            f'%599 = pod.read %598 [@in] : {nested_type_str}, {array_type_str}',
+            f'scf.yield %other : {pod_type_str}',
+            '}',
+        ]
+        op, _ = SCFWhile.parse(self.lines, 0, self._pod_while_parse_fn)
+
+        arg9_name = op.init_args[0][0].name  # renamed block-arg, e.g. "%arg9_w0"
+
+        ctx = TranslationContext()
+        ctx.input_pod_to_member[arg9_name] = "ark"
+
+        # Mirrors an llzk.nondet result: raw-SSA field names throughout, not
+        # semantic ones.
+        ctx.ssa2pod_var["%nondet_p"] = {
+            "@idx_7": ("%nondet_p_@idx_7", Type(nested_type_str)),
+        }
+        ctx.ssa2pod_var["%nondet_p_@idx_7"] = {
+            "@in": ("%nondet_p_@idx_7_@in", Type(array_type_str)),
+        }
+        # A second, independently-raw-named pod the loop yields back instead
+        # of %arg9 itself (so the yield-back actually exercises a copy,
+        # rather than being skipped as a same-name no-op).
+        ctx.ssa2pod_var["%other"] = {
+            "@idx_7": ("%other_@idx_7", Type(nested_type_str)),
+        }
+        ctx.ssa2pod_var["%other_@idx_7"] = {
+            "@in": ("%other_@idx_7_@in", Type(array_type_str)),
+        }
+
+        # Init-copy: mirrors SCFWhile.to_core's own first registration loop.
+        for type_, (lhs, rhs) in zip(op.func_type[0], op.init_args):
+            translate_assignment_core_with_ctx(lhs, rhs, type_, ctx)
+
+        assert ctx.ssa2pod_var[arg9_name]["@idx_7"][0] == "ark.idx_7"
+        assert ctx.ssa2pod_var["ark.idx_7"]["@in"][0] == "ark.idx_7_in"
+
+        # Body: the pod.read/pod.read chain must resolve without a
+        # KeyError -- this is the exact crash this fix targets.
+        pod_read_nested, pod_read_leaf, yield_op = op.after_body
+        list(pod_read_nested.to_core(ctx))
+        list(pod_read_leaf.to_core(ctx))
+
+        # Yield-back: mirrors SCFWhile.to_core's emit_iteration reassignment.
+        for yield_val, (before_in_arg, _), type_ in zip(yield_op.operands, op.init_args, op.func_type[0]):
+            if yield_val.name != before_in_arg.name:
+                translate_assignment_core_with_ctx(before_in_arg, yield_val, type_, ctx)
+
+        # The semantic destination must survive the yield-back too -- not be
+        # clobbered a second time by a fresh raw derived name.
+        assert ctx.ssa2pod_var[arg9_name]["@idx_7"][0] == "ark.idx_7"
+        assert ctx.ssa2pod_var["ark.idx_7"]["@in"][0] == "ark.idx_7_in"

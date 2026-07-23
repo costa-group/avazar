@@ -87,7 +87,11 @@ class FunctionReturn(Operation):
             if m["ops"] else []
         )
         types = (
-            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            # split_top_level_commas, not a naive split(",") -- a single
+            # returned type can itself contain a top-level comma (e.g. an
+            # N-D array's dimension list, "!array.type<17,17 x !felt.type<...>>"),
+            # which a naive split would break into two malformed fragments.
+            [Type.parse(t.strip()) for t in split_top_level_commas(m["types"])]
             if m["types"] else []
         )
         return FunctionReturn(operands, types)

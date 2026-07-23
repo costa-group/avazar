@@ -96,25 +96,60 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
     # Assign pod vars
     elif rhs.name in ctx.ssa2pod_var:
         pod_vars = ctx.ssa2pod_var[rhs.name]
+
+        # lhs may be a member-backed pod (e.g. an scf.while block arg backing
+        # struct member "ark") that has never been registered as its own key
+        # yet -- this is its very first assignment (the while's own initial
+        # value, or a pod.new record with an explicit initial value). Without
+        # this, the loop below would only ever see rhs's shape and derive
+        # throwaway "%lhs_record" names, discarding lhs's real (semantic)
+        # destination before it's ever created. Reuses rhs's own field types
+        # rather than re-parsing type_.name.
+        if lhs.name not in ctx.ssa2pod_var and ctx.input_pod_to_member.get(lhs.name):
+            from llzk_dialects.pod import _register_pod_top_level
+            _register_pod_top_level(
+                ctx, lhs.name,
+                {record: t for record, (_, t) in pod_vars.items()},
+            )
+
+        # Anchored on lhs's OWN pre-existing registration (its real
+        # destination), not merely on whether rhs's field happens to be
+        # semantic -- otherwise a member-backed lhs with a real semantic
+        # destination (e.g. "ark.idx_7") gets silently clobbered by a fresh
+        # "%lhs_record" derived name the moment rhs's own value isn't itself
+        # semantic (e.g. it traces back to a raw llzk.nondet result).
+        existing_lhs_vars = ctx.ssa2pod_var.get(lhs.name, {})
         new_pod_vars = {}
         assignments = []
         for record, (initial_value, type_) in pod_vars.items():
-            if not initial_value.startswith("%"):
+            existing_dest, _ = existing_lhs_vars.get(record, (None, None))
+            has_own_dest = existing_dest is not None and not existing_dest.startswith("%")
+
+            if has_own_dest:
+                # lhs already has its own semantic destination -- preserve it.
+                dest = existing_dest
+            elif not initial_value.startswith("%"):
                 # Semantic name (e.g. "mux.c"). Propagate directly without
                 # creating an intermediate copy variable.
+                dest = None
+            else:
+                dest = f"{lhs.name}_{record}"
+
+            if dest is None:
                 new_pod_vars[record] = (initial_value, type_)
             else:
-                assignments.append(translate_assignment_core_with_ctx(
-                    SSAVar(f"{lhs.name}_{record}"),
-                    SSAVar(initial_value),
-                    type_,
-                    ctx,
-                ))
-                new_pod_vars[record] = (f"{lhs.name}_{record}", type_)
+                if dest != initial_value:
+                    assignments.append(translate_assignment_core_with_ctx(
+                        SSAVar(dest),
+                        SSAVar(initial_value),
+                        type_,
+                        ctx,
+                    ))
+                new_pod_vars[record] = (dest, type_)
 
         ctx.ssa2pod_var[lhs.name] = new_pod_vars
 
-        return '\n'.join(assignments)
+        return '\n'.join(a for a in assignments if a)
 
     return translate_assignment_core(lhs.to_core(), rhs.to_core(), is_ff)
 

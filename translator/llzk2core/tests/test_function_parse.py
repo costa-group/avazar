@@ -24,6 +24,23 @@ class TestFunction:
         op = FunctionReturn.parse("  function.return %r : !felt.type  ")
         assert op.operands == [SSAVar("%r")]
 
+    def test_return_nd_array_type_not_split_on_dimension_comma(self):
+        # Regression: a single returned N-D array type's own dimension list
+        # (e.g. "17,17") contains a comma that is NOT a top-level type
+        # separator -- a naive split(",") on the types string broke it into
+        # two malformed fragments ("!array.type<17" and
+        # "17 x !felt.type<...>>"), silently producing a Type whose
+        # to_core() is None (a bare "!array.type<17" matches neither the
+        # array nor the felt-scalar case) -- which then leaked the literal
+        # string "None" into the emitted Core function signature. Mirrors
+        # the real @POSEIDON_M_2 shape from poseidon3_test_concrete.mlir.
+        op = FunctionReturn.parse(
+            'function.return %1 : !array.type<17,17 x !felt.type<"bn128">>'
+        )
+        assert op.operands == [SSAVar("%1")]
+        assert op.types == [Type('!array.type<17,17 x !felt.type<"bn128">>')]
+        assert op.types[0].to_core() == "arr<289>"
+
     def test_return_match(self):
         assert FunctionReturn.match("function.return") is True
         assert FunctionReturn.match("function.call @f()") is False

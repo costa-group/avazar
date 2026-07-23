@@ -87,15 +87,53 @@ def _register_pod_top_level(ctx: TranslationContext, var_name: str,
     """
     member = ctx.input_pod_to_member.get(var_name)
     if member:
-        ctx.ssa2pod_var[var_name] = {
+        mapping = {
             record: (f"{member}.{record[1:]}", type_)
             for record, type_ in fields.items()
         }
     else:
-        ctx.ssa2pod_var[var_name] = {
+        mapping = {
             record: (f"{var_name}_{record}", type_)
             for record, type_ in fields.items()
         }
+    ctx.ssa2pod_var[var_name] = mapping
+
+    # A field that is itself pod-typed needs its own representative name
+    # (e.g. "ark.idx_7") registered as a KEY of ctx.ssa2pod_var, not merely
+    # left as a value inside var_name's dict -- otherwise a later pod.read/
+    # pod.write chained through it (pod-in-pod) finds nothing. Mirrors
+    # _register_nested_pod_vars' own recursive step, which this delegates to.
+    for record, type_ in fields.items():
+        if "!pod.type" in type_.name:
+            child_name, _ = mapping[record]
+            _register_nested_pod_vars(ctx, child_name, type_.name)
+
+
+def _resolve_pod_field_var(ctx: TranslationContext, var_name: str,
+                           field_path: List[str]) -> str:
+    """
+    Resolve the actually-registered Core variable name for a leaf reached by
+    walking field_path from var_name one field at a time through
+    ctx.ssa2pod_var (populated per pod-typed prefix by
+    _register_nested_pod_vars) -- rather than deriving it in one shot via
+    _container_field_var, which always keeps the leading "@" and so
+    disagrees with a semantic base's own per-level naming (e.g. produces
+    "ark.idx_0_@in" where _register_nested_pod_vars registered
+    "ark.idx_0_in"). Falls back to _container_field_var for any suffix past
+    the last registered prefix -- e.g. once field_path crosses into a
+    struct-typed field, which _register_nested_pod_vars does not recurse
+    into -- so a var_name with no pod-var registration at all (the plain
+    struct case) degrades to today's existing behavior unchanged.
+    """
+    from llzk_dialects.array import _container_field_var
+
+    cur = var_name
+    for i, field in enumerate(field_path):
+        entry = ctx.ssa2pod_var.get(cur)
+        if entry is None or field not in entry:
+            return _container_field_var(cur, field_path[i:])
+        cur, _ = entry[field]
+    return cur
 
 
 def _allocate_pod_field_storage(ctx: TranslationContext, var_name: str,
@@ -118,7 +156,7 @@ def _allocate_pod_field_storage(ctx: TranslationContext, var_name: str,
     if first_dim is not None:
         yield f"array.new {first_dim} {var_name}"
     elif "!struct.type" in type_.name or "!pod.type" in type_.name:
-        from llzk_dialects.array import _flatten_container_fields, _container_field_var
+        from llzk_dialects.array import _flatten_container_fields
         from llzk_dialects.utils import is_array_type
 
         assert not is_array_type(type_.name), (
@@ -129,7 +167,7 @@ def _allocate_pod_field_storage(ctx: TranslationContext, var_name: str,
             _register_nested_pod_vars(ctx, var_name, type_.name)
         for field_path, leaf_type in _flatten_container_fields(type_.name, ctx):
             leaf_size = array_total_size(leaf_type.name)
-            field_var = _container_field_var(var_name, field_path)
+            field_var = _resolve_pod_field_var(ctx, var_name, field_path)
             if leaf_size is None:
                 # Scalar leaf (e.g. a struct's felt-typed output member): no
                 # array to allocate, just a placeholder value so a later

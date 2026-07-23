@@ -1,6 +1,7 @@
 import pytest
 from llzk_dialects.pod import PodNew, PodRead, PodWrite
 from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx
 
 
 class TestPod:
@@ -284,9 +285,87 @@ class TestPodToCore:
             "%p = pod.new : "
             "!pod.type<[@idx_0: !pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>]>"
         )
-        list(op.to_core(ctx))
+        lines = list(op.to_core(ctx))
         assert ctx.ssa2pod_var["%p"]["@idx_0"][0] == "ark.idx_0"
         assert ctx.ssa2pod_var["ark.idx_0"]["@in"][0] == "ark.idx_0_in"
+        # The allocated storage line must target the SAME name that got
+        # registered above -- previously it was derived independently via
+        # _container_field_var (which never strips "@"), producing
+        # "ark.idx_0_@in", a variable distinct from (and never assigned to)
+        # the registered "ark.idx_0_in".
+        assert lines == ["array.new 3 ark.idx_0_in"]
+
+    def test_new_member_pod_field_with_initial_value_registers_recursively(self):
+        # Same "ark.idx_0" shape as above, but the nested pod field is given
+        # an explicit initial value in the pod.new record list (instead of
+        # being left to _allocate_pod_field_storage) -- exercises
+        # translate_assignment_core_with_ctx's own pod-copy branch directly,
+        # which is the other place a member-backed lhs must end up with a
+        # recursively-registered semantic destination.
+        ctx = self._ctx()
+        ctx.input_pod_to_member["%p"] = "ark"
+        ctx.ssa2pod_var["%src"] = {
+            "@in": ("%src_@in", Type("!array.type<3 x !felt.type<\"bn128\">>")),
+        }
+        op = PodNew.parse(
+            "%p = pod.new {@idx_0 = %src} : "
+            "!pod.type<[@idx_0: !pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>]>"
+        )
+        lines = list(op.to_core(ctx))
+        assert ctx.ssa2pod_var["%p"]["@idx_0"][0] == "ark.idx_0"
+        assert ctx.ssa2pod_var["ark.idx_0"]["@in"][0] == "ark.idx_0_in"
+        assert lines == ["array.copy %src_@in ark.idx_0_in"]
+
+    def test_translate_assignment_preserves_member_backed_lhs_semantic_dest(self):
+        # Mirrors the poseidon3_test_concrete.mlir scf.while shape that
+        # originally crashed: a member-backed pod (lhs, backing struct
+        # member "ark") never yet registered as its own ctx.ssa2pod_var key,
+        # assigned from a plain raw-SSA-named pod (rhs, mirroring an
+        # llzk.nondet result). The assignment must give lhs's own "@idx_7"
+        # field its semantic destination ("ark.idx_7"), not a throwaway
+        # "%lhs_@idx_7" derived name -- and that destination must itself be
+        # recursively registered so a later pod.read chained through it
+        # ("ark.idx_7"'s own "@in" field) resolves.
+        ctx = self._ctx()
+        ctx.input_pod_to_member["%lhs"] = "ark"
+        ctx.ssa2pod_var["%rhs"] = {
+            "@idx_7": ("%rhs_@idx_7",
+                      Type("!pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>")),
+        }
+        ctx.ssa2pod_var["%rhs_@idx_7"] = {
+            "@in": ("%rhs_@idx_7_@in", Type("!array.type<3 x !felt.type<\"bn128\">>")),
+        }
+
+        pod_type = Type(
+            "!pod.type<[@idx_7: !pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>]>"
+        )
+        lines = translate_assignment_core_with_ctx(SSAVar("%lhs"), SSAVar("%rhs"), pod_type, ctx)
+
+        assert ctx.ssa2pod_var["%lhs"]["@idx_7"][0] == "ark.idx_7"
+        assert ctx.ssa2pod_var["ark.idx_7"]["@in"][0] == "ark.idx_7_in"
+        assert lines == "array.copy %rhs_@idx_7_@in ark.idx_7_in"
+
+        # A pod.read/pod.read chain through lhs must now resolve without a
+        # KeyError -- this is the exact crash this fix targets.
+        read_nested = PodRead.parse(
+            "%598 = pod.read %lhs [@idx_7] : "
+            "!pod.type<[@idx_7: !pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>]>, "
+            "!pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>"
+        )
+        list(read_nested.to_core(ctx))
+        read_leaf = PodRead.parse(
+            "%599 = pod.read %598 [@in] : "
+            "!pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>, "
+            "!array.type<3 x !felt.type<\"bn128\">>"
+        )
+        # previously: KeyError on "%598" inside ctx.ssa2pod_var[pod_ref.name]
+        leaf_lines = list(read_leaf.to_core(ctx))
+        # "@in" is array-typed and its resolved name is semantic, so
+        # PodRead.to_core aliases rather than emitting a copy (an
+        # array.write into it will use the alias directly) -- see
+        # PodRead.to_core's own array_felt_first_dimension early-return.
+        assert leaf_lines == []
+        assert ctx.ssa_to_name["%599"] == "ark.idx_7_in"
 
     def test_pod_in_pod_chain_nonempty_field_resolves_without_keyerror(self):
         # Mirrors the poseidon3_test_concrete.mlir shape that originally
