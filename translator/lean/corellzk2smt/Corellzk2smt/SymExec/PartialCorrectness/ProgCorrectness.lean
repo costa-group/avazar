@@ -19,23 +19,31 @@ into what the conditional `TranslatesCorrectly` actually buys at the whole-progr
    statement of `TranslatesCorrectly` for `seSimpleCmd`/`evalSimpleCmd` instead of ever unfolding
    `seSimpleCmd` directly to reach its error case.
 
-2. `WellShapedProg` is replaced by the strictly weaker `WellShapedProgBodies` (this file): its
-   other conjunct, whole-program pairwise function-name uniqueness, is now given directly by
-   `hasDupFuncNames` (already threaded into every relevant theorem, see
-   `FuncCorrectness.lean`/`FuncCallCorrectness.lean`) instead. `WellShapedProgBodies` keeps only
-   the per-function `WellShapedCmds` conjunct; `hasDupFuncNames_cons_disjoint` (below) recovers
-   the one specific disjointness fact the induction actually consumes (`hBdisj`) from
-   `hasDupFuncNames` instead of from `WellShapedProg` (the old file's analogous `hA'disj`, from
-   `WellShapedProg_head_after_prefix`, turned out to be computed but never actually used in the
-   proof -- so nothing is lost by not reproducing it).
+2. [REMOVED 2026] `WellShapedProg`/`WellShapedProgBodies` and every `hshaped`/`hwsp` *parameter*
+   are gone from this file's whole public API (`seExecFuncs_loop_correct`/`seExecFuncs_correct`
+   down to `seExecProg_call_correct`) -- no caller anywhere has to prove or thread down a
+   well-shapedness fact. `WellShapedProg` (whole-program name-uniqueness + per-function shape) and
+   `WellShapedProgBodies` (the shape-only remainder) are both gone as *definitions* too, since
+   they added nothing `WellShapedCmds` alone didn't already say. `WellShapedCom`/`WellShapedCmds`
+   themselves (`Language/Core/Analysis/WellShaped.lean`) are still *defined* -- pure structural
+   recursion reducing to `True` for every command/program -- and still threaded as real parameters
+   through `PartialCorrectness/Correctness.lean`'s `seIfStmt_correct`/`seCmd_correct`/
+   `seCmds_correct` (a `mutual` block whose termination proof turned out to be sensitive to that
+   exact parameter/match shape -- see that file's own header and `feedback_lean_slow_build_
+   diagnosis` for why it's not worth touching). This file's own calls into `FuncCorrectness.lean`
+   no longer need to supply anything, since `FuncCorrectness.lean` manufactures the (trivially
+   provable) witness itself via `trivialWSCmds` at the point of use. Whole-program pairwise
+   function-name uniqueness is given directly by `hasDupFuncNames` (already threaded into every
+   relevant theorem, see `FuncCorrectness.lean`/`FuncCallCorrectness.lean`);
+   `hasDupFuncNames_cons_disjoint` (below)
+   recovers the one specific disjointness fact the induction actually consumes (`hBdisj`) from it.
 
 3. `H_domain` and `H_shape` no longer exist as parameters anywhere in this whole chain -- both
    turned out to be false as originally stated (blanket-quantified over arbitrary, unrelated
    command lists/environments), and both are now discharged internally instead:
    - `H_shape`'s correctly-scoped, per-if-statement replacement is derived inline inside
-     `seIfStmt_correct` (`PartialCorrectness/Correctness.lean`), straight from `WellShapedCom`'s
-     own (now-strengthened, unconditional) shape-agreement conjunct via
-     `sameShape_of_symValMatches` (`SymExec/Lemmas.lean`).
+     `seIfStmt_correct` (`PartialCorrectness/Correctness.lean`), straight from `mergeSymEnv`'s own
+     success via `sameShape_of_symValMatches` (`SymExec/Lemmas.lean`).
    - `H_domain`'s replacement, `seCmds_domain_of_defined`/`seCmd_domain_of_defined`/
      `seIfStmt_domain_of_defined` (`SymExec/Lemmas.lean`), needs an extra premise (every variable
      a command could write is already in the environment's domain, phrased over
@@ -68,7 +76,6 @@ open Corellzk2smt.Config
 open Corellzk2smt.Language.Core.Syntax.AST
 open Corellzk2smt.Language.Core.Semantics.Basic
 open Corellzk2smt.Language.Core.Semantics.BigStep
-open Corellzk2smt.Language.Core.Analysis.WellShaped
 open Corellzk2smt.Language.Core.Analysis.DefinedVars
 open Corellzk2smt.SymExec.Basic
 open Corellzk2smt.SymExec.BigStep
@@ -84,31 +91,6 @@ open Corellzk2smt.SymExec.PartialCorrectness.Lemmas
 open Corellzk2smt.SymExec.PartialCorrectness.Correctness
 open Corellzk2smt.SymExec.PartialCorrectness.FuncCallCorrectness
 open Corellzk2smt.SymExec.PartialCorrectness.FuncCorrectness
-
-/-- `WellShapedProg`, minus its whole-program name-uniqueness conjunct (now redundant with
-    `hasDupFuncNames`, see this file's header) -- keeps only the "every function's body is
-    `WellShapedCmds` against its own true remainder" part. -/
-def WellShapedProgBodies {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c) : Prop :=
-  match p with
-  | [] => True
-  | f :: rest => WellShapedCmds gconf rest (funcWithMDBody f) ∧ WellShapedProgBodies gconf rest
-
-/-- `WellShapedProgBodies` analogue of `WellShapedProg_head_after_prefix`: since the
-    name-disjointness conjuncts are gone, this just recovers the one fact still needed --
-    `x`'s body is well-shaped against exactly the sub-program after it. -/
-theorem WellShapedProgBodies_head_after_prefix {c : ZKConfig} (gconf : GlobalConfig c) :
-    ∀ (A B : Prog c) (x : FuncWithMD c),
-      WellShapedProgBodies gconf (A ++ (x :: B)) →
-      WellShapedCmds gconf B (funcWithMDBody x) := by
-  intro A
-  induction A with
-  | nil =>
-      intro B x h
-      simpa only [List.nil_append, WellShapedProgBodies] using h.1
-  | cons a A' ih =>
-      intro B x h
-      simp only [List.cons_append, WellShapedProgBodies] at h
-      exact ih B x h.2
 
 /-- The one disjointness fact `seExecFuncs_loop_correct`'s induction actually needs (`hBdisj` in
     the old proof): if a function-list has no duplicate names, its head's name is disjoint from
@@ -197,13 +179,11 @@ theorem TranslatesCorrectly_prepend {c : ZKConfig} (gconf : GlobalConfig c)
 
 /-- The core induction: `seExecFuncs`'s `loop`, generalized over an explicit `donePart` -- see
     `SymExec.ProgCorrectness.seExecFuncs_loop_correct`'s header for the invariant. `H_simple` is
-    no longer a parameter (see `H_simple_holds`); `WellShapedProg` is replaced by the weaker
-    `WellShapedProgBodies`, with the disjointness fact it used to supply now coming from
-    `hasDupFuncNames` (already threaded here, unlike in the old file where it was added but
-    unused for this purpose). -/
+    no longer a parameter (see `H_simple_holds`); no well-shapedness hypothesis is needed at all
+    (see this file's header, point 2), with the disjointness fact the old proof needed for this
+    coming from `hasDupFuncNames` instead. -/
 theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
     ∀ (funcs donePart : Prog c) (specs : List (FuncSpec c)),
-      WellShapedProgBodies gconf (funcs.reverse ++ donePart) →
       hasDupFuncNames (funcs.reverse ++ donePart) = false →
       (∀ spec ∈ specs, spec.f.name = spec.name) →
       specs.map (·.name) = donePart.map funcWithMDName →
@@ -318,7 +298,7 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
   intro funcs
   induction funcs with
   | nil =>
-      intro donePart specs _hwsp _hnodup hspecs_wf hnames_corr hrets_corr hHfc hSpecC newSpecs
+      intro donePart specs _hnodup hspecs_wf hnames_corr hrets_corr hHfc hSpecC newSpecs
         hloop_eq
       simp only [List.reverse_nil, List.nil_append] at hloop_eq ⊢
       simp only [seExecFuncs.loop] at hloop_eq
@@ -326,14 +306,14 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
       exact ⟨hloop_eq ▸ hspecs_wf, hloop_eq ▸ hnames_corr, hloop_eq ▸ hrets_corr, hloop_eq ▸ hHfc,
         hloop_eq ▸ hSpecC⟩
   | cons func funcs' ih =>
-      intro donePart specs hwsp hnodup hspecs_wf hnames_corr hrets_corr hHfc hSpecC newSpecs
+      intro donePart specs hnodup hspecs_wf hnames_corr hrets_corr hHfc hSpecC newSpecs
         hloop_eq
       obtain ⟨md, name, params, rets, body⟩ := func
       have hlist_eq : (FuncWithMD.mk md (Func.mk name params rets body) :: funcs').reverse ++
           donePart =
           funcs'.reverse ++ (FuncWithMD.mk md (Func.mk name params rets body) :: donePart) := by
         simp [List.reverse_cons, List.append_assoc]
-      rw [hlist_eq] at hwsp hnodup ⊢
+      rw [hlist_eq] at hnodup ⊢
       have hnodup_head : hasDupFuncNames
           (FuncWithMD.mk md (Func.mk name params rets body) :: donePart) = false :=
         hasDupFuncNames_append_right funcs'.reverse _ hnodup
@@ -348,16 +328,11 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
       | ok fspec =>
         rw [hseFunc_eq] at hloop_eq
         simp only [Bind.bind, Except.bind] at hloop_eq
-        have hshaped := WellShapedProgBodies_head_after_prefix gconf funcs'.reverse donePart
-          (FuncWithMD.mk md (Func.mk name params rets body)) hwsp
         have hBdisj : ∀ f ∈ donePart,
             funcWithMDName f ≠ funcWithMDName (FuncWithMD.mk md (Func.mk name params rets body)) :=
           hasDupFuncNames_cons_disjoint _ donePart hnodup_head
-        have hbody_eq : funcWithMDBody (FuncWithMD.mk md (Func.mk name params rets body)) =
-            body := rfl
         have hname_eq2 : funcWithMDName (FuncWithMD.mk md (Func.mk name params rets body)) =
             name := rfl
-        rw [hbody_eq] at hshaped
         rw [hname_eq2] at hBdisj
         have hfname_eq : fspec.f.name = name :=
           seFunc_f_name_eq gconf specs name params rets body fspec hseFunc_eq
@@ -431,7 +406,7 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
               (Func.mk name params rets body) donePart
               (by simp only [fetchFunc, BEq.rfl, ↓reduceIte])
               hnodup_head
-              (H_simple_holds gconf specs) hHfc hspecs_cover_here hrets_corr hshaped hspecs_wf
+              (H_simple_holds gconf specs) hHfc hspecs_cover_here hrets_corr hspecs_wf
               fspec hseFunc_eq args outs
           · have hbeq : (name == fname') = false := by simpa using hcase
             simp only [hbeq, Bool.false_eq_true, ↓reduceIte] at hfetch
@@ -528,14 +503,14 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
                 (FuncWithMD.mk md (Func.mk name params rets body) :: donePart) specs name md
                 (Func.mk name params rets body) donePart
                 (by simp only [fetchFunc, BEq.rfl, ↓reduceIte])
-                (H_simple_holds gconf specs) hHfc hspecs_cover_here hrets_corr hshaped fspec
+                (H_simple_holds gconf specs) hHfc hspecs_cover_here hrets_corr fspec
                 hseFunc_eq
             obtain ⟨hspec_retsShape, _hnamesBelow, H_specCorrect⟩ :=
               seFunc_correct gconf (FuncWithMD.mk md (Func.mk name params rets body) :: donePart)
                 specs name md (Func.mk name params rets body) donePart
                 (by simp only [fetchFunc, BEq.rfl, ↓reduceIte])
                 hnodup_head (H_simple_holds gconf specs) hHfc hspecs_cover_here hrets_corr
-                hshaped hspecs_wf fspec hseFunc_eq
+                hspecs_wf fspec hseFunc_eq
             refine ⟨hparams_split_new, hspec_retsShape, ?_⟩
             simpa only [List.map_cons] using H_specCorrect
           · have hbeq : (name == fname') = false := by simpa using hcase
@@ -595,7 +570,7 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
                 exact evalFormula_names_below_indep gconf fspec.f (specs.map (·.f)) assign _ true
                   hnb hbig
         obtain ⟨hnewSpecs_wf, hnewSpecs_names, hnewSpecs_rets, hnewSpecs_Hfc, hnewSpecs_SpecC⟩ :=
-          ih (FuncWithMD.mk md (Func.mk name params rets body) :: donePart) (fspec :: specs) hwsp
+          ih (FuncWithMD.mk md (Func.mk name params rets body) :: donePart) (fspec :: specs)
             hnodup hspecs_wf' hnames_corr' hrets_corr' hHfc' hSpecC' newSpecs hloop_eq
         exact ⟨hnewSpecs_wf, hnewSpecs_names, hnewSpecs_rets, hnewSpecs_Hfc, hnewSpecs_SpecC⟩
 
@@ -605,12 +580,12 @@ theorem seExecFuncs_loop_correct {c : ZKConfig} (gconf : GlobalConfig c) :
 
 /-- `seExecFuncs gconf p`, specialized from `seExecFuncs_loop_correct` at `funcs := p.reverse`,
     `donePart := []` -- see `SymExec.ProgCorrectness.seExecFuncs_correct`'s header; `H_simple` is
-    no longer a parameter (see `H_simple_holds`), and `WellShapedProg` is replaced by
-    `WellShapedProgBodies`. `hasDupFuncNames p = false` also isn't a parameter -- `seExecFuncs`'s
-    own definition checks it first (`if hasDupFuncNames p then Except.error ... else ...`), so
-    `hspecs_eq`'s success already forces it, recovered here by a case-split rather than assumed. -/
+    no longer a parameter (see `H_simple_holds`), and no well-shapedness hypothesis is needed at
+    all (see this file's header, point 2). `hasDupFuncNames p = false` also isn't a parameter --
+    `seExecFuncs`'s own definition checks it first (`if hasDupFuncNames p then Except.error ...
+    else ...`), so `hspecs_eq`'s success already forces it, recovered here by a case-split rather
+    than assumed. -/
 theorem seExecFuncs_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
-    (hwsp : WellShapedProgBodies gconf p)
     (specs : List (FuncSpec c)) (hspecs_eq : seExecFuncs gconf p = Except.ok specs) :
     (∀ spec ∈ specs, spec.f.name = spec.name) ∧
     specs.map (·.name) = p.map funcWithMDName ∧
@@ -667,9 +642,6 @@ theorem seExecFuncs_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
   have hloop_eq : seExecFuncs.loop gconf p.reverse [] = Except.ok specs := by
     simp only [seExecFuncs, hnodup, Bool.false_eq_true, if_false] at hspecs_eq
     exact hspecs_eq
-  have hwsp' : WellShapedProgBodies gconf (p.reverse.reverse ++ ([] : Prog c)) := by
-    simp only [List.reverse_reverse, List.append_nil]
-    exact hwsp
   have hnodup' : hasDupFuncNames (p.reverse.reverse ++ ([] : Prog c)) = false := by
     simp only [List.reverse_reverse, List.append_nil]
     exact hnodup
@@ -731,7 +703,7 @@ theorem seExecFuncs_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
             evalFunCall gconf ([] : Prog c) fname' argVals = Except.ok retVals)) :=
     fun _ fname' _ _ hfetch _ _ => absurd hfetch (by simp [fetchFunc])
   obtain ⟨hspecs_wf, hnames_corr, _hrets_corr, hHfc, hSpecC⟩ := seExecFuncs_loop_correct gconf
-    p.reverse [] [] hwsp' hnodup' hspecs_wf0 hnames_corr0 hrets_corr0 hHfc0 hSpecC0 specs hloop_eq
+    p.reverse [] [] hnodup' hspecs_wf0 hnames_corr0 hrets_corr0 hHfc0 hSpecC0 specs hloop_eq
   have hp_eq : p.reverse.reverse ++ ([] : Prog c) = p := by simp
   refine ⟨hspecs_wf, ?_, ?_, ?_⟩
   · rw [hnames_corr, hp_eq]
@@ -1239,7 +1211,6 @@ theorem seExecProg_call_complete {c : ZKConfig} (gconf : GlobalConfig c) (funcs 
     this split was meant to avoid exposing. -/
 theorem seExecProg_call_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : ProgWithMD c)
     (funcs : Prog c) (hp : p = ProgWithMD.mk (match p with | ProgWithMD.mk pmd _ => pmd) funcs)
-    (hwsp : WellShapedProgBodies gconf funcs)
     (mainFuncName : FName) (cs : FFConstraintSystem c)
     (hcs_eq : seExecProg gconf p mainFuncName = Except.ok cs) :
     ∃ specs : List (FuncSpec c),
@@ -1280,7 +1251,7 @@ theorem seExecProg_call_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Pro
       simp only [Bind.bind, Except.bind, pure, Except.pure] at hcs_eq
       injection hcs_eq with hcs_eq
       obtain ⟨hspecs_wf, hnames_corr, _hHfc, hSpecC⟩ :=
-        seExecFuncs_correct gconf funcs hwsp specs hfuncSpecs
+        seExecFuncs_correct gconf funcs specs hfuncSpecs
       have hnodup : hasDupFuncNames funcs = false := by
         cases hh : hasDupFuncNames funcs with
         | true => simp [seExecFuncs, hh] at hfuncSpecs
