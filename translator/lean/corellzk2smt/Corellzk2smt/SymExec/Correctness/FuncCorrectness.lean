@@ -1,5 +1,6 @@
 import Corellzk2smt.SymExec.Correctness.Lemmas
 import Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
+import Corellzk2smt.SymExec.Correctness.BinaryExpansionCorrectness
 import Corellzk2smt.Language.Core.Analysis.DefinedVars
 import Corellzk2smt.Language.Core.Syntax.Lemmas
 
@@ -39,6 +40,7 @@ open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Lemmas
 open Corellzk2smt.SymExec.Correctness.Lemmas
 open Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
+open Corellzk2smt.SymExec.Correctness.BinaryExpansionCorrectness
 
 /-- `mintFreshParam` mints exactly `typeSize type` consecutive fresh `.ffv`s, in closed form --
     unconditionally (unlike the old FF-only version, `mintFreshParam` never errors any more). -/
@@ -352,6 +354,147 @@ theorem mintFreshParams_contains_mono {c : ZKConfig} :
               exact ih nv1 (Corellzk2smt.SymExec.Basic.setVar env p.name sv) nv2 vs2 env'' hrec id
                 ((contains_insert_iff env p.name id sv).mpr (Or.inr hid))
 
+-- ---------------------------------------------------------------------------
+-- `seFunc`'s entry symbolic environment carries no memoized binary representations, so it
+-- trivially satisfies `ValidBinRep` w.r.t. the trivial context `FFFormula.true`.
+-- ---------------------------------------------------------------------------
+
+/-- `mintFreshParam`'s minted symbolic value never carries a binary representation yet -- both
+    the `.ff` and `.array` cases construct fresh `.ffvar`s with `bits := none`. -/
+theorem mintFreshParam_symValue_noBits {c : ZKConfig} (nextVarId : Nat) (type : VarType)
+    (nv1 : Nat) (vs : List Var) (sv : SymValue c)
+    (h : mintFreshParam (c := c) nextVarId type = Except.ok (nv1, vs, sv)) :
+    SymValueNoBits sv := by
+  cases type with
+  | ff =>
+      simp only [mintFreshParam, Except.ok.injEq, Prod.mk.injEq] at h
+      rw [← h.2.2]
+      trivial
+  | array n =>
+      simp only [mintFreshParam, Except.ok.injEq, Prod.mk.injEq] at h
+      rw [← h.2.2]
+      intro sv' hsv'
+      simp only [List.mem_toArray, List.mem_map] at hsv'
+      obtain ⟨v, _, heq⟩ := hsv'
+      rw [← heq]
+      trivial
+
+/-- Folding a fixed `setVar id v0` step (same `v0` every time) over a list of ids preserves
+    "already `NoBits` everywhere", given `v0` itself is `NoBits` -- every id in the list ends up
+    mapped to `v0` (trivially `NoBits` by hypothesis), and every id outside the list is
+    untouched. -/
+theorem get?_constFoldl_noBits {c : ZKConfig} (v0 : SymValue c) (hv0 : SymValueNoBits v0) :
+    ∀ (l : List VarID) (env : SymEnv c),
+      (∀ id v, env.get? id = some v → SymValueNoBits v) →
+      ∀ id v, (l.foldl (fun e id' => Corellzk2smt.SymExec.Basic.setVar e id' v0) env).get? id
+        = some v → SymValueNoBits v := by
+  intro l
+  induction l with
+  | nil => intro env henv id v h; exact henv id v h
+  | cons id0 rest ih =>
+      intro env henv id v h
+      simp only [List.foldl_cons] at h
+      apply ih (Corellzk2smt.SymExec.Basic.setVar env id0 v0) ?_ id v h
+      intro id' v' hget'
+      by_cases heq : id' = id0
+      · subst heq
+        have hself : (Corellzk2smt.SymExec.Basic.setVar env id' v0).get? id' = some v0 := by
+          simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.get?_eq_getElem?,
+            Std.TreeMap.getElem?_insert_self]
+        rw [hself] at hget'
+        injection hget' with hget'
+        rw [← hget']; exact hv0
+      · have hne : id0 ≠ id' := Ne.symm heq
+        have hother : (Corellzk2smt.SymExec.Basic.setVar env id0 v0).get? id' = env.get? id' := by
+          simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.get?_eq_getElem?,
+            Std.TreeMap.getElem?_insert, Std.compare_eq_iff_eq, hne, if_false]
+        rw [hother] at hget'
+        exact henv id' v' hget'
+
+/-- `seFunc`'s `zeroSymEnv` (folding `.const 0` over `definedVarsOfFunc`, starting from
+    `emptySymEnv`) carries no memoized binary representation anywhere -- `.const` values are
+    always `NoBits`. -/
+theorem zeroSymEnv_noBits {c : ZKConfig} (vars : VarIDSet) :
+    ∀ id v, (vars.foldl (fun env id => Corellzk2smt.SymExec.Basic.setVar env id
+      (SymValue.simple (c := c) (SimpleSymVal.const 0))) emptySymEnv).get? id = some v →
+      SymValueNoBits v := by
+  intro id v h
+  rw [Std.TreeSet.foldl_eq_foldl_toList] at h
+  refine get?_constFoldl_noBits (SymValue.simple (SimpleSymVal.const 0)) trivial vars.toList
+    emptySymEnv (fun id' v' hget => ?_) id v h
+  simp only [emptySymEnv, Std.TreeMap.empty_eq_emptyc, Std.TreeMap.get?_eq_getElem?,
+    Std.TreeMap.getElem?_emptyc] at hget
+  exact absurd hget (by simp)
+
+/-- `mintFreshParams` never overwrites an entry with anything but a fresh, `NoBits` `.ffvar` (or
+    leaves untouched entries alone) -- so starting from an already-`NoBits` environment, the
+    output is `NoBits` everywhere too. -/
+theorem mintFreshParams_noBits_of_noBits {c : ZKConfig} :
+    ∀ (nextVarId : Nat) (params : List Param) (env : SymEnv c),
+      (∀ id v, env.get? id = some v → SymValueNoBits v) →
+      ∀ (nv : Nat) (vs : List Var) (env' : SymEnv c),
+        mintFreshParams (c := c) nextVarId params env = Except.ok (nv, vs, env') →
+        ∀ id v, env'.get? id = some v → SymValueNoBits v := by
+  intro nextVarId params
+  induction params generalizing nextVarId with
+  | nil =>
+      intro env henv nv vs env' heq id v h
+      simp only [mintFreshParams, Except.ok.injEq, Prod.mk.injEq] at heq
+      rw [← heq.2.2] at h
+      exact henv id v h
+  | cons p ps ih =>
+      intro env henv nv vs env' heq id v h
+      cases hmp : mintFreshParam (c := c) nextVarId p.type with
+      | error e => simp only [mintFreshParams, hmp] at heq; exact absurd heq (by simp)
+      | ok result =>
+          obtain ⟨nv1, vs1, sv⟩ := result
+          simp only [mintFreshParams, hmp] at heq
+          cases hrec : mintFreshParams (c := c) nv1 ps
+              (Corellzk2smt.SymExec.Basic.setVar env p.name sv) with
+          | error e => simp only [hrec] at heq; exact absurd heq (by simp)
+          | ok result2 =>
+              obtain ⟨nv2, vs2, env''⟩ := result2
+              simp only [hrec, Except.ok.injEq, Prod.mk.injEq] at heq
+              rw [← heq.2.2] at h
+              have hsv_noBits : SymValueNoBits sv :=
+                mintFreshParam_symValue_noBits nextVarId p.type nv1 vs1 sv hmp
+              have henv' : ∀ id' v', (Corellzk2smt.SymExec.Basic.setVar env p.name sv).get? id'
+                  = some v' → SymValueNoBits v' := by
+                intro id' v' hget'
+                by_cases heq2 : id' = p.name
+                · subst heq2
+                  have hself : (Corellzk2smt.SymExec.Basic.setVar env p.name sv).get? p.name
+                      = some sv := by
+                    simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.get?_eq_getElem?,
+                      Std.TreeMap.getElem?_insert_self]
+                  rw [hself] at hget'
+                  injection hget' with hget'
+                  rw [← hget']; exact hsv_noBits
+                · have hne : p.name ≠ id' := Ne.symm heq2
+                  have hother : (Corellzk2smt.SymExec.Basic.setVar env p.name sv).get? id'
+                      = env.get? id' := by
+                    simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.get?_eq_getElem?,
+                      Std.TreeMap.getElem?_insert, Std.compare_eq_iff_eq, hne, if_false]
+                  rw [hother] at hget'
+                  exact henv id' v' hget'
+              exact ih nv1 (Corellzk2smt.SymExec.Basic.setVar env p.name sv) henv' nv2 vs2 env''
+                hrec id v h
+
+/-- `seFunc`'s entry symbolic environment (`mintFreshParams` applied to `zeroSymEnv`) satisfies
+    `ValidBinRep` w.r.t. the trivial context `FFFormula.true` -- neither `zeroSymEnv`'s `.const 0`
+    placeholders nor `mintFreshParams`'s freshly-minted `.ffvar`s ever carry a memoized binary
+    representation, so there is nothing yet for any context to have to account for. This is the
+    `ctx` a function body's translation starts with. -/
+theorem seFunc_inSymEnv_validBinRep {c : ZKConfig} (gconf : GlobalConfig c) (params : List Param)
+    (vars : VarIDSet) (nv1 : Nat) (paramVars : List Var) (inSymEnv : SymEnv c)
+    (hmp : mintFreshParams (c := c) 0 params
+        (vars.foldl (fun env id => Corellzk2smt.SymExec.Basic.setVar env id
+          (SymValue.simple (SimpleSymVal.const 0))) emptySymEnv)
+        = Except.ok (nv1, paramVars, inSymEnv)) :
+    ValidBinRep gconf FFFormula.true inSymEnv :=
+  ValidBinRep_of_noBits gconf FFFormula.true inSymEnv
+    (mintFreshParams_noBits_of_noBits 0 params _ (zeroSymEnv_noBits vars) nv1 paramVars inSymEnv
+      hmp)
 
 -- ---------------------------------------------------------------------------
 -- Array-general replacement for the old FF-only `EnvMatches_mintFreshParams_bindInParams`

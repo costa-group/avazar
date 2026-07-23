@@ -27,7 +27,7 @@ structure SymExecConfig (c : ZKConfig) where
 
 /- A binary representation of a finite field variable. The first element of
    the list corresponds to the least significant bit. -/
-abbrev bits (c : ZKConfig) := Option (List (FFTerm c))
+abbrev bits (c : ZKConfig) := List (FFTerm c)
 
 
 /- A structure representing a finite field variable along with its binary representation. The
