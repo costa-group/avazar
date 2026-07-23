@@ -20,7 +20,7 @@ import Corellzk2smt.Language.Core.Semantics.BigStep
 
    Kept around (rather than deleted, and every call site's `hshaped`/`hwsp` parameter along with
    them) for a purely practical reason: the mutual, well-founded-recursive proofs in
-   `SymExec/Correctness/Correctness.lean` (`seIfStmt_correct`/`seCmd_correct`/
+   `SymExec/Correctness/Lemmas.lean` (`seIfStmt_correct`/`seCmd_correct`/
    `seCmds_correct`) turn out to be extremely sensitive to their own case-split/parameter shape --
    removing the `hshaped` parameter and its `match cmd, hshaped with`-style destructuring from
    those specific proofs (confirmed via careful bisection against the git history) made Lean's
@@ -28,7 +28,7 @@ import Corellzk2smt.Language.Core.Semantics.BigStep
    almost certainly due to how the equation compiler's auto-generated match/split lemmas interact
    with the shared `termination_by`/`decreasing_by` block once the case-split shape changes.
    Rather than risk that regression for a purely cosmetic win, those three theorems (and the
-   `_names_below`/`_prepend_indep`-style family in `SymExec/Correctness.lean`) keep their
+   `_names_below`/`_prepend_indep`-style family living earlier in the same file) keep their
    `hshaped`/`WellShapedCom`/`WellShapedCmds` parameters completely unchanged. What's actually
    removed is the *assumption burden* on every caller: every external call site (in
    `SymExec/Correctness/FuncCorrectness.lean` and `ProgCorrectness.lean`) now manufactures

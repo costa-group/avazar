@@ -512,20 +512,6 @@ theorem flattenArgVals_ff_only {c : ZKConfig} :
           rw [ih svs (by simpa using hlen) (fun pm hpm => hff pm (List.mem_cons_of_mem _ hpm))]
           rfl
 
-/-- `mintFreshRets` produces exactly one output value per return parameter -- regardless of
-    its type (an array-typed ret still contributes a single `SymValue.array` entry), so this
-    holds unconditionally, not just in the FF-only case. -/
-theorem mintFreshRets_outVals_length {c : ZKConfig} :
-    ∀ (nextVarId : Nat) (rets : List Param),
-      (mintFreshRets (c := c) nextVarId rets).2.2.length = rets.length := by
-  intro nextVarId rets
-  induction rets generalizing nextVarId with
-  | nil => rfl
-  | cons r rest ih =>
-      simp only [mintFreshRets]
-      obtain ⟨nv1, params1, val1⟩ := mintFreshRetParam (c := c) nextVarId r.type
-      simp only [List.length_cons, ih nv1]
-
 /-- If `symEnv` maps `id` to `sv`, every variable `sv` mentions is already accounted for by
     `symEnvVars symEnv` -- i.e. a value obtained via `getVar`/`.get?` never introduces a variable
     beyond what the whole environment already tracks. -/
@@ -559,32 +545,6 @@ theorem setVars_defined_of_length_eq {c : ZKConfig} :
           obtain ⟨env', hEnv'⟩ := ih vs (Corellzk2smt.SymExec.Basic.setVar env id v)
             (by simpa using hlen)
           exact ⟨env', by simp only [Corellzk2smt.SymExec.Basic.setVars, hEnv']⟩
-
-/-- Converse of `setVars_defined_of_length_eq`: `setVars` only ever succeeds when the id list and
-    value list have matching lengths -- its own definition falls to the mismatched-lengths error
-    case otherwise. -/
-theorem setVars_length_of_ok {c : ZKConfig} :
-    ∀ (ids : List VarID) (vs : List (SymValue c)) (env env' : SymEnv c),
-      Corellzk2smt.SymExec.Basic.setVars env ids vs = Except.ok env' → ids.length = vs.length := by
-  intro ids
-  induction ids with
-  | nil =>
-      intro vs env env' h
-      cases vs with
-      | nil => rfl
-      | cons v vs => simp [Corellzk2smt.SymExec.Basic.setVars] at h
-  | cons id ids ih =>
-      intro vs env env' h
-      cases vs with
-      | nil => simp [Corellzk2smt.SymExec.Basic.setVars] at h
-      | cons v vs =>
-          simp only [Corellzk2smt.SymExec.Basic.setVars] at h
-          cases hrec : Corellzk2smt.SymExec.Basic.setVars
-              (Corellzk2smt.SymExec.Basic.setVar env id v) ids vs with
-          | error e => rw [hrec] at h; simp at h
-          | ok env'' =>
-              simp only [List.length_cons]
-              exact congrArg (· + 1) (ih vs (Corellzk2smt.SymExec.Basic.setVar env id v) env'' hrec)
 
 /-- Concrete-side mirror of `setVars_defined_of_length_eq`. -/
 theorem setVars_defined_of_length_eq_concrete {c : ZKConfig} :

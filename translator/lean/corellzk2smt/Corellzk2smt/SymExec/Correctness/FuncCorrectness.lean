@@ -1,7 +1,6 @@
-import Corellzk2smt.SymExec.Correctness.Correctness
+import Corellzk2smt.SymExec.Correctness.Lemmas
 import Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
 import Corellzk2smt.Language.Core.Analysis.DefinedVars
-import Corellzk2smt.SymExec.Correctness.Lemmas
 
 /-
 This file merges what used to be two files: `SymExec/FuncCorrectness.lean` ("shared machinery"
@@ -38,7 +37,6 @@ open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
 open Corellzk2smt.SymExec.Correctness.Lemmas
-open Corellzk2smt.SymExec.Correctness.Correctness
 open Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
 
 /-- `mintFreshParam` mints exactly `typeSize type` consecutive fresh `.ffv`s, in closed form --
