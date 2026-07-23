@@ -21,6 +21,7 @@ from llzk_dialects.core import (
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.core_utils import (
     translate_assignment_core_with_ctx, infer_n_repetitions_from_expressions, SymbolicSteps,
+    scoped_branch_registrations,
 )
 from llzk_dialects.felt import FeltBinary, FeltConst
 from llzk_dialects.bool import BoolCmp
@@ -317,20 +318,26 @@ class SCFIf(BlockOperation):
             yield "}"
 
     def _translate_branch(self, branch_ops: List[Operation], ctx: TranslationContext) -> Generator[str, None, None]:
+        # Scoped so a branch-local temporary (e.g. a PodRead/PodNew that
+        # happens to reuse a raw SSA name also used by the sibling branch --
+        # valid under SSA, since only one branch executes at runtime) is
+        # never visible to the sibling branch's own translation, nor to any
+        # code after this if closes -- except this if's own declared
+        # results, which are what a trailing scf.yield legitimately writes.
+        with scoped_branch_registrations(ctx, self.results):
+            for statement in branch_ops[:-1]:
+                # Process all the operands as usual, except for the scf.yield
+                yield from statement.to_core(ctx)
 
-        for statement in branch_ops[:-1]:
-            # Process all the operands as usual, except for the scf.yield
-            yield from statement.to_core(ctx)
+            # Last instruction is either a yield that must be translated or no results are returned
+            assert len(self.results) == 0 or isinstance(branch_ops[-1], SCFYield), f"Last instruction of SCFIf must be a yield and it is {branch_ops[-1]}"
 
-        # Last instruction is either a yield that must be translated or no results are returned
-        assert len(self.results) == 0 or isinstance(branch_ops[-1], SCFYield), f"Last instruction of SCFIf must be a yield and it is {branch_ops[-1]}"
-
-        if len(branch_ops) > 0:
-            # For the yield operation, we must retrieve the results variables
-            # If it is not a yield, ctx.scf_result does not affect the translation
-            ctx.scf_result = self.results
-            yield from branch_ops[-1].to_core(ctx)
-            ctx.scf_result = []
+            if len(branch_ops) > 0:
+                # For the yield operation, we must retrieve the results variables
+                # If it is not a yield, ctx.scf_result does not affect the translation
+                ctx.scf_result = self.results
+                yield from branch_ops[-1].to_core(ctx)
+                ctx.scf_result = []
 
     def update_variables(self, rename: Dict[str, str]) -> None:
         if self.condition.name in rename:
@@ -426,17 +433,22 @@ class SCFExecuteRegion(BlockOperation):
         # Unconditional, executed exactly once: no wrapper syntax needed at
         # all in Core — just inline the body, then let the terminating
         # scf.yield assign into this op's own result(s), the same way
-        # SCFIf._translate_branch handles one branch's final yield.
-        for statement in self.body[:-1]:
-            yield from statement.to_core(ctx)
+        # SCFIf._translate_branch handles one branch's final yield. Scoped
+        # for the same reason as SCFIf's branches (same shape: a declared,
+        # escaping result vs. block-local temporaries) -- not strictly
+        # required here since execute_region has no sibling-branch
+        # alternative, but consistent/future-proof.
+        with scoped_branch_registrations(ctx, self.results):
+            for statement in self.body[:-1]:
+                yield from statement.to_core(ctx)
 
-        assert len(self.results) == 0 or isinstance(self.body[-1], SCFYield), \
-            f"Last instruction of scf.execute_region must be a yield and it is {self.body[-1]}"
+            assert len(self.results) == 0 or isinstance(self.body[-1], SCFYield), \
+                f"Last instruction of scf.execute_region must be a yield and it is {self.body[-1]}"
 
-        if len(self.body) > 0:
-            ctx.scf_result = self.results
-            yield from self.body[-1].to_core(ctx)
-            ctx.scf_result = []
+            if len(self.body) > 0:
+                ctx.scf_result = self.results
+                yield from self.body[-1].to_core(ctx)
+                ctx.scf_result = []
 
     def update_variables(self, rename: Dict[str, str]) -> None:
         for r in self.results:

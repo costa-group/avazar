@@ -2,6 +2,7 @@
 Module for useful methods applies to the classes in core.py
 """
 import re
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import List, Set, Dict, Union, Optional, Callable, Tuple
 from llzk_dialects.core import SSAVar, TranslationContext, Type, Operation
@@ -116,6 +117,71 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
         return '\n'.join(assignments)
 
     return translate_assignment_core(lhs.to_core(), rhs.to_core(), is_ff)
+
+
+@contextmanager
+def scoped_branch_registrations(ctx: TranslationContext, results: List[SSAVar]):
+    """
+    Scope ctx.ssa_to_name / ctx.ssa2pod_var / ctx.var2const to one mutually-
+    exclusive branch of an scf.if (or one scf.execute_region's single body),
+    so a branch-local temporary registered while translating this block does
+    not leak into a *sibling* branch's translation, nor survive past the
+    block once it closes.
+
+    Rationale: valid SSA scoping guarantees a value defined inside one
+    branch is never referenced outside it (or by a sibling branch) --
+    except for the block's own *declared* results, which are exactly what a
+    trailing scf.yield writes into `results`' own component names. Core, on
+    the other hand, always emits BOTH of an if's branches as real runtime
+    code (SCFIf.to_core never resolves the condition statically), and
+    ctx.ssa_to_name/ssa2pod_var/var2const are flat, whole-translation dicts
+    with no per-branch scoping of their own -- so a raw LLZK SSA name
+    legitimately reused across two mutually-exclusive branches (valid under
+    SSA: only one branch executes at runtime) would otherwise silently
+    clobber whichever branch's own registration was translated first, by
+    the time either that branch is revisited or any code after the
+    if/execute_region reads the name back.
+
+    On exit, every key is reverted to whatever it was before this block
+    ran, EXCEPT one of `results`' own component names
+    (SSAVar.to_core_component, one per n_components), which instead keeps
+    its current (just-computed, post-block) value -- that's precisely this
+    block's own declared, escaping registration.
+
+    Known limitation: a key that already existed before this block AND is
+    directly mutated by some op inside the block (not via one of `results`'
+    component names) is reverted to its pre-block value once this block
+    exits, even though the mutation wasn't a "new" branch-local temporary.
+    Every current writer of these three dicts derives new entries either
+    from a fresh (branch-local) SSA name, or, for pod.write into an
+    already-registered pod field, from an `lhs.name`-derived key whose
+    registered *shape* is independent of which branch performed the write
+    -- so this never actually diverges from "let the mutation persist" in
+    practice today. If a future op ever needs to mutate a pre-existing key
+    with a value that genuinely differs by branch and must survive past
+    the if, add its own key to an explicit allow-list here (or pass it in
+    via `results`).
+    """
+    ssa_to_name_before = dict(ctx.ssa_to_name)
+    ssa2pod_var_before = dict(ctx.ssa2pod_var)
+    var2const_before = dict(ctx.var2const)
+    try:
+        yield
+    finally:
+        result_keys = [r.to_core_component(i) for r in results for i in range(r.n_components)]
+        for key in result_keys:
+            if key in ctx.ssa_to_name:
+                ssa_to_name_before[key] = ctx.ssa_to_name[key]
+            if key in ctx.ssa2pod_var:
+                ssa2pod_var_before[key] = ctx.ssa2pod_var[key]
+            if key in ctx.var2const:
+                var2const_before[key] = ctx.var2const[key]
+        ctx.ssa_to_name.clear()
+        ctx.ssa_to_name.update(ssa_to_name_before)
+        ctx.ssa2pod_var.clear()
+        ctx.ssa2pod_var.update(ssa2pod_var_before)
+        ctx.var2const.clear()
+        ctx.var2const.update(var2const_before)
 
 
 @dataclass

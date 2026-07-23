@@ -8,7 +8,7 @@ from llzk_dialects.felt import FeltConst, FeltBinary
 from llzk_dialects.bool import BoolCmp, BoolBinary
 from llzk_dialects.constrain import ConstrainEq
 from llzk_dialects.function import FunctionCall
-from llzk_dialects.pod import PodRead
+from llzk_dialects.pod import PodRead, PodNew
 from llzk_dialects.core_utils import translate_assignment_core_with_ctx
 
 
@@ -165,6 +165,69 @@ class TestSCF:
             "}",
         ]
         assert ctx.ssa2pod_var["%r"] == {"@x": ("%r_@x", Type("!felt.type"))}
+
+    # ── Branch-scoping regressions (poseidon3_test_concrete.mlir) ────────────
+    #
+    # SCFIf.to_core unconditionally translates BOTH branches (Core needs both
+    # as real runtime code -- the condition is never resolved statically), so
+    # a raw LLZK SSA name reused across two mutually-exclusive branches
+    # (valid under SSA scoping, since only one branch executes at runtime)
+    # would otherwise silently clobber ctx.ssa_to_name/ctx.ssa2pod_var/
+    # ctx.var2const, which are flat, whole-translation dicts with no
+    # per-branch scoping of their own. See _translate_branch's
+    # scoped_branch_registrations wrapper.
+
+    def test_if_sibling_branches_do_not_leak_ssa_to_name(self):
+        # Two mutually-exclusive branches each register a PodRead's semantic
+        # alias into the SAME raw SSA name ("%755", mirroring the real
+        # poseidon3_test_concrete.mlir crash trace). This if declares no
+        # results, so neither branch's alias should survive past it.
+        then_read = PodRead(SSAVar("%755"), SSAVar("%podA"), GlobalVariable("@x"), {}, None)
+        else_read = PodRead(SSAVar("%755"), SSAVar("%podB"), GlobalVariable("@y"), {}, None)
+        op = SCFIf([], SSAVar("%cond"), [], [then_read], [else_read])
+
+        ctx = TranslationContext()
+        ctx.ssa2pod_var["%podA"] = {"@x": ("compA.x", Type("!felt.type"))}
+        ctx.ssa2pod_var["%podB"] = {"@y": ("compB.y", Type("!felt.type"))}
+
+        list(op.to_core(ctx))  # previously: "%755" left aliased to "compB.y"
+        assert "%755" not in ctx.ssa_to_name
+
+    def test_if_escape_hatch_preserves_declared_result_not_branch_local_temp(self):
+        # The if's own declared result (%r) is computed via a branch-local
+        # PodNew temporary (%tmp) in the then-branch. %r must be correctly
+        # registered after the if closes; %tmp -- never referenced by
+        # anything outside its own branch under valid SSA scoping -- must
+        # not survive.
+        then_body = [
+            PodNew(SSAVar("%tmp"), {}, {"@x": Type("!felt.type")}),
+            SCFYield([SSAVar("%tmp")], [Type("!pod.type<[@x: !felt.type]>")]),
+        ]
+        else_body = [
+            SCFYield([SSAVar("%other")], [Type("!pod.type<[@x: !felt.type]>")]),
+        ]
+        op = SCFIf([SSAVar("%r")], SSAVar("%cond"), [Type("!pod.type<[@x: !felt.type]>")],
+                   then_body, else_body)
+        ctx = TranslationContext()
+        ctx.ssa2pod_var["%other"] = {"@x": ("%other_@x", Type("!felt.type"))}
+
+        list(op.to_core(ctx))
+
+        assert ctx.ssa2pod_var["%r"] == {"@x": ("%r_@x", Type("!felt.type"))}
+        assert "%tmp" not in ctx.ssa2pod_var
+
+    def test_if_sibling_branches_do_not_leak_ssa2pod_var(self):
+        # Same sibling-branch collision as above, but directly on
+        # ctx.ssa2pod_var: both branches define a pod under the SAME raw
+        # name ("%p") with DIFFERENT field shapes. This if declares no
+        # results, so "%p" must not survive past it at all.
+        then_body = [PodNew(SSAVar("%p"), {}, {"@a": Type("!felt.type")})]
+        else_body = [PodNew(SSAVar("%p"), {}, {"@b": Type("!felt.type")})]
+        op = SCFIf([], SSAVar("%cond"), [], then_body, else_body)
+        ctx = TranslationContext()
+
+        list(op.to_core(ctx))  # previously: "%p" left as {'@b': (...)}
+        assert "%p" not in ctx.ssa2pod_var
 
     # ── SCFExecuteRegion (BlockOperation) ─────────────────────────────────────
 
