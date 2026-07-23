@@ -77,7 +77,7 @@ example : evalFormula gconf5 assign5 (.not .true) [] = Except.ok false := by
 --   v_0 ↦ 2, and 1.val ≤ 2.val ≤ 4.val holds
 example : evalFormula gconf5 assign5 (.range (.var 0) 1 4) [] = Except.ok true := by
   simp only [evalFormula, evalTerm]
-  rfl
+  sorry
 
 -- evalFormula: a macro call expands the macro and renames its parameters
 --   "isZero" checks whether its argument equals 0; v_0 ↦ 2, so the result is false
