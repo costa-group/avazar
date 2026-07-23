@@ -1,4 +1,4 @@
-import Corellzk2smt.SymExec.FuncCorrectness
+import Corellzk2smt.SymExec.PartialCorrectness.FuncCorrectness
 import Corellzk2smt.Language.Core.Analysis.DefinedVars
 
 /- Shared machinery for whole-program correctness (`seExecFuncs`/`seExecProg`,
@@ -7,7 +7,7 @@ import Corellzk2smt.Language.Core.Analysis.DefinedVars
    `TranslatesCorrectly`-independent) inductions over `seExecFuncs.loop`'s own recursion:
    `seExecFuncs_loop_specs_suffix` (the spec accumulator only ever grows by prepending) and
    `seExecFuncs_loop_params_split` (every macro's `params : List Var` field decomposes into a
-   params range / a rets range / an opaque aux list, exposing `seFunc_f_params_split`'s per-
+   params range / a rets range / an opaque aux list, exposing `seFunc_f_params_split_basic`'s per-
    function fact at the whole-program level). None of this is stated in terms of
    `TranslatesCorrectly` itself, so it's reused unchanged by both the (now-removed) unconditional
    formalization and the current conditional one in
@@ -31,7 +31,7 @@ open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
 open Corellzk2smt.SymExec.Lemmas
 open Corellzk2smt.SymExec.PartialCorrectness.Correctness
-open Corellzk2smt.SymExec.FuncCorrectness
+open Corellzk2smt.SymExec.PartialCorrectness.FuncCorrectness
 
 /-- `seFunc`'s output spec's macro name (`fspec.f.name`) is exactly the translated function's own
     name -- mirrors `seFunc_eq_shape`'s exact proof shape (same unfolding sequence), just also
@@ -100,7 +100,7 @@ theorem seExecFuncs_loop_specs_suffix {c : ZKConfig} (gconf : GlobalConfig c) :
           · rw [hbuilt'_eq, List.append_assoc]; rfl
           · simp [hbuilt'_len]
 
-/-- `seFunc_f_params_split`'s fact, threaded through the whole loop: every spec ever built (either
+/-- `seFunc_f_params_split_basic`'s fact, threaded through the whole loop: every spec ever built (either
     already in `specs` when the loop starts, or newly minted along the way) has its macro's
     `params : List Var` field split into a params range, a rets range, and an opaque aux list --
     a purely structural fact (no `WellShaped`/no-dup-names/`TranslatesCorrectly` involved at all),
@@ -145,7 +145,7 @@ theorem seExecFuncs_loop_params_split {c : ZKConfig} (gconf : GlobalConfig c) :
       | ok fspec =>
           rw [hseFunc_eq] at h
           simp only [Bind.bind, Except.bind] at h
-          have hfspec_split := seFunc_f_params_split gconf specs name params rets body fspec
+          have hfspec_split := seFunc_f_params_split_basic gconf specs name params rets body fspec
             hseFunc_eq
           obtain ⟨hname_eq, hparams_eq, hrets_eq⟩ := seFunc_eq_shape gconf specs name params rets
             body fspec hseFunc_eq
