@@ -1,6 +1,7 @@
 import Corellzk2smt.Basic
 import Corellzk2smt.Config
 import Corellzk2smt.Language.Core.Syntax.AST
+import Corellzk2smt.Language.Core.Syntax.Lemmas
 import Corellzk2smt.Language.Core.Syntax.Printer
 import Corellzk2smt.Language.Core.Semantics.Basic
 import Corellzk2smt.Language.Core.Analysis.DefinedVars
@@ -9,6 +10,7 @@ namespace Corellzk2smt.Language.Core.Semantics.BigStep
 
 open Corellzk2smt.Config
 open Corellzk2smt.Language.Core.Syntax.AST
+open Corellzk2smt.Language.Core.Syntax.Lemmas
 open Corellzk2smt.Language.Core.Semantics.Basic
 open Corellzk2smt.Language.Core.Analysis.DefinedVars
 

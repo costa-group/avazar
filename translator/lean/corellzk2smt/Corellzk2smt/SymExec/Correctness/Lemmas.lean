@@ -8,6 +8,7 @@ import Corellzk2smt.FFConstraints.Basic
 import Corellzk2smt.FFConstraints.Satisfiability
 import Corellzk2smt.FFConstraints.Lemmas
 import Corellzk2smt.Language.Core.Analysis.DefinedVars
+import Corellzk2smt.Language.Core.Syntax.Lemmas
 
 /-
 This file merges what used to be three files: `SymExec/Lemmas.lean` (the bulk of the symbolic-
@@ -57,6 +58,7 @@ namespace Corellzk2smt.SymExec.Correctness.Lemmas
 
 open Corellzk2smt.Config
 open Corellzk2smt.Language.Core.Syntax.AST
+open Corellzk2smt.Language.Core.Syntax.Lemmas
 open Corellzk2smt.Language.Core.Semantics.Basic
 open Corellzk2smt.Language.Core.Semantics.BigStep
 open Corellzk2smt.Language.Core.Analysis.WellShaped

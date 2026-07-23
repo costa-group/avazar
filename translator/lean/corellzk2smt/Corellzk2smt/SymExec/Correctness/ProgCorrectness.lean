@@ -1,5 +1,6 @@
 import Corellzk2smt.SymExec.Correctness.FuncCorrectness
 import Corellzk2smt.Language.Core.Analysis.DefinedVars
+import Corellzk2smt.Language.Core.Syntax.Lemmas
 
 /-
 This file merges what used to be two files: `SymExec/ProgCorrectness.lean` ("shared machinery"
@@ -88,6 +89,7 @@ namespace Corellzk2smt.SymExec.Correctness.ProgCorrectness
 
 open Corellzk2smt.Config
 open Corellzk2smt.Language.Core.Syntax.AST
+open Corellzk2smt.Language.Core.Syntax.Lemmas
 open Corellzk2smt.Language.Core.Semantics.Basic
 open Corellzk2smt.Language.Core.Semantics.BigStep
 open Corellzk2smt.Language.Core.Analysis.WellShaped

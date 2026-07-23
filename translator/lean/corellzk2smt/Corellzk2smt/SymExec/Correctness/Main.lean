@@ -1,4 +1,5 @@
 import Corellzk2smt.SymExec.Correctness.ProgCorrectness
+import Corellzk2smt.Language.Core.Syntax.Lemmas
 
 /-!
 This file exists so an outsider can see the one theorem the whole `SymExec/Correctness/`
@@ -11,6 +12,7 @@ namespace Corellzk2smt.SymExec.Correctness.Main
 
 open Corellzk2smt.Config
 open Corellzk2smt.Language.Core.Syntax.AST
+open Corellzk2smt.Language.Core.Syntax.Lemmas
 open Corellzk2smt.Language.Core.Semantics.Basic
 open Corellzk2smt.Language.Core.Semantics.BigStep
 open Corellzk2smt.Language.Core.Analysis.DefinedVars
