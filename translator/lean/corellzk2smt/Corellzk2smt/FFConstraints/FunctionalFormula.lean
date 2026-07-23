@@ -2,14 +2,14 @@ import Corellzk2smt.Basic
 import Corellzk2smt.Config
 import Corellzk2smt.FFConstraints.Basic
 import Corellzk2smt.FFConstraints.Satisfiability
-import Corellzk2smt.FFConstraints.Satisfiability_th
+import Corellzk2smt.FFConstraints.Lemmas
 
 namespace Corellzk2smt.FFConstraints.FunctionalFormula
 
 open Corellzk2smt.Config (GlobalConfig)
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
-open Corellzk2smt.FFConstraints.Satisfiability_th
+open Corellzk2smt.FFConstraints.Lemmas
 
 -- ---------------------------------------------------------------------------
 -- Small VarSet lemmas

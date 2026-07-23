@@ -6,7 +6,7 @@ import Corellzk2smt.SymExec.Basic
 import Corellzk2smt.SymExec.BigStep
 import Corellzk2smt.FFConstraints.Basic
 import Corellzk2smt.FFConstraints.Satisfiability
-import Corellzk2smt.FFConstraints.Satisfiability_th
+import Corellzk2smt.FFConstraints.Lemmas
 import Corellzk2smt.Language.Core.Analysis.DefinedVars
 
 /-
@@ -64,7 +64,7 @@ open Corellzk2smt.SymExec.Basic
 open Corellzk2smt.SymExec.BigStep
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
-open Corellzk2smt.FFConstraints.Satisfiability_th
+open Corellzk2smt.FFConstraints.Lemmas
 open Corellzk2smt.Language.Core.Analysis.DefinedVars
 
 

@@ -5,7 +5,7 @@ import Corellzk2smt.FFConstraints.Satisfiability
 
 /- Theorems about the executable semantics defined in `FFConstraints/Satisfiability.lean`. -/
 
-namespace Corellzk2smt.FFConstraints.Satisfiability_th
+namespace Corellzk2smt.FFConstraints.Lemmas
 
 open Corellzk2smt.Config (GlobalConfig)
 open Corellzk2smt.FFConstraints.Basic
@@ -1182,4 +1182,4 @@ decreasing_by
     apply fetchMacroLT gconf ms ms' name m hfm
 end
 
-end Corellzk2smt.FFConstraints.Satisfiability_th
+end Corellzk2smt.FFConstraints.Lemmas
