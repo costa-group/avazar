@@ -5,6 +5,8 @@ import Corellzk2smt.SymExec.Common
 import Corellzk2smt.FFConstraints.Basic
 import Corellzk2smt.Language.Core.Syntax.AST
 import Corellzk2smt.Language.Core.Analysis.DefinedVars
+import Corellzk2smt.Language.Core.Semantics.Basic
+import Corellzk2smt.Language.Core.Semantics.BigStep
 
 
 namespace Corellzk2smt.SymExec.BigStep
@@ -12,6 +14,8 @@ namespace Corellzk2smt.SymExec.BigStep
 
 open Corellzk2smt.Config (GlobalConfig)
 open Corellzk2smt.Language.Core.Syntax.AST
+open Corellzk2smt.Language.Core.Semantics.Basic
+open Corellzk2smt.Language.Core.Semantics.BigStep
 open Corellzk2smt.SymExec.Basic
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.Language.Core.Analysis.DefinedVars
@@ -126,6 +130,53 @@ def seFuncCall {c : ZKConfig}
             f := FFFormula.call spec.f.name (inputParams ++ outputParams ++ auxParams),
             nextVarId := nv2
           }
+
+/-- The concrete counterpart of `seFuncCall`: evaluate the arguments, call the function, bind
+    the results into the outputs. Mirrors `evalCmd`'s `Com.func_call` case exactly (no monadic
+    `.bind`, per house style). -/
+def evalFuncCallCmd {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c) (fname : FName)
+    (args : List (SimpleExpr c)) (outs : List VarID) (env : Env c) : Except String (Env c) :=
+  match evalSimpleExprsToValue env args with
+  | Except.error err => Except.error err
+  | Except.ok argVals =>
+    match evalFunCall gconf p fname argVals with
+    | Except.error err => Except.error err
+    | Except.ok outVals =>
+      match setVars env outs outVals with
+      | Except.error err => Except.error err
+      | Except.ok vars_env => Except.ok vars_env
+
+/-- The number of constraint-variable slots a single `.ff`/`.array size` type occupies: 1 for
+    `.ff`, `size` for `.array size` -- matches `mintFreshParam`/`mintFreshRetWithEq`'s own
+    var-minting counts (`mintFreshRetParam`/`flattenArgVal`, used at a *call site*, mint/consume
+    exactly this many slots too). Shared between `FuncCorrectness.lean` and
+    `FuncCallCorrectness.lean` (neither can import the other), hence living here. -/
+def typeSize (t : VarType) : Nat := match t with | .ff => 1 | .array n => n
+
+/-- `Param`-level convenience wrapper for `typeSize`. -/
+def paramSize (p : Param) : Nat := typeSize p.type
+
+/-- Total flattened constraint-variable count for a list of params (sum of each one's
+    `paramSize`) -- what `mintFreshParams`/`mintFreshRetsWithEq`/`mintFreshRets`/`flattenArgVals`
+    actually advance `nextVarId` by / how many flattened elements they produce or consume. -/
+def totalParamSize (params : List Param) : Nat := (params.map paramSize).sum
+
+@[simp] theorem totalParamSize_nil : totalParamSize ([] : List Param) = 0 := rfl
+
+@[simp] theorem totalParamSize_cons (p : Param) (ps : List Param) :
+    totalParamSize (p :: ps) = paramSize p + totalParamSize ps := by
+  simp [totalParamSize]
+
+/-- The fresh symbolic value a single `.ff`/`.array size` type gets minted, starting at
+    `nextVarId` -- the shared closed form both `mintFreshParam` (this file, entry env for a
+    function's own params/rets) and `mintFreshRetParam` (call-site fresh output vars) produce for
+    a single param/ret, letting both be characterized against ONE definition instead of two
+    independent ones. -/
+def freshRetSymValue {c : ZKConfig} (nextVarId : Nat) (type : VarType) : SymValue c :=
+  match type with
+  | .ff => SymValue.simple (SimpleSymVal.ffvar { var := nextVarId, bits := none })
+  | .array size => SymValue.array ((List.range size).map (fun i =>
+      SimpleSymVal.ffvar { var := nextVarId + i, bits := none })).toArray
 
 /-- Try to decide a condition without generating a formula, by constant-folding both sides
     (mirrors `evalCond`, but via `tryEvalSimpleExprToFFValue` -- so it only succeeds when both

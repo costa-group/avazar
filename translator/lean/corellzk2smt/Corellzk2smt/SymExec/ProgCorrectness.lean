@@ -30,7 +30,7 @@ open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
 open Corellzk2smt.SymExec.Lemmas
-open Corellzk2smt.SymExec.Correctness
+open Corellzk2smt.SymExec.PartialCorrectness.Correctness
 open Corellzk2smt.SymExec.FuncCorrectness
 
 /-- `seFunc`'s output spec's macro name (`fspec.f.name`) is exactly the translated function's own

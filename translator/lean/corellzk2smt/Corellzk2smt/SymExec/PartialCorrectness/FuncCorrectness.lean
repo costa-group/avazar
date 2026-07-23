@@ -36,7 +36,7 @@ open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
 open Corellzk2smt.SymExec.Lemmas
-open Corellzk2smt.SymExec.Correctness
+open Corellzk2smt.SymExec.PartialCorrectness.Correctness
 open Corellzk2smt.SymExec.FuncCallCorrectness
 open Corellzk2smt.SymExec.FuncCorrectness
 open Corellzk2smt.SymExec.PartialCorrectness.Lemmas

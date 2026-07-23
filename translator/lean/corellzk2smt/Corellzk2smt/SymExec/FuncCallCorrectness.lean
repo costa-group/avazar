@@ -1,4 +1,4 @@
-import Corellzk2smt.SymExec.Correctness
+import Corellzk2smt.SymExec.Lemmas
 
 /- Shared machinery for `seFuncCall` correctness (array-general -- callee params/rets may be
    `.array`-typed, flattened via `flattenArgVals`/`flattenSymValuesParams`): the
@@ -22,7 +22,6 @@ open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Satisfiability_th
 open Corellzk2smt.SymExec.Lemmas
-open Corellzk2smt.SymExec.Correctness
 
 /-- Replace every `.var`-referencing macro-call argument with a `.const` holding whatever
     value it currently denotes under `assign` -- doesn't change what `newAssignment'` builds,
