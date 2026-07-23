@@ -22,7 +22,7 @@ def evalSimpleCmd {c : ZKConfig}
   (gconf : GlobalConfig c)
   (env : Env c)
   (i : ComWithMD c)
-  : Except String (Env c) := do
+  : Except String (Env c) :=
   match i with
    | .mk md cmd =>
       match cmd with
@@ -32,7 +32,7 @@ def evalSimpleCmd {c : ZKConfig}
       | Com.write_array a index value => evalWriteArray md gconf env a index value
       | Com.copy_array out a => evalCopyArray md gconf env out a
       -- In principle, this should be unreachable, since the caller should have already
-      -- filtered out non-simple commands. However, we keep it here for safety.
+      -- filtered out non-simple commands.
       | _ => Except.error s!"evalSimpleCmd: command '{i}' is not a simple command"
 
 mutual

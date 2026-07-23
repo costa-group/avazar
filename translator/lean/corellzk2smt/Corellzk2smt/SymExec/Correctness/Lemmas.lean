@@ -5066,15 +5066,15 @@ theorem seCmd_domain_of_defined {c : ZKConfig} (gconf : GlobalConfig c) (sconf :
             exact mem_foldl_insert_var outs vars id hout)
         · exact hsymc
   | .assign out e, _hpre =>
-      simp [seCmd, seSimpleCmd] at heq
+      simp [seCmd, seSimpleCmd, seEvalAssignment] at heq
   | .new_array out size, _hpre =>
-      simp [seCmd, seSimpleCmd] at heq
+      simp [seCmd, seSimpleCmd, seNewArray] at heq
   | .read_array out arr idx, _hpre =>
-      simp [seCmd, seSimpleCmd] at heq
+      simp [seCmd, seSimpleCmd, seReadArray] at heq
   | .write_array arr idx value, _hpre =>
-      simp [seCmd, seSimpleCmd] at heq
+      simp [seCmd, seSimpleCmd, seWriteArray] at heq
   | .copy_array out arr, _hpre =>
-      simp [seCmd, seSimpleCmd] at heq
+      simp [seCmd, seSimpleCmd, seCopyArray] at heq
 termination_by (numOfLoopExpCom (ComWithMD.mk md cmd), sizeOfCom (ComWithMD.mk md cmd))
 decreasing_by
   all_goals first
@@ -5649,15 +5649,15 @@ theorem seCmd_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                         rw [hfname_eq]
                         exact fun heq => hne heq.symm
     | .assign _ _ =>
-        simp only [seCmd, seSimpleCmd] at hspec_eq; simp at hspec_eq
+        simp only [seCmd, seSimpleCmd, seEvalAssignment] at hspec_eq; simp at hspec_eq
     | .new_array _ _ =>
-        simp only [seCmd, seSimpleCmd] at hspec_eq; simp at hspec_eq
+        simp only [seCmd, seSimpleCmd, seNewArray] at hspec_eq; simp at hspec_eq
     | .read_array _ _ _ =>
-        simp only [seCmd, seSimpleCmd] at hspec_eq; simp at hspec_eq
+        simp only [seCmd, seSimpleCmd, seReadArray] at hspec_eq; simp at hspec_eq
     | .write_array _ _ _ =>
-        simp only [seCmd, seSimpleCmd] at hspec_eq; simp at hspec_eq
+        simp only [seCmd, seSimpleCmd, seWriteArray] at hspec_eq; simp at hspec_eq
     | .copy_array _ _ =>
-        simp only [seCmd, seSimpleCmd] at hspec_eq; simp at hspec_eq
+        simp only [seCmd, seSimpleCmd, seCopyArray] at hspec_eq; simp at hspec_eq
 termination_by (numOfLoopExpCom i, sizeOfCom i)
 decreasing_by
   · simp only [numOfLoopExpCom]

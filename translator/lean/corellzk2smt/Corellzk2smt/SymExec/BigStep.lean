@@ -5,7 +5,8 @@ import Corellzk2smt.SymExec.Common
 import Corellzk2smt.FFConstraints.Basic
 import Corellzk2smt.Language.Core.Syntax.AST
 import Corellzk2smt.Language.Core.Analysis.DefinedVars
-
+import Corellzk2smt.SymExec.Assignment
+import Corellzk2smt.SymExec.ArrayCmds
 
 namespace Corellzk2smt.SymExec.BigStep
 
@@ -19,13 +20,23 @@ open Corellzk2smt.Language.Core.Analysis.DefinedVars
 
 
 def seSimpleCmd {c : ZKConfig}
-    (_gconf : GlobalConfig c)
-    (_sconf : SymExecConfig c)
-    (_symEnv : SymEnv c)
-    (_specs : List (FuncSpec c))
-    (_i : ComWithMD c)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (i : ComWithMD c)
     : Except String (CmdsSpec c) :=
-    Except.error "TBD"
+  match i with
+   | .mk md cmd =>
+      match cmd with
+      | Com.assign id e => seEvalAssignment md gconf sconf symEnv specs id e
+      | Com.new_array id size => seNewArray md gconf sconf symEnv specs id size
+      | Com.read_array out a index => seReadArray md gconf sconf symEnv specs out a index
+      | Com.write_array a index value => seWriteArray md gconf sconf symEnv specs a index value
+      | Com.copy_array out a => seCopyArray md gconf sconf symEnv specs out a
+      -- In principle, this should be unreachable, since the caller should have already
+      -- filtered out non-simple commands.
+      | _ => Except.error s!"seSimpleCmd: command '{i}' is not a simple command"
 
 /-- Mint the macro-call arguments (one fresh `ff` var, or `size` fresh `ff` vars for an array)
     for a single return parameter, together with the `SymValue` those fresh vars denote (what
