@@ -1,0 +1,180 @@
+{
+  "timing": {
+    "graph_construction": 0.0,
+    "clustering": 0.0,
+    "dag_construction": 0.0,
+    "equivalency": 0.0,
+    "total": 0.0
+  },
+  "nodes": [
+    {
+      "node_name": "Decoder(4)",
+      "component_name": "",
+      "node_id": 0,
+      "constraints": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "input_signals": [
+        6
+      ],
+      "output_signals": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "signals": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "predecessors": []
+    },
+    {
+      "node_name": "IsZero()",
+      "component_name": "checkZero#0",
+      "node_id": 1,
+      "constraints": [
+        9,
+        10
+      ],
+      "input_signals": [
+        8
+      ],
+      "output_signals": [
+        7
+      ],
+      "signals": [
+        7,
+        8,
+        9
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [],
+      "predecessors": [
+        0
+      ]
+    },
+    {
+      "node_name": "IsZero()",
+      "component_name": "checkZero#1",
+      "node_id": 2,
+      "constraints": [
+        11,
+        12
+      ],
+      "input_signals": [
+        11
+      ],
+      "output_signals": [
+        10
+      ],
+      "signals": [
+        10,
+        11,
+        12
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [],
+      "predecessors": [
+        0
+      ]
+    },
+    {
+      "node_name": "IsZero()",
+      "component_name": "checkZero#2",
+      "node_id": 3,
+      "constraints": [
+        13,
+        14
+      ],
+      "input_signals": [
+        14
+      ],
+      "output_signals": [
+        13
+      ],
+      "signals": [
+        13,
+        14,
+        15
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [],
+      "predecessors": [
+        0
+      ]
+    },
+    {
+      "node_name": "IsZero()",
+      "component_name": "checkZero#3",
+      "node_id": 4,
+      "constraints": [
+        15,
+        16
+      ],
+      "input_signals": [
+        17
+      ],
+      "output_signals": [
+        16
+      ],
+      "signals": [
+        16,
+        17,
+        18
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [],
+      "predecessors": [
+        0
+      ]
+    }
+  ],
+  "equivalency_local": [
+    [
+      0
+    ],
+    [
+      1,
+      2,
+      3,
+      4
+    ]
+  ],
+  "equivalency_structural": [
+    [
+      0
+    ],
+    [
+      1,
+      2,
+      3,
+      4
+    ]
+  ]
+}

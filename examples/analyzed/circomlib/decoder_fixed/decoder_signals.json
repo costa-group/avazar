@@ -1,0 +1,20 @@
+{
+  "main.out[0]": 1,
+  "main.out[1]": 2,
+  "main.out[2]": 3,
+  "main.out[3]": 4,
+  "main.success": 5,
+  "main.inp": 6,
+  "main.checkZero#0.out": 7,
+  "main.checkZero#0.in": 8,
+  "main.checkZero#0.inv": 9,
+  "main.checkZero#1.out": 10,
+  "main.checkZero#1.in": 11,
+  "main.checkZero#1.inv": 12,
+  "main.checkZero#2.out": 13,
+  "main.checkZero#2.in": 14,
+  "main.checkZero#2.inv": 15,
+  "main.checkZero#3.out": 16,
+  "main.checkZero#3.in": 17,
+  "main.checkZero#3.inv": 18
+}

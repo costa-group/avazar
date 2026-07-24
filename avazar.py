@@ -4,11 +4,17 @@ import subprocess
 import os
 import sys
 sys.path.append("translator/llzk2core/src")
+sys.path.append("translator/circom_linearization")
+
 from typing import List
 import logging
 import argparse
 import shutil
 from execution.main_execution import main as llzk2core_main
+
+from linearize_component_names import main as linearize_components
+from linearize_signal_names import main as linearize_signals
+
 
 
 VERSION = "1.0.0"
@@ -71,8 +77,15 @@ def main():
 
 
         #1. run circom to generate r1cs
-        circom_command = [CIRCOM, args.source,"--r1cs", "--O0", "--print_tree_info", "--name_to_signal", "--output", out_abs_path]
+        circom_command = [CIRCOM, args.source,"--r1cs", "--O0", "--print_tree_info", "--prime", "goldilocks","--name_to_signal", "--output", out_abs_path]
         run_command(circom_command)
+
+        #1.b run the linearization
+        args_comp = out_abs_path +"/"+root_name_withoutext+"_structure.json"
+        linearize_components(args_comp, args_comp)
+        args_sig = out_abs_path +"/"+root_name_withoutext+"_signals.json"
+        linearize_signals(args_sig, args_sig)
+        
 
         #2. run circom-llzk to generate llzk-ir
         circom_llzk_command = [CIRCOM_LLZK, args.source,"--llzk", "concrete", "--output", out_abs_path, "--llzk_plaintext"]
@@ -89,7 +102,7 @@ def main():
         llzk2core_main(llzk2core_args)
 
         #4. call to the solver
-        avazar_tool_command = [AVAZAR_TOOL, out_abs_path+"/"+root_name_withoutext+".r1cs", "--input_structure", out_abs_path+"/"+root_name_withoutext+"_structure.json", "--check_correctness", out_abs_path+"/"+root_name_withoutext+".json", "--correspondence", out_abs_path+"/"+root_name_withoutext+"_signals.json", "--solver", args.solver, "--verbose"]
+        avazar_tool_command = [AVAZAR_TOOL, out_abs_path+"/"+root_name_withoutext+".r1cs", "--input_structure", out_abs_path+"/"+root_name_withoutext+"_structure.json", "--check_correctness", out_abs_path+"/"+root_name_withoutext+".json", "--correspondence", out_abs_path+"/"+root_name_withoutext+"_signals.json", "--solver", args.solver, "--verbose", "--prime", "18446744069414584321"]
         print(" ".join(avazar_tool_command))
         res_avazar = run_command(avazar_tool_command)
         print(res_avazar.stdout)

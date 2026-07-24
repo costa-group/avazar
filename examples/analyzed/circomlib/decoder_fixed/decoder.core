@@ -1,0 +1,237 @@
+def @IsZero_0(%arg0: ff) -> out: ff {
+  %felt_const_0 = 0
+  %0 = bool.neq %felt_const_0 %arg0
+  if (%0 == 1) {
+    %felt_const_1_0 = 1
+    %5 = felt.div %felt_const_1_0 %arg0
+    inv = %5
+    %1 = %5
+  }
+  else {
+    %felt_const_0_0 = 0
+    inv = %felt_const_0_0
+    %1 = %felt_const_0_0
+  }
+  %2 = felt.neg %arg0
+  %3 = felt.mul %2 %1
+  %felt_const_1 = 1
+  %4 = felt.add %3 %felt_const_1
+  out = %4
+}
+def @Decoder_1(%arg0: ff) -> out: arr<4>, success: ff {
+  array.new 4 %nondet
+  array.new 4 %array_@count
+  array.new 4 %array_@comp_@out
+  %c4 = 4
+  %c0 = 0
+  %c1 = 1
+  %arg1 = 0
+  repeat 4 {
+    %c1_6 = 1
+    %pod_7_@count = %c1_6
+    %pod_7_@comp_@out = 0
+    array.write %pod_7_@count %array_@count[%arg1]
+    array.write %pod_7_@comp_@out %array_@comp_@out[%arg1]
+    %arg1 = felt.add %arg1 1
+  }
+  array.new 4 %array_0_@in
+  %felt_const_4 = 4
+  %felt_const_0 = 0
+  %felt_const_0_1 = 0
+  %arg1 = %felt_const_0_1
+  %arg2 = %felt_const_0
+  array.copy %array_0_@in %arg3_@in
+  %1_aft69 = felt.sub %arg0 %arg1
+  %2_aft69 = %arg1
+  array.read %arg3_@in[%2_aft69] checkZero#0.in
+  checkZero#0.in = %1_aft69
+  %4_aft69 = %arg1
+  array.write checkZero#0.in %arg3_@in[%4_aft69]
+  %5_aft69 = %arg1
+  array.read %array_@count[%5_aft69] %6_aft69_@count
+  array.read %array_@comp_@out[%5_aft69] %6_aft69_@comp_@out
+  %7_aft69 = %arg1
+  array.read %arg3_@in[%7_aft69] checkZero#0.in
+  %9_aft69 = %6_aft69_@count
+  %c1_6_aft69 = 1
+  %10_aft69 = felt.sub %9_aft69 %c1_6_aft69
+  %6_aft69_@count = %10_aft69
+  %c0_7_aft69 = 0
+  %11_aft69 = bool.eq %10_aft69 %c0_7_aft69
+  if (%11_aft69 == 1) {
+    %22_aft69 = checkZero#0.in
+    call @IsZero_0(checkZero#0.in) to checkZero#0.out
+    %6_aft69_@comp_@out = checkZero#0.out
+    %24_aft69 = %arg1
+    array.write %6_aft69_@count %array_@count[%24_aft69]
+    array.write %6_aft69_@comp_@out %array_@comp_@out[%24_aft69]
+  }
+  %12_aft69 = %arg1
+  array.read %array_@count[%12_aft69] %13_aft69_@count
+  array.read %array_@comp_@out[%12_aft69] %13_aft69_@comp_@out
+  %14_aft69_@out = %13_aft69_@comp_@out
+  %15_aft69 = %14_aft69_@out
+  %16_aft69 = %arg1
+  array.write %15_aft69 %nondet[%16_aft69]
+  %17_aft69 = %arg1
+  array.read %nondet[%17_aft69] %18_aft69
+  %19_aft69 = felt.add %arg2 %18_aft69
+  %felt_const_1_aft69 = 1
+  %20_aft69 = felt.add %arg1 %felt_const_1_aft69
+  %arg1 = %20_aft69
+  %arg2 = %19_aft69
+  %felt_const_4_6_bef69 = 4
+  %1_bef69 = bool.lt %felt_const_4_6_bef69 %arg1
+  %0#0 = %arg1
+  %0#1 = %arg2
+  array.copy %arg3_@in %0#2_@in
+  %1_aft69 = felt.sub %arg0 %arg1
+  %2_aft69 = %arg1
+  array.read %arg3_@in[%2_aft69] checkZero#1.in
+  checkZero#1.in = %1_aft69
+  %4_aft69 = %arg1
+  array.write checkZero#1.in %arg3_@in[%4_aft69]
+  %5_aft69 = %arg1
+  array.read %array_@count[%5_aft69] %6_aft69_@count
+  array.read %array_@comp_@out[%5_aft69] %6_aft69_@comp_@out
+  %7_aft69 = %arg1
+  array.read %arg3_@in[%7_aft69] checkZero#1.in
+  %9_aft69 = %6_aft69_@count
+  %c1_6_aft69 = 1
+  %10_aft69 = felt.sub %9_aft69 %c1_6_aft69
+  %6_aft69_@count = %10_aft69
+  %c0_7_aft69 = 0
+  %11_aft69 = bool.eq %10_aft69 %c0_7_aft69
+  if (%11_aft69 == 1) {
+    %22_aft69 = checkZero#1.in
+    call @IsZero_0(checkZero#1.in) to checkZero#1.out
+    %6_aft69_@comp_@out = checkZero#1.out
+    %24_aft69 = %arg1
+    array.write %6_aft69_@count %array_@count[%24_aft69]
+    array.write %6_aft69_@comp_@out %array_@comp_@out[%24_aft69]
+  }
+  %12_aft69 = %arg1
+  array.read %array_@count[%12_aft69] %13_aft69_@count
+  array.read %array_@comp_@out[%12_aft69] %13_aft69_@comp_@out
+  %14_aft69_@out = %13_aft69_@comp_@out
+  %15_aft69 = %14_aft69_@out
+  %16_aft69 = %arg1
+  array.write %15_aft69 %nondet[%16_aft69]
+  %17_aft69 = %arg1
+  array.read %nondet[%17_aft69] %18_aft69
+  %19_aft69 = felt.add %arg2 %18_aft69
+  %felt_const_1_aft69 = 1
+  %20_aft69 = felt.add %arg1 %felt_const_1_aft69
+  %arg1 = %20_aft69
+  %arg2 = %19_aft69
+  %felt_const_4_6_bef69 = 4
+  %1_bef69 = bool.lt %felt_const_4_6_bef69 %arg1
+  %0#0 = %arg1
+  %0#1 = %arg2
+  array.copy %arg3_@in %0#2_@in
+  %1_aft69 = felt.sub %arg0 %arg1
+  %2_aft69 = %arg1
+  array.read %arg3_@in[%2_aft69] checkZero#2.in
+  checkZero#2.in = %1_aft69
+  %4_aft69 = %arg1
+  array.write checkZero#2.in %arg3_@in[%4_aft69]
+  %5_aft69 = %arg1
+  array.read %array_@count[%5_aft69] %6_aft69_@count
+  array.read %array_@comp_@out[%5_aft69] %6_aft69_@comp_@out
+  %7_aft69 = %arg1
+  array.read %arg3_@in[%7_aft69] checkZero#2.in
+  %9_aft69 = %6_aft69_@count
+  %c1_6_aft69 = 1
+  %10_aft69 = felt.sub %9_aft69 %c1_6_aft69
+  %6_aft69_@count = %10_aft69
+  %c0_7_aft69 = 0
+  %11_aft69 = bool.eq %10_aft69 %c0_7_aft69
+  if (%11_aft69 == 1) {
+    %22_aft69 = checkZero#2.in
+    call @IsZero_0(checkZero#2.in) to checkZero#2.out
+    %6_aft69_@comp_@out = checkZero#2.out
+    %24_aft69 = %arg1
+    array.write %6_aft69_@count %array_@count[%24_aft69]
+    array.write %6_aft69_@comp_@out %array_@comp_@out[%24_aft69]
+  }
+  %12_aft69 = %arg1
+  array.read %array_@count[%12_aft69] %13_aft69_@count
+  array.read %array_@comp_@out[%12_aft69] %13_aft69_@comp_@out
+  %14_aft69_@out = %13_aft69_@comp_@out
+  %15_aft69 = %14_aft69_@out
+  %16_aft69 = %arg1
+  array.write %15_aft69 %nondet[%16_aft69]
+  %17_aft69 = %arg1
+  array.read %nondet[%17_aft69] %18_aft69
+  %19_aft69 = felt.add %arg2 %18_aft69
+  %felt_const_1_aft69 = 1
+  %20_aft69 = felt.add %arg1 %felt_const_1_aft69
+  %arg1 = %20_aft69
+  %arg2 = %19_aft69
+  %felt_const_4_6_bef69 = 4
+  %1_bef69 = bool.lt %felt_const_4_6_bef69 %arg1
+  %0#0 = %arg1
+  %0#1 = %arg2
+  array.copy %arg3_@in %0#2_@in
+  %1_aft69 = felt.sub %arg0 %arg1
+  %2_aft69 = %arg1
+  array.read %arg3_@in[%2_aft69] checkZero#3.in
+  checkZero#3.in = %1_aft69
+  %4_aft69 = %arg1
+  array.write checkZero#3.in %arg3_@in[%4_aft69]
+  %5_aft69 = %arg1
+  array.read %array_@count[%5_aft69] %6_aft69_@count
+  array.read %array_@comp_@out[%5_aft69] %6_aft69_@comp_@out
+  %7_aft69 = %arg1
+  array.read %arg3_@in[%7_aft69] checkZero#3.in
+  %9_aft69 = %6_aft69_@count
+  %c1_6_aft69 = 1
+  %10_aft69 = felt.sub %9_aft69 %c1_6_aft69
+  %6_aft69_@count = %10_aft69
+  %c0_7_aft69 = 0
+  %11_aft69 = bool.eq %10_aft69 %c0_7_aft69
+  if (%11_aft69 == 1) {
+    %22_aft69 = checkZero#3.in
+    call @IsZero_0(checkZero#3.in) to checkZero#3.out
+    %6_aft69_@comp_@out = checkZero#3.out
+    %24_aft69 = %arg1
+    array.write %6_aft69_@count %array_@count[%24_aft69]
+    array.write %6_aft69_@comp_@out %array_@comp_@out[%24_aft69]
+  }
+  %12_aft69 = %arg1
+  array.read %array_@count[%12_aft69] %13_aft69_@count
+  array.read %array_@comp_@out[%12_aft69] %13_aft69_@comp_@out
+  %14_aft69_@out = %13_aft69_@comp_@out
+  %15_aft69 = %14_aft69_@out
+  %16_aft69 = %arg1
+  array.write %15_aft69 %nondet[%16_aft69]
+  %17_aft69 = %arg1
+  array.read %nondet[%17_aft69] %18_aft69
+  %19_aft69 = felt.add %arg2 %18_aft69
+  %felt_const_1_aft69 = 1
+  %20_aft69 = felt.add %arg1 %felt_const_1_aft69
+  %arg1 = %20_aft69
+  %arg2 = %19_aft69
+  %felt_const_4_6_bef69 = 4
+  %1_bef69 = bool.lt %felt_const_4_6_bef69 %arg1
+  %0#0 = %arg1
+  %0#1 = %arg2
+  array.copy %arg3_@in %0#2_@in
+  success = %0#1
+  array.new 4 %array_2_@out
+  %c4_3 = 4
+  %c0_4 = 0
+  %c1_5 = 1
+  %arg1 = 0
+  repeat 4 {
+    array.read %array_@count[%arg1] %1_@count
+    array.read %array_@comp_@out[%arg1] %1_@comp_@out
+    %2_@out = %1_@comp_@out
+    array.write %2_@out %array_2_@out[%arg1]
+    %arg1 = felt.add %arg1 1
+  }
+  array.copy %nondet out
+}
+def main(%arg0: ff) -> out: arr<4>, success: ff {
+  call @Decoder_1(%arg0) to out, success
+}

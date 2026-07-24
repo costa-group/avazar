@@ -24,16 +24,29 @@ from llzk_dialects.definitions import Dialect
 CMPI_PREDICATES = {"eq", "ne", "slt", "sle", "sgt", "sge", "ult", "ule", "ugt", "uge"}
 
 
+def parse_arith_const_value(value: str) -> int:
+    """
+    Parse an arith.constant's literal value string into an int. Boolean
+    constants are spelled 'true'/'false' rather than an integer literal (Core
+    has no boolean type, so they become 1/0); anything else is a plain int.
+    """
+    mapped = {"true": 1, "false": 0}.get(value)
+    return int(value) if mapped is None else mapped
+
+
 class ArithConst(Operation):
     """
-    Integer or index constant.
+    Integer, index, or boolean (i1) constant.
 
-    Syntax: %result = arith.constant $value : $type
+    Syntax: %result = arith.constant $value [: $type]
     Examples:
       %c = arith.constant 42 : i32
       %n = arith.constant 0 : index
+      %true = arith.constant true
+    A boolean constant ('true'/'false') carries no type annotation at all in
+    real MLIR output; it implicitly means i1.
     Attribute: value (IntegerAttr)
-    Result:    integer or index type
+    Result:    integer, index, or i1 type
     """
 
     _OPS = {"arith.constant"}
@@ -53,15 +66,16 @@ class ArithConst(Operation):
 
     @classmethod
     def parse(cls, line: str) -> 'ArithConst':
-        # %r = arith.constant <value> : <type>
+        # %r = arith.constant <value> [: <type>]
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*arith\.constant\s+(?P<val>\S+)"
-            r"\s*:\s*(?P<type>.+)\s*"
+            r"(?:\s*:\s*(?P<type>.+))?\s*"
         )
         m = re.fullmatch(pattern, line)
         if not m:
             raise ValueError(f"Failed to parse ArithConst: {line}")
-        return ArithConst(SSAVar.parse(m["res"]), m["val"], Type.parse(m["type"].strip()))
+        type_str = m["type"].strip() if m["type"] else "i1"
+        return ArithConst(SSAVar.parse(m["res"]), m["val"], Type.parse(type_str))
 
     @property
     def result(self):
@@ -72,9 +86,9 @@ class ArithConst(Operation):
         return []
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # Update the constant dict
-        ctx.var2const[self._result.name] = int(self.value)
-        yield f"{self._result.to_core()} = {self.value}"
+        value = parse_arith_const_value(self.value)
+        ctx.var2const[self._result.name] = value
+        yield f"{self._result.to_core()} = {value}"
 
     def __repr__(self):
         return f"ArithConst({self._result} = arith.constant {self.value} : {self.result_type})"

@@ -1,0 +1,17 @@
+# Regression test for a bug in Liveness.lean's `.if_stmt` case: when an `if`
+# has no `else` clause, the parser gives it an empty else-branch (`[]`). The
+# then-branch here fully overwrites `y` (so it doesn't need y's prior value),
+# but on the implicit empty else-path nothing happens, so `y` must still be
+# live-in to the whole if-statement (its value has to survive unchanged from
+# before the if, since `z = y` needs it right after).
+#
+# Bug: `getCmdsLiveIn eb'` is called without passing `out` as the default,
+# so for the empty else-branch it falls back to `emptyVarIDSet` instead of
+# `out`, silently dropping `y` from the if-statement's live_in.
+
+func main(cond:ff, y:ff) -> z:ff {
+  if (cond == 1) {
+    y = 1
+  }
+  z = y
+}

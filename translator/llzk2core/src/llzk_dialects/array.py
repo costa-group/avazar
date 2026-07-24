@@ -22,9 +22,9 @@ Container element types (pod, struct):
 """
 
 import re
-from typing import List, Optional, Generator, Tuple
+from typing import List, Optional, Generator, Tuple, Union
 
-from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
+from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext, LoopIndexedName
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.utils import (
     array_felt_first_dimension, array_felt_dimensions,
@@ -113,6 +113,16 @@ def _container_field_var(base: str, field_path: List[str]) -> str:
     return base + "_" + "_".join(field_path)
 
 
+def _semantic_field_var(semantic_base: str, field_path: List[str]) -> str:
+    """
+    Core variable name for a flattened field of a component read out of a
+    named component array (e.g. "last_0.in1_last"), mirroring PodNew's
+    "{member}.{record}" convention for a scalar subcomponent — a dot after
+    the member/index prefix, then underscore-joined for any nested fields.
+    """
+    return semantic_base + "." + "_".join(p[1:] for p in field_path)
+
+
 def _struct_out_args(struct_type_str: str, ctx: TranslationContext) -> List[Tuple[str, Type]]:
     """Resolve a struct type's own output args (name-with-@, Type), via ctx."""
     full_ref = struct_type_name(struct_type_str)
@@ -149,22 +159,40 @@ def _flatten_container_fields(type_str: str, ctx: TranslationContext) -> List[Tu
 
 
 def _emit_container_field_copy(src_arr: str, dest_arr: str, start: str, length: int,
-                               base: str) -> Generator[str, None, None]:
+                               base: str, offset_src: bool = False) -> Generator[str, None, None]:
     """
-    Emit a Core 'repeat' loop copying `length` contiguous elements from
-    src_arr[0..length-1] into dest_arr[start..start+length-1]. `start` is a
-    Core sexp (a variable name or integer literal). Core's repeat has no
-    implicit counter, so one is initialised before the loop and advanced
-    inside it (see CORELLZK.md's Bounded Loops).
+    Emit a Core 'repeat' loop copying `length` contiguous elements between
+    src_arr and dest_arr. `start` is a Core sexp (a variable name or integer
+    literal). Core's repeat has no implicit counter, so one is initialised
+    before the loop and advanced inside it (see CORELLZK.md's Bounded Loops).
+
+    Two shapes, depending on which side is the big (structure-of-arrays
+    backing) array and which is the small, freshly-allocated one:
+
+    - offset_src=False (default — "insert": copying a small array INTO a
+      bigger one, e.g. ArrayWrite/ArrayInsert writing one instance's value
+      back into the backing store): copies src_arr[0..length) into
+      dest_arr[start..start+length) — the offset lands on the destination.
+    - offset_src=True ("extract": copying a slice OUT OF a bigger array
+      into a freshly allocated smaller one, e.g. ArrayRead/ArrayExtract
+      reading one instance's value out of the backing store): copies
+      src_arr[start..start+length) into dest_arr[0..length) instead — the
+      offset must land on the source, or the (correctly small) destination
+      array would be written out of bounds for any start > 0.
     """
     counter = f"{base}_cp_idx"
     tmp = f"{base}_cp_tmp"
-    dest = f"{base}_cp_dest"
+    off = f"{base}_cp_src" if offset_src else f"{base}_cp_dest"
     yield f"{counter} = 0"
     yield f"repeat {length} {{"
-    yield f"array.read {src_arr}[{counter}] {tmp}"
-    yield f"{dest} = felt.add {counter} {start}"
-    yield f"array.write {tmp} {dest_arr}[{dest}]"
+    if offset_src:
+        yield f"{off} = felt.add {counter} {start}"
+        yield f"array.read {src_arr}[{off}] {tmp}"
+        yield f"array.write {tmp} {dest_arr}[{counter}]"
+    else:
+        yield f"array.read {src_arr}[{counter}] {tmp}"
+        yield f"{off} = felt.add {counter} {start}"
+        yield f"array.write {tmp} {dest_arr}[{off}]"
     yield f"{counter} = felt.add {counter} 1"
     yield "}"
 
@@ -173,9 +201,9 @@ class ArrayNew(Operation):
     """
     Create a new array, optionally initialised with element values.
 
-    Syntax: %result = array.new [: ($elements)?] : type($result)
+    Syntax: %result = array.new [$elements] : type($result)
     Example (empty):    %a = array.new : !array.type<index, 4 x index>
-    Example (elements): %a = array.new : (%x, %y) : !array.type<index, 2 x index>
+    Example (elements): %a = array.new %x, %y : !array.type<index, 2 x index>
     Operands: elements (variadic), mapOperands (variadic index, for affine shapes)
     Result:   n-dimensional array
     """
@@ -197,10 +225,10 @@ class ArrayNew(Operation):
     @classmethod
     def parse(cls, line: str) -> 'ArrayNew':
         # %r = array.new : !type
-        # %r = array.new : (%e0, %e1) : !type
+        # %r = array.new %e0, %e1 : !type
         pattern = re.compile(
             r"\s*(?P<res>\S+)\s*=\s*array\.new"
-            r"(?:\s*:\s*\(\s*(?P<elems>[^)]*)\s*\))?"
+            r"(?:\s+(?P<elems>%[^\s,]+(?:\s*,\s*%[^\s,]+)*))?"
             r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
@@ -221,13 +249,26 @@ class ArrayNew(Operation):
         return list(self.elements)
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
-        if len(self.elements) > 0:
-            raise NotImplementedError("array.new not implemented with initial elements")
         type_str = self.result_type.name
         dim = array_felt_first_dimension(type_str)
         if dim is not None:
             yield f"array.new {dim} {self._result}"
+            if self.elements:
+                # Core allows a literal/known value to be written directly
+                # into an array slot, so each initial element just becomes a
+                # plain array.write at its own index.
+                assert len(self.elements) == dim, (
+                    f"ArrayNew: {len(self.elements)} initial elements given "
+                    f"for a {dim}-element array"
+                )
+                for i, elem in enumerate(self.elements):
+                    yield f"array.write {elem.to_core()} {self._result.to_core()}[{i}]"
             return
+
+        if self.elements:
+            raise NotImplementedError(
+                "array.new with initial elements is only implemented for felt arrays"
+            )
 
         if "!pod.type" in type_str or "!struct.type" in type_str:
             # Array of pod/struct (structure-of-arrays): one real flattened
@@ -240,7 +281,7 @@ class ArrayNew(Operation):
                 yield f"array.new {leaf_size} {_container_field_var(self._result.name, field_path)}"
 
     def __repr__(self):
-        elem_str = f" : ({', '.join(repr(e) for e in self.elements)})" if self.elements else ""
+        elem_str = f" {', '.join(repr(e) for e in self.elements)}" if self.elements else ""
         return f"ArrayNew({self._result} = array.new{elem_str} : {self.result_type})"
 
 
@@ -261,6 +302,24 @@ class ArrayRead(Operation):
         self.arr_ref = arr_ref
         self.indices = indices
         self.types = types
+        # Set by struct.py's _build_component_naming_maps pre-pass (via
+        # _annotate_input_array_reads) when arr_ref is a registered
+        # "$inputs" component array: the plain string "member_idx" for a
+        # compile-time constant index, or LoopIndexedName("member") when the
+        # index is a genuine runtime loop variable (resolved in to_core
+        # below into "member#i" if that loop got unrolled, else bare
+        # "member"). None until the pre-pass runs, or when arr_ref isn't a
+        # registered component array.
+        #
+        # This can't be computed here from ctx.var2const at to_core time:
+        # SCFFor/SCFWhile deliberately treat their own loop-carried
+        # variables as a compile-time constant for structural purposes (see
+        # their own to_core), even though the value actually varies per
+        # iteration — trusting that here would misattribute a genuinely
+        # symbolic loop index to one specific instance. The pre-pass instead
+        # resolves this with its own scope-safe static fold, once per
+        # function, and stamps the result directly on this node.
+        self._semantic_base: Optional[Union[str, LoopIndexedName]] = None
 
     def dialect(self) -> Dialect:
         return Dialect("array")
@@ -310,12 +369,31 @@ class ArrayRead(Operation):
             # plain name concatenation.
             arr_core = ctx.ssa_to_name.get(self.arr_ref.name, self.arr_ref.to_core())
 
+            # When this array backs a named component-array member, name the
+            # extracted element after that member instead of a raw
+            # SSA-derived name — see the _semantic_base field comment above
+            # for how/when this is resolved. A LoopIndexedName means the
+            # index wasn't a compile-time constant in the source IR; resolve
+            # it against the current unroll iteration (set by SCFFor/
+            # SCFWhile.to_core when they unroll a loop for this exact
+            # reason — see scf.py's _contains_function_call), or leave it
+            # bare if this loop wasn't unrolled after all.
+            semantic_base = self._semantic_base
+            if isinstance(semantic_base, LoopIndexedName):
+                semantic_base = semantic_base.resolve(ctx.unroll_index)
+
             if is_pod:
                 all_fields = _parse_pod_fields(elem_type.name)
-                ctx.ssa2pod_var[self._result.name] = {
-                    field: (f"{self._result.name}_{field}", field_type)
-                    for field, field_type in all_fields.items()
-                }
+                if semantic_base is not None:
+                    ctx.ssa2pod_var[self._result.name] = {
+                        field: (_semantic_field_var(semantic_base, [field]), field_type)
+                        for field, field_type in all_fields.items()
+                    }
+                else:
+                    ctx.ssa2pod_var[self._result.name] = {
+                        field: (f"{self._result.name}_{field}", field_type)
+                        for field, field_type in all_fields.items()
+                    }
                 # An empty pod-typed field (e.g. @params: !pod.type<[]>)
                 # contributes no leaves to _flatten_container_fields below, so
                 # its storage name would otherwise never be independently
@@ -328,7 +406,9 @@ class ArrayRead(Operation):
                 # generic array.copy fallback with an undefined variable.
                 for field, field_type in all_fields.items():
                     if "!pod.type" in field_type.name and not _parse_pod_fields(field_type.name):
-                        ctx.ssa2pod_var[f"{self._result.name}_{field}"] = {}
+                        key = (_semantic_field_var(semantic_base, [field])
+                               if semantic_base is not None else f"{self._result.name}_{field}")
+                        ctx.ssa2pod_var[key] = {}
 
             if len(self.indices) <= 1:
                 idx = self.indices[0].to_core() if self.indices else "0"
@@ -344,7 +424,12 @@ class ArrayRead(Operation):
 
             for field_path, leaf_type in _flatten_container_fields(elem_type.name, ctx):
                 src_arr = _container_field_var(arr_core, field_path)
-                dest_var = _container_field_var(self._result.name, field_path)
+                raw_dest_var = _container_field_var(self._result.name, field_path)
+                if semantic_base is not None:
+                    dest_var = _semantic_field_var(semantic_base, field_path)
+                    ctx.ssa_to_name[raw_dest_var] = dest_var
+                else:
+                    dest_var = raw_dest_var
                 leaf_size = array_total_size(leaf_type.name)
                 if leaf_size is None:
                     yield f"array.read {src_arr}[{idx}] {dest_var}"
@@ -352,7 +437,11 @@ class ArrayRead(Operation):
                     start_var = f"{dest_var}_off"
                     yield f"{start_var} = felt.mul {idx} {leaf_size}"
                     yield f"array.new {leaf_size} {dest_var}"
-                    yield from _emit_container_field_copy(src_arr, dest_var, start_var, leaf_size, dest_var)
+                    # Extracting this instance's slice out of the bigger
+                    # backing array (src_arr) into the freshly allocated
+                    # dest_var — offset belongs on the source, not dest_var.
+                    yield from _emit_container_field_copy(src_arr, dest_var, start_var, leaf_size, dest_var,
+                                                          offset_src=True)
             return
 
         if len(self.indices) <= 1:
@@ -538,8 +627,12 @@ class ArrayExtract(Operation):
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # array.extract reads a lower-rank sub-array out of arr_ref: a
         # contiguous run of the flattened source array, copied into a freshly
-        # allocated result array. Symmetric to ArrayInsert (see there for the
-        # start/length derivation).
+        # allocated result array. The start/length derivation mirrors
+        # ArrayInsert, but the copy itself runs the opposite way — this is
+        # an "extract" (offset on the source, the bigger arr_ref; the fresh,
+        # correctly-sized result is always written 0-based), not an
+        # "insert" (offset on the destination) — see
+        # _emit_container_field_copy's offset_src.
         type_str = self.arr_type.name
         dims = array_dimensions(type_str)
         assert dims is not None, \
@@ -574,11 +667,13 @@ class ArrayExtract(Operation):
                     field_start = f"{dest_arr}_start"
                     yield f"{field_start} = felt.mul {start} {leaf_mult}"
                 yield f"array.new {field_length} {dest_arr}"
-                yield from _emit_container_field_copy(src_arr, dest_arr, field_start, field_length, dest_arr)
+                yield from _emit_container_field_copy(src_arr, dest_arr, field_start, field_length, dest_arr,
+                                                      offset_src=True)
             return
 
         yield f"array.new {length} {self._result.to_core()}"
-        yield from _emit_container_field_copy(arr_core, self._result.to_core(), start, length, base)
+        yield from _emit_container_field_copy(arr_core, self._result.to_core(), start, length, base,
+                                              offset_src=True)
 
     def __repr__(self):
         idx_str = ', '.join(repr(i) for i in self.indices)

@@ -1,0 +1,283 @@
+def @Num2Bits_0(%arg0: ff) -> out: arr<2> {
+  array.new 2 %nondet
+  %felt_const_2 = 2
+  %felt_const_0 = 0
+  %felt_const_1 = 1
+  %felt_const_0_0 = 0
+  %arg1 = %felt_const_0_0
+  %arg2 = %felt_const_0
+  %arg3 = %felt_const_1
+  repeat 2 {
+    %1_aft11 = bit.shr %arg0 %arg1
+    %felt_const_1_1_aft11 = 1
+    %2_aft11 = bit.and %1_aft11 %felt_const_1_1_aft11
+    %3_aft11 = %arg1
+    array.write %2_aft11 %nondet[%3_aft11]
+    %4_aft11 = %arg1
+    array.read %nondet[%4_aft11] %5_aft11
+    %6_aft11 = felt.mul %5_aft11 %arg3
+    %7_aft11 = felt.add %arg2 %6_aft11
+    %8_aft11 = felt.add %arg3 %arg3
+    %felt_const_1_2_aft11 = 1
+    %9_aft11 = felt.add %arg1 %felt_const_1_2_aft11
+    %arg1 = %9_aft11
+    %arg2 = %7_aft11
+    %arg3 = %8_aft11
+    %felt_const_2_1_bef11 = 2
+    %1_bef11 = bool.lt %felt_const_2_1_bef11 %arg1
+    %0#0 = %arg1
+    %0#1 = %arg2
+    %0#2 = %arg3
+  }
+  array.copy %nondet out
+}
+def @Num2Ternary_1(%arg0: ff) -> out: arr<4> {
+  array.new 4 %nondet
+  array.new 2 %nondet_0
+  array.new 2 %array_@count
+  array.new 4 %array_@comp_@out
+  %c2 = 2
+  %c0 = 0
+  %c1 = 1
+  %arg1 = 0
+  repeat 2 {
+    %c1_8 = 1
+    %pod_9_@count = %c1_8
+    array.new 2 %pod_9_@comp_@out
+    array.write %pod_9_@count %array_@count[%arg1]
+    %pod_9_@comp_@out_off = felt.mul %arg1 2
+    %pod_9_@comp_@out_cp_idx = 0
+    repeat 2 {
+      array.read %pod_9_@comp_@out[%pod_9_@comp_@out_cp_idx] %pod_9_@comp_@out_cp_tmp
+      %pod_9_@comp_@out_cp_dest = felt.add %pod_9_@comp_@out_cp_idx %pod_9_@comp_@out_off
+      array.write %pod_9_@comp_@out_cp_tmp %array_@comp_@out[%pod_9_@comp_@out_cp_dest]
+      %pod_9_@comp_@out_cp_idx = felt.add %pod_9_@comp_@out_cp_idx 1
+    }
+    %arg1 = felt.add %arg1 1
+  }
+  array.new 2 %array_1_@in
+  %felt_const_2 = 2
+  %felt_const_0 = 0
+  %felt_const_0_2 = 0
+  %felt_const_1 = 1
+  %felt_const_0_3 = 0
+  %arg1 = %felt_const_1
+  %arg2 = %felt_const_0_2
+  array.copy %array_1_@in %arg3_@in
+  %arg4 = %felt_const_0
+  %arg5 = %felt_const_0_3
+  %1_aft95 = felt.uidiv %arg0 %arg1
+  %felt_const_3_aft95 = 3
+  %2_aft95 = felt.uimod %1_aft95 %felt_const_3_aft95
+  %3_aft95 = %arg5
+  array.write %2_aft95 %nondet_0[%3_aft95]
+  %4_aft95 = %arg5
+  array.read %nondet_0[%4_aft95] %5_aft95
+  %6_aft95 = felt.mul %5_aft95 %arg1
+  %7_aft95 = felt.add %arg2 %6_aft95
+  %felt_const_3_8_aft95 = 3
+  %8_aft95 = felt.mul %arg1 %felt_const_3_8_aft95
+  %9_aft95 = %arg5
+  array.read %nondet_0[%9_aft95] %10_aft95
+  %11_aft95 = %arg4
+  array.read %arg3_@in[%11_aft95] Num2Bits_16_325#0.in
+  Num2Bits_16_325#0.in = %10_aft95
+  %13_aft95 = %arg4
+  array.write Num2Bits_16_325#0.in %arg3_@in[%13_aft95]
+  %14_aft95 = %arg4
+  array.read %array_@count[%14_aft95] %15_aft95_@count
+  %15_aft95_@comp_@out_off = felt.mul %14_aft95 2
+  array.new 2 %15_aft95_@comp_@out
+  %15_aft95_@comp_@out_cp_idx = 0
+  repeat 2 {
+    %15_aft95_@comp_@out_cp_src = felt.add %15_aft95_@comp_@out_cp_idx %15_aft95_@comp_@out_off
+    array.read %array_@comp_@out[%15_aft95_@comp_@out_cp_src] %15_aft95_@comp_@out_cp_tmp
+    array.write %15_aft95_@comp_@out_cp_tmp %15_aft95_@comp_@out[%15_aft95_@comp_@out_cp_idx]
+    %15_aft95_@comp_@out_cp_idx = felt.add %15_aft95_@comp_@out_cp_idx 1
+  }
+  %16_aft95 = %arg4
+  array.read %arg3_@in[%16_aft95] Num2Bits_16_325#0.in
+  %18_aft95 = %15_aft95_@count
+  %c1_9_aft95 = 1
+  %19_aft95 = felt.sub %18_aft95 %c1_9_aft95
+  %15_aft95_@count = %19_aft95
+  %c0_10_aft95 = 0
+  %20_aft95 = bool.eq %19_aft95 %c0_10_aft95
+  if (%20_aft95 == 1) {
+    %29_aft95 = Num2Bits_16_325#0.in
+    call @Num2Bits_0(Num2Bits_16_325#0.in) to Num2Bits_16_325#0.out
+    array.copy Num2Bits_16_325#0.out %15_aft95_@comp_@out
+    %31_aft95 = %arg4
+    array.write %15_aft95_@count %array_@count[%31_aft95]
+    %15_aft95_@comp_@out_off = felt.mul %31_aft95 2
+    %15_aft95_@comp_@out_cp_idx = 0
+    repeat 2 {
+      array.read %15_aft95_@comp_@out[%15_aft95_@comp_@out_cp_idx] %15_aft95_@comp_@out_cp_tmp
+      %15_aft95_@comp_@out_cp_dest = felt.add %15_aft95_@comp_@out_cp_idx %15_aft95_@comp_@out_off
+      array.write %15_aft95_@comp_@out_cp_tmp %array_@comp_@out[%15_aft95_@comp_@out_cp_dest]
+      %15_aft95_@comp_@out_cp_idx = felt.add %15_aft95_@comp_@out_cp_idx 1
+    }
+  }
+  %21_aft95 = %arg4
+  array.read %array_@count[%21_aft95] %22_aft95_@count
+  %22_aft95_@comp_@out_off = felt.mul %21_aft95 2
+  array.new 2 %22_aft95_@comp_@out
+  %22_aft95_@comp_@out_cp_idx = 0
+  repeat 2 {
+    %22_aft95_@comp_@out_cp_src = felt.add %22_aft95_@comp_@out_cp_idx %22_aft95_@comp_@out_off
+    array.read %array_@comp_@out[%22_aft95_@comp_@out_cp_src] %22_aft95_@comp_@out_cp_tmp
+    array.write %22_aft95_@comp_@out_cp_tmp %22_aft95_@comp_@out[%22_aft95_@comp_@out_cp_idx]
+    %22_aft95_@comp_@out_cp_idx = felt.add %22_aft95_@comp_@out_cp_idx 1
+  }
+  array.copy %22_aft95_@comp_@out %23_aft95_@out
+  array.copy %23_aft95_@out %24_aft95
+  %25_aft95 = %arg5
+  %24_aft95_s0 = 2
+  %24_aft95_t0 = felt.mul %25_aft95 %24_aft95_s0
+  %24_aft95_lin = %24_aft95_t0
+  %24_aft95_cp_idx = 0
+  repeat 2 {
+    array.read %24_aft95[%24_aft95_cp_idx] %24_aft95_cp_tmp
+    %24_aft95_cp_dest = felt.add %24_aft95_cp_idx %24_aft95_lin
+    array.write %24_aft95_cp_tmp %nondet[%24_aft95_cp_dest]
+    %24_aft95_cp_idx = felt.add %24_aft95_cp_idx 1
+  }
+  %felt_const_1_11_aft95 = 1
+  %26_aft95 = felt.add %arg5 %felt_const_1_11_aft95
+  %felt_const_1_12_aft95 = 1
+  %27_aft95 = felt.add %arg4 %felt_const_1_12_aft95
+  %arg1 = %8_aft95
+  %arg2 = %7_aft95
+  %arg4 = %27_aft95
+  %arg5 = %26_aft95
+  %felt_const_2_8_bef95 = 2
+  %1_bef95 = bool.lt %felt_const_2_8_bef95 %arg5
+  %0#0 = %arg1
+  %0#1 = %arg2
+  array.copy %arg3_@in %0#2_@in
+  %0#3 = %arg4
+  %0#4 = %arg5
+  %1_aft95 = felt.uidiv %arg0 %arg1
+  %felt_const_3_aft95 = 3
+  %2_aft95 = felt.uimod %1_aft95 %felt_const_3_aft95
+  %3_aft95 = %arg5
+  array.write %2_aft95 %nondet_0[%3_aft95]
+  %4_aft95 = %arg5
+  array.read %nondet_0[%4_aft95] %5_aft95
+  %6_aft95 = felt.mul %5_aft95 %arg1
+  %7_aft95 = felt.add %arg2 %6_aft95
+  %felt_const_3_8_aft95 = 3
+  %8_aft95 = felt.mul %arg1 %felt_const_3_8_aft95
+  %9_aft95 = %arg5
+  array.read %nondet_0[%9_aft95] %10_aft95
+  %11_aft95 = %arg4
+  array.read %arg3_@in[%11_aft95] Num2Bits_16_325#1.in
+  Num2Bits_16_325#1.in = %10_aft95
+  %13_aft95 = %arg4
+  array.write Num2Bits_16_325#1.in %arg3_@in[%13_aft95]
+  %14_aft95 = %arg4
+  array.read %array_@count[%14_aft95] %15_aft95_@count
+  %15_aft95_@comp_@out_off = felt.mul %14_aft95 2
+  array.new 2 %15_aft95_@comp_@out
+  %15_aft95_@comp_@out_cp_idx = 0
+  repeat 2 {
+    %15_aft95_@comp_@out_cp_src = felt.add %15_aft95_@comp_@out_cp_idx %15_aft95_@comp_@out_off
+    array.read %array_@comp_@out[%15_aft95_@comp_@out_cp_src] %15_aft95_@comp_@out_cp_tmp
+    array.write %15_aft95_@comp_@out_cp_tmp %15_aft95_@comp_@out[%15_aft95_@comp_@out_cp_idx]
+    %15_aft95_@comp_@out_cp_idx = felt.add %15_aft95_@comp_@out_cp_idx 1
+  }
+  %16_aft95 = %arg4
+  array.read %arg3_@in[%16_aft95] Num2Bits_16_325#1.in
+  %18_aft95 = %15_aft95_@count
+  %c1_9_aft95 = 1
+  %19_aft95 = felt.sub %18_aft95 %c1_9_aft95
+  %15_aft95_@count = %19_aft95
+  %c0_10_aft95 = 0
+  %20_aft95 = bool.eq %19_aft95 %c0_10_aft95
+  if (%20_aft95 == 1) {
+    %29_aft95 = Num2Bits_16_325#1.in
+    call @Num2Bits_0(Num2Bits_16_325#1.in) to Num2Bits_16_325#1.out
+    array.copy Num2Bits_16_325#1.out %15_aft95_@comp_@out
+    %31_aft95 = %arg4
+    array.write %15_aft95_@count %array_@count[%31_aft95]
+    %15_aft95_@comp_@out_off = felt.mul %31_aft95 2
+    %15_aft95_@comp_@out_cp_idx = 0
+    repeat 2 {
+      array.read %15_aft95_@comp_@out[%15_aft95_@comp_@out_cp_idx] %15_aft95_@comp_@out_cp_tmp
+      %15_aft95_@comp_@out_cp_dest = felt.add %15_aft95_@comp_@out_cp_idx %15_aft95_@comp_@out_off
+      array.write %15_aft95_@comp_@out_cp_tmp %array_@comp_@out[%15_aft95_@comp_@out_cp_dest]
+      %15_aft95_@comp_@out_cp_idx = felt.add %15_aft95_@comp_@out_cp_idx 1
+    }
+  }
+  %21_aft95 = %arg4
+  array.read %array_@count[%21_aft95] %22_aft95_@count
+  %22_aft95_@comp_@out_off = felt.mul %21_aft95 2
+  array.new 2 %22_aft95_@comp_@out
+  %22_aft95_@comp_@out_cp_idx = 0
+  repeat 2 {
+    %22_aft95_@comp_@out_cp_src = felt.add %22_aft95_@comp_@out_cp_idx %22_aft95_@comp_@out_off
+    array.read %array_@comp_@out[%22_aft95_@comp_@out_cp_src] %22_aft95_@comp_@out_cp_tmp
+    array.write %22_aft95_@comp_@out_cp_tmp %22_aft95_@comp_@out[%22_aft95_@comp_@out_cp_idx]
+    %22_aft95_@comp_@out_cp_idx = felt.add %22_aft95_@comp_@out_cp_idx 1
+  }
+  array.copy %22_aft95_@comp_@out %23_aft95_@out
+  array.copy %23_aft95_@out %24_aft95
+  %25_aft95 = %arg5
+  %24_aft95_s0 = 2
+  %24_aft95_t0 = felt.mul %25_aft95 %24_aft95_s0
+  %24_aft95_lin = %24_aft95_t0
+  %24_aft95_cp_idx = 0
+  repeat 2 {
+    array.read %24_aft95[%24_aft95_cp_idx] %24_aft95_cp_tmp
+    %24_aft95_cp_dest = felt.add %24_aft95_cp_idx %24_aft95_lin
+    array.write %24_aft95_cp_tmp %nondet[%24_aft95_cp_dest]
+    %24_aft95_cp_idx = felt.add %24_aft95_cp_idx 1
+  }
+  %felt_const_1_11_aft95 = 1
+  %26_aft95 = felt.add %arg5 %felt_const_1_11_aft95
+  %felt_const_1_12_aft95 = 1
+  %27_aft95 = felt.add %arg4 %felt_const_1_12_aft95
+  %arg1 = %8_aft95
+  %arg2 = %7_aft95
+  %arg4 = %27_aft95
+  %arg5 = %26_aft95
+  %felt_const_2_8_bef95 = 2
+  %1_bef95 = bool.lt %felt_const_2_8_bef95 %arg5
+  %0#0 = %arg1
+  %0#1 = %arg2
+  array.copy %arg3_@in %0#2_@in
+  %0#3 = %arg4
+  %0#4 = %arg5
+  array.new 4 %array_4_@out
+  %c2_5 = 2
+  %c0_6 = 0
+  %c1_7 = 1
+  %arg1 = 0
+  repeat 2 {
+    array.read %array_@count[%arg1] %1_@count
+    %1_@comp_@out_off = felt.mul %arg1 2
+    array.new 2 %1_@comp_@out
+    %1_@comp_@out_cp_idx = 0
+    repeat 2 {
+      %1_@comp_@out_cp_src = felt.add %1_@comp_@out_cp_idx %1_@comp_@out_off
+      array.read %array_@comp_@out[%1_@comp_@out_cp_src] %1_@comp_@out_cp_tmp
+      array.write %1_@comp_@out_cp_tmp %1_@comp_@out[%1_@comp_@out_cp_idx]
+      %1_@comp_@out_cp_idx = felt.add %1_@comp_@out_cp_idx 1
+    }
+    array.copy %1_@comp_@out %2_@out
+    %2_@out_off = felt.mul %arg1 2
+    %2_@out_cp_idx = 0
+    repeat 2 {
+      array.read %2_@out[%2_@out_cp_idx] %2_@out_cp_tmp
+      %2_@out_cp_dest = felt.add %2_@out_cp_idx %2_@out_off
+      array.write %2_@out_cp_tmp %array_4_@out[%2_@out_cp_dest]
+      %2_@out_cp_idx = felt.add %2_@out_cp_idx 1
+    }
+    %arg1 = felt.add %arg1 1
+  }
+  array.copy %nondet_0 ternary_digits
+  array.copy %nondet out
+}
+def main(%arg0: ff) -> out: arr<4> {
+  call @Num2Ternary_1(%arg0) to out
+}

@@ -1,9 +1,13 @@
 import pytest
-from llzk_dialects.scf import SCFYield, SCFCondition, SCFIf, SCFFor, SCFWhile
-from llzk_dialects.core import SSAVar, Type, TranslationContext
+from llzk_dialects.scf import (
+    SCFYield, SCFCondition, SCFIf, SCFExecuteRegion, SCFFor, SCFWhile,
+    _contains_function_call,
+)
+from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext, LoopIndexedName
 from llzk_dialects.felt import FeltConst, FeltBinary
 from llzk_dialects.bool import BoolCmp
 from llzk_dialects.constrain import ConstrainEq
+from llzk_dialects.function import FunctionCall
 
 
 class TestSCF:
@@ -102,6 +106,110 @@ class TestSCF:
         assert SCFIf.match("scf.if %c {") is True
         assert SCFIf.match("scf.for %iv = %lb to %ub step %s {") is False
 
+    def test_if_to_core_yields_pod_value(self):
+        # Regression: SCFYield.to_core must dispatch through
+        # translate_assignment_core_with_ctx (not the plain, type-agnostic
+        # helper) so a pod-typed yield — as scf.execute_region's real usage
+        # requires — is handled the same way it already is for felt/array.
+        self.lines = [
+            "%r = scf.if %cond : !pod.type<[@x: !felt.type]> {",
+            "scf.yield %a : !pod.type<[@x: !felt.type]>",
+            "} else {",
+            "scf.yield %b : !pod.type<[@x: !felt.type]>",
+            "}",
+        ]
+        op, _ = SCFIf.parse(self.lines, 0, self._simple_parse_fn)
+        ctx = TranslationContext()
+        ctx.ssa2pod_var["%a"] = {"@x": ("%a_@x", Type("!felt.type"))}
+        ctx.ssa2pod_var["%b"] = {"@x": ("%b_@x", Type("!felt.type"))}
+        out = list(op.to_core(ctx))
+        assert out == [
+            "if (%cond == 1) {",
+            "%r_@x = %a_@x",
+            "}\n",
+            "else {",
+            "%r_@x = %b_@x",
+            "}",
+        ]
+        assert ctx.ssa2pod_var["%r"] == {"@x": ("%r_@x", Type("!felt.type"))}
+
+    # ── SCFExecuteRegion (BlockOperation) ─────────────────────────────────────
+
+    def test_execute_region_no_results(self):
+        self.lines = [
+            "scf.execute_region {",
+            "constrain.eq %a, %b",
+            "scf.yield",
+            "}",
+        ]
+        op, next_cur = SCFExecuteRegion.parse(self.lines, 0, self._simple_parse_fn)
+        assert op.results == []
+        assert op.result_types == []
+        assert len(op.body) == 2
+        assert next_cur == 4
+
+    def test_execute_region_single_scalar_result(self):
+        self.lines = [
+            "%x = scf.execute_region -> !felt.type<\"bn128\"> {",
+            "scf.yield %v : !felt.type<\"bn128\">",
+            "}",
+        ]
+        op, next_cur = SCFExecuteRegion.parse(self.lines, 0, self._simple_parse_fn)
+        assert op.results == [SSAVar("%x")]
+        assert op.result_types == [Type("!felt.type<\"bn128\">")]
+        assert next_cur == 3
+
+    def test_execute_region_multi_pod_result(self):
+        self.lines = [
+            "%34:2 = scf.execute_region -> (!pod.type<[@a: index]>, !pod.type<[@b: index]>) {",
+            "scf.yield %x, %y : !pod.type<[@a: index]>, !pod.type<[@b: index]>",
+            "}",
+        ]
+        op, next_cur = SCFExecuteRegion.parse(self.lines, 0, self._simple_parse_fn)
+        assert op.results == [SSAVar("%34", 2)]
+        assert op.result_types == [Type("!pod.type<[@a: index]>"), Type("!pod.type<[@b: index]>")]
+        assert next_cur == 3
+
+    def test_execute_region_match(self):
+        assert SCFExecuteRegion.match("scf.execute_region {") is True
+        assert SCFExecuteRegion.match("%x = scf.execute_region -> !felt.type<\"bn128\"> {") is True
+        assert SCFExecuteRegion.match("scf.if %c {") is False
+
+    def test_execute_region_to_core_no_results(self):
+        self.lines = [
+            "scf.execute_region {",
+            "%c = felt.const 1 : !felt.type",
+            "scf.yield",
+            "}",
+        ]
+        op, _ = SCFExecuteRegion.parse(self.lines, 0, self._simple_parse_fn)
+        ctx = TranslationContext()
+        # No wrapper syntax at all: just the inlined body statement(s).
+        assert list(op.to_core(ctx)) == ["%c = 1"]
+
+    def test_execute_region_to_core_scalar_result(self):
+        self.lines = [
+            "%x = scf.execute_region -> !felt.type<\"bn128\"> {",
+            "scf.yield %v : !felt.type<\"bn128\">",
+            "}",
+        ]
+        op, _ = SCFExecuteRegion.parse(self.lines, 0, self._simple_parse_fn)
+        ctx = TranslationContext()
+        assert list(op.to_core(ctx)) == ["%x = %v"]
+
+    def test_execute_region_to_core_pod_result_propagates_ssa2pod_var(self):
+        self.lines = [
+            "%34 = scf.execute_region -> !pod.type<[@x: !felt.type]> {",
+            "scf.yield %36 : !pod.type<[@x: !felt.type]>",
+            "}",
+        ]
+        op, _ = SCFExecuteRegion.parse(self.lines, 0, self._simple_parse_fn)
+        ctx = TranslationContext()
+        ctx.ssa2pod_var["%36"] = {"@x": ("%36_@x", Type("!felt.type"))}
+        out = list(op.to_core(ctx))
+        assert out == ["%34_@x = %36_@x"]
+        assert ctx.ssa2pod_var["%34"] == {"@x": ("%34_@x", Type("!felt.type"))}
+
     # ── SCFFor (BlockOperation) ───────────────────────────────────────────────
 
     def test_for_basic(self):
@@ -169,6 +277,35 @@ class TestSCF:
         ]
         # Induction variable is not in var2const after the loop.
         assert "%iv" not in ctx.var2const
+
+    def test_for_to_core_unrolls_when_body_has_call(self):
+        # A body containing a function.call is unrolled into one literal
+        # copy per iteration instead of a single generic "repeat" block —
+        # so a subcomponent instantiated inside the loop can be named
+        # per-iteration (LoopIndexedName, resolved via ctx.unroll_index)
+        # instead of sharing one bare name across every iteration.
+        call = FunctionCall([SSAVar("%r")], GlobalVariable("@Sub"), [SSAVar("%iv")], None)
+        call._member_hint = LoopIndexedName("last")
+        op = SCFFor([], SSAVar("%iv"), SSAVar("%c0"), SSAVar("%c2"), SSAVar("%c1"), [], [call])
+
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+        ctx.var2const["%c2"] = 2
+        ctx.var2const["%c1"] = 1
+        ctx.llzk_func2core["@Sub"] = "Sub"
+        ctx.core_func2args["Sub"] = ([], [("@out", Type("!felt.type"))])
+
+        out = list(op.to_core(ctx))
+        assert out == [
+            "%iv = 0",
+            "call Sub(%iv) to last#0.out",
+            "%iv = 1",
+            "call Sub(%iv) to last#1.out",
+        ]
+        assert not any("repeat" in line for line in out)
+        assert "%iv" not in ctx.var2const
+        # ctx.unroll_index is restored after the loop.
+        assert ctx.unroll_index is None
 
     def test_for_to_core_missing_bound_raises(self):
         lines = [
@@ -245,3 +382,151 @@ class TestSCF:
     def test_while_match(self):
         assert SCFWhile.match("scf.while (%a = %b) {") is True
         assert SCFWhile.match("scf.if %c {") is False
+
+    def _counting_while(self, call=None):
+        """
+        A minimal 2-iteration counting while loop (mirrors
+        ternary_concrete.mlir's Num2Bits_16_325-instantiating loop, stripped
+        to just the counter): %arg1 starts at 0, increments by 1 each pass,
+        stops once %arg1 >= 2. `call`, if given, is spliced into after_body
+        so _contains_function_call detects it.
+        """
+        after_body = [FeltConst(SSAVar("%c1"), 1)]
+        if call is not None:
+            after_body.append(call)
+        after_body += [
+            FeltBinary(SSAVar("%next"), "felt.add", SSAVar("%arg1"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next")], [Type("index")]),
+        ]
+        before_body = [
+            FeltConst(SSAVar("%c2"), 2),
+            BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg1"), SSAVar("%c2")),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%arg1")], [Type("index")]),
+        ]
+        return SCFWhile(
+            [], [(SSAVar("%arg1"), SSAVar("%c0"))], [[Type("index")], [Type("index")]],
+            before_body, [(SSAVar("%arg1"), Type("index"))], after_body,
+        )
+
+    def test_while_to_core_repeat_when_no_call(self):
+        # No function.call in the body: translated once, wrapped in a Core
+        # "repeat" block (today's behavior, unaffected by unrolling).
+        op = self._counting_while()
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+
+        out = list(op.to_core(ctx))
+        assert out == [
+            "%arg1 = %c0",
+            "repeat 2 {",
+            "%c1 = 1",
+            "%next = felt.add %arg1 %c1",
+            "%arg1 = %next",
+            "%c2 = 2",
+            "%cond = bool.lt %c2 %arg1",
+            "}",
+        ]
+        assert ctx.unroll_index is None
+
+    def test_while_to_core_unrolls_when_body_has_call(self):
+        # A call inside the after-body: unrolled into one literal copy per
+        # iteration (no "repeat" wrapper), each with its own resolved
+        # LoopIndexedName — mirrors ternary_concrete.mlir's
+        # Num2Bits_16_325, instantiated once per while-loop iteration.
+        call = FunctionCall([SSAVar("%r")], GlobalVariable("@Sub"), [SSAVar("%arg1")], None)
+        call._member_hint = LoopIndexedName("last")
+        op = self._counting_while(call=call)
+
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+        ctx.llzk_func2core["@Sub"] = "Sub"
+        ctx.core_func2args["Sub"] = ([], [("@out", Type("!felt.type"))])
+
+        out = list(op.to_core(ctx))
+        assert out == [
+            "%arg1 = %c0",
+            "%c1 = 1",
+            "call Sub(%arg1) to last#0.out",
+            "%next = felt.add %arg1 %c1",
+            "%arg1 = %next",
+            "%c2 = 2",
+            "%cond = bool.lt %c2 %arg1",
+            "%c1 = 1",
+            "call Sub(%arg1) to last#1.out",
+            "%next = felt.add %arg1 %c1",
+            "%arg1 = %next",
+            "%c2 = 2",
+            "%cond = bool.lt %c2 %arg1",
+        ]
+        assert not any("repeat" in line for line in out)
+        assert ctx.unroll_index is None
+
+    def test_while_to_core_reassigned_array_loop_carried_value_uses_array_copy(self):
+        # Regression test (ternary_modified_concrete.mlir): an array-typed
+        # loop-carried value that is genuinely reassigned each iteration
+        # (yielded back under a *different* SSA name than its own block-arg
+        # name, unlike every other loop-carried value seen so far, which are
+        # yielded back unchanged) must translate to array.copy, not a plain
+        # "=" assignment.
+        #
+        # The yield-reassignment step's per-arg type must come from
+        # in_types (positionally aligned with init_args, the same list
+        # already used correctly for the initial assignment below) —
+        # init_args' own second tuple element is the *initial-value SSAVar*,
+        # not a Type. Using it as one silently mistranslated any array into
+        # a scalar copy, since "array" in <ssa-name-string> almost never
+        # holds true by coincidence.
+        arr_type = Type("!array.type<2 x !felt.type>")
+        after_body = [
+            FeltConst(SSAVar("%c1"), 1),
+            FeltBinary(SSAVar("%next"), "felt.add", SSAVar("%arg1"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next"), SSAVar("%newarr")], [Type("index"), arr_type]),
+        ]
+        before_body = [
+            FeltConst(SSAVar("%c2"), 2),
+            BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg1"), SSAVar("%c2")),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%arg1"), SSAVar("%arg2")], [Type("index"), arr_type]),
+        ]
+        op = SCFWhile(
+            [], [(SSAVar("%arg1"), SSAVar("%c0")), (SSAVar("%arg2"), SSAVar("%init_arr"))],
+            [[Type("index"), arr_type], [Type("index"), arr_type]],
+            before_body, [(SSAVar("%arg1"), Type("index")), (SSAVar("%arg2"), arr_type)],
+            after_body,
+        )
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+
+        out = list(op.to_core(ctx))
+        assert "array.copy %init_arr %arg2" in out  # initial assignment (was already correct)
+        assert "array.copy %newarr %arg2" in out    # per-iteration reassignment (the bug)
+        assert "%arg2 = %newarr" not in out
+
+    # ── _contains_function_call ──────────────────────────────────────────────
+
+    def test_contains_call_flat(self):
+        call = FunctionCall([], GlobalVariable("@f"), [], None)
+        assert _contains_function_call([call]) is True
+
+    def test_contains_call_absent(self):
+        assert _contains_function_call([FeltConst(SSAVar("%c"), 1)]) is False
+
+    def test_contains_call_nested_in_if(self):
+        call = FunctionCall([], GlobalVariable("@f"), [], None)
+        inner_if = SCFIf([], SSAVar("%cond"), [], [call], None)
+        assert _contains_function_call([inner_if]) is True
+
+    def test_contains_call_nested_in_for(self):
+        call = FunctionCall([], GlobalVariable("@f"), [], None)
+        loop = SCFFor([], SSAVar("%iv"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"), [], [call])
+        assert _contains_function_call([loop]) is True
+
+    def test_contains_call_nested_in_while_after_body(self):
+        call = FunctionCall([], GlobalVariable("@f"), [], None)
+        while_op = SCFWhile([], [], [[], []], [SCFCondition(SSAVar("%c"), [], [])], [], [call])
+        assert _contains_function_call([while_op]) is True
+
+    def test_contains_call_sibling_branch_without_call_is_false(self):
+        # A call in one sibling branch must not make an unrelated, call-free
+        # branch report True.
+        other_if = SCFIf([], SSAVar("%cond"), [], [FeltConst(SSAVar("%c"), 1)], None)
+        assert _contains_function_call([other_if]) is False

@@ -22,7 +22,7 @@ from typing import List, Optional, Tuple, Generator
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, GlobalVariable, Type,
-    TranslationContext, ParseFn,
+    TranslationContext, ParseFn, LoopIndexedName,
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
@@ -69,6 +69,170 @@ def _annotate_function_calls(ops, pod_to_member):
                 _annotate_function_calls(sub, pod_to_member)
 
 
+def _fold_index_constants(ops):
+    """
+    Pre-pass constant folder over a single body level: maps SSA names to
+    their statically-known integer value, resolving felt.const/arith.constant
+    literals through identity casts (cast.toindex/cast.tofelt).
+
+    Used ahead of to_core translation (before ctx.var2const is populated) to
+    tell whether an array.read/array.write in an array-of-components loop
+    body accesses a specific, compile-time-known component index — see
+    _find_array_component_bases.
+    """
+    from llzk_dialects.felt import FeltConst
+    from llzk_dialects.arith import ArithConst, parse_arith_const_value
+    from llzk_dialects.cast import CastToIndex, CastToFelt
+
+    const_map = {}
+    for op in ops:
+        if isinstance(op, FeltConst):
+            const_map[op.result.name] = op.constant
+        elif isinstance(op, ArithConst):
+            const_map[op.result.name] = parse_arith_const_value(op.value)
+        elif isinstance(op, (CastToIndex, CastToFelt)):
+            value = const_map.get(op.value.name)
+            if value is not None:
+                const_map[op.result.name] = value
+    return const_map
+
+
+def _find_array_component_bases(body):
+    """
+    Detect array-of-component members: a struct member holding an array of
+    subcomponents (e.g. "@last : !array.type<2 x !struct.type<...>>") is
+    populated, at the end of compute, by a bulk-copy scf.for loop that reads
+    each "counting pod" array element's @comp field (the just-computed
+    subcomponent) and writes it into the array that is then struct-written
+    into that member.
+
+    Returns a dict mapping the counting-pod array's own SSA name to the
+    member's base name (no @), so a later constant-indexed read of that
+    counting array (see _build_component_naming_maps) can be attributed to
+    a specific component instance, e.g. "last_0".
+    """
+    from llzk_dialects.scf import SCFFor
+    from llzk_dialects.pod import PodRead
+    from llzk_dialects.array import ArrayRead, ArrayWrite
+
+    # target array SSA (the array-of-struct member's value) -> counting array SSA
+    target_to_counting = {}
+    for op in body:
+        if not isinstance(op, SCFFor):
+            continue
+        # array.read result -> counting array ssa, restricted to reads
+        # indexed by this loop's own induction variable
+        comp_reads = {
+            inner._result.name: inner.arr_ref.name
+            for inner in op.body
+            if isinstance(inner, ArrayRead)
+            and len(inner.indices) == 1 and inner.indices[0].name == op.iv.name
+        }
+        # pod.read(@comp) result -> counting array ssa
+        comp_vals = {}
+        for inner in op.body:
+            if isinstance(inner, PodRead) and inner.record_name.name == "@comp":
+                counting_arr = comp_reads.get(inner.pod_ref.name)
+                if counting_arr is not None:
+                    comp_vals[inner._result.name] = counting_arr
+        for inner in op.body:
+            if (isinstance(inner, ArrayWrite) and len(inner.indices) == 1
+                    and inner.indices[0].name == op.iv.name):
+                counting_arr = comp_vals.get(inner.rvalue.name)
+                if counting_arr is not None:
+                    target_to_counting[inner.arr_ref.name] = counting_arr
+
+    array_member_base = {}
+    for op in body:
+        if (isinstance(op, StructWritem) and op.types
+                and "_inputs" not in op.member_name.name
+                and "!struct" in op.types[-1].name):
+            counting_arr = target_to_counting.get(op.value.name)
+            if counting_arr is not None:
+                array_member_base[counting_arr] = op.member_name.name[1:]  # strip @
+    return array_member_base
+
+
+def _annotate_array_component_reads(ops, array_member_base, const_map, pod_to_member):
+    """
+    Recursively scan a body for reads of a counting-pod array that backs an
+    array-of-component member (array_member_base, from
+    _find_array_component_bases), stamping pod_to_member[read_result] with
+    a name for the slot that was read:
+
+      - "{base}_{idx}" (a plain string) when the index resolves to a
+        compile-time constant (via a local constant fold — const_map
+        carries constants folded in enclosing scopes down into this one,
+        without leaking sideways between sibling branches that may reuse
+        the same SSA names, e.g. two scf.for loops in the same function
+        both using "%arg1" as their induction variable).
+      - LoopIndexedName(base) when it doesn't — the read sits inside a
+        genuine runtime loop (e.g. an scf.while's after-body), so there is
+        no single instance to name here. SCFFor/SCFWhile.to_core unrolls
+        such a loop (see _contains_function_call) and resolves this into
+        "{base}#{i}" per iteration via ctx.unroll_index; if the loop is
+        somehow not unrolled, it resolves to the bare base name instead.
+
+    _annotate_function_calls then picks up these entries exactly like the
+    scalar-subcomponent ones already in pod_to_member.
+    """
+    from llzk_dialects.array import ArrayRead
+
+    local_const_map = dict(const_map)
+    local_const_map.update(_fold_index_constants(ops))
+
+    for op in ops:
+        if (isinstance(op, ArrayRead) and len(op.indices) == 1
+                and op.arr_ref.name in array_member_base):
+            base = array_member_base[op.arr_ref.name]
+            idx_val = local_const_map.get(op.indices[0].name)
+            pod_to_member[op._result.name] = (
+                f"{base}_{idx_val}" if idx_val is not None else LoopIndexedName(base)
+            )
+
+        for attr in ('body', 'then_body', 'else_body', 'before_body', 'after_body'):
+            sub = getattr(op, attr, None)
+            if sub:
+                _annotate_array_component_reads(sub, array_member_base, local_const_map, pod_to_member)
+
+
+def _annotate_input_array_reads(ops, ctx, const_map):
+    """
+    Recursively stamp ArrayRead._semantic_base on every read of a registered
+    "$inputs" component array (ctx.input_pod_to_member), mirroring what
+    _annotate_array_component_reads does for the counting-pod array side.
+
+    This must use its own scope-safe static constant fold (const_map, built
+    the same way as in _annotate_array_component_reads) rather than
+    ctx.var2const: SCFFor/SCFWhile deliberately treat their own
+    loop-carried variables as a compile-time constant in ctx.var2const for
+    structural purposes (see their own to_core), even though the value
+    actually varies per iteration. Trusting that here would misattribute a
+    genuinely symbolic loop index (e.g. ternary_concrete.mlir's
+    Num2Bits_16_325, instantiated inside a real scf.while) to one specific
+    instance instead of leaving it as LoopIndexedName(member) — resolved by
+    ArrayRead.to_core into "{member}#{i}" per iteration if SCFFor/SCFWhile
+    unrolls that loop (see _contains_function_call), or the bare member
+    name otherwise.
+    """
+    from llzk_dialects.array import ArrayRead
+
+    local_const_map = dict(const_map)
+    local_const_map.update(_fold_index_constants(ops))
+
+    for op in ops:
+        if isinstance(op, ArrayRead) and len(op.indices) == 1:
+            member = ctx.input_pod_to_member.get(op.arr_ref.name)
+            if member is not None:
+                idx_val = local_const_map.get(op.indices[0].name)
+                op._semantic_base = f"{member}_{idx_val}" if idx_val is not None else LoopIndexedName(member)
+
+        for attr in ('body', 'then_body', 'else_body', 'before_body', 'after_body'):
+            sub = getattr(op, attr, None)
+            if sub:
+                _annotate_input_array_reads(sub, ctx, local_const_map)
+
+
 def _build_component_naming_maps(body, ctx):
     """
     Pre-pass: scan a compute function body to build naming maps.
@@ -76,11 +240,24 @@ def _build_component_naming_maps(body, ctx):
     1. ctx.input_pod_to_member — pod_ssa -> member base name
        Used by PodNew so semantic field names like "mux.c" are used instead
        of raw "%pod_0_@c" names.  Traces through scf.while result chains.
+       Also consumed by _annotate_input_array_reads, which stamps this same
+       base name (plus "_idx" for a constant index) directly onto every
+       ArrayRead of such an array — see ArrayRead._semantic_base.
 
     2. FunctionCall._member_hint — stamped directly on each call node.
        Used by FunctionCall.to_core() so the output is named "n2ba.out"
        instead of "%16_@out".  Per-body SSA def-maps prevent collisions when
        two sibling scf.if branches define the same SSA name.
+
+    Array-of-component members (see _find_array_component_bases) reuse the
+    same pod_to_member map from part 2, keyed by a read of the counting-pod
+    array — "last_0" (a plain string) for a compile-time-constant index
+    (matching a scalar subcomponent's own naming), or LoopIndexedName(base)
+    when the read sits inside a genuine runtime loop (index not constant).
+    SCFFor/SCFWhile.to_core unrolls such a loop (see _contains_function_call
+    in scf.py) precisely so this resolves to "Num2Bits_16_325#0",
+    "Num2Bits_16_325#1", etc. per iteration, instead of one bare name shared
+    by every call.
     """
     from llzk_dialects.scf import SCFWhile
     from llzk_dialects.pod import PodRead
@@ -92,14 +269,20 @@ def _build_component_naming_maps(body, ctx):
     # Build map: while-result component name -> its initial value name.
     # Handles chains like "%1#1" -> "%0#1" -> "%pod_0".
     result_to_init = {}
+    # (block_arg_name, init_val_name) for every scf.while iter_arg — the
+    # block_arg is the name a loop-carried value is known by *inside* the
+    # loop body (e.g. "%arg3"), which is what an array.read/write there
+    # actually references, as opposed to the init_val name registered below.
+    while_iter_args = []
     for op in body:
         if isinstance(op, SCFWhile):
             flat_results = []
             for res in op.results:
                 for k in range(res.n_components):
                     flat_results.append(res.to_core_component(k))
-            for comp_name, (_, init_val) in zip(flat_results, op.init_args):
+            for comp_name, (block_arg, init_val) in zip(flat_results, op.init_args):
                 result_to_init[comp_name] = init_val.name
+                while_iter_args.append((block_arg.name, init_val.name))
 
     def trace_source(name):
         seen = set()
@@ -114,6 +297,17 @@ def _build_component_naming_maps(body, ctx):
             base = member[1:member.index("_inputs")]
             source = trace_source(op.value.name)
             ctx.input_pod_to_member[source] = base
+
+    # A loop body refers to a loop-carried $inputs array by its block-arg
+    # name, not the name it was registered under above — alias it too.
+    for block_arg_name, init_val_name in while_iter_args:
+        base = ctx.input_pod_to_member.get(trace_source(init_val_name))
+        if base is not None:
+            ctx.input_pod_to_member[block_arg_name] = base
+
+    # Now that ctx.input_pod_to_member is fully populated, stamp every
+    # ArrayRead of a registered "$inputs" array with its semantic name.
+    _annotate_input_array_reads(body, ctx, {})
 
     # --- Part 2: annotate FunctionCall objects with their component member name ---
     # Build pod_ssa -> member_name from top-level struct.writem writes.
@@ -130,6 +324,16 @@ def _build_component_naming_maps(body, ctx):
             pod_var = pod_comp_read.get(op.value.name)
             if pod_var is not None:
                 pod_to_member[pod_var] = op.member_name.name[1:]  # strip @
+
+    # --- Part 2b: array-of-component members ---
+    # A read of a counting-pod array that backs an array-of-component member
+    # is named like a scalar subcomponent: "last_0" when the index is a
+    # compile-time constant, or LoopIndexedName(base) when it isn't (a read
+    # inside a genuine runtime loop, e.g. an scf.while's after-body) — see
+    # _annotate_array_component_reads.
+    array_member_base = _find_array_component_bases(body)
+    if array_member_base:
+        _annotate_array_component_reads(body, array_member_base, {}, pod_to_member)
 
     _annotate_function_calls(body, pod_to_member)
 
@@ -492,8 +696,8 @@ class StructDef(BlockOperation):
             referred = full_ref.split("::")[-1]
             arr_m = re.search(r"!array\.type<\s*(\d+)\s+x\s+!struct\.type<", type_str)
             if arr_m:
-                for i in range(1, int(arr_m.group(1)) + 1):
-                    subcomponent_members[f"{member_name}{i}"] = referred
+                for i in range(int(arr_m.group(1))):
+                    subcomponent_members[f"{member_name}#{i}"] = referred
             else:
                 subcomponent_members[member_name] = referred
         if subcomponent_members:
