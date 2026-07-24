@@ -1,6 +1,7 @@
 import Llzk.Basic
 import Llzk.Language.Core.Syntax.AST
 import Llzk.FFConstraints.Basic
+import Llzk.Language.Core.Semantics.Basic
 
 /- Printing a constraints system in SMT2 format
 
@@ -12,7 +13,7 @@ namespace Llzk.FFConstraints.SMT
 
 open Llzk.Language.Core.Syntax.AST
 open Llzk.FFConstraints.Basic
-
+open Llzk.Language.Core.Semantics.Basic
 
 /- Generates spaces for indentation -/
 def getIndent (level : Nat) : String :=
@@ -87,11 +88,11 @@ def printFormula {c : ZKConfig}
   | .true  => stream.putStr s!"{sp}true{nl}"
   | .false => stream.putStr s!"{sp}false{nl}"
   | .range t l u =>
-      let int_of_l : Int := if l.val < c.midpoint then l.val else l.val - c.p
-      let int_of_u : Int := if u.val < c.midpoint then u.val else u.val - c.p
-      if (int_of_l >= 0 && int_of_u < 0 ) then
-        panic s!"Error: range [{int_of_l}, {int_of_u}] crosses the midpoint of the field."
-      else if (int_of_l <= 0 && int_of_u < 0) || (int_of_l >= 0 && int_of_u >= 0) then
+      let int_of_l : Int := toSigned l
+      let int_of_u : Int := toSigned u
+      if (int_of_l > int_of_u ) then
+        panic s!"Error: ivalid range [{int_of_l}, {int_of_u}]."
+      else
         stream.putStr s!"{sp}(ff.range "
         printTerm stream t
         stream.putStr " "
