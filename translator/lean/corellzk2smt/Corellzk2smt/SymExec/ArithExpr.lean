@@ -48,24 +48,54 @@ def seExprAdd {c : ZKConfig}
             }
 
 def seExprSub {c : ZKConfig}
-    (md : CmdMD)
-    (gconf : GlobalConfig c)
+    (_md : CmdMD)
+    (_gconf : GlobalConfig c)
     (sconf : SymExecConfig c)
     (symEnv : SymEnv c)
-    (specs : List (FuncSpec c))
-    (e1 e2 : SimpleExpr c)
+    (_specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c)
   : Except String (ExprSpec c) :=
-  Except.error "Not implemented yet"
+    match resolveSimpleExpr symEnv s1 with
+    | Except.error msg => Except.error msg
+    | Except.ok v1 =>
+        match resolveSimpleExpr symEnv s2 with
+        | Except.error msg => Except.error msg
+        | Except.ok v2 =>
+            let v1Term := simpleSymValToTerm v1
+            let v2Term := simpleSymValToTerm v2
+            let outFFVar : FFVar := sconf.nextVarId
+            let f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.sub v1Term v2Term) -- outVar = v1 - v2
+            Except.ok {
+                outSymEnv := symEnv,
+                f := f,
+                nextVarId := sconf.nextVarId + 1,
+                result := SimpleSymVal.ffvar ⟨outFFVar, none⟩
+            }
 
 def seExprMul {c : ZKConfig}
-    (md : CmdMD)
-    (gconf : GlobalConfig c)
+    (_md : CmdMD)
+    (_gconf : GlobalConfig c)
     (sconf : SymExecConfig c)
     (symEnv : SymEnv c)
-    (specs : List (FuncSpec c))
-    (e1 e2 : SimpleExpr c)
+    (_specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c)
   : Except String (ExprSpec c) :=
-  Except.error "Not implemented yet"
+    match resolveSimpleExpr symEnv s1 with
+    | Except.error msg => Except.error msg
+    | Except.ok v1 =>
+        match resolveSimpleExpr symEnv s2 with
+        | Except.error msg => Except.error msg
+        | Except.ok v2 =>
+            let v1Term := simpleSymValToTerm v1
+            let v2Term := simpleSymValToTerm v2
+            let outFFVar : FFVar := sconf.nextVarId
+            let f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.mul v1Term v2Term) -- outVar = v1 * v2
+            Except.ok {
+                outSymEnv := symEnv,
+                f := f,
+                nextVarId := sconf.nextVarId + 1,
+                result := SimpleSymVal.ffvar ⟨outFFVar, none⟩
+            }
 
 def seExprDiv {c : ZKConfig}
     (md : CmdMD)

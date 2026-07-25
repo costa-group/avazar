@@ -117,8 +117,8 @@ theorem H_simple_domain_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : L
           simp only [seEvalAssignmentNonConst] at heq
           cases e with
           | bop op s1 s2 =>
-              by_cases hop : op = BinOp.add
-              · subst hop
+              by_cases hop1 : op = BinOp.add
+              · subst hop1
                 cases hexpr : seEvalExpr md gconf sconf symEnv specs
                     (Expr.bop BinOp.add s1 s2) with
                 | error msg' => rw [hexpr] at heq; simp at heq
@@ -137,12 +137,53 @@ theorem H_simple_domain_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : L
                           (by simp only [definedVarsCom]; exact Std.TreeSet.mem_insert_self ..)
                       simp [heqid, hcontains]
                     · simp [Ne.symm heqid]
-              · exfalso
-                cases hexpr : seEvalExpr md gconf sconf symEnv specs (Expr.bop op s1 s2) with
-                | error msg' => rw [hexpr] at heq; simp at heq
-                | ok exprSpec =>
-                    exact absurd hexpr
-                      (seEvalExpr_bop_isError md gconf sconf symEnv specs op hop s1 s2 exprSpec)
+              · by_cases hop2 : op = BinOp.sub
+                · subst hop2
+                  cases hexpr : seEvalExpr md gconf sconf symEnv specs
+                      (Expr.bop BinOp.sub s1 s2) with
+                  | error msg' => rw [hexpr] at heq; simp at heq
+                  | ok exprSpec =>
+                      simp only [seEvalAssignmentNonConst, hexpr] at heq
+                      injection heq with heq
+                      subst heq
+                      obtain ⟨_v1, _v2, _hres1, _hres2, houtSymEnv, _hf⟩ :=
+                        seEvalExpr_sub_eq md gconf sconf symEnv specs s1 s2 exprSpec hexpr
+                      intro id'
+                      simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.contains_insert,
+                        houtSymEnv]
+                      by_cases heqid : id' = id
+                      · have hcontains : symEnv.contains id :=
+                          hpre id
+                            (by simp only [definedVarsCom]; exact Std.TreeSet.mem_insert_self ..)
+                        simp [heqid, hcontains]
+                      · simp [Ne.symm heqid]
+                · by_cases hop3 : op = BinOp.mul
+                  · subst hop3
+                    cases hexpr : seEvalExpr md gconf sconf symEnv specs
+                        (Expr.bop BinOp.mul s1 s2) with
+                    | error msg' => rw [hexpr] at heq; simp at heq
+                    | ok exprSpec =>
+                        simp only [seEvalAssignmentNonConst, hexpr] at heq
+                        injection heq with heq
+                        subst heq
+                        obtain ⟨_v1, _v2, _hres1, _hres2, houtSymEnv, _hf⟩ :=
+                          seEvalExpr_mul_eq md gconf sconf symEnv specs s1 s2 exprSpec hexpr
+                        intro id'
+                        simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.contains_insert,
+                          houtSymEnv]
+                        by_cases heqid : id' = id
+                        · have hcontains : symEnv.contains id :=
+                            hpre id
+                              (by simp only [definedVarsCom]; exact Std.TreeSet.mem_insert_self ..)
+                          simp [heqid, hcontains]
+                        · simp [Ne.symm heqid]
+                  · exfalso
+                    cases hexpr : seEvalExpr md gconf sconf symEnv specs (Expr.bop op s1 s2) with
+                    | error msg' => rw [hexpr] at heq; simp at heq
+                    | ok exprSpec =>
+                        exact absurd hexpr
+                          (seEvalExpr_bop_isError md gconf sconf symEnv specs op hop1 hop2 hop3
+                            s1 s2 exprSpec)
           | uop op s =>
               cases op with
               | neg =>
@@ -242,8 +283,8 @@ theorem H_simple_names_below_holds {c : ZKConfig} (gconf : GlobalConfig c)
             simp only [seEvalAssignmentNonConst] at heq
             cases e with
             | bop op s1 s2 =>
-                by_cases hop : op = BinOp.add
-                · subst hop
+                by_cases hop1 : op = BinOp.add
+                · subst hop1
                   cases hexpr : seEvalExpr md gconf sconf symEnv specs
                       (Expr.bop BinOp.add s1 s2) with
                   | error msg' => rw [hexpr] at heq; simp at heq
@@ -255,12 +296,39 @@ theorem H_simple_names_below_holds {c : ZKConfig} (gconf : GlobalConfig c)
                         seEvalExpr_add_eq md gconf sconf symEnv specs s1 s2 exprSpec hexpr
                       rw [hf]
                       cases v1 <;> cases v2 <;> exact ⟨trivial, trivial, trivial⟩
-                · exfalso
-                  cases hexpr : seEvalExpr md gconf sconf symEnv specs (Expr.bop op s1 s2) with
-                  | error msg' => rw [hexpr] at heq; simp at heq
-                  | ok exprSpec =>
-                      exact absurd hexpr
-                        (seEvalExpr_bop_isError md gconf sconf symEnv specs op hop s1 s2 exprSpec)
+                · by_cases hop2 : op = BinOp.sub
+                  · subst hop2
+                    cases hexpr : seEvalExpr md gconf sconf symEnv specs
+                        (Expr.bop BinOp.sub s1 s2) with
+                    | error msg' => rw [hexpr] at heq; simp at heq
+                    | ok exprSpec =>
+                        simp only [seEvalAssignmentNonConst, hexpr] at heq
+                        injection heq with heq
+                        subst heq
+                        obtain ⟨v1, v2, _hres1, _hres2, _houtSymEnv, hf⟩ :=
+                          seEvalExpr_sub_eq md gconf sconf symEnv specs s1 s2 exprSpec hexpr
+                        rw [hf]
+                        cases v1 <;> cases v2 <;> exact ⟨trivial, trivial, trivial⟩
+                  · by_cases hop3 : op = BinOp.mul
+                    · subst hop3
+                      cases hexpr : seEvalExpr md gconf sconf symEnv specs
+                          (Expr.bop BinOp.mul s1 s2) with
+                      | error msg' => rw [hexpr] at heq; simp at heq
+                      | ok exprSpec =>
+                          simp only [seEvalAssignmentNonConst, hexpr] at heq
+                          injection heq with heq
+                          subst heq
+                          obtain ⟨v1, v2, _hres1, _hres2, _houtSymEnv, hf⟩ :=
+                            seEvalExpr_mul_eq md gconf sconf symEnv specs s1 s2 exprSpec hexpr
+                          rw [hf]
+                          cases v1 <;> cases v2 <;> exact ⟨trivial, trivial, trivial⟩
+                    · exfalso
+                      cases hexpr : seEvalExpr md gconf sconf symEnv specs (Expr.bop op s1 s2) with
+                      | error msg' => rw [hexpr] at heq; simp at heq
+                      | ok exprSpec =>
+                          exact absurd hexpr
+                            (seEvalExpr_bop_isError md gconf sconf symEnv specs op hop1 hop2 hop3
+                              s1 s2 exprSpec)
             | uop op s =>
                 cases op with
                 | neg =>

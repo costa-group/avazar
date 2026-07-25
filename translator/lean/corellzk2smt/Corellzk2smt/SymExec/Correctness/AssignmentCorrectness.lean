@@ -171,25 +171,77 @@ theorem seEvalExpr_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List
   | .id s =>
       simp only [seEvalExpr]; exact seExprId_correct gconf specs sconf ctx md s
 
-/-- `seEvalExpr` never succeeds on a `.bop` shape *other than* `.add` today -- every remaining
-    dispatch target (`seExprSub`, `seExprMul`, ...) is still a permanent `"Not implemented yet"`
-    stub. Scoped away from `.add` (via the `hop` hypothesis), unlike an earlier single lemma
-    covering every `Expr` shape: `.add` dispatches to `seExprAdd`, which is no longer a stub (see
-    `seExprAdd_correct`), so a lemma claiming `seEvalExpr` *always* fails on `.bop` can no longer
-    cover that case. This will need to shrink further as each remaining `.bop`/`.uop` operator gets
-    implemented for real. -/
+/-- `seEvalExpr` never succeeds on a `.bop` shape *other than* `.add`/`.sub`/`.mul` today -- every
+    remaining dispatch target (`seExprDiv`, `seExprPow`, ...) is still a permanent `"Not
+    implemented yet"` stub. Scoped away from those three (via the `hop1`/`hop2`/`hop3` hypotheses),
+    unlike an earlier single lemma covering every `Expr` shape: `.add`/`.sub`/`.mul` dispatch to
+    `seExprAdd`/`seExprSub`/`seExprMul`, none of which are stubs anymore (see
+    `seExprAdd_correct`/`seExprSub_correct`/`seExprMul_correct`), so a lemma claiming `seEvalExpr`
+    *always* fails on `.bop` can no longer cover those cases. This will need to shrink further as
+    each remaining `.bop`/`.uop` operator gets implemented for real. -/
 theorem seEvalExpr_bop_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
     (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
-    (op : BinOp) (hop : op ≠ BinOp.add) (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (op : BinOp) (hop1 : op ≠ BinOp.add) (hop2 : op ≠ BinOp.sub) (hop3 : op ≠ BinOp.mul)
+    (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
     (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop op s1 s2) = Except.ok exprSpec) :
     False := by
   cases op <;>
     first
-    | exact absurd rfl hop
-    | simp [seEvalExpr, seExprSub, seExprMul, seExprDiv, seExprPow,
+    | exact absurd rfl hop1
+    | exact absurd rfl hop2
+    | exact absurd rfl hop3
+    | simp [seEvalExpr, seExprDiv, seExprPow,
         seExprUIMod, seExprUIDiv, seExprBor, seExprBAnd, seExprEq, seExprNeq, seExprLtSigned,
         seExprLeSigned, seExprGtSigned, seExprGeSigned, seExprBitwiseAND, seExprBitwiseOR,
         seExprBitwiseXOR, seExprBitwiseSHL, seExprBitwiseSHR] at heq
+
+/-- Mirror of `seEvalExpr_add_eq`, for `seExprSub` (`outVar = v1 - v2`). -/
+theorem seEvalExpr_sub_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop BinOp.sub s1 s2)
+      = Except.ok exprSpec) :
+    ∃ v1 v2, resolveSimpleExpr symEnv s1 = Except.ok v1 ∧
+      resolveSimpleExpr symEnv s2 = Except.ok v2 ∧
+      exprSpec.outSymEnv = symEnv ∧
+      exprSpec.f = FFFormula.eq (FFTerm.var sconf.nextVarId)
+        (FFTerm.sub (simpleSymValToTerm v1) (simpleSymValToTerm v2)) := by
+  simp only [seEvalExpr, seExprSub] at heq
+  cases hres1 : resolveSimpleExpr symEnv s1 with
+  | error msg => rw [hres1] at heq; simp at heq
+  | ok v1 =>
+      rw [hres1] at heq
+      cases hres2 : resolveSimpleExpr symEnv s2 with
+      | error msg => rw [hres2] at heq; simp at heq
+      | ok v2 =>
+          rw [hres2] at heq
+          injection heq with heq
+          subst heq
+          exact ⟨v1, v2, rfl, rfl, rfl, rfl⟩
+
+/-- Mirror of `seEvalExpr_add_eq`, for `seExprMul` (`outVar = v1 * v2`). -/
+theorem seEvalExpr_mul_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop BinOp.mul s1 s2)
+      = Except.ok exprSpec) :
+    ∃ v1 v2, resolveSimpleExpr symEnv s1 = Except.ok v1 ∧
+      resolveSimpleExpr symEnv s2 = Except.ok v2 ∧
+      exprSpec.outSymEnv = symEnv ∧
+      exprSpec.f = FFFormula.eq (FFTerm.var sconf.nextVarId)
+        (FFTerm.mul (simpleSymValToTerm v1) (simpleSymValToTerm v2)) := by
+  simp only [seEvalExpr, seExprMul] at heq
+  cases hres1 : resolveSimpleExpr symEnv s1 with
+  | error msg => rw [hres1] at heq; simp at heq
+  | ok v1 =>
+      rw [hres1] at heq
+      cases hres2 : resolveSimpleExpr symEnv s2 with
+      | error msg => rw [hres2] at heq; simp at heq
+      | ok v2 =>
+          rw [hres2] at heq
+          injection heq with heq
+          subst heq
+          exact ⟨v1, v2, rfl, rfl, rfl, rfl⟩
 
 /-- `seEvalExpr` on `.bop .add s1 s2`, when it succeeds, does so via `seExprAdd`'s exact defining
     shape -- output symbolic environment unchanged, formula the fresh-var tie-back equation
