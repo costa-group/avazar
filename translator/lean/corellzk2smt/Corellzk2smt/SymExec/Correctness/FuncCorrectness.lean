@@ -167,40 +167,15 @@ theorem EnvMatches_empty {c : ZKConfig} (assignment : Assignment c) :
     exact absurd hsv (by simp)
 
 /-- A single `.const 0` `setVar` step, applied identically on both sides, preserves
-    `EnvMatches` -- `simpleValMatches` for a `.const` value is just `v' = v`, independent of
-    the assignment, so this holds regardless of what `assignment` is. -/
+    `EnvMatches` -- the `0`-specialization of `EnvMatches_setVar_const`
+    (`Correctness/Lemmas.lean`), kept under its own name since `EnvMatches_zeroFoldl` below
+    already refers to it. -/
 theorem EnvMatches_setVar_zero {c : ZKConfig} (assignment : Assignment c) (symEnv : SymEnv c)
     (env : Env c) (id : VarID) (h : EnvMatches assignment symEnv env) :
     EnvMatches assignment
       (Corellzk2smt.SymExec.Basic.setVar symEnv id (SymValue.simple (SimpleSymVal.const 0)))
-      (Corellzk2smt.Language.Core.Semantics.Basic.setVar env id (Value.scalar 0)) := by
-  constructor
-  · intro id'
-    simp only [Corellzk2smt.SymExec.Basic.setVar,
-      Corellzk2smt.Language.Core.Semantics.Basic.setVar, Std.TreeMap.contains_insert]
-    by_cases heq : id' = id
-    · simp [heq]
-    · simp [h.1 id']
-  · intro id' sv' hsv'
-    by_cases heq : id' = id
-    · subst heq
-      simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.get?_eq_getElem?,
-        Std.TreeMap.getElem?_insert_self] at hsv'
-      injection hsv' with hsv'
-      refine ⟨Value.scalar 0, ?_, ?_⟩
-      · simp only [Corellzk2smt.Language.Core.Semantics.Basic.setVar,
-          Std.TreeMap.get?_eq_getElem?, Std.TreeMap.getElem?_insert_self]
-      · rw [← hsv']; simp [symValMatches, simpleValMatches]
-    · have hne : id ≠ id' := fun hh => heq hh.symm
-      simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.get?_eq_getElem?,
-        Std.TreeMap.getElem?_insert, Std.compare_eq_iff_eq, hne, if_false] at hsv'
-      rw [← Std.TreeMap.get?_eq_getElem?] at hsv'
-      obtain ⟨v', hv', hm'⟩ := h.2 id' sv' hsv'
-      refine ⟨v', ?_, hm'⟩
-      simp only [Corellzk2smt.Language.Core.Semantics.Basic.setVar, Std.TreeMap.get?_eq_getElem?,
-        Std.TreeMap.getElem?_insert, Std.compare_eq_iff_eq, hne, if_false]
-      rw [← Std.TreeMap.get?_eq_getElem?]
-      exact hv'
+      (Corellzk2smt.Language.Core.Semantics.Basic.setVar env id (Value.scalar 0)) :=
+  EnvMatches_setVar_const assignment symEnv env id 0 h
 
 /-- Lifting `EnvMatches_setVar_zero` across a `List.foldl` of identical `.const 0` steps on
     both sides. -/

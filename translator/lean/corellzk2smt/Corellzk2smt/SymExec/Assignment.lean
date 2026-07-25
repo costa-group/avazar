@@ -2,6 +2,9 @@ import Corellzk2smt.Basic
 import Corellzk2smt.Config
 import Corellzk2smt.SymExec.Basic
 import Corellzk2smt.SymExec.Common
+import Corellzk2smt.SymExec.ArithExpr
+import Corellzk2smt.SymExec.BoolExpr
+import Corellzk2smt.SymExec.BitwiseExpr
 import Corellzk2smt.FFConstraints.Basic
 import Corellzk2smt.Language.Core.Syntax.AST
 import Corellzk2smt.Language.Core.Semantics.Basic
@@ -24,10 +27,10 @@ open Corellzk2smt.FFConstraints.Basic
 def evalExpr {c : ZKConfig}
     (_md : CmdMD)
     (_gconf : GlobalConfig c)
-    (sconf : SymExecConfig c)
+    (_sconf : SymExecConfig c)
     (symEnv : SymEnv c)
     (_specs : List (FuncSpec c))
-    (id : VarID)
+    (_id : VarID)
     (e : Expr c)
   : Except String (SimpleSymVal c) :=
   match e with
@@ -89,17 +92,72 @@ def seEvalAssignmentConst {c : ZKConfig}
   | Except.error msg => Except.error msg
 
 
-/- Symbolic execution of non-constant assignment -/
+/- Symbolic evaluation of an expression: dispatches on `e`'s shape/operator to the matching
+   `seExprXXX`, none of which need `id` -- binding the result to a variable is
+   `seEvalAssignmentNonConst`'s job alone, done once, after this returns. -/
+def seEvalExpr {c : ZKConfig}
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (e : Expr c)
+  : Except String (ExprSpec c) :=
+  match e with
+    | .bop op s1 s2 =>
+      match op with
+      | .add => seExprAdd md gconf sconf symEnv specs s1 s2 -- arith
+      | .sub => seExprSub md gconf sconf symEnv specs s1 s2 -- arith
+      | .mul => seExprMul md gconf sconf symEnv specs s1 s2 -- arith
+      | .div => seExprDiv md gconf sconf symEnv specs s1 s2 -- arith
+      | .pow => seExprPow md gconf sconf symEnv specs s1 s2 -- arith
+      | .uimod => seExprUIMod md gconf sconf symEnv specs s1 s2 -- arith
+      | .uidiv => seExprUIDiv md gconf sconf symEnv specs s1 s2 -- arith
+      -- boolean
+      | .bor => seExprBor md gconf sconf symEnv specs s1 s2 -- bool
+      | .band => seExprBAnd md gconf sconf symEnv specs s1 s2 -- bool
+      | .eq => seExprEq md gconf sconf symEnv specs s1 s2 -- bool
+      | .neq => seExprNeq md gconf sconf symEnv specs s1 s2 -- bool
+      | .lt => seExprLtSigned md gconf sconf symEnv specs s1 s2 -- bool
+      | .le => seExprLeSigned md gconf sconf symEnv specs s1 s2 -- bool
+      | .gt => seExprGtSigned md gconf sconf symEnv specs s1 s2 -- bool
+      | .ge => seExprGeSigned md gconf sconf symEnv specs s1 s2 -- bool
+      -- bitwise
+      | .and => seExprBitwiseAND md gconf sconf symEnv specs s1 s2 -- bitwise
+      | .or => seExprBitwiseOR md gconf sconf symEnv specs s1 s2 -- bitwise
+      | .xor => seExprBitwiseXOR md gconf sconf symEnv specs s1 s2 -- bitwise
+      | .shl => seExprBitwiseSHL md gconf sconf symEnv specs s1 s2 -- bitwise
+      | .shr => seExprBitwiseSHR md gconf sconf symEnv specs s1 s2 -- bitwise
+    | .uop op s =>
+      match op with
+      | .neg => seExprNeg md gconf sconf symEnv specs s -- arith
+      | .bneg => seExprBNeg md gconf sconf symEnv specs s -- bool
+      | .not => seExprBitwiseNOT md gconf sconf symEnv specs s -- bitwise
+    | .id s =>
+        seExprId md gconf sconf symEnv specs s -- arith
+
+/- Symbolic execution of non-constant assignment: evaluate `e` via `seEvalExpr`, then bind its
+   result to `id` -- the one place this file actually calls `setVar`/assembles a `CmdsSpec` for
+   the non-constant path. -/
 def seEvalAssignmentNonConst {c : ZKConfig}
-    (_md : CmdMD)
-    (_gconf : GlobalConfig c)
-    (_sconf : SymExecConfig c)
-    (_symEnv : SymEnv c)
-    (_specs : List (FuncSpec c))
-    (_id : VarID)
-    (_e : Expr c)
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (id : VarID)
+    (e : Expr c)
   : Except String (CmdsSpec c) :=
-  Except.error "seAssignmentNonConst: TBD"
+  match seEvalExpr md gconf sconf symEnv specs e with
+  | Except.ok exprSpec =>
+    let newSymEnv :=
+      Corellzk2smt.SymExec.Basic.setVar exprSpec.outSymEnv id (SymValue.simple exprSpec.result)
+    Except.ok { inSymEnv := symEnv,
+                outSymEnv := newSymEnv,
+                f := exprSpec.f,
+                nextVarId := exprSpec.nextVarId
+    }
+  | Except.error msg => Except.error msg
 
 def seEvalAssignment {c : ZKConfig}
     (md : CmdMD)

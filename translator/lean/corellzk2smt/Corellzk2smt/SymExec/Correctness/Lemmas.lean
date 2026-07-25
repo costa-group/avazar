@@ -2916,6 +2916,53 @@ theorem EnvMatches_agreesOnFF_preserves {c : ZKConfig} (a a' : Assignment c) (sy
   exact ⟨v, hv, symValMatches_agreesOnFF_preserves a a' sv v (symEnvVars symEnv)
     (symValVars_subset_symEnvVars symEnv id sv hget) hagree hmatch⟩
 
+/-- `EnvMatches` survives a paired `setVar` update to a constant value on both sides, under
+    *any* assignment -- `simpleValMatches`'s `.const` case doesn't consult the assignment at all,
+    so the new binding matches regardless, and every other key is untouched by the update. -/
+theorem EnvMatches_setVar {c : ZKConfig} (assignment : Assignment c) (symEnv : SymEnv c)
+    (env : Env c) (id : VarID) (sv : SymValue c) (v : Value c)
+    (h : EnvMatches assignment symEnv env) (hm : symValMatches assignment sv v) :
+    EnvMatches assignment
+      (Corellzk2smt.SymExec.Basic.setVar symEnv id sv)
+      (Corellzk2smt.Language.Core.Semantics.Basic.setVar env id v) := by
+  constructor
+  · intro id'
+    simp only [Corellzk2smt.SymExec.Basic.setVar,
+      Corellzk2smt.Language.Core.Semantics.Basic.setVar, Std.TreeMap.contains_insert]
+    by_cases heq : id' = id
+    · simp [heq]
+    · simp [h.1 id']
+  · intro id' sv' hsv'
+    by_cases heq : id' = id
+    · subst heq
+      simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.get?_eq_getElem?,
+        Std.TreeMap.getElem?_insert_self] at hsv'
+      injection hsv' with hsv'
+      refine ⟨v, ?_, ?_⟩
+      · simp only [Corellzk2smt.Language.Core.Semantics.Basic.setVar,
+          Std.TreeMap.get?_eq_getElem?, Std.TreeMap.getElem?_insert_self]
+      · rw [← hsv']; exact hm
+    · have hne : id ≠ id' := fun hh => heq hh.symm
+      simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.get?_eq_getElem?,
+        Std.TreeMap.getElem?_insert, Std.compare_eq_iff_eq, hne, if_false] at hsv'
+      rw [← Std.TreeMap.get?_eq_getElem?] at hsv'
+      obtain ⟨v', hv', hm'⟩ := h.2 id' sv' hsv'
+      refine ⟨v', ?_, hm'⟩
+      simp only [Corellzk2smt.Language.Core.Semantics.Basic.setVar, Std.TreeMap.get?_eq_getElem?,
+        Std.TreeMap.getElem?_insert, Std.compare_eq_iff_eq, hne, if_false]
+      rw [← Std.TreeMap.get?_eq_getElem?]
+      exact hv'
+
+/-- `EnvMatches_setVar`'s `.const` specialization -- `simpleValMatches`'s `.const` case doesn't
+    consult the assignment at all, so it's always available regardless of `assignment`. -/
+theorem EnvMatches_setVar_const {c : ZKConfig} (assignment : Assignment c) (symEnv : SymEnv c)
+    (env : Env c) (id : VarID) (v : FF c) (h : EnvMatches assignment symEnv env) :
+    EnvMatches assignment
+      (Corellzk2smt.SymExec.Basic.setVar symEnv id (SymValue.simple (SimpleSymVal.const v)))
+      (Corellzk2smt.Language.Core.Semantics.Basic.setVar env id (Value.scalar v)) :=
+  EnvMatches_setVar assignment symEnv env id (SymValue.simple (SimpleSymVal.const v))
+    (Value.scalar v) h (by simp [symValMatches, simpleValMatches])
+
 /-- Every var `resolveSimpleExpr` reads off `symEnv` for a variable expression is among
     `symEnv`'s own vars (constants contribute none at all). -/
 theorem resolveSimpleExpr_vars_subset {c : ZKConfig} (symEnv : SymEnv c) (s : SimpleExpr c)
@@ -5412,6 +5459,82 @@ theorem TranslatesCorrectlyGiven_of_TranslatesCorrectly {c : ZKConfig} (gconf : 
     TranslatesCorrectlyGiven gconf sconf specs ctx guard concrete symbolic := by
   intro symEnv hbelow hvalid _hguard spec hspec_eq
   exact h symEnv hbelow hvalid spec hspec_eq
+
+-- ---------------------------------------------------------------------------
+-- TranslatesExprCorrectly -- the `TranslatesCorrectly` analogue for expression evaluation
+-- (`ExprSpec`/`seEvalExpr`, `SymExec/Assignment.lean`), against a concrete function that
+-- produces a *value* (`Env c → Except String (FF c)`) rather than an updated environment.
+-- ---------------------------------------------------------------------------
+
+/-- `specVars`, for an `ExprSpec` instead of a `CmdsSpec` -- the vars its own formula may
+    mention. -/
+def exprSpecVars {c : ZKConfig} (espec : ExprSpec c) : VarSet :=
+  ffVarsOfFormula espec.f ∪ bVarsOfFormula espec.f
+
+/-- The soundness half of `TranslatesExprCorrectly`: every concrete success extends to a
+    satisfying assignment, agreeing with the given one outside `espec`'s own vars (the frame
+    condition) -- the `TranslatesCorrectly_soundness` analogue for expression evaluation, which
+    produces a *value* rather than an updated environment. `env` itself never changes (evaluating
+    an expression can't touch the concrete environment); what can grow is `espec.outSymEnv`'s
+    cached bits relative to `symEnv`, hence still an `EnvMatches` conjunct rather than a bare
+    `symEnv = espec.outSymEnv`. -/
+def TranslatesExprCorrectly_soundness {c : ZKConfig} (gconf : GlobalConfig c)
+    (specs : List (FuncSpec c)) (symEnv : SymEnv c) (espec : ExprSpec c)
+    (concrete : Env c → Except String (FF c)) : Prop :=
+  ∀ (env : Env c) (assignment : Assignment c),
+    EnvMatches assignment symEnv env →
+    ∀ val, concrete env = Except.ok val →
+      ∃ assignment',
+        agreesOnFF (symEnvVars symEnv) assignment assignment' ∧
+        agreesOnBool (symEnvVars symEnv) assignment assignment' ∧
+        (∀ n, Var.ffv n ∉ exprSpecVars espec → assignment'.ff n = assignment.ff n) ∧
+        (∀ n, Var.boolv n ∉ exprSpecVars espec → assignment'.bool n = assignment.bool n) ∧
+        evalFormula gconf assignment' espec.f (specs.map (·.f)) = Except.ok true ∧
+        EnvMatches assignment' espec.outSymEnv env ∧
+        simpleValMatches assignment' espec.result val
+
+/-- The completeness half of `TranslatesExprCorrectly`: every satisfying extension of a matching
+    assignment corresponds to an actual concrete success, at that same value. See
+    `TranslatesExprCorrectly_soundness`. -/
+def TranslatesExprCorrectly_completeness {c : ZKConfig} (gconf : GlobalConfig c)
+    (specs : List (FuncSpec c)) (symEnv : SymEnv c) (espec : ExprSpec c)
+    (concrete : Env c → Except String (FF c)) : Prop :=
+  ∀ (env : Env c) (assignment : Assignment c),
+    EnvMatches assignment symEnv env →
+    ∀ assignment', agreesOnFF (symEnvVars symEnv) assignment assignment' →
+      evalFormula gconf assignment' espec.f (specs.map (·.f)) = Except.ok true →
+      ∃ val, concrete env = Except.ok val ∧ EnvMatches assignment' espec.outSymEnv env ∧
+        simpleValMatches assignment' espec.result val
+
+/-- The `TranslatesCorrectly` analogue for expression evaluation: what `seEvalExpr` (and,
+    eventually, each individual `seExprXXX`) needs to satisfy against its concrete counterpart
+    (`Language/Core/Semantics/Basic.evalExpr`). Structurally identical to `TranslatesCorrectly`
+    minus the `spec.inSymEnv = symEnv` conjunct -- `ExprSpec` has no `inSymEnv` field, since
+    evaluating an expression is always done directly against whatever `symEnv` is passed in,
+    never against data the spec itself carries -- plus one extra conjunct with no `CmdsSpec`
+    analogue: `espec.result`'s own var (if it's a fresh `.ffvar`, not a plain `.const`) must
+    already be among `espec.f`'s own vars. Without this, `espec.result` could denote an
+    unconstrained fresh variable that no formula ever pins down -- unsound for any real
+    implementation regardless, but also the exact fact `seEvalAssignmentNonConst_correct` needs to
+    line up its frame condition (over `specVars`, which only ever sees `espec.f`, never
+    `espec.result` directly) with this one's (over `exprSpecVars`). -/
+def TranslatesExprCorrectly {c : ZKConfig} (gconf : GlobalConfig c) (sconf : SymExecConfig c)
+    (specs : List (FuncSpec c)) (ctx : FFFormula c)
+    (concrete : Env c → Except String (FF c))
+    (symbolic : SymEnv c → Except String (ExprSpec c)) : Prop :=
+  ∀ (symEnv : SymEnv c),
+    varSetBelow (symEnvVars symEnv) sconf.nextVarId →
+    ValidBinRep gconf ctx symEnv →
+    ∀ espec, symbolic symEnv = Except.ok espec →
+      sconf.nextVarId ≤ espec.nextVarId ∧
+      simpleValVars espec.result ⊆ exprSpecVars espec ∧
+      (∀ v ∈ exprSpecVars espec, v ∈ symEnvVars symEnv ∨ sconf.nextVarId ≤ varIndex v) ∧
+      varSetBelow (exprSpecVars espec) espec.nextVarId ∧
+      varSetBelow (symEnvVars espec.outSymEnv) espec.nextVarId ∧
+      (∀ v ∈ symEnvVars espec.outSymEnv, v ∈ symEnvVars symEnv ∨ sconf.nextVarId ≤ varIndex v) ∧
+      ValidBinRep gconf (espec.f.and ctx) espec.outSymEnv ∧
+      TranslatesExprCorrectly_soundness gconf specs symEnv espec concrete ∧
+      TranslatesExprCorrectly_completeness gconf specs symEnv espec concrete
 
 -- ---------------------------------------------------------------------------
 -- seIfStmt_correct / seCmd_correct / seCmds_correct

@@ -121,6 +121,20 @@ structure CmdsSpec (c : ZKConfig) where
   f : FFFormula c := FFFormula.false
   nextVarId : Nat := 0
 
+/- Everything a symbolic expression evaluation produces, short of binding it to a variable: the
+   (possibly bits-enriched) symbolic environment, the constraint relating `result` to the resolved
+   operands, the updated variable counter, and the value itself. Plain data -- no correctness
+   predicate of its own; each `seExprXXX`'s correctness is established directly against
+   `seEvalAssignmentNonConst`'s `TranslatesCorrectly` obligation, exactly like `CmdsSpec` itself is
+   plain data with `TranslatesCorrectly` living externally over it.
+-/
+structure ExprSpec (c : ZKConfig) where
+  outSymEnv : SymEnv c := emptySymEnv
+  f : FFFormula c := FFFormula.false
+  nextVarId : Nat := 0
+  result : SimpleSymVal c := default
+
+/- A specification for a function. -/
 structure FuncSpec (c : ZKConfig) where
   name : String := ""
   inSymEnv : SymEnv c := emptySymEnv

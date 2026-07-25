@@ -1,10 +1,34 @@
 import Corellzk2smt.SymExec.Correctness.Lemmas
+import Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
+import Corellzk2smt.SymExec.Correctness.ArithExprCorrectness
+import Corellzk2smt.SymExec.Correctness.BoolExprCorrectness
+import Corellzk2smt.SymExec.Correctness.BitwiseExprCorrectness
 
 /-!
 Correctness statement for `seEvalAssignment` (`SymExec/Assignment.lean`) against its concrete
-counterpart `evalAssign` (`Language/Core/Semantics/Basic.lean`). `seEvalAssignment` is currently a
-permanent `"TBD"` stub, so this is left as an honest `sorry` -- see `SimpleCmdCorrectness.lean`,
-which composes this together with `ArrayCmdsCorrectness.lean`'s theorems into `H_simple_holds`.
+counterpart `evalAssign` (`Language/Core/Semantics/Basic.lean`). Split into pieces, mirroring the
+`seEvalAssignmentConst`/`seEvalAssignmentNonConst`/`seEvalAssignment` split in `Assignment.lean`
+itself:
+
+- `seEvalAssignmentConst_correct` -- the constant-folding path. `seEvalAssignmentConst` only ever
+  succeeds when both operands fully constant-fold, in which case it writes the result directly
+  into the symbolic environment as a `SimpleSymVal.const` (no fresh variable, no real formula
+  content -- `f := FFFormula.true`), sharing the exact same `evalAdd`/`evalSub`/... functions the
+  concrete side uses. That sharing is what makes soundness/completeness hold with the *same*
+  assignment throughout (see `seEvalExprConcreteValue_correct`).
+- `seEvalAssignmentNonConst_correct` -- the general path, built directly from `seEvalExpr_correct`
+  (below), not from `seEvalExpr_isError`'s current vacuity -- so it keeps working unchanged once
+  `seEvalExpr_correct` is discharged for real.
+- `seEvalAssignment_correct` -- pure dispatch: `seEvalAssignment` tries `Const` first and only
+  ever falls back to `NonConst` on error, so its success cases coincide exactly with `Const`'s.
+
+Together these compose (via `SimpleCmdCorrectness.lean`) into `H_simple_holds`.
+
+Also states `seEvalExpr_correct` -- the `TranslatesExprCorrectly` contract `seEvalExpr` needs to
+satisfy, proved by pure dispatch to each `seExprXXX_correct` (`ArithExprCorrectness.lean`/
+`BoolExprCorrectness.lean`/`BitwiseExprCorrectness.lean`) -- each of those is its own honest
+`sorry`, since every `seExprXXX` is still a permanent `"Not implemented yet"` stub, but no `sorry`
+lives directly in this file.
 -/
 
 namespace Corellzk2smt.SymExec.Correctness.AssignmentCorrectness
@@ -15,19 +39,298 @@ open Corellzk2smt.Language.Core.Semantics.Basic
 open Corellzk2smt.SymExec.Basic
 open Corellzk2smt.SymExec.BigStep
 open Corellzk2smt.FFConstraints.Basic
+open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.SymExec.Correctness.Lemmas
+open Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
+open Corellzk2smt.SymExec.Correctness.BinaryExpansionCorrectness
+open Corellzk2smt.SymExec.Correctness.ArithExprCorrectness
+open Corellzk2smt.SymExec.Correctness.BoolExprCorrectness
+open Corellzk2smt.SymExec.Correctness.BitwiseExprCorrectness
 
-/-- `seEvalAssignment` correctly translates `evalAssign`. Genuinely open: `seEvalAssignment` is
-    currently a permanent `"TBD"` stub, under which this would be vacuously provable (the success
-    hypothesis inside `TranslatesCorrectly` can never fire) -- but that proves the wrong thing, so
-    it's left as an honest `sorry` instead. Once `seEvalAssignment` is actually implemented, this
-    is the one place that needs a real proof. -/
+/-- `evalExpr`'s (symbolic) only ever succeeds by fully constant-folding, so its result is always
+    a bare `SimpleSymVal.const` -- never a fresh `.ffvar`. Purely structural: doesn't need any
+    concrete environment or assignment at all. -/
+theorem seEvalExprConcreteValue_isConst {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (id : VarID) (e : Expr c) (r : SimpleSymVal c)
+    (heq : Corellzk2smt.SymExec.BigStep.evalExpr md gconf sconf symEnv specs id e
+      = Except.ok r) :
+    ∃ v, r = SimpleSymVal.const v := by
+  cases e with
+  | bop op s1 s2 =>
+      simp only [Corellzk2smt.SymExec.BigStep.evalExpr] at heq
+      cases h1 : tryEvalSimpleExprToFFValue symEnv s1 with
+      | error msg => rw [h1] at heq; simp at heq
+      | ok v1 =>
+      cases h2 : tryEvalSimpleExprToFFValue symEnv s2 with
+      | error msg => rw [h1, h2] at heq; simp at heq
+      | ok v2 =>
+      rw [h1, h2] at heq
+      cases op <;> (injection heq with heq; exact ⟨_, heq.symm⟩)
+  | uop op s =>
+      simp only [Corellzk2smt.SymExec.BigStep.evalExpr] at heq
+      cases h1 : tryEvalSimpleExprToFFValue symEnv s with
+      | error msg => rw [h1] at heq; simp at heq
+      | ok v1 =>
+      rw [h1] at heq
+      cases op <;> (injection heq with heq; exact ⟨_, heq.symm⟩)
+  | id s =>
+      simp [Corellzk2smt.SymExec.BigStep.evalExpr] at heq
+
+/-- `evalExpr`'s (symbolic) success value agrees with concrete `evalExpr`, under any assignment
+    matching the symbolic environment it ran against. This is where the fact that both sides
+    share the exact same `evalAdd`/`evalSub`/`evalMul`/... functions actually gets used: once the
+    operands agree (`tryEvalSimpleExprToFFValue_correct`), the two sides compute *the same*
+    function of *the same* values, so no new assignment is ever needed to make them match. -/
+theorem seEvalExprConcreteValue_correct {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (id : VarID) (e : Expr c) (v : FF c)
+    (heq : Corellzk2smt.SymExec.BigStep.evalExpr md gconf sconf symEnv specs id e
+      = Except.ok (SimpleSymVal.const v))
+    (env : Env c) (assignment : Assignment c) (hmatch : EnvMatches assignment symEnv env) :
+    Corellzk2smt.Language.Core.Semantics.Basic.evalExpr env e = Except.ok v := by
+  cases e with
+  | bop op s1 s2 =>
+      simp only [Corellzk2smt.SymExec.BigStep.evalExpr] at heq
+      cases h1 : tryEvalSimpleExprToFFValue symEnv s1 with
+      | error msg => rw [h1] at heq; simp at heq
+      | ok v1 =>
+      cases h2 : tryEvalSimpleExprToFFValue symEnv s2 with
+      | error msg => rw [h1, h2] at heq; simp at heq
+      | ok v2 =>
+      rw [h1, h2] at heq
+      have hc1 := tryEvalSimpleExprToFFValue_correct symEnv s1 env assignment v1 hmatch h1
+      have hc2 := tryEvalSimpleExprToFFValue_correct symEnv s2 env assignment v2 hmatch h2
+      simp only [Corellzk2smt.Language.Core.Semantics.Basic.evalExpr, hc1, hc2]
+      cases op <;> (injection heq with heq; injection heq with heq; simp [heq])
+  | uop op s =>
+      simp only [Corellzk2smt.SymExec.BigStep.evalExpr] at heq
+      cases h1 : tryEvalSimpleExprToFFValue symEnv s with
+      | error msg => rw [h1] at heq; simp at heq
+      | ok v1 =>
+      rw [h1] at heq
+      have hc1 := tryEvalSimpleExprToFFValue_correct symEnv s env assignment v1 hmatch h1
+      simp only [Corellzk2smt.Language.Core.Semantics.Basic.evalExpr, hc1]
+      cases op <;> (injection heq with heq; injection heq with heq; simp [heq])
+  | id s =>
+      simp [Corellzk2smt.SymExec.BigStep.evalExpr] at heq
+
+/-- What `seEvalExpr` needs to satisfy against concrete `evalExpr` for `seEvalAssignmentNonConst`
+    to be provable in general: the expression-level analogue of `H_simple`/`TranslatesCorrectly`,
+    i.e. a `TranslatesExprCorrectly` fact. Pure dispatch on `e`'s shape/operator to the matching
+    `seExprXXX_correct` (`ArithExprCorrectness.lean`/`BoolExprCorrectness.lean`/
+    `BitwiseExprCorrectness.lean`), exactly mirroring `seEvalExpr`'s own dispatch -- each of those
+    is still an honest `sorry` (every `seExprXXX` is a permanent `"Not implemented yet"` stub), so
+    no `sorry` lives directly in this proof, but it isn't vacuous either: discharging any one
+    `seExprXXX_correct` immediately upgrades this theorem's coverage of that operator, and once
+    all 24 are real, so is this. -/
+theorem seEvalExpr_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
+    (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD) (e : Expr c) :
+    TranslatesExprCorrectly gconf sconf specs ctx
+      (fun env => Corellzk2smt.Language.Core.Semantics.Basic.evalExpr env e)
+      (fun symEnv => seEvalExpr md gconf sconf symEnv specs e) := by
+  match e with
+  | .bop op s1 s2 =>
+      match op with
+      | .add => simp only [seEvalExpr]; exact seExprAdd_correct gconf specs sconf ctx md s1 s2
+      | .sub => simp only [seEvalExpr]; exact seExprSub_correct gconf specs sconf ctx md s1 s2
+      | .mul => simp only [seEvalExpr]; exact seExprMul_correct gconf specs sconf ctx md s1 s2
+      | .div => simp only [seEvalExpr]; exact seExprDiv_correct gconf specs sconf ctx md s1 s2
+      | .pow => simp only [seEvalExpr]; exact seExprPow_correct gconf specs sconf ctx md s1 s2
+      | .uimod =>
+          simp only [seEvalExpr]; exact seExprUIMod_correct gconf specs sconf ctx md s1 s2
+      | .uidiv =>
+          simp only [seEvalExpr]; exact seExprUIDiv_correct gconf specs sconf ctx md s1 s2
+      | .bor => simp only [seEvalExpr]; exact seExprBor_correct gconf specs sconf ctx md s1 s2
+      | .band => simp only [seEvalExpr]; exact seExprBAnd_correct gconf specs sconf ctx md s1 s2
+      | .eq => simp only [seEvalExpr]; exact seExprEq_correct gconf specs sconf ctx md s1 s2
+      | .neq => simp only [seEvalExpr]; exact seExprNeq_correct gconf specs sconf ctx md s1 s2
+      | .lt =>
+          simp only [seEvalExpr]; exact seExprLtSigned_correct gconf specs sconf ctx md s1 s2
+      | .le =>
+          simp only [seEvalExpr]; exact seExprLeSigned_correct gconf specs sconf ctx md s1 s2
+      | .gt =>
+          simp only [seEvalExpr]; exact seExprGtSigned_correct gconf specs sconf ctx md s1 s2
+      | .ge =>
+          simp only [seEvalExpr]; exact seExprGeSigned_correct gconf specs sconf ctx md s1 s2
+      | .and =>
+          simp only [seEvalExpr]; exact seExprBitwiseAND_correct gconf specs sconf ctx md s1 s2
+      | .or =>
+          simp only [seEvalExpr]; exact seExprBitwiseOR_correct gconf specs sconf ctx md s1 s2
+      | .xor =>
+          simp only [seEvalExpr]; exact seExprBitwiseXOR_correct gconf specs sconf ctx md s1 s2
+      | .shl =>
+          simp only [seEvalExpr]; exact seExprBitwiseSHL_correct gconf specs sconf ctx md s1 s2
+      | .shr =>
+          simp only [seEvalExpr]; exact seExprBitwiseSHR_correct gconf specs sconf ctx md s1 s2
+  | .uop op s =>
+      match op with
+      | .neg => simp only [seEvalExpr]; exact seExprNeg_correct gconf specs sconf ctx md s
+      | .bneg => simp only [seEvalExpr]; exact seExprBNeg_correct gconf specs sconf ctx md s
+      | .not => simp only [seEvalExpr]; exact seExprBitwiseNOT_correct gconf specs sconf ctx md s
+  | .id s =>
+      simp only [seEvalExpr]; exact seExprId_correct gconf specs sconf ctx md s
+
+/-- `seEvalExpr` never succeeds today -- every one of its dispatch targets (`seExprAdd`,
+    `seExprSub`, ...) is still a permanent `"Not implemented yet"` stub. This will need to become
+    a real per-operator fact (mirroring `seEvalExprConcreteValue_isConst`'s style) as each
+    `seExprXXX` gets implemented -- at that point this lemma stops covering that operator's case,
+    by design. -/
+theorem seEvalExpr_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c)) (e : Expr c)
+    (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs e = Except.ok exprSpec) : False := by
+  cases e with
+  | bop op s1 s2 =>
+      cases op <;> simp [seEvalExpr, seExprAdd, seExprSub, seExprMul, seExprDiv, seExprPow,
+        seExprUIMod, seExprUIDiv, seExprBor, seExprBAnd, seExprEq, seExprNeq, seExprLtSigned,
+        seExprLeSigned, seExprGtSigned, seExprGeSigned, seExprBitwiseAND, seExprBitwiseOR,
+        seExprBitwiseXOR, seExprBitwiseSHL, seExprBitwiseSHR] at heq
+  | uop op s =>
+      cases op <;> simp [seEvalExpr, seExprNeg, seExprBNeg, seExprBitwiseNOT] at heq
+  | id s =>
+      simp [seEvalExpr, seExprId] at heq
+
+/-- `seEvalAssignmentNonConst` correctly translates `evalAssign`, *given* `seEvalExpr_correct`'s
+    contract -- built directly from it (not from `seEvalExpr_isError`'s current vacuity), so this
+    proof keeps working unchanged once that `sorry` is discharged for real: binding `exprSpec`'s
+    result to `id` (`EnvMatches_setVar`) is the only new step over what `seEvalExpr_correct`
+    itself already provides. -/
+theorem seEvalAssignmentNonConst_correct {c : ZKConfig} (gconf : GlobalConfig c)
+    (specs : List (FuncSpec c)) (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD)
+    (id : VarID) (e : Expr c) :
+    TranslatesCorrectly gconf sconf specs ctx
+      (fun env => evalAssign md gconf env id e)
+      (fun symEnv => seEvalAssignmentNonConst md gconf sconf symEnv specs id e) := by
+  intro symEnv hbelow hvalid spec hspec_eq
+  have hcontract := seEvalExpr_correct gconf specs sconf ctx md e symEnv hbelow hvalid
+  cases hexpr : seEvalExpr md gconf sconf symEnv specs e with
+  | error msg => simp [seEvalAssignmentNonConst, hexpr] at hspec_eq
+  | ok espec =>
+  obtain ⟨hnv, hresult_sub, hfresh, hfbelow, houtbelow, houtfresh, _hvalidbin, hsound, hcomplete⟩ :=
+    hcontract espec hexpr
+  simp only [seEvalAssignmentNonConst, hexpr] at hspec_eq
+  injection hspec_eq with hspec_eq
+  subst hspec_eq
+  refine ⟨rfl, hnv, hfresh, hfbelow, ?_, ?_, ValidBinRep_trivial gconf _ _, ?_, ?_⟩
+  · intro v hv
+    rcases symEnvVars_setVar_subset espec.outSymEnv id (SymValue.simple espec.result) v hv
+      with h | h
+    · exact houtbelow v h
+    · simp only [symValVars] at h
+      exact hfbelow v (hresult_sub v h)
+  · intro v hv
+    rcases symEnvVars_setVar_subset espec.outSymEnv id (SymValue.simple espec.result) v hv
+      with h | h
+    · exact houtfresh v h
+    · simp only [symValVars] at h
+      exact hfresh v (hresult_sub v h)
+  · intro env assignment hmatch env' hc
+    simp only [evalAssign] at hc
+    cases hce : Corellzk2smt.Language.Core.Semantics.Basic.evalExpr env e with
+    | error msg => rw [hce] at hc; simp at hc
+    | ok val =>
+        rw [hce] at hc
+        injection hc with hc
+        obtain ⟨assignment', hagreeff, hagreebool, hframeff, hframebool, hf, houtmatch,
+          hresmatch⟩ := hsound env assignment hmatch val hce
+        refine ⟨assignment', hagreeff, hagreebool, hframeff, hframebool, hf, ?_⟩
+        rw [← hc]
+        exact EnvMatches_setVar assignment' espec.outSymEnv env id (SymValue.simple espec.result)
+          (Value.scalar val) houtmatch (by simp only [symValMatches]; exact hresmatch)
+  · intro env assignment hmatch assignment' hagree heval_f
+    obtain ⟨val, hval_ok, houtmatch, hresmatch⟩ :=
+      hcomplete env assignment hmatch assignment' hagree heval_f
+    refine ⟨Corellzk2smt.Language.Core.Semantics.Basic.setVar env id (Value.scalar val), ?_, ?_⟩
+    · simp only [evalAssign, hval_ok]
+    · exact EnvMatches_setVar assignment' espec.outSymEnv env id (SymValue.simple espec.result)
+        (Value.scalar val) houtmatch (by simp only [symValMatches]; exact hresmatch)
+
+/-- `seEvalAssignmentConst` correctly translates `evalAssign`, when it succeeds: both sides
+    constant-fold via the shared `evalAdd`/`evalSub`/.../`evalNeg`/... functions, so soundness
+    and completeness both go through with the witness assignment *unchanged* --
+    `f := FFFormula.true` means there's no real constraint to satisfy, and the newly-bound `id` is
+    a bare constant, not a fresh variable, so nothing needs solving for. -/
+theorem seEvalAssignmentConst_correct {c : ZKConfig} (gconf : GlobalConfig c)
+    (specs : List (FuncSpec c)) (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD)
+    (id : VarID) (e : Expr c) :
+    TranslatesCorrectly gconf sconf specs ctx
+      (fun env => evalAssign md gconf env id e)
+      (fun symEnv => seEvalAssignmentConst md gconf sconf symEnv specs id e) := by
+  intro symEnv hbelow _hvalid spec hspec_eq
+  cases heval : Corellzk2smt.SymExec.BigStep.evalExpr md gconf sconf symEnv specs id e with
+  | error msg => simp [seEvalAssignmentConst, heval] at hspec_eq
+  | ok r =>
+  obtain ⟨v, hv⟩ := seEvalExprConcreteValue_isConst md gconf sconf symEnv specs id e r heval
+  subst hv
+  simp only [seEvalAssignmentConst, heval] at hspec_eq
+  injection hspec_eq with hspec_eq
+  subst hspec_eq
+  refine ⟨rfl, le_refl _, ?_, ?_, ?_, ?_, ValidBinRep_trivial gconf _ _, ?_, ?_⟩
+  · intro v' hv'
+    rcases Std.TreeSet.mem_union_iff.mp hv' with h | h <;>
+      simp only [ffVarsOfFormula, bVarsOfFormula] at h <;>
+      exact absurd h Std.TreeSet.not_mem_emptyc
+  · intro v' hv'
+    rcases Std.TreeSet.mem_union_iff.mp hv' with h | h <;>
+      simp only [ffVarsOfFormula, bVarsOfFormula] at h <;>
+      exact absurd h Std.TreeSet.not_mem_emptyc
+  · intro v' hv'
+    rcases symEnvVars_setVar_subset symEnv id (SymValue.simple (SimpleSymVal.const v)) v' hv'
+      with h | h
+    · exact hbelow v' h
+    · simp only [symValVars, simpleValVars] at h
+      exact absurd h Std.TreeSet.not_mem_emptyc
+  · intro v' hv'
+    rcases symEnvVars_setVar_subset symEnv id (SymValue.simple (SimpleSymVal.const v)) v' hv'
+      with h | h
+    · exact Or.inl h
+    · simp only [symValVars, simpleValVars] at h
+      exact absurd h Std.TreeSet.not_mem_emptyc
+  · intro env assignment hmatch env' hc
+    simp only [evalAssign] at hc
+    cases hce : Corellzk2smt.Language.Core.Semantics.Basic.evalExpr env e with
+    | error msg => rw [hce] at hc; simp at hc
+    | ok val =>
+        rw [hce] at hc
+        injection hc with hc
+        have hcv := seEvalExprConcreteValue_correct md gconf sconf symEnv specs id e v heval env
+          assignment hmatch
+        rw [hcv] at hce
+        injection hce with hce
+        subst hce
+        refine ⟨assignment, (fun n _ => rfl), (fun n _ => rfl), (fun n _ => rfl),
+          (fun n _ => rfl), ?_, ?_⟩
+        · simp only [evalFormula]
+        · rw [← hc]; exact EnvMatches_setVar_const assignment symEnv env id v hmatch
+  · intro env assignment hmatch assignment' hagree _heval_f
+    refine ⟨Corellzk2smt.Language.Core.Semantics.Basic.setVar env id (Value.scalar v), ?_, ?_⟩
+    · simp only [evalAssign, seEvalExprConcreteValue_correct md gconf sconf symEnv specs id e v
+        heval env assignment hmatch]
+    · exact EnvMatches_setVar_const assignment' symEnv env id v
+        (EnvMatches_agreesOnFF_preserves assignment assignment' symEnv env hagree hmatch)
+
+/-- `seEvalAssignment` correctly translates `evalAssign` -- pure dispatch: `seEvalAssignment`
+    tries `seEvalAssignmentConst` first and only falls back to `seEvalAssignmentNonConst` when
+    that errors, so its success cases coincide exactly with one or the other's own. -/
 theorem seEvalAssignment_correct {c : ZKConfig} (gconf : GlobalConfig c)
     (specs : List (FuncSpec c)) (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD)
     (id : VarID) (e : Expr c) :
     TranslatesCorrectly gconf sconf specs ctx
       (fun env => evalAssign md gconf env id e)
       (fun symEnv => seEvalAssignment md gconf sconf symEnv specs id e) := by
-  sorry
+  intro symEnv hbelow hvalid spec hspec_eq
+  simp only [seEvalAssignment] at hspec_eq
+  cases hconst : seEvalAssignmentConst md gconf sconf symEnv specs id e with
+  | ok spec' =>
+      rw [hconst] at hspec_eq
+      injection hspec_eq with hspec_eq
+      subst hspec_eq
+      exact seEvalAssignmentConst_correct gconf specs sconf ctx md id e symEnv hbelow hvalid
+        spec' hconst
+  | error msg =>
+      rw [hconst] at hspec_eq
+      exact seEvalAssignmentNonConst_correct gconf specs sconf ctx md id e symEnv hbelow hvalid
+        spec hspec_eq
 
 end Corellzk2smt.SymExec.Correctness.AssignmentCorrectness

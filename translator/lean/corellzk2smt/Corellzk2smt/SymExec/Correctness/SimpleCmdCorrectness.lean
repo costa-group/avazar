@@ -7,8 +7,9 @@ import Corellzk2smt.SymExec.Correctness.ArrayCmdsCorrectness
 through `ProgCorrectness.lean`'s whole-program induction. `seSimpleCmd` dispatches to one of five
 per-operation functions (`SymExec/Assignment.lean`/`ArrayCmds.lean`); this file's proof is pure
 dispatch, routing each case to `AssignmentCorrectness.lean`/`ArrayCmdsCorrectness.lean`'s own
-theorem for that operation (each currently an honest `sorry`, since the operation itself is still
-a `"TBD"` stub) -- no `sorry` lives directly in this file anymore.
+theorem for that operation -- `.assign` is fully proved (`seEvalAssignment_correct`), the four
+array ops are still honest `sorry`s (permanent `"TBD"` stubs) -- no `sorry` lives directly in this
+file anymore.
 -/
 
 namespace Corellzk2smt.SymExec.Correctness.SimpleCmdCorrectness
@@ -100,8 +101,8 @@ theorem H_simple_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (Fu
     (and everything downstream) treat "whatever `seSimpleCmd` does to the symbolic env's domain" as
     an opaque hypothesis, so it never needs to unfold `seSimpleCmd`/`seEvalAssignment`/etc. itself.
     Dispatches the same way `H_simple_holds` does: the four array ops are still permanent `"TBD"`
-    stubs, discharged vacuously; `.assign` is genuinely open (mirrors `seEvalAssignment_correct`'s
-    own honest `sorry`, since `seEvalAssignmentConst` can now succeed). -/
+    stubs, discharged vacuously; `.assign` only ever succeeds via `seEvalAssignmentConst`, which
+    binds `id` to a constant in `outSymEnv` without touching any other key. -/
 theorem H_simple_domain_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
     (sconf : SymExecConfig c) (symEnv : SymEnv c) (vars : VarIDSet) (md : CmdMD) (cmd : Com c)
     (hpre : ∀ id, id ∈ definedVarsCom vars cmd → symEnv.contains id) (spec : CmdsSpec c)
@@ -109,7 +110,34 @@ theorem H_simple_domain_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : L
     ∀ id, symEnv.contains id ↔ spec.outSymEnv.contains id := by
   match cmd with
   | .assign id e =>
-      sorry
+      simp only [seSimpleCmd] at heq
+      cases hconst : seEvalAssignmentConst md gconf sconf symEnv specs id e with
+      | error msg =>
+          exfalso
+          simp only [seEvalAssignment, hconst] at heq
+          simp only [seEvalAssignmentNonConst] at heq
+          cases hexpr : seEvalExpr md gconf sconf symEnv specs e with
+          | error msg' => rw [hexpr] at heq; simp at heq
+          | ok exprSpec =>
+              exact absurd hexpr (seEvalExpr_isError md gconf sconf symEnv specs e exprSpec)
+      | ok spec' =>
+          simp only [seEvalAssignment, hconst] at heq
+          injection heq with heq
+          subst heq
+          simp only [seEvalAssignmentConst] at hconst
+          cases hev : Corellzk2smt.SymExec.BigStep.evalExpr md gconf sconf symEnv specs id e with
+          | error msg => rw [hev] at hconst; simp at hconst
+          | ok r =>
+              rw [hev] at hconst
+              injection hconst with hconst
+              subst hconst
+              intro id'
+              simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.contains_insert]
+              by_cases heqid : id' = id
+              · have hcontains : symEnv.contains id :=
+                  hpre id (by simp only [definedVarsCom]; exact Std.TreeSet.mem_insert_self ..)
+                simp [heqid, hcontains]
+              · simp [Ne.symm heqid]
   | .new_array id size =>
       simp [seSimpleCmd, seNewArray] at heq
   | .read_array out a index =>
@@ -123,7 +151,8 @@ theorem H_simple_domain_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : L
 
 /-- `H_simple_names_below`'s conditional-form statement -- the `FormulaNamesBelow` analogue of
     `H_simple_domain_holds` above, for the same reason (keep `Lemmas.lean`'s `_names_below` family
-    from ever unfolding `seSimpleCmd` itself). Same dispatch/status as `H_simple_domain_holds`. -/
+    from ever unfolding `seSimpleCmd` itself). Same dispatch as `H_simple_domain_holds`: `.assign`
+    only ever succeeds via `seEvalAssignmentConst`, whose formula is always `FFFormula.true`. -/
 theorem H_simple_names_below_holds {c : ZKConfig} (gconf : GlobalConfig c)
     (specs : List (FuncSpec c)) (badName : String) (sconf : SymExecConfig c) (symEnv : SymEnv c)
     (i : ComWithMD c) (spec : CmdsSpec c)
@@ -133,7 +162,28 @@ theorem H_simple_names_below_holds {c : ZKConfig} (gconf : GlobalConfig c)
   | .mk md cmd =>
     match cmd with
     | .assign id e =>
-        sorry
+        simp only [seSimpleCmd] at heq
+        cases hconst : seEvalAssignmentConst md gconf sconf symEnv specs id e with
+        | error msg =>
+            exfalso
+            simp only [seEvalAssignment, hconst] at heq
+            simp only [seEvalAssignmentNonConst] at heq
+            cases hexpr : seEvalExpr md gconf sconf symEnv specs e with
+            | error msg' => rw [hexpr] at heq; simp at heq
+            | ok exprSpec =>
+                exact absurd hexpr (seEvalExpr_isError md gconf sconf symEnv specs e exprSpec)
+        | ok spec' =>
+            simp only [seEvalAssignment, hconst] at heq
+            injection heq with heq
+            subst heq
+            simp only [seEvalAssignmentConst] at hconst
+            cases hev : Corellzk2smt.SymExec.BigStep.evalExpr md gconf sconf symEnv specs id e with
+            | error msg => rw [hev] at hconst; simp at hconst
+            | ok r =>
+                rw [hev] at hconst
+                injection hconst with hconst
+                subst hconst
+                trivial
     | .new_array id size =>
         simp [seSimpleCmd, seNewArray] at heq
     | .read_array out a index =>
