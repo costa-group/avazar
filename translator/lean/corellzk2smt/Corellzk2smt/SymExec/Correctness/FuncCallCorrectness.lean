@@ -461,8 +461,9 @@ theorem flattenSymValueParams_mem_vars {c : ZKConfig} (v : SymValue c) (mcp : Ma
       | const cv => exact Or.inl ⟨Const.ffc cv, by rw [hmcp]; rfl⟩
       | ffvar vbr =>
           refine Or.inr ⟨vbr.var, by rw [hmcp]; rfl, ?_⟩
-          simp only [symValVars, simpleValVars]
-          exact Std.TreeSet.mem_insert.mpr (Or.inl (Var_compare_eq_iff_eq.mpr rfl))
+          simp only [symValVars, simpleValVars, simpleValOwnVars]
+          exact Std.TreeSet.mem_union_of_left
+            (Std.TreeSet.mem_insert.mpr (Or.inl (Var_compare_eq_iff_eq.mpr rfl)))
   | array arr =>
       simp only [flattenSymValueParams] at hmcp
       obtain ⟨sv, hsv, hmcpeq⟩ := List.mem_map.mp hmcp
@@ -471,8 +472,9 @@ theorem flattenSymValueParams_mem_vars {c : ZKConfig} (v : SymValue c) (mcp : Ma
       | ffvar vbr =>
           refine Or.inr ⟨vbr.var, by rw [← hmcpeq]; rfl, ?_⟩
           apply symValVars_array_mem_subset arr (SimpleSymVal.ffvar vbr) hsv
-          simp only [simpleValVars]
-          exact Std.TreeSet.mem_insert.mpr (Or.inl (Var_compare_eq_iff_eq.mpr rfl))
+          simp only [simpleValVars, simpleValOwnVars]
+          exact Std.TreeSet.mem_union_of_left
+            (Std.TreeSet.mem_insert.mpr (Or.inl (Var_compare_eq_iff_eq.mpr rfl)))
 
 /-- List-level combination of `flattenSymValuesParams_mem_elim`/`flattenSymValueParams_mem_vars`
     -- the membership/vars fact `hfresh`/`hbelowProof`-style reasoning needs about the flattened
@@ -1091,7 +1093,7 @@ theorem constify_input_params_eq {c : ZKConfig} (symEnv : SymEnv c)
               simp only [simpleValMatches] at hd
               simp only [simpleSymValToMacroCallParam, constifyMacroCallParam]
               have hmem : Var.ffv vbr.var ∈ symEnvVars symEnv :=
-                hsvvars (Var.ffv vbr.var) (by simp [simpleValVars])
+                hsvvars (Var.ffv vbr.var) (by simp [simpleValVars, simpleValOwnVars])
               rw [hagree vbr.var hmem, hd]
 
 /-- Constifying the fresh output params `mintFreshRets` mints (all-`.ff`) under an assignment
@@ -1921,7 +1923,8 @@ theorem constify_input_symvalues_eq {c : ZKConfig} (symEnv : SymEnv c)
                   | ffvar vbr =>
                       simp only [symValMatches, simpleValMatches] at hd
                       have hmem : Var.ffv vbr.var ∈ symEnvVars symEnv :=
-                        hsvvars (Var.ffv vbr.var) (by simp [symValVars, simpleValVars])
+                        hsvvars (Var.ffv vbr.var)
+                          (by simp [symValVars, simpleValVars, simpleValOwnVars])
                       simp [flattenSymValueParams, simpleSymValToMacroCallParam,
                         constifyMacroCallParam, flattenValueParams, hagree vbr.var hmem, hd]
           | array arr =>

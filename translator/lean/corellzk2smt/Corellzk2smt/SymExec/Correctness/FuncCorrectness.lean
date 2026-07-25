@@ -2218,10 +2218,13 @@ theorem eqs_complete {c : ZKConfig} (gconf : GlobalConfig c) (ms : List (FFMacro
               simpa using hind
 
 /-- Vars-membership companion to `eqs_sound`/`eqs_complete`: every var mentioned by the `j`-th
-    element (`j < elems.length`) is captured by the whole block's own var-set. -/
+    element (`j < elems.length`) is captured by the whole block's own var-set. Stated over
+    `simpleValOwnVars`, not the fuller `simpleValVars` -- the block's formula ties a fresh var to
+    `simpleSymValToTerm p.1`, which (`ffVarsOfTerm_simpleSymValToTerm`) never mentions cached
+    bits, so that's genuinely all this formula can ever be shown to capture. -/
 theorem eqs_vars_mem {c : ZKConfig} :
     ∀ (elems : List (SimpleSymVal c)) (nextVarId : Nat) (j : Nat), j < elems.length →
-      ∀ w ∈ simpleValVars (elems.getD j default),
+      ∀ w ∈ simpleValOwnVars (elems.getD j default),
         w ∈ ffVarsOfFormula
               (((elems.zip ((List.range elems.length).map (fun i => nextVarId + i))).map
                 (fun p => FFFormula.eq (FFTerm.var p.2) (simpleSymValToTerm p.1))).foldr
@@ -2431,6 +2434,59 @@ theorem mem_symValVars_of_mem_symValueElems {c : ZKConfig} (sv : SymValue c) (j 
       exact (mem_foldl_union_simpleValVars arr.toList emptyVarSet w).mpr
         (Or.inr ⟨j, hj, hw⟩)
 
+/-- `mem_foldl_union_simpleValVars`'s bits-blind counterpart. -/
+theorem mem_foldl_union_simpleValOwnVars {c : ZKConfig} :
+    ∀ (l : List (SimpleSymVal c)) (init : VarSet) (w : Var),
+      w ∈ l.foldl (fun acc s => acc ∪ simpleValOwnVars s) init ↔
+        w ∈ init ∨ ∃ j, j < l.length ∧ w ∈ simpleValOwnVars (l.getD j default) := by
+  intro l
+  induction l with
+  | nil => intro init w; simp
+  | cons s l ih =>
+      intro init w
+      simp only [List.foldl_cons]
+      rw [ih (init ∪ simpleValOwnVars s) w]
+      constructor
+      · rintro (h1 | ⟨j, hj, hw⟩)
+        · rcases Std.TreeSet.mem_union_iff.mp h1 with h1' | h1'
+          · exact Or.inl h1'
+          · exact Or.inr ⟨0, by simp, by simpa using h1'⟩
+        · exact Or.inr ⟨j + 1, by simp only [List.length_cons]; omega, by simpa using hw⟩
+      · rintro (h1 | ⟨j, hj, hw⟩)
+        · exact Or.inl (Std.TreeSet.mem_union_of_left h1)
+        · cases j with
+          | zero => exact Or.inl (Std.TreeSet.mem_union_of_right (by simpa using hw))
+          | succ j' => exact Or.inr ⟨j', by simpa using hj, by simpa using hw⟩
+
+/-- Specialization of `mem_foldl_union_simpleValOwnVars` starting from `emptyVarSet`. -/
+theorem mem_foldl_simpleValOwnVars_union {c : ZKConfig} (l : List (SimpleSymVal c)) (w : Var)
+    (hw : w ∈ l.foldl (fun acc s => acc ∪ simpleValOwnVars s) emptyVarSet) :
+    ∃ j, j < l.length ∧ w ∈ simpleValOwnVars (l.getD j default) := by
+  rcases (mem_foldl_union_simpleValOwnVars l emptyVarSet w).mp hw with h | h
+  · exact absurd h Std.TreeSet.not_mem_emptyc
+  · exact h
+
+/-- `mem_symValVars_of_mem_symValueElems`'s bits-blind counterpart -- what's actually needed to
+    connect `ffVarsOfTerm_simpleSymValToTerm`-derived facts (which only ever land in
+    `simpleValOwnVars`) back to `symValOwnVars sv`. -/
+theorem mem_symValOwnVars_of_mem_symValueElems {c : ZKConfig} (sv : SymValue c) (j : Nat)
+    (hj : j < (symValueElems sv).length) :
+    ∀ w ∈ simpleValOwnVars ((symValueElems sv).getD j default), w ∈ symValOwnVars sv := by
+  cases sv with
+  | simple s =>
+      simp only [symValueElems, List.length_cons, List.length_nil] at hj
+      have hj0 : j = 0 := by omega
+      subst hj0
+      simp only [symValueElems, List.getD_cons_zero, symValOwnVars]
+      exact fun w hw => hw
+  | array arr =>
+      intro w hw
+      simp only [symValueElems] at hj hw
+      simp only [symValOwnVars]
+      rw [← Array.foldl_toList, List.toList_toArray]
+      exact (mem_foldl_union_simpleValOwnVars arr.toList emptyVarSet w).mpr
+        (Or.inr ⟨j, hj, hw⟩)
+
 /-- Unpacks `symValMatches` into its own element-wise view via `symValueElems`/`flattenValueToFF`
     -- the shape (`.simple`/`.scalar` vs `.array`/`.array`) is forced to agree by `symValMatches`
     itself (its `False` cases rule out a mismatch), and `ensureCorrectType` pins the exact size. -/
@@ -2570,12 +2626,14 @@ theorem mintFreshParams_block_mem_symEnvVars {c : ZKConfig} :
                 exact hind
 
 /-- Vars-membership companion to `mintFreshRetWithEq_eqf_sound`/`_complete`: every var mentioned
-    by `sv`'s own denoted value is captured by `eqf`'s own var-set. -/
+    by `sv`'s own denoted value is captured by `eqf`'s own var-set. Stated over `symValOwnVars`,
+    not the fuller `symValVars` -- `eqf` is always built purely out of `simpleSymValToTerm`
+    equalities, which never mention cached bits (see `eqs_vars_mem`). -/
 theorem mintFreshRetWithEq_eqf_vars_sub {c : ZKConfig} (nextVarId : Nat) (bodySymEnv : SymEnv c)
     (r : Param) (nv1 : Nat) (vs : List Var) (sv' : SymValue c) (eqf : FFFormula c)
     (h : mintFreshRetWithEq (c := c) nextVarId bodySymEnv r = Except.ok (nv1, vs, sv', eqf))
     (sv : SymValue c) (hgv : getVar bodySymEnv r.name = Except.ok sv) :
-    ∀ w ∈ symValVars sv, w ∈ ffVarsOfFormula eqf ∪ bVarsOfFormula eqf := by
+    ∀ w ∈ symValOwnVars sv, w ∈ ffVarsOfFormula eqf ∪ bVarsOfFormula eqf := by
   cases htype : r.type with
   | ff =>
       simp only [mintFreshRetWithEq, htype] at h
@@ -2588,7 +2646,7 @@ theorem mintFreshRetWithEq_eqf_vars_sub {c : ZKConfig} (nextVarId : Nat) (bodySy
             h.2.2.2.symm
           rw [heqf1]
           intro w hw
-          simp only [symValVars] at hw
+          simp only [symValOwnVars] at hw
           simp only [ffVarsOfFormula, bVarsOfFormula, ffVarsOfTerm, ffVarsOfTerm_simpleSymValToTerm,
             bVarsOfTerm, bVarsOfTerm_simpleSymValToTerm]
           exact Std.TreeSet.mem_union_of_left (Std.TreeSet.mem_union_of_right hw)
@@ -2607,9 +2665,9 @@ theorem mintFreshRetWithEq_eqf_vars_sub {c : ZKConfig} (nextVarId : Nat) (bodySy
             have hlen : n = arr.toList.length := by rw [Array.length_toList]; exact hsize.symm
             rw [heqf1, hlen]
             intro w hw
-            simp only [symValVars] at hw
+            simp only [symValOwnVars] at hw
             rw [← Array.foldl_toList, List.toList_toArray] at hw
-            obtain ⟨j, hj, hw'⟩ := mem_foldl_simpleValVars_union arr.toList w hw
+            obtain ⟨j, hj, hw'⟩ := mem_foldl_simpleValOwnVars_union arr.toList w hw
             exact eqs_vars_mem arr.toList nextVarId j hj w hw'
           · simp [hsize] at h
 
@@ -2927,7 +2985,7 @@ theorem mintFreshRetsWithEq_sv_vars_sub_general {c : ZKConfig} :
         Except.ok (nv2, retVars, retBinds, retEqFormula) →
       ∀ i, (hi : i < rets.length) → ∀ sv,
         getVar bodySymEnv (rets.getD i default).name = Except.ok sv →
-        ∀ w ∈ symValVars sv, w ∈ ffVarsOfFormula retEqFormula ∪ bVarsOfFormula retEqFormula := by
+        ∀ w ∈ symValOwnVars sv, w ∈ ffVarsOfFormula retEqFormula ∪ bVarsOfFormula retEqFormula := by
   intro nextVarId bodySymEnv rets
   induction rets generalizing nextVarId with
   | nil => intro nv2 retVars retBinds retEqFormula _h i hi; simp at hi
@@ -3153,6 +3211,11 @@ theorem seFunc_f_params_split {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog 
       TranslatesCorrectly gconf sconf specs ctx
         (fun env => evalFuncCallCmd gconf p' fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs))
+    (H_simple_domain : ∀ (sconf : SymExecConfig c) (symEnv : SymEnv c) (vars : VarIDSet)
+        (md : CmdMD) (cmd : Com c),
+      (∀ id, id ∈ definedVarsCom vars cmd → symEnv.contains id) →
+      ∀ spec, seSimpleCmd gconf sconf symEnv specs (ComWithMD.mk md cmd) = Except.ok spec →
+        ∀ id, symEnv.contains id ↔ spec.outSymEnv.contains id)
     (hspecs_cover : ∀ fname'', fname'' ∈ specs.map (·.name) → fname'' ∈ p'.map funcWithMDName)
     (hspecs_rets_cover : ∀ fname''' fspec', fetchFuncSpec specs fname''' = Except.ok fspec' →
       ∀ md func p''', fetchFunc p' fname''' = Except.ok (FuncWithMD.mk md func, p''') →
@@ -3208,8 +3271,8 @@ theorem seFunc_f_params_split {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog 
               exact mintFreshParams_contains_mono 0 params _ nv1 paramVars inSymEnv hmp id hzero
             obtain ⟨_hbs_in, hbs_mono, _hbs_fresh, _hbs_below,
               _hbs_outbelow, _hbs_outfresh, _hbs_validBinRep, _hbs_sound, _hbs_complete⟩ :=
-              seCmds_correct gconf p' specs H_simple H_funcCall hspecs_cover hspecs_rets_cover
-                (params.foldl (fun acc pm => acc.insert pm.name) emptyVarIDSet)
+              seCmds_correct gconf p' specs H_simple H_funcCall H_simple_domain hspecs_cover
+                hspecs_rets_cover (params.foldl (fun acc pm => acc.insert pm.name) emptyVarIDSet)
                 { nextVarId := nv1 } FFFormula.true body inSymEnv hinSymEnv_below
                 (seFunc_inSymEnv_validBinRep gconf params
                   (definedVarsOfFunc (Func.mk name params rets body)) nv1 paramVars inSymEnv hmp)
@@ -3289,6 +3352,14 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
       TranslatesCorrectly gconf sconf specs ctx
         (fun env => evalFuncCallCmd gconf p' fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs))
+    (H_simple_domain : ∀ (sconf : SymExecConfig c) (symEnv : SymEnv c) (vars : VarIDSet)
+        (md : CmdMD) (cmd : Com c),
+      (∀ id, id ∈ definedVarsCom vars cmd → symEnv.contains id) →
+      ∀ spec, seSimpleCmd gconf sconf symEnv specs (ComWithMD.mk md cmd) = Except.ok spec →
+        ∀ id, symEnv.contains id ↔ spec.outSymEnv.contains id)
+    (H_simple_names_below : ∀ (badName : String) (sconf : SymExecConfig c) (symEnv : SymEnv c)
+        (i : ComWithMD c) (spec : CmdsSpec c),
+      seSimpleCmd gconf sconf symEnv specs i = Except.ok spec → FormulaNamesBelow spec.f badName)
     (hspecs_cover : ∀ fname'', fname'' ∈ specs.map (·.name) → fname'' ∈ p'.map funcWithMDName)
     (hspecs_rets_cover : ∀ fname''' fspec', fetchFuncSpec specs fname''' = Except.ok fspec' →
       ∀ md func p''', fetchFunc p' fname''' = Except.ok (FuncWithMD.mk md func, p''') →
@@ -3368,8 +3439,8 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
               exact mintFreshParams_contains_mono 0 params _ nv1 paramVars inSymEnv hmp id hzero
             obtain ⟨hbs_in, hbs_mono, hbs_fresh, hbs_below,
               hbs_outbelow, hbs_outfresh, _hbs_validBinRep, hbs_sound, hbs_complete⟩ :=
-              seCmds_correct gconf p' specs H_simple H_funcCall hspecs_cover hspecs_rets_cover
-                (params.foldl (fun acc pm => acc.insert pm.name) emptyVarIDSet)
+              seCmds_correct gconf p' specs H_simple H_funcCall H_simple_domain hspecs_cover
+                hspecs_rets_cover (params.foldl (fun acc pm => acc.insert pm.name) emptyVarIDSet)
                 { nextVarId := nv1 } FFFormula.true body inSymEnv hinSymEnv_below
                 (seFunc_inSymEnv_validBinRep gconf params
                   (definedVarsOfFunc (Func.mk name params rets body)) nv1 paramVars inSymEnv hmp)
@@ -3417,7 +3488,7 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
             · intro badName hunreach
               show FormulaNamesBelow (FFFormula.and bodySpec.f retEqFormula) badName
               exact ⟨seCmds_names_below gconf p' badName hunreach { nextVarId := nv1 } inSymEnv
-                  specs hspecs_wf hspecs_cover body bodySpec hbs,
+                  specs (H_simple_names_below badName) hspecs_wf hspecs_cover body bodySpec hbs,
                 mintFreshRetsWithEq_names_below bodySpec.nextVarId bodySpec.outSymEnv rets nv2
                   retVars retBinds retEqFormula hmr badName⟩
             · intro argVals hargVals
@@ -3509,7 +3580,7 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                     (hNotRetVarSet_of_lt v (hbs_below v hv))
               have hSvVarLocation : ∀ i, (hi : i < rets.length) → ∀ sv : SymValue c,
                   getVar bodySpec.outSymEnv (rets.getD i default).name = Except.ok sv →
-                  ∀ w ∈ symValVars sv, w ∈ paramVarSet ∨ w ∈ auxVarsList := by
+                  ∀ w ∈ symValOwnVars sv, w ∈ paramVarSet ∨ w ∈ auxVarsList := by
                 intro i hi sv hgv w hw
                 have hmemRetEq := mintFreshRetsWithEq_sv_vars_sub_general bodySpec.nextVarId
                   bodySpec.outSymEnv rets nv2 retVars retBinds retEqFormula hmr i hi sv hgv w hw
@@ -3517,7 +3588,7 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                   have hgv' : bodySpec.outSymEnv.get? (rets.getD i default).name = some sv :=
                     (getVar_eq_ok_iff_sym bodySpec.outSymEnv (rets.getD i default).name sv).mp hgv
                   exact getVar_mem_symEnvVars bodySpec.outSymEnv (rets.getD i default).name sv
-                    hgv' w hw
+                    hgv' w (symValOwnVars_subset_symValVars sv w hw)
                 by_cases hp : w ∈ paramVarSet
                 · left; exact hp
                 · right
@@ -3839,7 +3910,7 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                               { ff := finalFFBase, bool := finalBoolBase } bodySpec.nextVarId
                               bodySpec.outSymEnv rets nv2 retVars retBinds retEqFormula hmr
                             intro i hi sv hgv j hj
-                            have hmemw : ∀ w ∈ symValVars sv, w ∈ paramVarSet ∨
+                            have hmemw : ∀ w ∈ symValOwnVars sv, w ∈ paramVarSet ∨
                                 w ∈ auxVarsList := hSvVarLocation i hi sv hgv
                             have hgv' : bodySpec.outSymEnv.get? (rets.getD i default).name =
                                 some sv :=
@@ -3886,8 +3957,8 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                               constructor
                               · intro k hk
                                 rw [ffVarsOfTerm_simpleSymValToTerm] at hk
-                                have hkmemw : Var.ffv k ∈ symValVars sv :=
-                                  mem_symValVars_of_mem_symValueElems sv j hjlen (Var.ffv k) hk
+                                have hkmemw : Var.ffv k ∈ symValOwnVars sv :=
+                                  mem_symValOwnVars_of_mem_symValueElems sv j hjlen (Var.ffv k) hk
                                 rcases hmemw (Var.ffv k) hkmemw with h1 | h1
                                 · obtain ⟨j', hj', hj_eq⟩ :=
                                     hParamVars_index (Var.ffv k)
@@ -4189,6 +4260,14 @@ theorem seFuncCall_correct_via_seFunc {c : ZKConfig} (gconf : GlobalConfig c) (p
       TranslatesCorrectly gconf sconf specs ctx
         (fun env => evalFuncCallCmd gconf p' fname' args outs env)
         (fun symEnv => seFuncCall gconf sconf symEnv specs fname' args outs))
+    (H_simple_domain : ∀ (sconf : SymExecConfig c) (symEnv : SymEnv c) (vars : VarIDSet)
+        (md : CmdMD) (cmd : Com c),
+      (∀ id, id ∈ definedVarsCom vars cmd → symEnv.contains id) →
+      ∀ spec, seSimpleCmd gconf sconf symEnv specs (ComWithMD.mk md cmd) = Except.ok spec →
+        ∀ id, symEnv.contains id ↔ spec.outSymEnv.contains id)
+    (H_simple_names_below : ∀ (badName : String) (sconf : SymExecConfig c) (symEnv : SymEnv c)
+        (i : ComWithMD c) (spec : CmdsSpec c),
+      seSimpleCmd gconf sconf symEnv specs i = Except.ok spec → FormulaNamesBelow spec.f badName)
     (hspecs_cover : ∀ fname'', fname'' ∈ specs.map (·.name) → fname'' ∈ p'.map funcWithMDName)
     (hspecs_rets_cover : ∀ fname''' fspec', fetchFuncSpec specs fname''' = Except.ok fspec' →
       ∀ md func p''', fetchFunc p' fname''' = Except.ok (FuncWithMD.mk md func, p''') →
@@ -4208,8 +4287,8 @@ theorem seFuncCall_correct_via_seFunc {c : ZKConfig} (gconf : GlobalConfig c) (p
       have hspec_eq : fetchFuncSpec (fspec :: specs) fname = Except.ok fspec := by
         simp [fetchFuncSpec, hfname, hname_eq]
       obtain ⟨hspec_retsShape, _hnamesBelow, H_specCorrect⟩ := seFunc_correct gconf p specs fname
-        md (Func.mk name params rets body) p' hfetch hnodup_p H_simple H_funcCall hspecs_cover
-        hspecs_rets_cover hspecs_wf fspec hseFunc_eq
+        md (Func.mk name params rets body) p' hfetch hnodup_p H_simple H_funcCall H_simple_domain
+        H_simple_names_below hspecs_cover hspecs_rets_cover hspecs_wf fspec hseFunc_eq
       exact seFuncCall_correct gconf p (fspec :: specs) sconf ctx fname args outs fspec hspec_eq
         hspec_retsShape H_specCorrect
 

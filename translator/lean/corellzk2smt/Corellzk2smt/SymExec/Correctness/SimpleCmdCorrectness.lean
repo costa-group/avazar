@@ -20,6 +20,8 @@ open Corellzk2smt.Language.Core.Semantics.BigStep
 open Corellzk2smt.SymExec.Basic
 open Corellzk2smt.SymExec.BigStep
 open Corellzk2smt.FFConstraints.Basic
+open Corellzk2smt.FFConstraints.Lemmas
+open Corellzk2smt.Language.Core.Analysis.DefinedVars
 open Corellzk2smt.SymExec.Correctness.Lemmas
 open Corellzk2smt.SymExec.Correctness.AssignmentCorrectness
 open Corellzk2smt.SymExec.Correctness.ArrayCmdsCorrectness
@@ -93,5 +95,54 @@ theorem H_simple_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (Fu
         intro symEnv _hbelow _hvalid spec hspec_eq
         simp only [seSimpleCmd] at hspec_eq
         simp at hspec_eq
+
+/-- `H_simple_domain`'s conditional-form statement -- lets `Lemmas.lean`'s domain-of-defined family
+    (and everything downstream) treat "whatever `seSimpleCmd` does to the symbolic env's domain" as
+    an opaque hypothesis, so it never needs to unfold `seSimpleCmd`/`seEvalAssignment`/etc. itself.
+    Dispatches the same way `H_simple_holds` does: the four array ops are still permanent `"TBD"`
+    stubs, discharged vacuously; `.assign` is genuinely open (mirrors `seEvalAssignment_correct`'s
+    own honest `sorry`, since `seEvalAssignmentConst` can now succeed). -/
+theorem H_simple_domain_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (vars : VarIDSet) (md : CmdMD) (cmd : Com c)
+    (hpre : ∀ id, id ∈ definedVarsCom vars cmd → symEnv.contains id) (spec : CmdsSpec c)
+    (heq : seSimpleCmd gconf sconf symEnv specs (ComWithMD.mk md cmd) = Except.ok spec) :
+    ∀ id, symEnv.contains id ↔ spec.outSymEnv.contains id := by
+  match cmd with
+  | .assign id e =>
+      sorry
+  | .new_array id size =>
+      simp [seSimpleCmd, seNewArray] at heq
+  | .read_array out a index =>
+      simp [seSimpleCmd, seReadArray] at heq
+  | .write_array a index value =>
+      simp [seSimpleCmd, seWriteArray] at heq
+  | .copy_array out a =>
+      simp [seSimpleCmd, seCopyArray] at heq
+  | .if_stmt .. | .loop_exp .. | .loop .. | .func_call .. =>
+      simp [seSimpleCmd] at heq
+
+/-- `H_simple_names_below`'s conditional-form statement -- the `FormulaNamesBelow` analogue of
+    `H_simple_domain_holds` above, for the same reason (keep `Lemmas.lean`'s `_names_below` family
+    from ever unfolding `seSimpleCmd` itself). Same dispatch/status as `H_simple_domain_holds`. -/
+theorem H_simple_names_below_holds {c : ZKConfig} (gconf : GlobalConfig c)
+    (specs : List (FuncSpec c)) (badName : String) (sconf : SymExecConfig c) (symEnv : SymEnv c)
+    (i : ComWithMD c) (spec : CmdsSpec c)
+    (heq : seSimpleCmd gconf sconf symEnv specs i = Except.ok spec) :
+    FormulaNamesBelow spec.f badName := by
+  match i with
+  | .mk md cmd =>
+    match cmd with
+    | .assign id e =>
+        sorry
+    | .new_array id size =>
+        simp [seSimpleCmd, seNewArray] at heq
+    | .read_array out a index =>
+        simp [seSimpleCmd, seReadArray] at heq
+    | .write_array a index value =>
+        simp [seSimpleCmd, seWriteArray] at heq
+    | .copy_array out a =>
+        simp [seSimpleCmd, seCopyArray] at heq
+    | .if_stmt .. | .loop_exp .. | .loop .. | .func_call .. =>
+        simp [seSimpleCmd] at heq
 
 end Corellzk2smt.SymExec.Correctness.SimpleCmdCorrectness

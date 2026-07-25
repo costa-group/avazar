@@ -170,6 +170,119 @@ theorem newAssignment_congr {c : ZKConfig} (a b : Assignment c)
     newAssignment a args params = newAssignment b args params :=
   newAssignment'_congr a b args params _ _ h_ff h_bool
 
+-- `ffVarsOfTerm`/`ffVarsOfFormula` only ever produce `Var.ffv` members, never `Var.boolv` --
+-- mirrors `bVarsOfTerm`/`bVarsOfFormula`'s own `.var`/`.call` cases only ever inserting
+-- `Var.boolv`s. Needed so callers building a `VarSet` out of `ffVarsOfTerm` (e.g. `SymExec/
+-- Correctness/Lemmas.lean`'s `bitsVars`, folding it over a cached binary expansion) can reuse
+-- the same "isFF" reasoning `simpleValVars_isFF`/`symValVars_isFF`/`symEnvVars_isFF` already
+-- rely on for their own, hand-rolled `Var.ffv`-only vars.
+mutual
+theorem ffVarsOfTerm_isFF {c : ZKConfig} (t : FFTerm c) :
+    ∀ v ∈ ffVarsOfTerm t, ∃ n, compare (Var.ffv n) v = .eq := by
+  match t with
+  | .val _ =>
+      intro v hv
+      simp only [ffVarsOfTerm] at hv
+      exact absurd hv Std.TreeSet.not_mem_emptyc
+  | .var n =>
+      intro v hv
+      simp only [ffVarsOfTerm] at hv
+      rcases Std.TreeSet.mem_insert.mp hv with heq | hmem
+      · exact ⟨n, heq⟩
+      · exact absurd hmem Std.TreeSet.not_mem_emptyc
+  | .add t1 t2 | .sub t1 t2 | .mul t1 t2 =>
+      intro v hv
+      simp only [ffVarsOfTerm] at hv
+      rcases Std.TreeSet.mem_union_iff.mp hv with hv1 | hv2
+      · exact ffVarsOfTerm_isFF t1 v hv1
+      · exact ffVarsOfTerm_isFF t2 v hv2
+  | .neg t1 =>
+      intro v hv
+      simp only [ffVarsOfTerm] at hv
+      exact ffVarsOfTerm_isFF t1 v hv
+  | .ite f t1 t2 =>
+      intro v hv
+      simp only [ffVarsOfTerm] at hv
+      rcases Std.TreeSet.mem_union_iff.mp hv with hv1 | hv2
+      · rcases Std.TreeSet.mem_union_iff.mp hv1 with hv1a | hv1b
+        · exact ffVarsOfFormula_isFF f v hv1a
+        · exact ffVarsOfTerm_isFF t1 v hv1b
+      · exact ffVarsOfTerm_isFF t2 v hv2
+termination_by sizeOfTerm t
+decreasing_by all_goals (simp only [sizeOfTerm]; omega)
+
+theorem ffVarsOfFormula_isFF {c : ZKConfig} (f : FFFormula c) :
+    ∀ v ∈ ffVarsOfFormula f, ∃ n, compare (Var.ffv n) v = .eq := by
+  match f with
+  | .true | .false =>
+      intro v hv
+      simp only [ffVarsOfFormula] at hv
+      exact absurd hv Std.TreeSet.not_mem_emptyc
+  | .range t _l _u =>
+      intro v hv
+      simp only [ffVarsOfFormula] at hv
+      exact ffVarsOfTerm_isFF t v hv
+  | .bool _ =>
+      intro v hv
+      simp only [ffVarsOfFormula] at hv
+      exact absurd hv Std.TreeSet.not_mem_emptyc
+  | .eq t1 t2 =>
+      intro v hv
+      simp only [ffVarsOfFormula] at hv
+      rcases Std.TreeSet.mem_union_iff.mp hv with hv1 | hv2
+      · exact ffVarsOfTerm_isFF t1 v hv1
+      · exact ffVarsOfTerm_isFF t2 v hv2
+  | .and f1 f2 | .or f1 f2 | .imply f1 f2 | .iff f1 f2 =>
+      intro v hv
+      simp only [ffVarsOfFormula] at hv
+      rcases Std.TreeSet.mem_union_iff.mp hv with hv1 | hv2
+      · exact ffVarsOfFormula_isFF f1 v hv1
+      · exact ffVarsOfFormula_isFF f2 v hv2
+  | .not f1 =>
+      intro v hv
+      simp only [ffVarsOfFormula] at hv
+      exact ffVarsOfFormula_isFF f1 v hv
+  | .ite g f1 f2 =>
+      intro v hv
+      simp only [ffVarsOfFormula] at hv
+      rcases Std.TreeSet.mem_union_iff.mp hv with hv1 | hv2
+      · rcases Std.TreeSet.mem_union_iff.mp hv1 with hv1a | hv1b
+        · exact ffVarsOfFormula_isFF g v hv1a
+        · exact ffVarsOfFormula_isFF f1 v hv1b
+      · exact ffVarsOfFormula_isFF f2 v hv2
+  | .call _name params =>
+      intro v hv
+      simp only [ffVarsOfFormula] at hv
+      suffices h : ∀ (l : List (MacroCallParam c)) (acc : VarSet),
+          (∀ v ∈ acc, ∃ n, compare (Var.ffv n) v = .eq) →
+          ∀ v ∈ l.foldl (fun acc p => match p with
+              | .var (.ffv n) => acc.insert (Var.ffv n)
+              | _             => acc) acc,
+            ∃ n, compare (Var.ffv n) v = .eq by
+        exact h params emptyVarSet (fun v hv => absurd hv Std.TreeSet.not_mem_emptyc) v hv
+      intro l
+      induction l with
+      | nil => intro acc hacc v hv; exact hacc v hv
+      | cons p rest ih =>
+          intro acc hacc v hv
+          simp only [List.foldl_cons] at hv
+          apply ih _ _ v hv
+          intro v' hv'
+          match p with
+          | .var (.ffv n) =>
+              rcases Std.TreeSet.mem_insert.mp hv' with heq | hmem
+              · exact ⟨n, heq⟩
+              · exact hacc v' hmem
+          | .var (.boolv _) => exact hacc v' hv'
+          | .const _ => exact hacc v' hv'
+  | .anno f1 _ =>
+      intro v hv
+      simp only [ffVarsOfFormula] at hv
+      exact ffVarsOfFormula_isFF f1 v hv
+termination_by sizeOfFormula f
+decreasing_by all_goals (simp only [sizeOfFormula]; omega)
+end
+
 -- `evalFormula`/`evalTerm` depend only on the vars that actually appear in the
 -- term/formula being evaluated. If two assignments agree on all FF vars in
 -- `ffVarsOfTerm`/`ffVarsOfFormula` and all bool vars in `bVarsOfTerm`/`bVarsOfFormula`,
