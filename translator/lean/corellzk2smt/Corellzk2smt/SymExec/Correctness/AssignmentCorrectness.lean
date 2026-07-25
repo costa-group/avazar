@@ -171,25 +171,80 @@ theorem seEvalExpr_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List
   | .id s =>
       simp only [seEvalExpr]; exact seExprId_correct gconf specs sconf ctx md s
 
-/-- `seEvalExpr` never succeeds today -- every one of its dispatch targets (`seExprAdd`,
-    `seExprSub`, ...) is still a permanent `"Not implemented yet"` stub. This will need to become
-    a real per-operator fact (mirroring `seEvalExprConcreteValue_isConst`'s style) as each
-    `seExprXXX` gets implemented -- at that point this lemma stops covering that operator's case,
-    by design. -/
-theorem seEvalExpr_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
-    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c)) (e : Expr c)
-    (exprSpec : ExprSpec c)
-    (heq : seEvalExpr md gconf sconf symEnv specs e = Except.ok exprSpec) : False := by
-  cases e with
-  | bop op s1 s2 =>
-      cases op <;> simp [seEvalExpr, seExprAdd, seExprSub, seExprMul, seExprDiv, seExprPow,
-        seExprUIMod, seExprUIDiv, seExprBor, seExprBAnd, seExprEq, seExprNeq, seExprLtSigned,
-        seExprLeSigned, seExprGtSigned, seExprGeSigned, seExprBitwiseAND, seExprBitwiseOR,
-        seExprBitwiseXOR, seExprBitwiseSHL, seExprBitwiseSHR] at heq
-  | uop op s =>
-      cases op <;> simp [seEvalExpr, seExprNeg, seExprBNeg, seExprBitwiseNOT] at heq
-  | id s =>
-      simp [seEvalExpr, seExprId] at heq
+/-- `seEvalExpr` never succeeds on a `.bop` shape today -- every one of `.bop`'s dispatch targets
+    (`seExprAdd`, `seExprSub`, ...) is still a permanent `"Not implemented yet"` stub. Scoped to
+    `.bop` only, unlike an earlier single lemma covering every `Expr` shape: `.id` dispatches to
+    `seExprId`, which is no longer a stub (see `seExprId_correct`), so a lemma claiming `seEvalExpr`
+    *always* fails can no longer cover that case. This will need to shrink further (mirroring
+    `seEvalExprConcreteValue_isConst`'s style) as each `.bop`/`.uop` operator gets implemented for
+    real. -/
+theorem seEvalExpr_bop_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (op : BinOp) (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop op s1 s2) = Except.ok exprSpec) :
+    False := by
+  cases op <;> simp [seEvalExpr, seExprAdd, seExprSub, seExprMul, seExprDiv, seExprPow,
+    seExprUIMod, seExprUIDiv, seExprBor, seExprBAnd, seExprEq, seExprNeq, seExprLtSigned,
+    seExprLeSigned, seExprGtSigned, seExprGeSigned, seExprBitwiseAND, seExprBitwiseOR,
+    seExprBitwiseXOR, seExprBitwiseSHL, seExprBitwiseSHR] at heq
+
+/-- `seEvalExpr` never succeeds on `.uop .bneg` today -- `seExprBNeg` is still a permanent
+    `"Not implemented yet"` stub. Scoped to `.bneg` only: `.neg` dispatches to `seExprNeg`, which
+    is no longer a stub (see `seExprNeg_correct`), so a single lemma covering all of `.uop` can no
+    longer claim `seEvalExpr` always fails there. -/
+theorem seEvalExpr_bneg_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.uop UnOp.bneg s) = Except.ok exprSpec) :
+    False := by
+  simp [seEvalExpr, seExprBNeg] at heq
+
+/-- Mirror of `seEvalExpr_bneg_isError`, for `.uop .not`. -/
+theorem seEvalExpr_not_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.uop UnOp.not s) = Except.ok exprSpec) :
+    False := by
+  simp [seEvalExpr, seExprBitwiseNOT] at heq
+
+/-- `seEvalExpr` on `.id s`, when it succeeds, does so via `seExprId`'s exact defining shape --
+    output symbolic environment unchanged, formula trivial. Stated directly against `seExprId`'s
+    implementation (not through `TranslatesExprCorrectly`, which says nothing about `outSymEnv`'s
+    domain/`f`'s shape specifically) since domain-of-defined/names-below bookkeeping is already
+    handled this way for the `.assign` `Const` path -- see
+    `H_simple_domain_holds`/`H_simple_names_below_holds`. -/
+theorem seEvalExpr_id_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.id s) = Except.ok exprSpec) :
+    exprSpec.outSymEnv = symEnv ∧ exprSpec.f = FFFormula.true := by
+  simp only [seEvalExpr, seExprId] at heq
+  cases hres : resolveSimpleExpr symEnv s with
+  | error msg => rw [hres] at heq; simp at heq
+  | ok v =>
+      rw [hres] at heq
+      injection heq with heq
+      subst heq
+      exact ⟨rfl, rfl⟩
+
+/-- `seEvalExpr` on `.uop .neg s`, when it succeeds, does so via `seExprNeg`'s exact defining
+    shape -- output symbolic environment unchanged, formula the fresh-var tie-back equation
+    `outVar = -v` for whatever `v` `s` resolves to. Stated directly against `seExprNeg`'s
+    implementation, same reason as `seEvalExpr_id_eq`. -/
+theorem seEvalExpr_neg_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.uop UnOp.neg s) = Except.ok exprSpec) :
+    ∃ v, resolveSimpleExpr symEnv s = Except.ok v ∧ exprSpec.outSymEnv = symEnv ∧
+      exprSpec.f = FFFormula.eq (FFTerm.var sconf.nextVarId) (FFTerm.neg (simpleSymValToTerm v)) := by
+  simp only [seEvalExpr, seExprNeg] at heq
+  cases hres : resolveSimpleExpr symEnv s with
+  | error msg => rw [hres] at heq; simp at heq
+  | ok v =>
+      rw [hres] at heq
+      injection heq with heq
+      subst heq
+      exact ⟨v, rfl, rfl, rfl⟩
 
 /-- `seEvalAssignmentNonConst` correctly translates `evalAssign`, *given* `seEvalExpr_correct`'s
     contract -- built directly from it (not from `seEvalExpr_isError`'s current vacuity), so this
@@ -218,13 +273,17 @@ theorem seEvalAssignmentNonConst_correct {c : ZKConfig} (gconf : GlobalConfig c)
       with h | h
     · exact houtbelow v h
     · simp only [symValVars] at h
-      exact hfbelow v (hresult_sub v h)
+      rcases hresult_sub v h with h2 | h2
+      · exact lt_of_lt_of_le (hbelow v h2) hnv
+      · exact hfbelow v h2
   · intro v hv
     rcases symEnvVars_setVar_subset espec.outSymEnv id (SymValue.simple espec.result) v hv
       with h | h
     · exact houtfresh v h
     · simp only [symValVars] at h
-      exact hfresh v (hresult_sub v h)
+      rcases hresult_sub v h with h2 | h2
+      · exact Or.inl h2
+      · exact hfresh v h2
   · intro env assignment hmatch env' hc
     simp only [evalAssign] at hc
     cases hce : Corellzk2smt.Language.Core.Semantics.Basic.evalExpr env e with

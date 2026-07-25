@@ -93,23 +93,42 @@ def seExprUIDiv {c : ZKConfig}
   Except.error "Not implemented yet"
 
 def seExprNeg {c : ZKConfig}
-    (md : CmdMD)
-    (gconf : GlobalConfig c)
+    (_md : CmdMD)
+    (_gconf : GlobalConfig c)
     (sconf : SymExecConfig c)
     (symEnv : SymEnv c)
-    (specs : List (FuncSpec c))
-    (e1 : SimpleExpr c)
+    (_specs : List (FuncSpec c))
+    (s : SimpleExpr c)
   : Except String (ExprSpec c) :=
-  Except.error "Not implemented yet"
+    match resolveSimpleExpr symEnv s with
+    | Except.error msg => Except.error msg
+    | Except.ok v =>
+      let vTerm := simpleSymValToTerm v
+      let outFFVar : FFVar := sconf.nextVarId
+      let f := FFFormula.eq (FFTerm.var outFFVar) (FFTerm.neg vTerm) -- outVar = -v
+      Except.ok {
+          outSymEnv := symEnv,
+          f := f,
+          nextVarId := sconf.nextVarId + 1,
+          result := SimpleSymVal.ffvar ⟨outFFVar, none⟩
+      }
 
 def seExprId {c : ZKConfig}
-    (md : CmdMD)
-    (gconf : GlobalConfig c)
+    (_md : CmdMD)
+    (_gconf : GlobalConfig c)
     (sconf : SymExecConfig c)
     (symEnv : SymEnv c)
-    (specs : List (FuncSpec c))
-    (e1 : SimpleExpr c)
+    (_specs : List (FuncSpec c))
+    (s : SimpleExpr c)
   : Except String (ExprSpec c) :=
-  Except.error "Not implemented yet"
+  match resolveSimpleExpr symEnv s with
+  | Except.error msg => Except.error msg
+  | Except.ok v =>
+      Except.ok {
+          outSymEnv := symEnv,
+          f := FFFormula.true,
+          nextVarId := sconf.nextVarId,
+          result := v
+      }
 
 end Corellzk2smt.SymExec.BigStep

@@ -5512,12 +5512,13 @@ def TranslatesExprCorrectly_completeness {c : ZKConfig} (gconf : GlobalConfig c)
     minus the `spec.inSymEnv = symEnv` conjunct -- `ExprSpec` has no `inSymEnv` field, since
     evaluating an expression is always done directly against whatever `symEnv` is passed in,
     never against data the spec itself carries -- plus one extra conjunct with no `CmdsSpec`
-    analogue: `espec.result`'s own var (if it's a fresh `.ffvar`, not a plain `.const`) must
-    already be among `espec.f`'s own vars. Without this, `espec.result` could denote an
-    unconstrained fresh variable that no formula ever pins down -- unsound for any real
-    implementation regardless, but also the exact fact `seEvalAssignmentNonConst_correct` needs to
-    line up its frame condition (over `specVars`, which only ever sees `espec.f`, never
-    `espec.result` directly) with this one's (over `exprSpecVars`). -/
+    analogue: `espec.result`'s own vars must be *either* already among `symEnv`'s own vars (a bare
+    passthrough of an existing variable, e.g. `seExprId` referencing `x` directly -- already
+    protected by `agreesOnFF (symEnvVars symEnv)` in soundness/completeness, no formula tie-down
+    needed) *or* among `espec.f`'s own vars (a genuinely fresh witness, needing a defining
+    equation to pin it down -- unconstrained otherwise, unsound for any real implementation
+    regardless of this contract). The first disjunct is what a first `seExprXXX_correct` proof
+    (`seExprId_correct`) needs and the original single-conjunct version didn't allow. -/
 def TranslatesExprCorrectly {c : ZKConfig} (gconf : GlobalConfig c) (sconf : SymExecConfig c)
     (specs : List (FuncSpec c)) (ctx : FFFormula c)
     (concrete : Env c → Except String (FF c))
@@ -5527,7 +5528,7 @@ def TranslatesExprCorrectly {c : ZKConfig} (gconf : GlobalConfig c) (sconf : Sym
     ValidBinRep gconf ctx symEnv →
     ∀ espec, symbolic symEnv = Except.ok espec →
       sconf.nextVarId ≤ espec.nextVarId ∧
-      simpleValVars espec.result ⊆ exprSpecVars espec ∧
+      (∀ v ∈ simpleValVars espec.result, v ∈ symEnvVars symEnv ∨ v ∈ exprSpecVars espec) ∧
       (∀ v ∈ exprSpecVars espec, v ∈ symEnvVars symEnv ∨ sconf.nextVarId ≤ varIndex v) ∧
       varSetBelow (exprSpecVars espec) espec.nextVarId ∧
       varSetBelow (symEnvVars espec.outSymEnv) espec.nextVarId ∧
