@@ -200,14 +200,14 @@ def evalUidiv {c : ZKConfig} (v1 v2 : FF c) : Except String (FF c) :=
   else
     let base := v1.val
     let divisor := v2.val
-    Except.ok (base / divisor : FF c)
+    Except.ok ((base / divisor : Nat) : FF c)
 
 def evalUimod {c : ZKConfig} (v1 v2 : FF c) : Except String (FF c) :=
   if v2 = 0 then Except.error "Division by zero"
   else
     let base := v1.val
     let divisor := v2.val
-    Except.ok (base % divisor : FF c)
+    Except.ok ((base % divisor : Nat) : FF c)
 
 /- Bitwise -/
 def evalShl {c : ZKConfig} (v1 v2 : FF c) : FF c :=

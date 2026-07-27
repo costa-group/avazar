@@ -192,6 +192,79 @@ def seExprUIMod {c : ZKConfig}
   : Except String (ExprSpec c) :=
   Except.error "Not implemented yet"
 
+
+
+/-- The constraint gadget shared by `.uidiv`/`.uimod` with a constant, positive divisor `B`
+    (`2 ≤ B.val < midpoint`): mints fresh `Q`/`R`, and asserts the division identity plus range
+    bounds on `Q` that depend on which half of the field the dividend `A` falls in --
+    `[0, (midpoint-1)/B]` when `A < midpoint`, `[midpoint/B, (p-1)/B]` otherwise. Splitting on `A`'s
+    half (rather than using one bound covering the whole field) is what keeps the gadget both
+    sound (every real quotient fits the bound for its half) and complete (no second, "wrapped"
+    `(Q,R)` pair also satisfies the equation) -- see `SymExec/Correctness/ArithExprCorrectness.lean`
+    for why a single-bound version can't have both. -/
+def uiDivModGadget {c : ZKConfig} (sconf : SymExecConfig c) (A : SimpleSymVal c) (B : FF c) :
+    FFFormula c × FFVar × FFVar :=
+  let Q : FFVar := sconf.nextVarId
+  let R : FFVar := sconf.nextVarId + 1
+  let uLo : Nat := (c.midpoint - 1) / B.val
+  let lo : Nat := c.midpoint / B.val
+  let hi : Nat := (c.p - 1) / B.val
+  let Aterm := simpleSymValToTerm A
+  let eqn := FFFormula.eq Aterm (FFTerm.add (FFTerm.mul (FFTerm.var Q) (FFTerm.val B)) (FFTerm.var R))
+  let rRange := FFFormula.range (FFTerm.var R) 0 (B.val - 1 : FF c)
+  let lowBranch := FFFormula.and eqn (FFFormula.and rRange (FFFormula.range (FFTerm.var Q) 0 (uLo : FF c)))
+  let highBranch :=
+    FFFormula.and eqn (FFFormula.and rRange (FFFormula.range (FFTerm.var Q) (lo : FF c) (hi : FF c)))
+  let isLow := FFFormula.range Aterm 0 (c.midpoint - 1 : FF c)
+  (FFFormula.ite isLow lowBranch highBranch, Q, R)
+
+def seExprUIDivWithFFPositiveConstantDivisor {c : ZKConfig}
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c)
+  : Except String (ExprSpec c) :=
+  match tryEvalSimpleExprToFFValue symEnv s2 with
+  | Except.error msg => Except.error msg
+  | Except.ok B =>
+      if B.val = 1 then
+        match resolveSimpleExpr symEnv s1 with
+        | Except.error msg => Except.error msg
+        | Except.ok v =>
+            Except.ok {
+                outSymEnv := symEnv,
+                f := FFFormula.true,
+                nextVarId := sconf.nextVarId,
+                result := v
+            }
+        -- B is in the range [1, midpoint-1], i.e. positive in the finite field
+      else if B.val > 1 && B.val < c.midpoint then
+        match resolveSimpleExpr symEnv s1 with
+        | Except.error msg => Except.error msg
+        | Except.ok A =>
+            let (f, Q, _R) := uiDivModGadget sconf A B
+            Except.ok {
+                outSymEnv := symEnv,
+                f := f,
+                nextVarId := sconf.nextVarId + 2,
+                result := SimpleSymVal.ffvar ⟨Q, none⟩
+            }
+      else
+        Except.error
+          s!"Error: divisor {B.val} is not in the range [1, midpoint-1] for .uidiv expression."
+
+def seExprUIDivWithNonConstantDivisor {c : ZKConfig}
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c)
+    : Except String (ExprSpec c) :=
+    Except.error "Integer division with non-constant divisor is not implemented yet"
+
 def seExprUIDiv {c : ZKConfig}
     (md : CmdMD)
     (gconf : GlobalConfig c)
@@ -200,7 +273,10 @@ def seExprUIDiv {c : ZKConfig}
     (specs : List (FuncSpec c))
     (e1 e2 : SimpleExpr c)
   : Except String (ExprSpec c) :=
-  Except.error "Not implemented yet"
+    match seExprUIDivWithFFPositiveConstantDivisor md gconf sconf symEnv specs e1 e2 with
+    | Except.ok result => Except.ok result
+    | Except.error _ =>
+        seExprUIDivWithNonConstantDivisor md gconf sconf symEnv specs e1 e2
 
 def seExprNeg {c : ZKConfig}
     (_md : CmdMD)

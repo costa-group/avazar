@@ -215,18 +215,20 @@ theorem seEvalExpr_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List
   | .id s =>
       simp only [seEvalExpr]; exact seExprId_correct gconf specs sconf ctx md s
 
-/-- `seEvalExpr` never succeeds on a `.bop` shape *other than* `.add`/`.sub`/`.mul` today -- every
-    remaining dispatch target (`seExprDiv`, `seExprPow`, ...) is still a permanent `"Not
-    implemented yet"` stub. Scoped away from those three (via the `hop1`/`hop2`/`hop3` hypotheses),
-    unlike an earlier single lemma covering every `Expr` shape: `.add`/`.sub`/`.mul` dispatch to
-    `seExprAdd`/`seExprSub`/`seExprMul`, none of which are stubs anymore (see
-    `seExprAdd_correct`/`seExprSub_correct`/`seExprMul_correct`), so a lemma claiming `seEvalExpr`
-    *always* fails on `.bop` can no longer cover those cases. This will need to shrink further as
-    each remaining `.bop`/`.uop` operator gets implemented for real. -/
+/-- `seEvalExpr` never succeeds on a `.bop` shape *other than* `.add`/`.sub`/`.mul`/`.div`/`.pow`/
+    `.uidiv` today -- every remaining dispatch target (`seExprBor`, `seExprEq`, ...) is still a
+    permanent `"Not implemented yet"` stub. Scoped away from those six (via the `hop1`-`hop6`
+    hypotheses), unlike an earlier single lemma covering every `Expr` shape: those six dispatch to
+    `seExprAdd`/`seExprSub`/`seExprMul`/`seExprDiv`/`seExprPow`/`seExprUIDiv`, none of which are
+    stubs anymore, so a lemma claiming `seEvalExpr` *always* fails on `.bop` can no longer cover
+    those cases. `.uimod` is still a permanent stub (`seExprUIMod`/`seExprUIMod_correct` are both
+    left as-is), so it stays in the catch-all below. This will need to shrink further as each
+    remaining `.bop`/`.uop` operator gets implemented for real. -/
 theorem seEvalExpr_bop_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
     (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
     (op : BinOp) (hop1 : op ≠ BinOp.add) (hop2 : op ≠ BinOp.sub) (hop3 : op ≠ BinOp.mul)
-    (hop4 : op ≠ BinOp.div) (hop5 : op ≠ BinOp.pow) (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (hop4 : op ≠ BinOp.div) (hop5 : op ≠ BinOp.pow) (hop6 : op ≠ BinOp.uidiv)
+    (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
     (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop op s1 s2) = Except.ok exprSpec) :
     False := by
   cases op <;>
@@ -236,8 +238,9 @@ theorem seEvalExpr_bop_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig
     | exact absurd rfl hop3
     | exact absurd rfl hop4
     | exact absurd rfl hop5
+    | exact absurd rfl hop6
     | simp [seEvalExpr,
-        seExprUIMod, seExprUIDiv, seExprBor, seExprBAnd, seExprEq, seExprNeq, seExprLtSigned,
+        seExprUIMod, seExprBor, seExprBAnd, seExprEq, seExprNeq, seExprLtSigned,
         seExprLeSigned, seExprGtSigned, seExprGeSigned, seExprBitwiseAND, seExprBitwiseOR,
         seExprBitwiseXOR, seExprBitwiseSHL, seExprBitwiseSHR] at heq
 
@@ -311,6 +314,70 @@ theorem seEvalExpr_div_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
           injection heq with heq
           subst heq
           exact ⟨v1, v2, rfl, rfl, rfl, rfl⟩
+
+/-- `seEvalExpr` on `.bop .uidiv s1 s2`, when it succeeds, keeps `outSymEnv` unchanged and never
+    mentions a macro call in its formula, regardless of which of `seExprUIDivWithFFPositiveConstant
+    Divisor`'s three branches (`B.val = 1` identity, in-range two-branch gadget, out-of-range
+    error) produced it -- unlike `seEvalExpr_div_eq`/`seEvalExpr_pow_eq`, there's no single clean
+    formula shape to expose (the gadget case's formula is a much larger `.ite`/`.and`/`.range`
+    tree), but `SimpleCmdCorrectness.lean` only ever needs these two coarser facts (domain-of-
+    defined and `FormulaNamesBelow` bookkeeping), so this is what's proved directly against the
+    implementation instead. -/
+theorem seEvalExpr_uidiv_facts {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop BinOp.uidiv s1 s2)
+      = Except.ok exprSpec) :
+    exprSpec.outSymEnv = symEnv ∧
+      ∀ badName, Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow exprSpec.f badName := by
+  simp only [seEvalExpr, seExprUIDiv] at heq
+  cases hconst : seExprUIDivWithFFPositiveConstantDivisor md gconf sconf symEnv specs s1 s2 with
+  | error msg =>
+      rw [hconst] at heq
+      simp [seExprUIDivWithNonConstantDivisor] at heq
+  | ok result =>
+      rw [hconst] at heq
+      injection heq with heq
+      subst heq
+      simp only [seExprUIDivWithFFPositiveConstantDivisor] at hconst
+      cases hB : tryEvalSimpleExprToFFValue symEnv s2 with
+      | error msg => rw [hB] at hconst; simp at hconst
+      | ok B =>
+          rw [hB] at hconst
+          simp only [] at hconst
+          by_cases hB1 : B.val = 1
+          · rw [if_pos hB1] at hconst
+            cases hres1 : resolveSimpleExpr symEnv s1 with
+            | error msg => rw [hres1] at hconst; simp at hconst
+            | ok v =>
+                rw [hres1] at hconst
+                injection hconst with hconst
+                subst hconst
+                exact ⟨rfl, fun badName => by
+                  simp [Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow]⟩
+          · rw [if_neg hB1] at hconst
+            by_cases hBrange : 1 < B.val ∧ B.val < c.midpoint
+            · have hcond : (B.val > 1 && B.val < c.midpoint) = true := by
+                simp only [Bool.and_eq_true, decide_eq_true_eq, gt_iff_lt]
+                exact hBrange
+              simp only [hcond, if_true] at hconst
+              cases hres1 : resolveSimpleExpr symEnv s1 with
+              | error msg => rw [hres1] at hconst; simp at hconst
+              | ok A =>
+                  rw [hres1] at hconst
+                  simp only [uiDivModGadget] at hconst
+                  injection hconst with hconst
+                  subst hconst
+                  exact ⟨rfl, fun badName => by
+                    simp [Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow,
+                      Corellzk2smt.FFConstraints.Lemmas.TermNamesBelow,
+                      Corellzk2smt.SymExec.Correctness.Lemmas.simpleSymValToTerm_names_below]⟩
+            · exfalso
+              have hcond : (B.val > 1 && B.val < c.midpoint) = false := by
+                simp only [Bool.and_eq_false_iff, decide_eq_false_iff_not, gt_iff_lt, not_lt]
+                omega
+              simp only [hcond, if_false] at hconst
+              simp at hconst
 
 /-- Mirror of `seEvalExpr_add_eq`, for `seExprSub` (`outVar = v1 - v2`). -/
 theorem seEvalExpr_sub_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)

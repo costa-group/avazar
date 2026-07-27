@@ -104,6 +104,7 @@ def F5 : ZKConfig := {
   p_fits := by rfl
 }
 
+
 /- We need to add a fact that myConfig.p is a prime so Lean can
    find it automatically.
 -/
