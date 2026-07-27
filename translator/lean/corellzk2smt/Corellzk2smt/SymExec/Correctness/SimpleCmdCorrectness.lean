@@ -355,7 +355,8 @@ theorem H_simple_names_below_holds {c : ZKConfig} (gconf : GlobalConfig c)
                             obtain ⟨v1, v2, _hres1, _hres2, _houtSymEnv, hf⟩ :=
                               seEvalExpr_div_eq md gconf sconf symEnv specs s1 s2 exprSpec hexpr
                             rw [hf]
-                            cases v1 <;> cases v2 <;> exact ⟨⟨trivial, trivial⟩, trivial⟩
+                            cases v1 <;> cases v2 <;>
+                              simp [FormulaNamesBelow, TermNamesBelow, simpleSymValToTerm]
                       · exfalso
                         cases hexpr : seEvalExpr md gconf sconf symEnv specs
                             (Expr.bop op s1 s2) with

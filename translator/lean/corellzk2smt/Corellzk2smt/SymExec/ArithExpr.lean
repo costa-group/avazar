@@ -115,7 +115,10 @@ def seExprDiv {c : ZKConfig}
             let v1Term := simpleSymValToTerm v1
             let v2Term := simpleSymValToTerm v2
             let outFFVar : FFVar := sconf.nextVarId
-            let f := FFFormula.eq (FFTerm.mul (FFTerm.var outFFVar) v2Term) v1Term  -- (outVar = v1 / v2)
+            let f := FFFormula.ite
+                      (FFFormula.eq v2Term (FFTerm.val 0))
+                      FFFormula.false
+                      (FFFormula.eq (FFTerm.mul (FFTerm.var outFFVar) v2Term) v1Term)
             Except.ok {
                 outSymEnv := symEnv,
                 f := f,

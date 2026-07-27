@@ -256,8 +256,10 @@ theorem seEvalExpr_div_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
     ∃ v1 v2, resolveSimpleExpr symEnv s1 = Except.ok v1 ∧
       resolveSimpleExpr symEnv s2 = Except.ok v2 ∧
       exprSpec.outSymEnv = symEnv ∧
-      exprSpec.f = FFFormula.eq (FFTerm.mul (FFTerm.var sconf.nextVarId) (simpleSymValToTerm v2))
-        (simpleSymValToTerm v1) := by
+      exprSpec.f = FFFormula.ite (FFFormula.eq (simpleSymValToTerm v2) (FFTerm.val 0))
+        FFFormula.false
+        (FFFormula.eq (FFTerm.mul (FFTerm.var sconf.nextVarId) (simpleSymValToTerm v2))
+          (simpleSymValToTerm v1)) := by
   simp only [seEvalExpr, seExprDiv] at heq
   cases hres1 : resolveSimpleExpr symEnv s1 with
   | error msg => rw [hres1] at heq; simp at heq
