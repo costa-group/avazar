@@ -41,10 +41,19 @@ def evalExpr {c : ZKConfig}
       | .add => Except.ok (SimpleSymVal.const (evalAdd v1 v2))
       | .sub => Except.ok (SimpleSymVal.const (evalSub v1 v2))
       | .mul => Except.ok (SimpleSymVal.const (evalMul v1 v2))
-      | .div => Except.ok (SimpleSymVal.const (evalDiv v1 v2))
+      | .div =>
+        match evalDiv v1 v2 with
+        | Except.ok r => Except.ok (SimpleSymVal.const r)
+        | Except.error msg => Except.error msg
       | .pow => Except.ok (SimpleSymVal.const (evalPow v1 v2))
-      | .uimod => Except.ok (SimpleSymVal.const (evalUimod v1 v2))
-      | .uidiv => Except.ok (SimpleSymVal.const (evalUidiv v1 v2))
+      | .uimod =>
+        match evalUimod v1 v2 with
+        | Except.ok r => Except.ok (SimpleSymVal.const r)
+        | Except.error msg => Except.error msg
+      | .uidiv =>
+        match evalUidiv v1 v2 with
+        | Except.ok r => Except.ok (SimpleSymVal.const r)
+        | Except.error msg => Except.error msg
       | .shl => Except.ok (SimpleSymVal.const (evalShl v1 v2))
       | .shr => Except.ok (SimpleSymVal.const (evalShr v1 v2))
       | .and => Except.ok (SimpleSymVal.const (evalAnd v1 v2))
