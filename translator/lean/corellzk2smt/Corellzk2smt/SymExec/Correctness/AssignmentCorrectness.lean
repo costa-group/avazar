@@ -316,13 +316,13 @@ theorem seEvalExpr_div_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
           exact ⟨v1, v2, rfl, rfl, rfl, rfl⟩
 
 /-- `seEvalExpr` on `.bop .uidiv s1 s2`, when it succeeds, keeps `outSymEnv` unchanged and never
-    mentions a macro call in its formula, regardless of which of `seExprUIDivWithFFPositiveConstant
-    Divisor`'s three branches (`B.val = 1` identity, in-range two-branch gadget, out-of-range
-    error) produced it -- unlike `seEvalExpr_div_eq`/`seEvalExpr_pow_eq`, there's no single clean
-    formula shape to expose (the gadget case's formula is a much larger `.ite`/`.and`/`.range`
-    tree), but `SimpleCmdCorrectness.lean` only ever needs these two coarser facts (domain-of-
-    defined and `FormulaNamesBelow` bookkeeping), so this is what's proved directly against the
-    implementation instead. -/
+    mentions a macro call in its formula, regardless of which of `seExprUIDivWithConstantDivisor`'s
+    four branches (`B.val = 1` identity, positive-divisor gadget, negative-divisor gadget,
+    division-by-zero error) produced it -- unlike `seEvalExpr_div_eq`/`seEvalExpr_pow_eq`, there's
+    no single clean formula shape to expose (the gadget cases' formulas are much larger `.ite`/
+    `.and`/`.range` trees), but `SimpleCmdCorrectness.lean` only ever needs these two coarser facts
+    (domain-of-defined and `FormulaNamesBelow` bookkeeping), so this is what's proved directly
+    against the implementation instead. -/
 theorem seEvalExpr_uidiv_facts {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
     (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
     (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
@@ -331,7 +331,7 @@ theorem seEvalExpr_uidiv_facts {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig
     exprSpec.outSymEnv = symEnv ∧
       ∀ badName, Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow exprSpec.f badName := by
   simp only [seEvalExpr, seExprUIDiv] at heq
-  cases hconst : seExprUIDivWithFFPositiveConstantDivisor md gconf sconf symEnv specs s1 s2 with
+  cases hconst : seExprUIDivWithConstantDivisor md gconf sconf symEnv specs s1 s2 with
   | error msg =>
       rw [hconst] at heq
       simp [seExprUIDivWithNonConstantDivisor] at heq
@@ -339,7 +339,7 @@ theorem seEvalExpr_uidiv_facts {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig
       rw [hconst] at heq
       injection heq with heq
       subst heq
-      simp only [seExprUIDivWithFFPositiveConstantDivisor] at hconst
+      simp only [seExprUIDivWithConstantDivisor] at hconst
       cases hB : tryEvalSimpleExprToFFValue symEnv s2 with
       | error msg => rw [hB] at hconst; simp at hconst
       | ok B =>
@@ -372,16 +372,30 @@ theorem seEvalExpr_uidiv_facts {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig
                     simp [Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow,
                       Corellzk2smt.FFConstraints.Lemmas.TermNamesBelow,
                       Corellzk2smt.SymExec.Correctness.Lemmas.simpleSymValToTerm_names_below]⟩
-            · exfalso
-              have hcond : (B.val > 1 && B.val < c.midpoint) = false := by
+            · have hcond : (B.val > 1 && B.val < c.midpoint) = false := by
                 simp only [Bool.and_eq_false_iff, decide_eq_false_iff_not, gt_iff_lt, not_lt]
                 omega
               simp only [hcond, if_false] at hconst
-              simp at hconst
+              by_cases hBge : B.val ≥ c.midpoint
+              · rw [if_pos hBge] at hconst
+                cases hres1 : resolveSimpleExpr symEnv s1 with
+                | error msg => rw [hres1] at hconst; simp at hconst
+                | ok A =>
+                    rw [hres1] at hconst
+                    simp only [uiDivModGadgetLargeDivisor] at hconst
+                    injection hconst with hconst
+                    subst hconst
+                    exact ⟨rfl, fun badName => by
+                      simp [Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow,
+                        Corellzk2smt.FFConstraints.Lemmas.TermNamesBelow,
+                        Corellzk2smt.SymExec.Correctness.Lemmas.simpleSymValToTerm_names_below]⟩
+              · exfalso
+                rw [if_neg hBge] at hconst
+                simp at hconst
 
-/-- Mirror of `seEvalExpr_uidiv_facts`, for `.uimod` -- same reasoning, same three branches of
-    `seExprUIModWithFFPositiveConstantDivisor` (shares `uiDivModGadget` with `.uidiv`, so the
-    `.call`-free argument for `FormulaNamesBelow` is identical). -/
+/-- Mirror of `seEvalExpr_uidiv_facts`, for `.uimod` -- same reasoning, same four branches of
+    `seExprUIModWithConstantDivisor` (shares `uiDivModGadget`/`uiDivModGadgetLargeDivisor` with
+    `.uidiv`, so the `.call`-free argument for `FormulaNamesBelow` is identical). -/
 theorem seEvalExpr_uimod_facts {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
     (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
     (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
@@ -390,7 +404,7 @@ theorem seEvalExpr_uimod_facts {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig
     exprSpec.outSymEnv = symEnv ∧
       ∀ badName, Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow exprSpec.f badName := by
   simp only [seEvalExpr, seExprUIMod] at heq
-  cases hconst : seExprUIModWithFFPositiveConstantDivisor md gconf sconf symEnv specs s1 s2 with
+  cases hconst : seExprUIModWithConstantDivisor md gconf sconf symEnv specs s1 s2 with
   | error msg =>
       rw [hconst] at heq
       simp [seExprUIModWithNonConstantDivisor] at heq
@@ -398,7 +412,7 @@ theorem seEvalExpr_uimod_facts {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig
       rw [hconst] at heq
       injection heq with heq
       subst heq
-      simp only [seExprUIModWithFFPositiveConstantDivisor] at hconst
+      simp only [seExprUIModWithConstantDivisor] at hconst
       cases hB : tryEvalSimpleExprToFFValue symEnv s2 with
       | error msg => rw [hB] at hconst; simp at hconst
       | ok B =>
@@ -431,12 +445,26 @@ theorem seEvalExpr_uimod_facts {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig
                     simp [Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow,
                       Corellzk2smt.FFConstraints.Lemmas.TermNamesBelow,
                       Corellzk2smt.SymExec.Correctness.Lemmas.simpleSymValToTerm_names_below]⟩
-            · exfalso
-              have hcond : (B.val > 1 && B.val < c.midpoint) = false := by
+            · have hcond : (B.val > 1 && B.val < c.midpoint) = false := by
                 simp only [Bool.and_eq_false_iff, decide_eq_false_iff_not, gt_iff_lt, not_lt]
                 omega
               simp only [hcond, if_false] at hconst
-              simp at hconst
+              by_cases hBge : B.val ≥ c.midpoint
+              · rw [if_pos hBge] at hconst
+                cases hres1 : resolveSimpleExpr symEnv s1 with
+                | error msg => rw [hres1] at hconst; simp at hconst
+                | ok A =>
+                    rw [hres1] at hconst
+                    simp only [uiDivModGadgetLargeDivisor] at hconst
+                    injection hconst with hconst
+                    subst hconst
+                    exact ⟨rfl, fun badName => by
+                      simp [Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow,
+                        Corellzk2smt.FFConstraints.Lemmas.TermNamesBelow,
+                        Corellzk2smt.SymExec.Correctness.Lemmas.simpleSymValToTerm_names_below]⟩
+              · exfalso
+                rw [if_neg hBge] at hconst
+                simp at hconst
 
 /-- Mirror of `seEvalExpr_add_eq`, for `seExprSub` (`outVar = v1 - v2`). -/
 theorem seEvalExpr_sub_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)

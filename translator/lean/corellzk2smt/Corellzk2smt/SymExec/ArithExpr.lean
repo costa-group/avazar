@@ -206,7 +206,27 @@ def uiDivModGadget {c : ZKConfig} (sconf : SymExecConfig c) (A : SimpleSymVal c)
   let isLow := FFFormula.range Aterm 0 (c.midpoint - 1 : FF c)
   (FFFormula.ite isLow lowBranch highBranch, Q, R)
 
-def seExprUIDivWithFFPositiveConstantDivisor {c : ZKConfig}
+/-- The constraint gadget shared by `.uidiv`/`.uimod` with a constant divisor `B` in the
+    *negative* half of the field (`B.val ≥ midpoint`): since every dividend `A.val < p < 2 *
+    B.val` here, the true quotient is always `0` or `1` -- no range-bounding on `Q`/`R` is needed
+    at all, just a direct split on `A ≥ B`, pinning `Q`/`R` down by equation in each branch.
+    `isHighA := range(A, B, -1)` (i.e. `toSigned B ≤ toSigned A ≤ -1`) captures `A.val ≥ B.val`
+    correctly for *every* `A` in one shot, including the awkward boundary `B.val = midpoint`
+    exactly -- using `B` itself (not `B - 1`) as the lower bound is what avoids that boundary
+    wrapping around to the wrong sign. -/
+def uiDivModGadgetLargeDivisor {c : ZKConfig} (sconf : SymExecConfig c) (A : SimpleSymVal c)
+    (B : FF c) : FFFormula c × FFVar × FFVar :=
+  let Q : FFVar := sconf.nextVarId
+  let R : FFVar := sconf.nextVarId + 1
+  let Aterm := simpleSymValToTerm A
+  let isHighA := FFFormula.range Aterm B (-1 : FF c)
+  let lowBranch := FFFormula.and (FFFormula.eq (FFTerm.var Q) (FFTerm.val 0))
+    (FFFormula.eq (FFTerm.var R) Aterm)
+  let highBranch := FFFormula.and (FFFormula.eq (FFTerm.var Q) (FFTerm.val 1))
+    (FFFormula.eq (FFTerm.var R) (FFTerm.sub Aterm (FFTerm.val B)))
+  (FFFormula.ite isHighA highBranch lowBranch, Q, R)
+
+def seExprUIDivWithConstantDivisor {c : ZKConfig}
     (md : CmdMD)
     (gconf : GlobalConfig c)
     (sconf : SymExecConfig c)
@@ -239,9 +259,20 @@ def seExprUIDivWithFFPositiveConstantDivisor {c : ZKConfig}
                 nextVarId := sconf.nextVarId + 2,
                 result := SimpleSymVal.ffvar ⟨Q, none⟩
             }
+        -- B is in the range [midpoint, p-1], i.e. negative in the finite field
+      else if B.val ≥ c.midpoint then
+        match resolveSimpleExpr symEnv s1 with
+        | Except.error msg => Except.error msg
+        | Except.ok A =>
+            let (f, Q, _R) := uiDivModGadgetLargeDivisor sconf A B
+            Except.ok {
+                outSymEnv := symEnv,
+                f := f,
+                nextVarId := sconf.nextVarId + 2,
+                result := SimpleSymVal.ffvar ⟨Q, none⟩
+            }
       else
-        Except.error
-          s!"Error: divisor {B.val} is not in the range [1, midpoint-1] for .uidiv expression."
+        Except.error s!"Error: division by zero for .uidiv expression."
 
 def seExprUIDivWithNonConstantDivisor {c : ZKConfig}
     (md : CmdMD)
@@ -261,17 +292,18 @@ def seExprUIDiv {c : ZKConfig}
     (specs : List (FuncSpec c))
     (e1 e2 : SimpleExpr c)
   : Except String (ExprSpec c) :=
-    match seExprUIDivWithFFPositiveConstantDivisor md gconf sconf symEnv specs e1 e2 with
+    match seExprUIDivWithConstantDivisor md gconf sconf symEnv specs e1 e2 with
     | Except.ok result => Except.ok result
     | Except.error _ =>
         seExprUIDivWithNonConstantDivisor md gconf sconf symEnv specs e1 e2
 
-/-- `.uimod`'s constant-positive-divisor path: shares `uiDivModGadget` with `.uidiv` (same fresh
-    `Q`/`R`, same tie-back equation, same range bounds), but reports `R` as the result instead of
-    `Q` -- and, unlike `.uidiv`, the `B.val = 1` identity case reports the constant `0` (`A mod 1 =
-    0` for any `A`), not `A` itself. `s1` is still resolved in that case (not just discarded) so a
-    malformed `e1` is caught symbolically the same way the concrete side would fail on it. -/
-def seExprUIModWithFFPositiveConstantDivisor {c : ZKConfig}
+/-- `.uimod`'s constant-divisor path: shares `uiDivModGadget`/`uiDivModGadgetLargeDivisor` with
+    `.uidiv` (same fresh `Q`/`R`, same tie-back equation, same range bounds), but reports `R` as
+    the result instead of `Q` -- and, unlike `.uidiv`, the `B.val = 1` identity case reports the
+    constant `0` (`A mod 1 = 0` for any `A`), not `A` itself. `s1` is still resolved in that case
+    (not just discarded) so a malformed `e1` is caught symbolically the same way the concrete side
+    would fail on it. -/
+def seExprUIModWithConstantDivisor {c : ZKConfig}
     (md : CmdMD)
     (gconf : GlobalConfig c)
     (sconf : SymExecConfig c)
@@ -304,9 +336,20 @@ def seExprUIModWithFFPositiveConstantDivisor {c : ZKConfig}
                 nextVarId := sconf.nextVarId + 2,
                 result := SimpleSymVal.ffvar ⟨R, none⟩
             }
+        -- B is in the range [midpoint, p-1], i.e. negative in the finite field
+      else if B.val ≥ c.midpoint then
+        match resolveSimpleExpr symEnv s1 with
+        | Except.error msg => Except.error msg
+        | Except.ok A =>
+            let (f, _Q, R) := uiDivModGadgetLargeDivisor sconf A B
+            Except.ok {
+                outSymEnv := symEnv,
+                f := f,
+                nextVarId := sconf.nextVarId + 2,
+                result := SimpleSymVal.ffvar ⟨R, none⟩
+            }
       else
-        Except.error
-          s!"Error: divisor {B.val} is not in the range [1, midpoint-1] for .uimod expression."
+        Except.error s!"Error: division by zero for .uimod expression."
 
 def seExprUIModWithNonConstantDivisor {c : ZKConfig}
     (md : CmdMD)
@@ -326,7 +369,7 @@ def seExprUIMod {c : ZKConfig}
     (specs : List (FuncSpec c))
     (e1 e2 : SimpleExpr c)
   : Except String (ExprSpec c) :=
-    match seExprUIModWithFFPositiveConstantDivisor md gconf sconf symEnv specs e1 e2 with
+    match seExprUIModWithConstantDivisor md gconf sconf symEnv specs e1 e2 with
     | Except.ok result => Except.ok result
     | Except.error _ =>
         seExprUIModWithNonConstantDivisor md gconf sconf symEnv specs e1 e2

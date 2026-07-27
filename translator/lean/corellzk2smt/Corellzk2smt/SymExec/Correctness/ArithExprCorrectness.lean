@@ -1153,19 +1153,19 @@ theorem QBR_val_eq_of_no_wrap {c : ZKConfig} (Q B R A : FF c) (heq : A = Q * B +
     rw [Nat.mod_eq_of_lt hge] at hmodeq
     omega
 
-/-- `seExprUIDivWithFFPositiveConstantDivisor`'s `B.val = 1` case: division by one is the
+/-- `seExprUIDivWithConstantDivisor`'s `B.val = 1` case: division by one is the
     identity, for *any* dividend -- no fresh variable, no formula content, structurally identical
     to `seExprId_correct`. -/
-theorem seExprUIDivWithFFPositiveConstantDivisor_correct {c : ZKConfig} (gconf : GlobalConfig c)
+theorem seExprUIDivWithConstantDivisor_correct {c : ZKConfig} (gconf : GlobalConfig c)
     (specs : List (FuncSpec c)) (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD)
     (e1 e2 : SimpleExpr c) :
     TranslatesExprCorrectly gconf sconf specs ctx
       (fun env => Corellzk2smt.Language.Core.Semantics.Basic.evalExpr env
         (Expr.bop BinOp.uidiv e1 e2))
       (fun symEnv =>
-        seExprUIDivWithFFPositiveConstantDivisor md gconf sconf symEnv specs e1 e2) := by
+        seExprUIDivWithConstantDivisor md gconf sconf symEnv specs e1 e2) := by
   intro symEnv hbelow _hvalid espec hspec_eq
-  simp only [seExprUIDivWithFFPositiveConstantDivisor] at hspec_eq
+  simp only [seExprUIDivWithConstantDivisor] at hspec_eq
   cases hB : tryEvalSimpleExprToFFValue symEnv e2 with
   | error msg => rw [hB] at hspec_eq; simp at hspec_eq
   | ok B =>
@@ -1805,12 +1805,16 @@ theorem seExprUIDivWithFFPositiveConstantDivisor_correct {c : ZKConfig} (gconf :
                         rw [hQfield_eq]
                       · simp only [simpleValMatches]
                         exact hQfield_def.symm
-      · exfalso
-        have hcond : (B.val > 1 && B.val < c.midpoint) = false := by
+      · have hcond : (B.val > 1 && B.val < c.midpoint) = false := by
           simp only [Bool.and_eq_false_iff, decide_eq_false_iff_not, gt_iff_lt, not_lt]
           omega
         simp only [hcond, if_false] at hspec_eq
-        simp at hspec_eq
+        by_cases hBge : B.val ≥ c.midpoint
+        · rw [if_pos hBge] at hspec_eq
+          sorry
+        · exfalso
+          rw [if_neg hBge] at hspec_eq
+          simp at hspec_eq
 
 theorem seExprUIDiv_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
     (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD) (e1 e2 : SimpleExpr c) :
@@ -1820,30 +1824,30 @@ theorem seExprUIDiv_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : Lis
       (fun symEnv => seExprUIDiv md gconf sconf symEnv specs e1 e2) := by
   intro symEnv hbelow hvalid espec hspec_eq
   simp only [seExprUIDiv] at hspec_eq
-  cases hconst : seExprUIDivWithFFPositiveConstantDivisor md gconf sconf symEnv specs e1 e2 with
+  cases hconst : seExprUIDivWithConstantDivisor md gconf sconf symEnv specs e1 e2 with
   | ok result =>
       rw [hconst] at hspec_eq
       injection hspec_eq with hspec_eq
       subst hspec_eq
-      exact seExprUIDivWithFFPositiveConstantDivisor_correct gconf specs sconf ctx md e1 e2 symEnv
+      exact seExprUIDivWithConstantDivisor_correct gconf specs sconf ctx md e1 e2 symEnv
         hbelow hvalid result hconst
   | error msg =>
       rw [hconst] at hspec_eq
       simp [seExprUIDivWithNonConstantDivisor] at hspec_eq
 
-/-- `seExprUIModWithFFPositiveConstantDivisor`'s `B.val = 1` case: modulo one is always zero, for
+/-- `seExprUIModWithConstantDivisor`'s `B.val = 1` case: modulo one is always zero, for
     *any* dividend -- `e1` is still resolved (so a malformed dividend is still caught), but its
     value is discarded; no fresh variable, no real formula content. -/
-theorem seExprUIModWithFFPositiveConstantDivisor_correct {c : ZKConfig} (gconf : GlobalConfig c)
+theorem seExprUIModWithConstantDivisor_correct {c : ZKConfig} (gconf : GlobalConfig c)
     (specs : List (FuncSpec c)) (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD)
     (e1 e2 : SimpleExpr c) :
     TranslatesExprCorrectly gconf sconf specs ctx
       (fun env => Corellzk2smt.Language.Core.Semantics.Basic.evalExpr env
         (Expr.bop BinOp.uimod e1 e2))
       (fun symEnv =>
-        seExprUIModWithFFPositiveConstantDivisor md gconf sconf symEnv specs e1 e2) := by
+        seExprUIModWithConstantDivisor md gconf sconf symEnv specs e1 e2) := by
   intro symEnv hbelow _hvalid espec hspec_eq
-  simp only [seExprUIModWithFFPositiveConstantDivisor] at hspec_eq
+  simp only [seExprUIModWithConstantDivisor] at hspec_eq
   cases hB : tryEvalSimpleExprToFFValue symEnv e2 with
   | error msg => rw [hB] at hspec_eq; simp at hspec_eq
   | ok B =>
@@ -2482,12 +2486,16 @@ theorem seExprUIModWithFFPositiveConstantDivisor_correct {c : ZKConfig} (gconf :
                         rw [hRfield_eq]
                       · simp only [simpleValMatches]
                         exact hRfield_def.symm
-      · exfalso
-        have hcond : (B.val > 1 && B.val < c.midpoint) = false := by
+      · have hcond : (B.val > 1 && B.val < c.midpoint) = false := by
           simp only [Bool.and_eq_false_iff, decide_eq_false_iff_not, gt_iff_lt, not_lt]
           omega
         simp only [hcond, if_false] at hspec_eq
-        simp at hspec_eq
+        by_cases hBge : B.val ≥ c.midpoint
+        · rw [if_pos hBge] at hspec_eq
+          sorry
+        · exfalso
+          rw [if_neg hBge] at hspec_eq
+          simp at hspec_eq
 
 theorem seExprUIMod_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
     (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD) (e1 e2 : SimpleExpr c) :
@@ -2497,12 +2505,12 @@ theorem seExprUIMod_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : Lis
       (fun symEnv => seExprUIMod md gconf sconf symEnv specs e1 e2) := by
   intro symEnv hbelow hvalid espec hspec_eq
   simp only [seExprUIMod] at hspec_eq
-  cases hconst : seExprUIModWithFFPositiveConstantDivisor md gconf sconf symEnv specs e1 e2 with
+  cases hconst : seExprUIModWithConstantDivisor md gconf sconf symEnv specs e1 e2 with
   | ok result =>
       rw [hconst] at hspec_eq
       injection hspec_eq with hspec_eq
       subst hspec_eq
-      exact seExprUIModWithFFPositiveConstantDivisor_correct gconf specs sconf ctx md e1 e2 symEnv
+      exact seExprUIModWithConstantDivisor_correct gconf specs sconf ctx md e1 e2 symEnv
         hbelow hvalid result hconst
   | error msg =>
       rw [hconst] at hspec_eq
