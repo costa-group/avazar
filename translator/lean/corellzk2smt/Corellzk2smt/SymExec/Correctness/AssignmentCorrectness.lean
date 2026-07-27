@@ -226,7 +226,7 @@ theorem seEvalExpr_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List
 theorem seEvalExpr_bop_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
     (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
     (op : BinOp) (hop1 : op ≠ BinOp.add) (hop2 : op ≠ BinOp.sub) (hop3 : op ≠ BinOp.mul)
-    (hop4 : op ≠ BinOp.div) (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (hop4 : op ≠ BinOp.div) (hop5 : op ≠ BinOp.pow) (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
     (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop op s1 s2) = Except.ok exprSpec) :
     False := by
   cases op <;>
@@ -235,10 +235,49 @@ theorem seEvalExpr_bop_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig
     | exact absurd rfl hop2
     | exact absurd rfl hop3
     | exact absurd rfl hop4
-    | simp [seEvalExpr, seExprPow,
+    | exact absurd rfl hop5
+    | simp [seEvalExpr,
         seExprUIMod, seExprUIDiv, seExprBor, seExprBAnd, seExprEq, seExprNeq, seExprLtSigned,
         seExprLeSigned, seExprGtSigned, seExprGeSigned, seExprBitwiseAND, seExprBitwiseOR,
         seExprBitwiseXOR, seExprBitwiseSHL, seExprBitwiseSHR] at heq
+
+/-- `seEvalExpr` on `.bop .pow s1 s2`, when it succeeds, does so via
+    `seExprPowWithConstantExponent`'s exact defining shape (`seExprPow` always falls through to it
+    first, and `seExprPowWithNonConstantExponent` is a permanent stub, so a `.pow` success can only
+    ever have come from there) -- output symbolic environment unchanged, formula the fresh-var
+    tie-back equation `outVar = base ^ power.val`. Stated directly against the implementation, same
+    reason as `seEvalExpr_id_eq`/`seEvalExpr_neg_eq`/`seEvalExpr_div_eq`. -/
+theorem seEvalExpr_pow_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop BinOp.pow s1 s2)
+      = Except.ok exprSpec) :
+    ∃ power base, tryEvalSimpleExprToFFValue symEnv s2 = Except.ok power ∧
+      resolveSimpleExpr symEnv s1 = Except.ok base ∧
+      exprSpec.outSymEnv = symEnv ∧
+      exprSpec.f = FFFormula.eq (FFTerm.var sconf.nextVarId)
+        (ffTermPow (simpleSymValToTerm base) power.val) := by
+  simp only [seEvalExpr, seExprPow] at heq
+  cases hconst : seExprPowWithConstantExponent md gconf sconf symEnv specs s1 s2 with
+  | error msg =>
+      rw [hconst] at heq
+      simp [seExprPowWithNonConstantExponent] at heq
+  | ok result =>
+      rw [hconst] at heq
+      injection heq with heq
+      subst heq
+      simp only [seExprPowWithConstantExponent] at hconst
+      cases hpow : tryEvalSimpleExprToFFValue symEnv s2 with
+      | error msg => rw [hpow] at hconst; simp at hconst
+      | ok power =>
+          rw [hpow] at hconst
+          cases hres1 : resolveSimpleExpr symEnv s1 with
+          | error msg => rw [hres1] at hconst; simp at hconst
+          | ok base =>
+              rw [hres1] at hconst
+              injection hconst with hconst
+              subst hconst
+              exact ⟨power, base, rfl, rfl, rfl, rfl⟩
 
 /-- `seEvalExpr` on `.bop .div s1 s2`, when it succeeds, does so via `seExprDiv`'s exact defining
     shape -- output symbolic environment unchanged, formula the "safe division" tie-back equation

@@ -691,13 +691,234 @@ theorem seExprDiv_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List 
                   evalDiv, hz, if_false]
               · simp only [simpleValMatches, hffeq]
 
+/-- `evalTerm` distributes over `ffTermPow`: evaluating `t`'s `n`-fold term-level product gives
+    the field power of whatever `t` itself evaluates to. Proved by plain induction on `n`,
+    matching `ffTermPow`'s own recursion exactly. -/
+theorem ffTermPow_correct {c : ZKConfig} (gconf : GlobalConfig c) (assignment : Assignment c)
+    (ms : List (FFMacro c)) (t : FFTerm c) (v : FF c)
+    (ht : evalTerm gconf assignment t ms = Except.ok v) (n : Nat) :
+    evalTerm gconf assignment (ffTermPow t n) ms = Except.ok (v ^ n) := by
+  induction n with
+  | zero => simp [ffTermPow, evalTerm]
+  | succ n ih => simp [ffTermPow, evalTerm, ht, ih, pow_succ']
+
+/-- `ffTermPow t n` only ever mentions vars that `t` itself does -- it's built purely out of `n`
+    copies of `t` chained by `.mul`, never anything else. -/
+theorem ffVarsOfTerm_ffTermPow_subset {c : ZKConfig} (t : FFTerm c) (n : Nat) :
+    ffVarsOfTerm (ffTermPow t n) ⊆ ffVarsOfTerm t := by
+  induction n with
+  | zero =>
+      intro v hv
+      simp only [ffTermPow, ffVarsOfTerm] at hv
+      exact absurd hv Std.TreeSet.not_mem_emptyc
+  | succ n ih =>
+      intro v hv
+      simp only [ffTermPow, ffVarsOfTerm, Std.TreeSet.mem_union_iff] at hv
+      rcases hv with h | h
+      · exact h
+      · exact ih v h
+
+/-- Mirror of `ffVarsOfTerm_ffTermPow_subset`, for `bVarsOfTerm`. -/
+theorem bVarsOfTerm_ffTermPow_subset {c : ZKConfig} (t : FFTerm c) (n : Nat) :
+    bVarsOfTerm (ffTermPow t n) ⊆ bVarsOfTerm t := by
+  induction n with
+  | zero =>
+      intro v hv
+      simp only [ffTermPow, bVarsOfTerm] at hv
+      exact absurd hv Std.TreeSet.not_mem_emptyc
+  | succ n ih =>
+      intro v hv
+      simp only [ffTermPow, bVarsOfTerm, Std.TreeSet.mem_union_iff] at hv
+      rcases hv with h | h
+      · exact h
+      · exact ih v h
+
+/-- `seExprPowWithConstantExponent` resolves the base's symbolic value `base` and fully
+    constant-folds the exponent to `power` (via `tryEvalSimpleExprToFFValue`, never touching a
+    live variable), then mints one fresh var tied to `base`'s `power.val`-fold term product via
+    `ffTermPow`. Since `power` is fully determined by `symEnv` alone, it evaluates to the exact
+    same concrete value under *every* env/assignment matching `symEnv`
+    (`tryEvalSimpleExprToFFValue_correct`) -- so unlike `seExprDiv_correct`, there's no case split
+    here, just `ffTermPow_correct` bridging the term-level product to the field power `evalPow`
+    itself computes. -/
+theorem seExprPowWithConstantExponent_correct {c : ZKConfig} (gconf : GlobalConfig c)
+    (specs : List (FuncSpec c)) (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD)
+    (e1 e2 : SimpleExpr c) :
+    TranslatesExprCorrectly gconf sconf specs ctx
+      (fun env => Corellzk2smt.Language.Core.Semantics.Basic.evalExpr env
+        (Expr.bop BinOp.pow e1 e2))
+      (fun symEnv => seExprPowWithConstantExponent md gconf sconf symEnv specs e1 e2) := by
+  intro symEnv hbelow _hvalid espec hspec_eq
+  simp only [seExprPowWithConstantExponent] at hspec_eq
+  cases hpow : tryEvalSimpleExprToFFValue symEnv e2 with
+  | error msg => rw [hpow] at hspec_eq; simp at hspec_eq
+  | ok power =>
+      rw [hpow] at hspec_eq
+      cases hres1 : resolveSimpleExpr symEnv e1 with
+      | error msg => rw [hres1] at hspec_eq; simp at hspec_eq
+      | ok base =>
+          rw [hres1] at hspec_eq
+          injection hspec_eq with hspec_eq
+          subst hspec_eq
+          have hsub1 := Corellzk2smt.SymExec.Correctness.Lemmas.resolveSimpleExpr_vars_subset
+            symEnv e1 base hres1
+          have hpowsub : ffVarsOfTerm (ffTermPow (simpleSymValToTerm base) power.val) ⊆
+              simpleValOwnVars base := by
+            rw [← ffVarsOfTerm_simpleSymValToTerm base]
+            exact ffVarsOfTerm_ffTermPow_subset (simpleSymValToTerm base) power.val
+          have hpowsubB : bVarsOfTerm (ffTermPow (simpleSymValToTerm base) power.val) ⊆
+              (emptyVarSet : VarSet) := by
+            rw [← bVarsOfTerm_simpleSymValToTerm base]
+            exact bVarsOfTerm_ffTermPow_subset (simpleSymValToTerm base) power.val
+          have hmemF : Var.ffv sconf.nextVarId ∈
+              ffVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                (ffTermPow (simpleSymValToTerm base) power.val)) := by
+            simp only [ffVarsOfFormula, ffVarsOfTerm, Std.TreeSet.mem_union_iff]
+            exact Or.inl (Std.TreeSet.mem_insert_self ..)
+          refine ⟨Nat.le_succ _, ?_, ?_, ?_, varSetBelow_mono (Nat.le_succ _) hbelow,
+            fun v' hv' => Or.inl hv', ValidBinRep_trivial gconf _ _, ?_, ?_⟩
+          · intro v' hv'
+            simp only [simpleValVars, simpleValOwnVars, Option.map_none, Option.getD_none,
+              Std.TreeSet.mem_union_iff] at hv'
+            rcases hv' with h | h
+            · rcases Std.TreeSet.mem_insert.mp h with heq | hmem
+              · rw [← Var_compare_eq_iff_eq.mp heq]
+                exact Or.inr (Std.TreeSet.mem_union_of_left hmemF)
+              · exact absurd hmem Std.TreeSet.not_mem_emptyc
+            · exact absurd h Std.TreeSet.not_mem_emptyc
+          · intro v' hv'
+            simp only [exprSpecVars] at hv'
+            rcases Std.TreeSet.mem_union_iff.mp hv' with hff | hb
+            · simp only [ffVarsOfFormula, ffVarsOfTerm, Std.TreeSet.mem_union_iff] at hff
+              rcases hff with h1 | h2
+              · rcases Std.TreeSet.mem_insert.mp h1 with heq | hmem
+                · rw [← Var_compare_eq_iff_eq.mp heq]
+                  exact Or.inr (le_refl _)
+                · exact absurd hmem Std.TreeSet.not_mem_emptyc
+              · exact Or.inl (hsub1 v' (simpleValOwnVars_subset_simpleValVars base v'
+                  (hpowsub v' h2)))
+            · simp only [bVarsOfFormula, bVarsOfTerm, Std.TreeSet.mem_union_iff] at hb
+              rcases hb with h1 | h2
+              · exact absurd h1 Std.TreeSet.not_mem_emptyc
+              · exact absurd (hpowsubB v' h2) Std.TreeSet.not_mem_emptyc
+          · intro v' hv'
+            simp only [exprSpecVars] at hv'
+            rcases Std.TreeSet.mem_union_iff.mp hv' with hff | hb
+            · simp only [ffVarsOfFormula, ffVarsOfTerm, Std.TreeSet.mem_union_iff] at hff
+              rcases hff with h1 | h2
+              · rcases Std.TreeSet.mem_insert.mp h1 with heq | hmem
+                · rw [← Var_compare_eq_iff_eq.mp heq]
+                  simp only [varIndex]
+                  omega
+                · exact absurd hmem Std.TreeSet.not_mem_emptyc
+              · exact lt_of_lt_of_le
+                  (hbelow v' (hsub1 v' (simpleValOwnVars_subset_simpleValVars base v'
+                    (hpowsub v' h2))))
+                  (Nat.le_succ _)
+            · simp only [bVarsOfFormula, bVarsOfTerm, Std.TreeSet.mem_union_iff] at hb
+              rcases hb with h1 | h2
+              · exact absurd h1 Std.TreeSet.not_mem_emptyc
+              · exact absurd (hpowsubB v' h2) Std.TreeSet.not_mem_emptyc
+          · intro env assignment hmatch val hval
+            have hval2 := tryEvalSimpleExprToFFValue_correct symEnv e2 env assignment power
+              hmatch hpow
+            obtain ⟨val1, hval1, hm1⟩ :=
+              resolveSimpleExpr_correct symEnv e1 env assignment base hmatch hres1
+            simp only [Corellzk2smt.Language.Core.Semantics.Basic.evalExpr, hval1, hval2,
+              evalPow] at hval
+            injection hval with hval
+            subst hval
+            set assignment' : Assignment c :=
+              { assignment with
+                ff := fun n => if n = sconf.nextVarId then val1 ^ power.val else assignment.ff n }
+              with hassignment'_def
+            have hagreeff : agreesOnFF (symEnvVars symEnv) assignment assignment' := by
+              intro n hn
+              have hne : n ≠ sconf.nextVarId := Nat.ne_of_lt (hbelow (Var.ffv n) hn)
+              simp only [hassignment'_def, if_neg hne]
+            have hagreebool : agreesOnBool (symEnvVars symEnv) assignment assignment' :=
+              fun n _ => rfl
+            have hframeff : ∀ n, Var.ffv n ∉
+                (ffVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                  (ffTermPow (simpleSymValToTerm base) power.val)) ∪
+                 bVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                  (ffTermPow (simpleSymValToTerm base) power.val))) →
+                assignment'.ff n = assignment.ff n := by
+              intro n hn
+              have hne : n ≠ sconf.nextVarId := by
+                intro heqn
+                apply hn
+                rw [heqn]
+                exact Std.TreeSet.mem_union_of_left hmemF
+              simp only [hassignment'_def, if_neg hne]
+            have hframebool : ∀ n, Var.boolv n ∉
+                (ffVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                  (ffTermPow (simpleSymValToTerm base) power.val)) ∪
+                 bVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                  (ffTermPow (simpleSymValToTerm base) power.val))) →
+                assignment'.bool n = assignment.bool n := fun n _ => rfl
+            have hsimpleMatch1' : simpleValMatches assignment' base val1 :=
+              simpleValMatches_agreesOnFF_preserves assignment assignment' base val1
+                (symEnvVars symEnv) hsub1 hagreeff hm1
+            have hevalTerm1' : evalTerm gconf assignment' (simpleSymValToTerm base)
+                (specs.map (·.f)) = Except.ok val1 :=
+              evalTerm_simpleSymValToTerm gconf assignment' base val1 (specs.map (·.f))
+                hsimpleMatch1'
+            have hevalPow' : evalTerm gconf assignment'
+                (ffTermPow (simpleSymValToTerm base) power.val) (specs.map (·.f))
+                = Except.ok (val1 ^ power.val) :=
+              ffTermPow_correct gconf assignment' (specs.map (·.f)) (simpleSymValToTerm base)
+                val1 hevalTerm1' power.val
+            have hffeval : assignment'.ff sconf.nextVarId = val1 ^ power.val := by
+              simp [hassignment'_def]
+            refine ⟨assignment', hagreeff, hagreebool, hframeff, hframebool, ?_,
+              EnvMatches_agreesOnFF_preserves assignment assignment' symEnv env hagreeff hmatch,
+              ?_⟩
+            · simp [evalFormula, evalTerm, hevalPow', hffeval]
+            · simp only [simpleValMatches, hffeval]
+          · intro env assignment hmatch assignment' hagree heval_f
+            have hmatch' : EnvMatches assignment' symEnv env :=
+              EnvMatches_agreesOnFF_preserves assignment assignment' symEnv env hagree hmatch
+            have hval2 := tryEvalSimpleExprToFFValue_correct symEnv e2 env assignment' power
+              hmatch' hpow
+            obtain ⟨val1, hval1, hm1'⟩ :=
+              resolveSimpleExpr_correct symEnv e1 env assignment' base hmatch' hres1
+            have hevalTerm1' : evalTerm gconf assignment' (simpleSymValToTerm base)
+                (specs.map (·.f)) = Except.ok val1 :=
+              evalTerm_simpleSymValToTerm gconf assignment' base val1 (specs.map (·.f)) hm1'
+            have hevalPow' : evalTerm gconf assignment'
+                (ffTermPow (simpleSymValToTerm base) power.val) (specs.map (·.f))
+                = Except.ok (val1 ^ power.val) :=
+              ffTermPow_correct gconf assignment' (specs.map (·.f)) (simpleSymValToTerm base)
+                val1 hevalTerm1' power.val
+            simp only [evalFormula, evalTerm, hevalPow', Except.ok.injEq, beq_iff_eq] at heval_f
+            refine ⟨val1 ^ power.val, ?_, hmatch', ?_⟩
+            · simp only [Corellzk2smt.Language.Core.Semantics.Basic.evalExpr, hval1, hval2,
+                evalPow]
+            · simp only [simpleValMatches]
+              exact heval_f
+
+/-- `seExprPow` dispatch: it tries `seExprPowWithConstantExponent` first and only falls back to
+    `seExprPowWithNonConstantExponent` (a permanent stub) on error, so its success cases coincide
+    exactly with the constant-exponent path's own. -/
 theorem seExprPow_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
     (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD) (e1 e2 : SimpleExpr c) :
     TranslatesExprCorrectly gconf sconf specs ctx
       (fun env => Corellzk2smt.Language.Core.Semantics.Basic.evalExpr env
         (Expr.bop BinOp.pow e1 e2))
       (fun symEnv => seExprPow md gconf sconf symEnv specs e1 e2) := by
-  sorry
+  intro symEnv hbelow hvalid espec hspec_eq
+  simp only [seExprPow] at hspec_eq
+  cases hconst : seExprPowWithConstantExponent md gconf sconf symEnv specs e1 e2 with
+  | ok result =>
+      rw [hconst] at hspec_eq
+      injection hspec_eq with hspec_eq
+      subst hspec_eq
+      exact seExprPowWithConstantExponent_correct gconf specs sconf ctx md e1 e2 symEnv hbelow
+        hvalid result hconst
+  | error msg =>
+      rw [hconst] at hspec_eq
+      simp [seExprPowWithNonConstantExponent] at hspec_eq
 
 theorem seExprUIMod_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
     (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD) (e1 e2 : SimpleExpr c) :

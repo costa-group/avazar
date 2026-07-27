@@ -193,9 +193,7 @@ def evalDiv {c : ZKConfig} (v1 v2 : FF c) : Except String (FF c) :=
   if v2 = 0 then Except.error "Division by zero" else Except.ok (v1 / v2)
 
 def evalPow {c : ZKConfig} (v1 v2 : FF c) : FF c :=
-  let base := v1.val
-  let exponent := v2.val
-  (base ^ exponent : FF c)
+  v1 ^ v2.val
 
 def evalUidiv {c : ZKConfig} (v1 v2 : FF c) : Except String (FF c) :=
   if v2 = 0 then Except.error "Division by zero"
