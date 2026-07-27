@@ -182,18 +182,6 @@ def seExprPow {c : ZKConfig}
     | Except.error _ =>
         seExprPowWithNonConstantExponent md gconf sconf symEnv specs s1 s2
 
-def seExprUIMod {c : ZKConfig}
-    (md : CmdMD)
-    (gconf : GlobalConfig c)
-    (sconf : SymExecConfig c)
-    (symEnv : SymEnv c)
-    (specs : List (FuncSpec c))
-    (e1 e2 : SimpleExpr c)
-  : Except String (ExprSpec c) :=
-  Except.error "Not implemented yet"
-
-
-
 /-- The constraint gadget shared by `.uidiv`/`.uimod` with a constant, positive divisor `B`
     (`2 ≤ B.val < midpoint`): mints fresh `Q`/`R`, and asserts the division identity plus range
     bounds on `Q` that depend on which half of the field the dividend `A` falls in --
@@ -277,6 +265,71 @@ def seExprUIDiv {c : ZKConfig}
     | Except.ok result => Except.ok result
     | Except.error _ =>
         seExprUIDivWithNonConstantDivisor md gconf sconf symEnv specs e1 e2
+
+/-- `.uimod`'s constant-positive-divisor path: shares `uiDivModGadget` with `.uidiv` (same fresh
+    `Q`/`R`, same tie-back equation, same range bounds), but reports `R` as the result instead of
+    `Q` -- and, unlike `.uidiv`, the `B.val = 1` identity case reports the constant `0` (`A mod 1 =
+    0` for any `A`), not `A` itself. `s1` is still resolved in that case (not just discarded) so a
+    malformed `e1` is caught symbolically the same way the concrete side would fail on it. -/
+def seExprUIModWithFFPositiveConstantDivisor {c : ZKConfig}
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c)
+  : Except String (ExprSpec c) :=
+  match tryEvalSimpleExprToFFValue symEnv s2 with
+  | Except.error msg => Except.error msg
+  | Except.ok B =>
+      if B.val = 1 then
+        match resolveSimpleExpr symEnv s1 with
+        | Except.error msg => Except.error msg
+        | Except.ok _v =>
+            Except.ok {
+                outSymEnv := symEnv,
+                f := FFFormula.true,
+                nextVarId := sconf.nextVarId,
+                result := SimpleSymVal.const 0
+            }
+        -- B is in the range [1, midpoint-1], i.e. positive in the finite field
+      else if B.val > 1 && B.val < c.midpoint then
+        match resolveSimpleExpr symEnv s1 with
+        | Except.error msg => Except.error msg
+        | Except.ok A =>
+            let (f, _Q, R) := uiDivModGadget sconf A B
+            Except.ok {
+                outSymEnv := symEnv,
+                f := f,
+                nextVarId := sconf.nextVarId + 2,
+                result := SimpleSymVal.ffvar ⟨R, none⟩
+            }
+      else
+        Except.error
+          s!"Error: divisor {B.val} is not in the range [1, midpoint-1] for .uimod expression."
+
+def seExprUIModWithNonConstantDivisor {c : ZKConfig}
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c)
+    : Except String (ExprSpec c) :=
+    Except.error "Integer modulo with non-constant divisor is not implemented yet"
+
+def seExprUIMod {c : ZKConfig}
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (e1 e2 : SimpleExpr c)
+  : Except String (ExprSpec c) :=
+    match seExprUIModWithFFPositiveConstantDivisor md gconf sconf symEnv specs e1 e2 with
+    | Except.ok result => Except.ok result
+    | Except.error _ =>
+        seExprUIModWithNonConstantDivisor md gconf sconf symEnv specs e1 e2
 
 def seExprNeg {c : ZKConfig}
     (_md : CmdMD)

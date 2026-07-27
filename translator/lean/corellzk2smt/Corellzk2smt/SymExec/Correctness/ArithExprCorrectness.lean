@@ -1153,14 +1153,6 @@ theorem QBR_val_eq_of_no_wrap {c : ZKConfig} (Q B R A : FF c) (heq : A = Q * B +
     rw [Nat.mod_eq_of_lt hge] at hmodeq
     omega
 
-theorem seExprUIMod_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
-    (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD) (e1 e2 : SimpleExpr c) :
-    TranslatesExprCorrectly gconf sconf specs ctx
-      (fun env => Corellzk2smt.Language.Core.Semantics.Basic.evalExpr env
-        (Expr.bop BinOp.uimod e1 e2))
-      (fun symEnv => seExprUIMod md gconf sconf symEnv specs e1 e2) := by
-  sorry
-
 /-- `seExprUIDivWithFFPositiveConstantDivisor`'s `B.val = 1` case: division by one is the
     identity, for *any* dividend -- no fresh variable, no formula content, structurally identical
     to `seExprId_correct`. -/
@@ -1838,6 +1830,683 @@ theorem seExprUIDiv_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : Lis
   | error msg =>
       rw [hconst] at hspec_eq
       simp [seExprUIDivWithNonConstantDivisor] at hspec_eq
+
+/-- `seExprUIModWithFFPositiveConstantDivisor`'s `B.val = 1` case: modulo one is always zero, for
+    *any* dividend -- `e1` is still resolved (so a malformed dividend is still caught), but its
+    value is discarded; no fresh variable, no real formula content. -/
+theorem seExprUIModWithFFPositiveConstantDivisor_correct {c : ZKConfig} (gconf : GlobalConfig c)
+    (specs : List (FuncSpec c)) (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD)
+    (e1 e2 : SimpleExpr c) :
+    TranslatesExprCorrectly gconf sconf specs ctx
+      (fun env => Corellzk2smt.Language.Core.Semantics.Basic.evalExpr env
+        (Expr.bop BinOp.uimod e1 e2))
+      (fun symEnv =>
+        seExprUIModWithFFPositiveConstantDivisor md gconf sconf symEnv specs e1 e2) := by
+  intro symEnv hbelow _hvalid espec hspec_eq
+  simp only [seExprUIModWithFFPositiveConstantDivisor] at hspec_eq
+  cases hB : tryEvalSimpleExprToFFValue symEnv e2 with
+  | error msg => rw [hB] at hspec_eq; simp at hspec_eq
+  | ok B =>
+    rw [hB] at hspec_eq
+    simp only [] at hspec_eq
+    by_cases hB1 : B.val = 1
+    · rw [if_pos hB1] at hspec_eq
+      cases hres1 : resolveSimpleExpr symEnv e1 with
+      | error msg => rw [hres1] at hspec_eq; simp at hspec_eq
+      | ok v =>
+          rw [hres1] at hspec_eq
+          injection hspec_eq with hspec_eq
+          subst hspec_eq
+          have hBne0 : B ≠ (0 : FF c) := by
+            intro hB0; rw [hB0] at hB1; simp at hB1
+          refine ⟨le_refl _, ?_, ?_, ?_, hbelow,
+            fun v' hv' => Or.inl hv', ValidBinRep_trivial gconf _ _, ?_, ?_⟩
+          · intro v' hv'
+            simp only [simpleValVars] at hv'
+            exact absurd hv' Std.TreeSet.not_mem_emptyc
+          · intro v' hv'
+            rcases Std.TreeSet.mem_union_iff.mp hv' with h | h <;>
+              simp only [ffVarsOfFormula, bVarsOfFormula] at h <;>
+              exact absurd h Std.TreeSet.not_mem_emptyc
+          · intro v' hv'
+            rcases Std.TreeSet.mem_union_iff.mp hv' with h | h <;>
+              simp only [ffVarsOfFormula, bVarsOfFormula] at h <;>
+              exact absurd h Std.TreeSet.not_mem_emptyc
+          · intro env assignment hmatch val hval
+            obtain ⟨val', hval', _hm⟩ :=
+              resolveSimpleExpr_correct symEnv e1 env assignment v hmatch hres1
+            have hB' := tryEvalSimpleExprToFFValue_correct symEnv e2 env assignment B hmatch hB
+            simp only [Corellzk2smt.Language.Core.Semantics.Basic.evalExpr, hval', hB',
+              evalUimod, if_neg hBne0, hB1, Nat.mod_one] at hval
+            injection hval with hval
+            subst hval
+            exact ⟨assignment, (fun n _ => rfl), (fun n _ => rfl), (fun n _ => rfl),
+              (fun n _ => rfl), by simp only [evalFormula], hmatch, by
+                simp [simpleValMatches]⟩
+          · intro env assignment hmatch assignment' hagree _heval
+            refine ⟨0, ?_, EnvMatches_agreesOnFF_preserves assignment assignment' symEnv env
+              hagree hmatch, by simp [simpleValMatches]⟩
+            obtain ⟨val, hval, _hm⟩ :=
+              resolveSimpleExpr_correct symEnv e1 env assignment v hmatch hres1
+            have hB' := tryEvalSimpleExprToFFValue_correct symEnv e2 env assignment B hmatch hB
+            simp [Corellzk2smt.Language.Core.Semantics.Basic.evalExpr, hval, hB',
+              evalUimod, if_neg hBne0, hB1, Nat.mod_one]
+    · rw [if_neg hB1] at hspec_eq
+      by_cases hBrange : 1 < B.val ∧ B.val < c.midpoint
+      · have hcond : (B.val > 1 && B.val < c.midpoint) = true := by
+          simp only [Bool.and_eq_true, decide_eq_true_eq, gt_iff_lt]
+          exact hBrange
+        simp only [hcond, if_true] at hspec_eq
+        cases hres1 : resolveSimpleExpr symEnv e1 with
+        | error msg => rw [hres1] at hspec_eq; simp at hspec_eq
+        | ok A =>
+            rw [hres1] at hspec_eq
+            simp only [uiDivModGadget] at hspec_eq
+            injection hspec_eq with hspec_eq
+            subst hspec_eq
+            obtain ⟨hB2, hBmid⟩ := hBrange
+            have hsubA := Corellzk2smt.SymExec.Correctness.Lemmas.resolveSimpleExpr_vars_subset
+              symEnv e1 A hres1
+            have hBne0 : B ≠ (0 : FF c) := by
+              intro hB0; rw [hB0] at hB2; simp at hB2
+            have h2mid := two_mul_midpoint_eq B.val hB2 hBmid
+            have hlow_nowrap := uidiv_low_no_wrap B.val hB2 hBmid
+            have hhigh_nowrap := uidiv_high_no_wrap B.val hB2 hBmid
+            have hmemQeqn : Var.ffv sconf.nextVarId ∈
+                ffVarsOfFormula (FFFormula.eq (simpleSymValToTerm A)
+                  (FFTerm.add (FFTerm.mul (FFTerm.var sconf.nextVarId) (FFTerm.val B))
+                    (FFTerm.var (sconf.nextVarId + 1)))) := by
+              simp only [ffVarsOfFormula, ffVarsOfTerm, Std.TreeSet.mem_union_iff]
+              exact Or.inr (Or.inl (Or.inl (Std.TreeSet.mem_insert_self ..)))
+            have hmemReqn : Var.ffv (sconf.nextVarId + 1) ∈
+                ffVarsOfFormula (FFFormula.eq (simpleSymValToTerm A)
+                  (FFTerm.add (FFTerm.mul (FFTerm.var sconf.nextVarId) (FFTerm.val B))
+                    (FFTerm.var (sconf.nextVarId + 1)))) := by
+              simp only [ffVarsOfFormula, ffVarsOfTerm, Std.TreeSet.mem_union_iff]
+              exact Or.inr (Or.inr (Std.TreeSet.mem_insert_self ..))
+            have hffdisj : ∀ (l u : FF c) (v' : Var), v' ∈ ffVarsOfFormula (FFFormula.and
+                (FFFormula.eq (simpleSymValToTerm A)
+                  (FFTerm.add (FFTerm.mul (FFTerm.var sconf.nextVarId) (FFTerm.val B))
+                    (FFTerm.var (sconf.nextVarId + 1))))
+                (FFFormula.and
+                  (FFFormula.range (FFTerm.var (sconf.nextVarId + 1)) 0 (B.val - 1 : FF c))
+                  (FFFormula.range (FFTerm.var sconf.nextVarId) l u))) →
+                v' = Var.ffv sconf.nextVarId ∨ v' = Var.ffv (sconf.nextVarId + 1) ∨
+                  v' ∈ simpleValOwnVars A := by
+              intro l u v' hv'
+              simp only [ffVarsOfFormula, ffVarsOfTerm, ffVarsOfTerm_simpleSymValToTerm,
+                Std.TreeSet.mem_union_iff] at hv'
+              rcases hv' with (hA | (hQ | hE) | hR) | (hR2 | hQ2)
+              · exact Or.inr (Or.inr hA)
+              · rcases Std.TreeSet.mem_insert.mp hQ with heq | hmem
+                · exact Or.inl (Var_compare_eq_iff_eq.mp heq).symm
+                · exact absurd hmem Std.TreeSet.not_mem_emptyc
+              · exact absurd hE Std.TreeSet.not_mem_emptyc
+              · rcases Std.TreeSet.mem_insert.mp hR with heq | hmem
+                · exact Or.inr (Or.inl (Var_compare_eq_iff_eq.mp heq).symm)
+                · exact absurd hmem Std.TreeSet.not_mem_emptyc
+              · rcases Std.TreeSet.mem_insert.mp hR2 with heq | hmem
+                · exact Or.inr (Or.inl (Var_compare_eq_iff_eq.mp heq).symm)
+                · exact absurd hmem Std.TreeSet.not_mem_emptyc
+              · rcases Std.TreeSet.mem_insert.mp hQ2 with heq | hmem
+                · exact Or.inl (Var_compare_eq_iff_eq.mp heq).symm
+                · exact absurd hmem Std.TreeSet.not_mem_emptyc
+            have hbdisj : ∀ (l u : FF c) (v' : Var), v' ∈ bVarsOfFormula (FFFormula.and
+                (FFFormula.eq (simpleSymValToTerm A)
+                  (FFTerm.add (FFTerm.mul (FFTerm.var sconf.nextVarId) (FFTerm.val B))
+                    (FFTerm.var (sconf.nextVarId + 1))))
+                (FFFormula.and
+                  (FFFormula.range (FFTerm.var (sconf.nextVarId + 1)) 0 (B.val - 1 : FF c))
+                  (FFFormula.range (FFTerm.var sconf.nextVarId) l u))) → False := by
+              intro l u v' hv'
+              simp only [bVarsOfFormula, bVarsOfTerm, bVarsOfTerm_simpleSymValToTerm,
+                Std.TreeSet.mem_union_iff] at hv'
+              rcases hv' with (h | (h | h) | h) | (h | h) <;>
+                exact absurd h Std.TreeSet.not_mem_emptyc
+            have hmemQ_f : Var.ffv sconf.nextVarId ∈
+                ffVarsOfFormula (FFFormula.ite
+                  (FFFormula.range (simpleSymValToTerm A) 0 (c.midpoint - 1 : FF c))
+                  (FFFormula.and (FFFormula.eq (simpleSymValToTerm A)
+                      (FFTerm.add (FFTerm.mul (FFTerm.var sconf.nextVarId) (FFTerm.val B))
+                        (FFTerm.var (sconf.nextVarId + 1))))
+                    (FFFormula.and
+                      (FFFormula.range (FFTerm.var (sconf.nextVarId + 1)) 0 (B.val - 1 : FF c))
+                      (FFFormula.range (FFTerm.var sconf.nextVarId) 0
+                        (((c.midpoint - 1) / B.val : Nat) : FF c))))
+                  (FFFormula.and (FFFormula.eq (simpleSymValToTerm A)
+                      (FFTerm.add (FFTerm.mul (FFTerm.var sconf.nextVarId) (FFTerm.val B))
+                        (FFTerm.var (sconf.nextVarId + 1))))
+                    (FFFormula.and
+                      (FFFormula.range (FFTerm.var (sconf.nextVarId + 1)) 0 (B.val - 1 : FF c))
+                      (FFFormula.range (FFTerm.var sconf.nextVarId)
+                        ((c.midpoint / B.val : Nat) : FF c)
+                        (((c.p - 1) / B.val : Nat) : FF c))))) :=
+              Std.TreeSet.mem_union_of_left
+                (Std.TreeSet.mem_union_of_right (Std.TreeSet.mem_union_of_left hmemQeqn))
+            have hmemR_f : Var.ffv (sconf.nextVarId + 1) ∈
+                ffVarsOfFormula (FFFormula.ite
+                  (FFFormula.range (simpleSymValToTerm A) 0 (c.midpoint - 1 : FF c))
+                  (FFFormula.and (FFFormula.eq (simpleSymValToTerm A)
+                      (FFTerm.add (FFTerm.mul (FFTerm.var sconf.nextVarId) (FFTerm.val B))
+                        (FFTerm.var (sconf.nextVarId + 1))))
+                    (FFFormula.and
+                      (FFFormula.range (FFTerm.var (sconf.nextVarId + 1)) 0 (B.val - 1 : FF c))
+                      (FFFormula.range (FFTerm.var sconf.nextVarId) 0
+                        (((c.midpoint - 1) / B.val : Nat) : FF c))))
+                  (FFFormula.and (FFFormula.eq (simpleSymValToTerm A)
+                      (FFTerm.add (FFTerm.mul (FFTerm.var sconf.nextVarId) (FFTerm.val B))
+                        (FFTerm.var (sconf.nextVarId + 1))))
+                    (FFFormula.and
+                      (FFFormula.range (FFTerm.var (sconf.nextVarId + 1)) 0 (B.val - 1 : FF c))
+                      (FFFormula.range (FFTerm.var sconf.nextVarId)
+                        ((c.midpoint / B.val : Nat) : FF c)
+                        (((c.p - 1) / B.val : Nat) : FF c))))) :=
+              Std.TreeSet.mem_union_of_left
+                (Std.TreeSet.mem_union_of_right (Std.TreeSet.mem_union_of_left hmemReqn))
+            set isLowExpr : FFFormula c :=
+              FFFormula.range (simpleSymValToTerm A) 0 (c.midpoint - 1 : FF c)
+              with hisLowExpr_def
+            set eqnExpr : FFFormula c := FFFormula.eq (simpleSymValToTerm A)
+                (FFTerm.add (FFTerm.mul (FFTerm.var sconf.nextVarId) (FFTerm.val B))
+                  (FFTerm.var (sconf.nextVarId + 1)))
+              with heqnExpr_def
+            set rRangeExpr : FFFormula c :=
+              FFFormula.range (FFTerm.var (sconf.nextVarId + 1)) 0 (B.val - 1 : FF c)
+              with hrRangeExpr_def
+            set qLowExpr : FFFormula c :=
+              FFFormula.range (FFTerm.var sconf.nextVarId) 0
+                (((c.midpoint - 1) / B.val : Nat) : FF c)
+              with hqLowExpr_def
+            set qHighExpr : FFFormula c :=
+              FFFormula.range (FFTerm.var sconf.nextVarId) ((c.midpoint / B.val : Nat) : FF c)
+                (((c.p - 1) / B.val : Nat) : FF c)
+              with hqHighExpr_def
+            set lowBranchExpr : FFFormula c :=
+              FFFormula.and eqnExpr (FFFormula.and rRangeExpr qLowExpr) with hlowBranchExpr_def
+            set highBranchExpr : FFFormula c :=
+              FFFormula.and eqnExpr (FFFormula.and rRangeExpr qHighExpr) with hhighBranchExpr_def
+            set fExpr : FFFormula c := FFFormula.ite isLowExpr lowBranchExpr highBranchExpr
+              with hfExpr_def
+            refine ⟨Nat.le_add_right sconf.nextVarId 2, ?_, ?_, ?_,
+              varSetBelow_mono (Nat.le_add_right sconf.nextVarId 2) hbelow,
+              fun v' hv' => Or.inl hv', ValidBinRep_trivial gconf _ _, ?_, ?_⟩
+            · intro v' hv'
+              simp only [simpleValVars, simpleValOwnVars, Option.map_none, Option.getD_none,
+                Std.TreeSet.mem_union_iff] at hv'
+              rcases hv' with h | h
+              · rcases Std.TreeSet.mem_insert.mp h with heq | hmem
+                · rw [← Var_compare_eq_iff_eq.mp heq]
+                  exact Or.inr (Std.TreeSet.mem_union_of_left hmemR_f)
+                · exact absurd hmem Std.TreeSet.not_mem_emptyc
+              · exact absurd h Std.TreeSet.not_mem_emptyc
+            · intro v' hv'
+              simp only [exprSpecVars] at hv'
+              rcases Std.TreeSet.mem_union_iff.mp hv' with hff | hb
+              · simp only [hfExpr_def, ffVarsOfFormula, Std.TreeSet.mem_union_iff] at hff
+                rcases hff with hff' | hhigh
+                · rcases hff' with hisLow | hlow
+                  · rw [hisLowExpr_def, ffVarsOfFormula, ffVarsOfTerm_simpleSymValToTerm] at hisLow
+                    exact Or.inl (hsubA v' (simpleValOwnVars_subset_simpleValVars A v' hisLow))
+                  · rcases hffdisj 0 (((c.midpoint - 1) / B.val : Nat) : FF c) v' hlow with
+                      heq | heq | h
+                    · rw [heq]; exact Or.inr (le_refl _)
+                    · rw [heq]; refine Or.inr ?_; simp only [varIndex]; omega
+                    · exact Or.inl (hsubA v' (simpleValOwnVars_subset_simpleValVars A v' h))
+                · rcases hffdisj ((c.midpoint / B.val : Nat) : FF c)
+                    (((c.p - 1) / B.val : Nat) : FF c) v' hhigh with heq | heq | h
+                  · rw [heq]; exact Or.inr (le_refl _)
+                  · rw [heq]; refine Or.inr ?_; simp only [varIndex]; omega
+                  · exact Or.inl (hsubA v' (simpleValOwnVars_subset_simpleValVars A v' h))
+              · exfalso
+                simp only [hfExpr_def, bVarsOfFormula, Std.TreeSet.mem_union_iff] at hb
+                rcases hb with hb' | hbhigh
+                · rcases hb' with hbisLow | hblow
+                  · rw [hisLowExpr_def, bVarsOfFormula, bVarsOfTerm_simpleSymValToTerm] at hbisLow
+                    exact absurd hbisLow Std.TreeSet.not_mem_emptyc
+                  · exact hbdisj 0 (((c.midpoint - 1) / B.val : Nat) : FF c) v' hblow
+                · exact hbdisj ((c.midpoint / B.val : Nat) : FF c)
+                    (((c.p - 1) / B.val : Nat) : FF c) v' hbhigh
+            · intro v' hv'
+              simp only [exprSpecVars] at hv'
+              rcases Std.TreeSet.mem_union_iff.mp hv' with hff | hb
+              · simp only [hfExpr_def, ffVarsOfFormula, Std.TreeSet.mem_union_iff] at hff
+                rcases hff with hff' | hhigh
+                · rcases hff' with hisLow | hlow
+                  · rw [hisLowExpr_def, ffVarsOfFormula, ffVarsOfTerm_simpleSymValToTerm] at hisLow
+                    exact lt_of_lt_of_le
+                      (hbelow v' (hsubA v' (simpleValOwnVars_subset_simpleValVars A v' hisLow)))
+                      (Nat.le_add_right sconf.nextVarId 2)
+                  · rcases hffdisj 0 (((c.midpoint - 1) / B.val : Nat) : FF c) v' hlow with
+                      heq | heq | h
+                    · rw [heq]; simp only [varIndex]; omega
+                    · rw [heq]; simp only [varIndex]; omega
+                    · exact lt_of_lt_of_le
+                        (hbelow v' (hsubA v' (simpleValOwnVars_subset_simpleValVars A v' h)))
+                        (Nat.le_add_right sconf.nextVarId 2)
+                · rcases hffdisj ((c.midpoint / B.val : Nat) : FF c)
+                    (((c.p - 1) / B.val : Nat) : FF c) v' hhigh with heq | heq | h
+                  · rw [heq]; simp only [varIndex]; omega
+                  · rw [heq]; simp only [varIndex]; omega
+                  · exact lt_of_lt_of_le
+                      (hbelow v' (hsubA v' (simpleValOwnVars_subset_simpleValVars A v' h)))
+                      (Nat.le_add_right sconf.nextVarId 2)
+              · exfalso
+                simp only [hfExpr_def, bVarsOfFormula, Std.TreeSet.mem_union_iff] at hb
+                rcases hb with hb' | hbhigh
+                · rcases hb' with hbisLow | hblow
+                  · rw [hisLowExpr_def, bVarsOfFormula, bVarsOfTerm_simpleSymValToTerm] at hbisLow
+                    exact absurd hbisLow Std.TreeSet.not_mem_emptyc
+                  · exact hbdisj 0 (((c.midpoint - 1) / B.val : Nat) : FF c) v' hblow
+                · exact hbdisj ((c.midpoint / B.val : Nat) : FF c)
+                    (((c.p - 1) / B.val : Nat) : FF c) v' hbhigh
+            · intro env assignment hmatch val hval
+              obtain ⟨Aval, hAval, hmA⟩ :=
+                resolveSimpleExpr_correct symEnv e1 env assignment A hmatch hres1
+              have hB' := tryEvalSimpleExprToFFValue_correct symEnv e2 env assignment B hmatch hB
+              simp only [Corellzk2smt.Language.Core.Semantics.Basic.evalExpr, hAval, hB',
+                evalUimod, if_neg hBne0] at hval
+              injection hval with hval
+              set assignment' : Assignment c :=
+                { assignment with
+                  ff := fun n => if n = sconf.nextVarId then ((Aval.val / B.val : Nat) : FF c)
+                    else if n = sconf.nextVarId + 1 then ((Aval.val % B.val : Nat) : FF c)
+                    else assignment.ff n }
+                with hassignment'_def
+              have hagreeff : agreesOnFF (symEnvVars symEnv) assignment assignment' := by
+                intro n hn
+                have hne1 : n ≠ sconf.nextVarId := Nat.ne_of_lt (hbelow (Var.ffv n) hn)
+                have hne2 : n ≠ sconf.nextVarId + 1 := by
+                  have h : n < sconf.nextVarId := by
+                    have h' := hbelow (Var.ffv n) hn
+                    simpa only [varIndex] using h'
+                  exact Nat.ne_of_lt (lt_trans h (Nat.lt_succ_self _))
+                simp only [hassignment'_def, if_neg hne1, if_neg hne2]
+              have hagreebool : agreesOnBool (symEnvVars symEnv) assignment assignment' :=
+                fun n _ => rfl
+              have hframeff : ∀ n, Var.ffv n ∉ (ffVarsOfFormula fExpr ∪ bVarsOfFormula fExpr) →
+                  assignment'.ff n = assignment.ff n := by
+                intro n hn
+                have hne1 : n ≠ sconf.nextVarId := by
+                  intro heqn; apply hn; rw [heqn]
+                  exact Std.TreeSet.mem_union_of_left hmemQ_f
+                have hne2 : n ≠ sconf.nextVarId + 1 := by
+                  intro heqn; apply hn; rw [heqn]
+                  exact Std.TreeSet.mem_union_of_left hmemR_f
+                simp only [hassignment'_def, if_neg hne1, if_neg hne2]
+              have hframebool : ∀ n, Var.boolv n ∉ (ffVarsOfFormula fExpr ∪ bVarsOfFormula fExpr) →
+                  assignment'.bool n = assignment.bool n := fun n _ => rfl
+              have hAterm_eval : evalTerm gconf assignment' (simpleSymValToTerm A)
+                  (specs.map (·.f)) = Except.ok Aval := by
+                have hmA' : simpleValMatches assignment' A Aval :=
+                  simpleValMatches_agreesOnFF_preserves assignment assignment' A Aval
+                    (symEnvVars symEnv) hsubA hagreeff hmA
+                exact evalTerm_simpleSymValToTerm gconf assignment' A Aval (specs.map (·.f)) hmA'
+              have hqeval : assignment'.ff sconf.nextVarId = ((Aval.val / B.val : Nat) : FF c) := by
+                simp [hassignment'_def]
+              have hreval : assignment'.ff (sconf.nextVarId + 1)
+                  = ((Aval.val % B.val : Nat) : FF c) := by
+                simp [hassignment'_def]
+              have heqn_true : evalFormula gconf assignment' eqnExpr (specs.map (·.f))
+                  = Except.ok true := by
+                rw [heqnExpr_def]
+                simp only [evalFormula, evalTerm, hAterm_eval, hqeval, hreval]
+                rw [cast_div_add_mod_eq' Aval.val B, ZMod.natCast_rightInverse Aval]
+                simp
+              have hrRange_true : evalFormula gconf assignment' rRangeExpr (specs.map (·.f))
+                  = Except.ok true := by
+                rw [hrRangeExpr_def]
+                rw [evalFormula_range_iff gconf assignment' (specs.map (·.f))
+                  (FFTerm.var (sconf.nextVarId + 1)) 0 (B.val - 1 : FF c)
+                  (((Aval.val % B.val : Nat) : FF c)) (by simp only [evalTerm, hreval])]
+                have h0 : toSigned (0 : FF c) = 0 := by
+                  have : (0 : FF c) = ((0 : Nat) : FF c) := by norm_num
+                  rw [this, toSigned_natCast_of_lt 0 (by have := c.p_prime.two_le; omega)
+                    (by omega)]
+                  simp
+                have hB1 : toSigned (B.val - 1 : FF c) = ((B.val - 1 : Nat) : Int) := by
+                  rw [cast_sub_one_eq B.val (by omega),
+                    toSigned_natCast_of_lt (B.val - 1) (by omega) (by omega)]
+                have hRmod : toSigned (((Aval.val % B.val : Nat) : FF c))
+                    = ((Aval.val % B.val : Nat) : Int) :=
+                  toSigned_natCast_of_lt (Aval.val % B.val)
+                    (by have := Nat.mod_lt Aval.val (show 0 < B.val by omega); omega)
+                    (by have := Nat.mod_lt Aval.val (show 0 < B.val by omega); omega)
+                rw [h0, hB1, hRmod]
+                constructor
+                · exact Int.ofNat_nonneg _
+                · have := Nat.mod_lt Aval.val (show 0 < B.val by omega)
+                  exact_mod_cast (by omega : Aval.val % B.val ≤ B.val - 1)
+              refine ⟨assignment', hagreeff, hagreebool, hframeff, hframebool, ?_,
+                EnvMatches_agreesOnFF_preserves assignment assignment' symEnv env hagreeff hmatch,
+                ?_⟩
+              · rw [hfExpr_def]
+                by_cases hAlow : Aval.val < c.midpoint
+                · have hisLow_true : evalFormula gconf assignment' isLowExpr (specs.map (·.f))
+                      = Except.ok true := by
+                    rw [hisLowExpr_def]
+                    rw [evalFormula_range_iff gconf assignment' (specs.map (·.f))
+                      (simpleSymValToTerm A) 0 (c.midpoint - 1 : FF c) Aval hAterm_eval]
+                    have h0 : toSigned (0 : FF c) = 0 := by
+                      have : (0 : FF c) = ((0 : Nat) : FF c) := by norm_num
+                      rw [this, toSigned_natCast_of_lt 0 (by have := c.p_prime.two_le; omega)
+                        (by omega)]
+                      simp
+                    have hmid1 : toSigned (c.midpoint - 1 : FF c)
+                        = ((c.midpoint - 1 : Nat) : Int) := by
+                      rw [cast_sub_one_eq c.midpoint (by omega),
+                        toSigned_natCast_of_lt (c.midpoint - 1) (by omega) (by omega)]
+                    rw [h0, hmid1, toSigned_of_val_lt_midpoint Aval hAlow]
+                    exact ⟨Int.ofNat_nonneg _, by exact_mod_cast (by omega : Aval.val ≤
+                      c.midpoint - 1)⟩
+                  have hqLow_true : evalFormula gconf assignment' qLowExpr (specs.map (·.f))
+                      = Except.ok true := by
+                    rw [hqLowExpr_def]
+                    rw [evalFormula_range_iff gconf assignment' (specs.map (·.f))
+                      (FFTerm.var sconf.nextVarId) 0 (((c.midpoint - 1) / B.val : Nat) : FF c)
+                      (((Aval.val / B.val : Nat) : FF c)) (by simp only [evalTerm, hqeval])]
+                    have h0 : toSigned (0 : FF c) = 0 := by
+                      have : (0 : FF c) = ((0 : Nat) : FF c) := by norm_num
+                      rw [this, toSigned_natCast_of_lt 0 (by have := c.p_prime.two_le; omega)
+                        (by omega)]
+                      simp
+                    have hqLowBound := uidiv_qLow_bound B.val hB2 hBmid
+                    have huLo : toSigned (((c.midpoint - 1) / B.val : Nat) : FF c)
+                        = (((c.midpoint - 1) / B.val : Nat) : Int) :=
+                      toSigned_natCast_of_lt _ (by omega) hqLowBound
+                    have hQdvd : Aval.val / B.val ≤ (c.midpoint - 1) / B.val :=
+                      Nat.div_le_div_right (by omega)
+                    have hQval : toSigned (((Aval.val / B.val : Nat) : FF c))
+                        = ((Aval.val / B.val : Nat) : Int) :=
+                      toSigned_natCast_of_lt _ (by omega) (by omega)
+                    rw [h0, huLo, hQval]
+                    exact ⟨Int.ofNat_nonneg _, by exact_mod_cast hQdvd⟩
+                  refine evalFormula_ite_true gconf assignment' (specs.map (·.f)) isLowExpr
+                    lowBranchExpr highBranchExpr hisLow_true ?_
+                  rw [hlowBranchExpr_def]
+                  exact evalFormula_and_intro gconf assignment' (specs.map (·.f)) eqnExpr
+                    (FFFormula.and rRangeExpr qLowExpr) heqn_true
+                    (evalFormula_and_intro gconf assignment' (specs.map (·.f)) rRangeExpr qLowExpr
+                      hrRange_true hqLow_true)
+                · have hisLow_false : evalFormula gconf assignment' isLowExpr (specs.map (·.f))
+                      = Except.ok false := by
+                    rw [hisLowExpr_def]
+                    have hiff := evalFormula_range_iff gconf assignment' (specs.map (·.f))
+                      (simpleSymValToTerm A) 0 (c.midpoint - 1 : FF c) Aval hAterm_eval
+                    cases hres : evalFormula gconf assignment'
+                        (FFFormula.range (simpleSymValToTerm A) 0 (c.midpoint - 1 : FF c))
+                        (specs.map (·.f)) with
+                    | error msg =>
+                        simp [evalFormula, hAterm_eval] at hres
+                    | ok b =>
+                        cases b with
+                        | true =>
+                            exfalso
+                            have h0 : toSigned (0 : FF c) = 0 := by
+                              have : (0 : FF c) = ((0 : Nat) : FF c) := by norm_num
+                              rw [this, toSigned_natCast_of_lt 0
+                                (by have := c.p_prime.two_le; omega) (by omega)]
+                              simp
+                            have hmid1 : toSigned (c.midpoint - 1 : FF c)
+                                = ((c.midpoint - 1 : Nat) : Int) := by
+                              rw [cast_sub_one_eq c.midpoint (by omega),
+                                toSigned_natCast_of_lt (c.midpoint - 1) (by omega) (by omega)]
+                            have := hiff.mp hres
+                            rw [hmid1] at this
+                            have hAvalSigned : c.midpoint ≤ Aval.val := by omega
+                            have : toSigned Aval < 0 := by
+                              simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned,
+                                if_neg (by omega : ¬ Aval.val < c.midpoint)]
+                              have := ZMod.val_lt Aval
+                              omega
+                            omega
+                        | false => rfl
+                  have hqHigh_true : evalFormula gconf assignment' qHighExpr (specs.map (·.f))
+                      = Except.ok true := by
+                    rw [hqHighExpr_def]
+                    rw [evalFormula_range_iff gconf assignment' (specs.map (·.f))
+                      (FFTerm.var sconf.nextVarId) ((c.midpoint / B.val : Nat) : FF c)
+                      (((c.p - 1) / B.val : Nat) : FF c) (((Aval.val / B.val : Nat) : FF c))
+                      (by simp only [evalTerm, hqeval])]
+                    have hqHighLoBound := uidiv_qHighLo_bound B.val hB2 hBmid
+                    have hqHighHiBound := uidiv_qHighHi_bound B.val hB2 hBmid
+                    have hlo : toSigned ((c.midpoint / B.val : Nat) : FF c)
+                        = ((c.midpoint / B.val : Nat) : Int) :=
+                      toSigned_natCast_of_lt _ (by omega) hqHighLoBound
+                    have hhi : toSigned (((c.p - 1) / B.val : Nat) : FF c)
+                        = (((c.p - 1) / B.val : Nat) : Int) :=
+                      toSigned_natCast_of_lt _ (by omega) hqHighHiBound
+                    have hAvalLtP := ZMod.val_lt Aval
+                    have hAvalB_le_hi : Aval.val / B.val ≤ (c.p - 1) / B.val :=
+                      Nat.div_le_div_right (by omega)
+                    have hAvalB_ge_lo : c.midpoint / B.val ≤ Aval.val / B.val :=
+                      Nat.div_le_div_right (by omega)
+                    have hQval : toSigned (((Aval.val / B.val : Nat) : FF c))
+                        = ((Aval.val / B.val : Nat) : Int) :=
+                      toSigned_natCast_of_lt _ (by omega) (by omega)
+                    rw [hlo, hhi, hQval]
+                    exact ⟨by exact_mod_cast hAvalB_ge_lo, by exact_mod_cast hAvalB_le_hi⟩
+                  refine evalFormula_ite_false gconf assignment' (specs.map (·.f)) isLowExpr
+                    lowBranchExpr highBranchExpr hisLow_false ?_
+                  rw [hhighBranchExpr_def]
+                  exact evalFormula_and_intro gconf assignment' (specs.map (·.f)) eqnExpr
+                    (FFFormula.and rRangeExpr qHighExpr) heqn_true
+                    (evalFormula_and_intro gconf assignment' (specs.map (·.f)) rRangeExpr qHighExpr
+                      hrRange_true hqHigh_true)
+              · simp only [simpleValMatches, hreval]
+                exact hval
+            · intro env assignment hmatch assignment' hagree heval_f
+              have hmatch' : EnvMatches assignment' symEnv env :=
+                EnvMatches_agreesOnFF_preserves assignment assignment' symEnv env hagree hmatch
+              obtain ⟨Aval, hAval, hmA'⟩ :=
+                resolveSimpleExpr_correct symEnv e1 env assignment' A hmatch' hres1
+              have hB' := tryEvalSimpleExprToFFValue_correct symEnv e2 env assignment' B hmatch'
+                hB
+              have hAterm_eval : evalTerm gconf assignment' (simpleSymValToTerm A)
+                  (specs.map (·.f)) = Except.ok Aval :=
+                evalTerm_simpleSymValToTerm gconf assignment' A Aval (specs.map (·.f)) hmA'
+              have hrange_extract : ∀ (t : FFVar) (lo hi tval : FF c),
+                  lo.val < c.midpoint → hi.val < c.midpoint → assignment'.ff t = tval →
+                  evalFormula gconf assignment'
+                      (FFFormula.range (FFTerm.var t) lo hi)
+                      (specs.map (·.f)) = Except.ok true →
+                  lo.val ≤ tval.val ∧ tval.val ≤ hi.val := by
+                intro t lo hi tval hlo hhi htval heval
+                have hEvalT : evalTerm gconf assignment' (FFTerm.var t) (specs.map (·.f))
+                    = Except.ok tval := by simp only [evalTerm, htval]
+                rw [evalFormula_range_iff gconf assignment' (specs.map (·.f)) (FFTerm.var t)
+                  lo hi tval hEvalT] at heval
+                have hlo_signed : toSigned lo = (lo.val : Int) := toSigned_of_val_lt_midpoint lo hlo
+                have hhi_signed : toSigned hi = (hi.val : Int) := toSigned_of_val_lt_midpoint hi hhi
+                rw [hlo_signed, hhi_signed] at heval
+                have htval_lt_mid : tval.val < c.midpoint := by
+                  by_contra hcon
+                  push_neg at hcon
+                  have hneg : toSigned tval < 0 := by
+                    simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned,
+                      if_neg (show ¬tval.val < c.midpoint by omega)]
+                    have := ZMod.val_lt tval
+                    omega
+                  have hlo_nonneg : (0:Int) ≤ (lo.val:Int) := by exact_mod_cast Nat.zero_le lo.val
+                  omega
+                rw [toSigned_of_val_lt_midpoint tval htval_lt_mid] at heval
+                exact ⟨by exact_mod_cast heval.1, by exact_mod_cast heval.2⟩
+              have hzero_eq : (0 : FF c).val = 0 := ZMod.val_zero
+              have hzero_bound : (0 : FF c).val < c.midpoint := by
+                rw [hzero_eq]; have := c.p_prime.two_le; omega
+              have hRupper_eq : (B.val - 1 : FF c).val = B.val - 1 := by
+                rw [cast_sub_one_eq B.val (by omega), val_natCast_eq]
+                exact Nat.mod_eq_of_lt (by omega)
+              have hRupper_bound : (B.val - 1 : FF c).val < c.midpoint := by
+                rw [hRupper_eq]; omega
+              rw [hfExpr_def] at heval_f
+              set Qfield : FF c := assignment'.ff sconf.nextVarId with hQfield_def
+              set Rfield : FF c := assignment'.ff (sconf.nextVarId + 1) with hRfield_def
+              have hrhs_eval : evalTerm gconf assignment'
+                  (FFTerm.add (FFTerm.mul (FFTerm.var sconf.nextVarId) (FFTerm.val B))
+                    (FFTerm.var (sconf.nextVarId + 1))) (specs.map (·.f))
+                  = Except.ok (Qfield * B + Rfield) := by
+                simp only [evalTerm, hQfield_def, hRfield_def]
+              cases hisLow_eval : evalFormula gconf assignment' isLowExpr (specs.map (·.f)) with
+              | error msg =>
+                  rw [hisLowExpr_def] at hisLow_eval
+                  simp [evalFormula, hAterm_eval] at hisLow_eval
+              | ok b =>
+                  simp only [evalFormula, hisLow_eval] at heval_f
+                  cases b with
+                  | true =>
+                      simp only [if_true] at heval_f
+                      rw [hlowBranchExpr_def] at heval_f
+                      obtain ⟨heqn, hrest⟩ :=
+                        evalFormula_and_elim gconf assignment' (specs.map (·.f)) eqnExpr
+                          (FFFormula.and rRangeExpr qLowExpr) heval_f
+                      obtain ⟨hrR, hqR⟩ :=
+                        evalFormula_and_elim gconf assignment' (specs.map (·.f)) rRangeExpr
+                          qLowExpr hrest
+                      have hRbound := hrange_extract (sconf.nextVarId + 1) 0 (B.val - 1 : FF c)
+                        Rfield hzero_bound hRupper_bound rfl
+                        (by rw [← hrRangeExpr_def]; exact hrR)
+                      rw [hzero_eq, hRupper_eq] at hRbound
+                      have hqLow_eq : (((c.midpoint - 1) / B.val : Nat) : FF c).val
+                          = (c.midpoint - 1) / B.val := by
+                        rw [val_natCast_eq]
+                        exact Nat.mod_eq_of_lt (by
+                          have := uidiv_qLow_bound B.val hB2 hBmid; omega)
+                      have hqLowUpper : (((c.midpoint - 1) / B.val : Nat) : FF c).val
+                          < c.midpoint := by
+                        rw [hqLow_eq]; exact uidiv_qLow_bound B.val hB2 hBmid
+                      have hQbound := hrange_extract sconf.nextVarId 0
+                        (((c.midpoint - 1) / B.val : Nat) : FF c) Qfield hzero_bound hqLowUpper
+                        rfl (by rw [← hqLowExpr_def]; exact hqR)
+                      rw [hzero_eq, hqLow_eq] at hQbound
+                      have heqn_field : Aval = Qfield * B + Rfield := by
+                        rw [heqnExpr_def] at heqn
+                        exact (evalFormula_eq_iff gconf assignment' (specs.map (·.f))
+                          (simpleSymValToTerm A) _ Aval (Qfield * B + Rfield) hAterm_eval
+                          hrhs_eval).mp heqn
+                      have hmul : Qfield.val * B.val ≤ (c.midpoint - 1) / B.val * B.val :=
+                        Nat.mul_le_mul_right B.val hQbound.2
+                      have hSlt2p : Qfield.val * B.val + Rfield.val < 2 * c.p := by omega
+                      have hSeq : Qfield.val * B.val + Rfield.val = Aval.val :=
+                        QBR_val_eq_of_no_wrap Qfield B Rfield Aval heqn_field hSlt2p
+                          (fun hge => absurd hge (by omega))
+                      obtain ⟨hQeq, hReq⟩ := nat_eq_div_mod_of_eq (show 0 < B.val by omega)
+                        hSeq (by omega)
+                      have hRfield_eq : Rfield = ((Aval.val % B.val : Nat) : FF c) := by
+                        have hround : ((Rfield.val : Nat) : FF c) = Rfield :=
+                          ZMod.natCast_rightInverse Rfield
+                        rw [← hReq] at hround
+                        exact hround.symm
+                      refine ⟨Rfield, ?_, hmatch', ?_⟩
+                      · simp only [Corellzk2smt.Language.Core.Semantics.Basic.evalExpr, hAval,
+                          hB', evalUimod, if_neg hBne0]
+                        rw [hRfield_eq]
+                      · simp only [simpleValMatches]
+                        exact hRfield_def.symm
+                  | false =>
+                      simp only [Bool.false_eq_true, if_false] at heval_f
+                      rw [hhighBranchExpr_def] at heval_f
+                      obtain ⟨heqn, hrest⟩ :=
+                        evalFormula_and_elim gconf assignment' (specs.map (·.f)) eqnExpr
+                          (FFFormula.and rRangeExpr qHighExpr) heval_f
+                      obtain ⟨hrR, hqR⟩ :=
+                        evalFormula_and_elim gconf assignment' (specs.map (·.f)) rRangeExpr
+                          qHighExpr hrest
+                      have hRbound := hrange_extract (sconf.nextVarId + 1) 0 (B.val - 1 : FF c)
+                        Rfield hzero_bound hRupper_bound rfl
+                        (by rw [← hrRangeExpr_def]; exact hrR)
+                      rw [hzero_eq, hRupper_eq] at hRbound
+                      have hqHighLo_eq : ((c.midpoint / B.val : Nat) : FF c).val
+                          = c.midpoint / B.val := by
+                        rw [val_natCast_eq]
+                        exact Nat.mod_eq_of_lt (by
+                          have := uidiv_qHighLo_bound B.val hB2 hBmid; omega)
+                      have hqHighLoUpper : ((c.midpoint / B.val : Nat) : FF c).val
+                          < c.midpoint := by
+                        rw [hqHighLo_eq]; exact uidiv_qHighLo_bound B.val hB2 hBmid
+                      have hqHighHi_eq : (((c.p - 1) / B.val : Nat) : FF c).val
+                          = (c.p - 1) / B.val := by
+                        rw [val_natCast_eq]
+                        exact Nat.mod_eq_of_lt (by
+                          have := uidiv_qHighHi_bound B.val hB2 hBmid; omega)
+                      have hqHighHiUpper : (((c.p - 1) / B.val : Nat) : FF c).val
+                          < c.midpoint := by
+                        rw [hqHighHi_eq]; exact uidiv_qHighHi_bound B.val hB2 hBmid
+                      have hQbound := hrange_extract sconf.nextVarId
+                        ((c.midpoint / B.val : Nat) : FF c) (((c.p - 1) / B.val : Nat) : FF c)
+                        Qfield hqHighLoUpper hqHighHiUpper rfl
+                        (by rw [← hqHighExpr_def]; exact hqR)
+                      rw [hqHighLo_eq, hqHighHi_eq] at hQbound
+                      have hAval_hi : c.midpoint ≤ Aval.val := by
+                        by_contra hcon
+                        push_neg at hcon
+                        have htrue : evalFormula gconf assignment' isLowExpr (specs.map (·.f))
+                            = Except.ok true := by
+                          rw [hisLowExpr_def]
+                          rw [evalFormula_range_iff gconf assignment' (specs.map (·.f))
+                            (simpleSymValToTerm A) 0 (c.midpoint - 1 : FF c) Aval hAterm_eval]
+                          have h0 : toSigned (0 : FF c) = 0 := by
+                            have : (0 : FF c) = ((0 : Nat) : FF c) := by norm_num
+                            rw [this, toSigned_natCast_of_lt 0
+                              (by have := c.p_prime.two_le; omega) (by omega)]
+                            simp
+                          have hmid1 : toSigned (c.midpoint - 1 : FF c)
+                              = ((c.midpoint - 1 : Nat) : Int) := by
+                            rw [cast_sub_one_eq c.midpoint (by omega),
+                              toSigned_natCast_of_lt (c.midpoint - 1) (by omega) (by omega)]
+                          rw [h0, hmid1, toSigned_of_val_lt_midpoint Aval hcon]
+                          exact ⟨Int.ofNat_nonneg _, by exact_mod_cast
+                            (by omega : Aval.val ≤ c.midpoint - 1)⟩
+                        rw [htrue] at hisLow_eval
+                        simp at hisLow_eval
+                      have heqn_field : Aval = Qfield * B + Rfield := by
+                        rw [heqnExpr_def] at heqn
+                        exact (evalFormula_eq_iff gconf assignment' (specs.map (·.f))
+                          (simpleSymValToTerm A) _ Aval (Qfield * B + Rfield) hAterm_eval
+                          hrhs_eval).mp heqn
+                      have hmul : Qfield.val * B.val ≤ (c.p - 1) / B.val * B.val :=
+                        Nat.mul_le_mul_right B.val hQbound.2
+                      have hSlt2p : Qfield.val * B.val + Rfield.val < 2 * c.p := by omega
+                      have hSeq : Qfield.val * B.val + Rfield.val = Aval.val :=
+                        QBR_val_eq_of_no_wrap Qfield B Rfield Aval heqn_field hSlt2p
+                          (fun _ => by omega)
+                      obtain ⟨hQeq, hReq⟩ := nat_eq_div_mod_of_eq (show 0 < B.val by omega)
+                        hSeq (by omega)
+                      have hRfield_eq : Rfield = ((Aval.val % B.val : Nat) : FF c) := by
+                        have hround : ((Rfield.val : Nat) : FF c) = Rfield :=
+                          ZMod.natCast_rightInverse Rfield
+                        rw [← hReq] at hround
+                        exact hround.symm
+                      refine ⟨Rfield, ?_, hmatch', ?_⟩
+                      · simp only [Corellzk2smt.Language.Core.Semantics.Basic.evalExpr, hAval,
+                          hB', evalUimod, if_neg hBne0]
+                        rw [hRfield_eq]
+                      · simp only [simpleValMatches]
+                        exact hRfield_def.symm
+      · exfalso
+        have hcond : (B.val > 1 && B.val < c.midpoint) = false := by
+          simp only [Bool.and_eq_false_iff, decide_eq_false_iff_not, gt_iff_lt, not_lt]
+          omega
+        simp only [hcond, if_false] at hspec_eq
+        simp at hspec_eq
+
+theorem seExprUIMod_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
+    (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD) (e1 e2 : SimpleExpr c) :
+    TranslatesExprCorrectly gconf sconf specs ctx
+      (fun env => Corellzk2smt.Language.Core.Semantics.Basic.evalExpr env
+        (Expr.bop BinOp.uimod e1 e2))
+      (fun symEnv => seExprUIMod md gconf sconf symEnv specs e1 e2) := by
+  intro symEnv hbelow hvalid espec hspec_eq
+  simp only [seExprUIMod] at hspec_eq
+  cases hconst : seExprUIModWithFFPositiveConstantDivisor md gconf sconf symEnv specs e1 e2 with
+  | ok result =>
+      rw [hconst] at hspec_eq
+      injection hspec_eq with hspec_eq
+      subst hspec_eq
+      exact seExprUIModWithFFPositiveConstantDivisor_correct gconf specs sconf ctx md e1 e2 symEnv
+        hbelow hvalid result hconst
+  | error msg =>
+      rw [hconst] at hspec_eq
+      simp [seExprUIModWithNonConstantDivisor] at hspec_eq
 
 /-- `seExprNeg` resolves `e1`'s own symbolic value `v`, mints one fresh var tied to it via
     `outVar = -v`, and reports that fresh var as the result -- structurally identical to the
