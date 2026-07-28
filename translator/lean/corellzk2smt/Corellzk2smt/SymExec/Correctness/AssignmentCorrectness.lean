@@ -46,6 +46,7 @@ open Corellzk2smt.SymExec.Correctness.BinaryExpansionCorrectness
 open Corellzk2smt.SymExec.Correctness.ArithExprCorrectness
 open Corellzk2smt.SymExec.Correctness.BoolExprCorrectness
 open Corellzk2smt.SymExec.Correctness.BitwiseExprCorrectness
+open Corellzk2smt.SymExec.BinaryExpansion
 
 /-- `evalExpr`'s (symbolic) only ever succeeds by fully constant-folding, so its result is always
     a bare `SimpleSymVal.const` -- never a fresh `.ffvar`. Purely structural: doesn't need any
@@ -216,18 +217,21 @@ theorem seEvalExpr_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List
       simp only [seEvalExpr]; exact seExprId_correct gconf specs sconf ctx md s
 
 /-- `seEvalExpr` never succeeds on a `.bop` shape *other than* `.add`/`.sub`/`.mul`/`.div`/`.pow`/
-    `.uidiv`/`.uimod` today -- every remaining dispatch target (`seExprBor`, `seExprEq`, ...) is
-    still a permanent `"Not implemented yet"` stub. Scoped away from those seven (via the
-    `hop1`-`hop7` hypotheses), unlike an earlier single lemma covering every `Expr` shape: those
-    seven dispatch to `seExprAdd`/`seExprSub`/`seExprMul`/`seExprDiv`/`seExprPow`/`seExprUIDiv`/
-    `seExprUIMod`, none of which are stubs anymore, so a lemma claiming `seEvalExpr` *always* fails
-    on `.bop` can no longer cover those cases. This will need to shrink further as each remaining
-    `.bop`/`.uop` operator gets implemented for real. -/
+    `.uidiv`/`.uimod`/`.eq`/`.neq`/`.bor` today -- every remaining dispatch target
+    (`seExprBAnd`, `seExprLtSigned`, ...) is still a permanent `"Not implemented yet"` stub. Scoped
+    away from those ten (via the `hop1`-`hop10` hypotheses), unlike an earlier single lemma
+    covering every `Expr` shape: those ten dispatch to `seExprAdd`/`seExprSub`/`seExprMul`/
+    `seExprDiv`/`seExprPow`/`seExprUIDiv`/`seExprUIMod`/`seExprEq`/`seExprNeq`/`seExprBor`, none of
+    which are stubs anymore, so a lemma claiming `seEvalExpr` *always* fails on `.bop` can no
+    longer cover those cases. This will need to shrink further as each remaining `.bop`/`.uop`
+    operator gets implemented for real. -/
 theorem seEvalExpr_bop_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
     (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
     (op : BinOp) (hop1 : op ≠ BinOp.add) (hop2 : op ≠ BinOp.sub) (hop3 : op ≠ BinOp.mul)
     (hop4 : op ≠ BinOp.div) (hop5 : op ≠ BinOp.pow) (hop6 : op ≠ BinOp.uidiv)
-    (hop7 : op ≠ BinOp.uimod) (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (hop7 : op ≠ BinOp.uimod) (hop8 : op ≠ BinOp.eq) (hop9 : op ≠ BinOp.neq)
+    (hop10 : op ≠ BinOp.bor)
+    (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
     (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop op s1 s2) = Except.ok exprSpec) :
     False := by
   cases op <;>
@@ -239,10 +243,110 @@ theorem seEvalExpr_bop_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig
     | exact absurd rfl hop5
     | exact absurd rfl hop6
     | exact absurd rfl hop7
+    | exact absurd rfl hop8
+    | exact absurd rfl hop9
+    | exact absurd rfl hop10
     | simp [seEvalExpr,
-        seExprBor, seExprBAnd, seExprEq, seExprNeq, seExprLtSigned,
+        seExprBAnd, seExprLtSigned,
         seExprLeSigned, seExprGtSigned, seExprGeSigned, seExprBitwiseAND, seExprBitwiseOR,
         seExprBitwiseXOR, seExprBitwiseSHL, seExprBitwiseSHR] at heq
+
+/-- `seEvalExpr` on `.bop .bor s1 s2`, when it succeeds, does so via `seExprBor`'s exact defining
+    shape -- same `ite`-on-equality encoding as `seExprNeq` (no `bool_ffterm` tag yet). Stated
+    directly against the implementation, same reason as `seEvalExpr_eq_eq`/`seEvalExpr_neq_eq`. -/
+theorem seEvalExpr_bor_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop BinOp.bor s1 s2)
+      = Except.ok exprSpec) :
+    ∃ v1 v2, resolveSimpleExpr symEnv s1 = Except.ok v1 ∧
+      resolveSimpleExpr symEnv s2 = Except.ok v2 ∧
+      exprSpec.outSymEnv = symEnv ∧
+      exprSpec.f = FFFormula.eq (FFTerm.var sconf.nextVarId)
+        (FFTerm.ite (FFFormula.eq (simpleSymValToTerm v1) (simpleSymValToTerm v2))
+          (FFTerm.val 0) (FFTerm.val 1)) := by
+  simp only [seEvalExpr, seExprBor] at heq
+  cases hres1 : resolveSimpleExpr symEnv s1 with
+  | error msg => rw [hres1] at heq; simp at heq
+  | ok v1 =>
+      rw [hres1] at heq
+      cases hres2 : resolveSimpleExpr symEnv s2 with
+      | error msg => rw [hres2] at heq; simp at heq
+      | ok v2 =>
+          rw [hres2] at heq
+          injection heq with heq
+          subst heq
+          exact ⟨v1, v2, rfl, rfl, rfl, rfl⟩
+
+/-- Mirror of `seEvalExpr_eq_eq`, for `.neq` -- same shape, the `ite` branches swapped, and the
+    same `bool_ffterm` tag conjunct on the fresh var. -/
+theorem seEvalExpr_neq_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop BinOp.neq s1 s2)
+      = Except.ok exprSpec) :
+    ∃ v1 v2 fbool, resolveSimpleExpr symEnv s1 = Except.ok v1 ∧
+      resolveSimpleExpr symEnv s2 = Except.ok v2 ∧
+      bool_ffterm gconf sconf (FFTerm.var sconf.nextVarId) = Except.ok fbool ∧
+      exprSpec.outSymEnv = symEnv ∧
+      exprSpec.f = FFFormula.and
+        (FFFormula.eq (FFTerm.var sconf.nextVarId)
+          (FFTerm.ite (FFFormula.eq (simpleSymValToTerm v1) (simpleSymValToTerm v2))
+            (FFTerm.val 0) (FFTerm.val 1)))
+        fbool := by
+  simp only [seEvalExpr, seExprNeq] at heq
+  cases hres1 : resolveSimpleExpr symEnv s1 with
+  | error msg => rw [hres1] at heq; simp at heq
+  | ok v1 =>
+      rw [hres1] at heq
+      cases hres2 : resolveSimpleExpr symEnv s2 with
+      | error msg => rw [hres2] at heq; simp at heq
+      | ok v2 =>
+          rw [hres2] at heq
+          cases hbool : bool_ffterm gconf sconf (FFTerm.var sconf.nextVarId) with
+          | error msg => rw [hbool] at heq; simp at heq
+          | ok fbool =>
+              rw [hbool] at heq
+              injection heq with heq
+              subst heq
+              exact ⟨v1, v2, fbool, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- `seEvalExpr` on `.bop .eq s1 s2`, when it succeeds, does so via `seExprEq`'s exact defining
+    shape -- output symbolic environment unchanged, formula the conjunction of the fresh-var
+    tie-back equation `outVar = ite(v1 = v2, 1, 0)` with the `bool_ffterm` tag asserting `outVar`
+    is boolean. Stated directly against the implementation, same reason as
+    `seEvalExpr_uidiv_facts`/`seEvalExpr_div_eq`: `SimpleCmdCorrectness.lean` needs a shape fact for
+    its domain-of-defined/names-below bookkeeping, without unfolding `seSimpleCmd` itself. -/
+theorem seEvalExpr_eq_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop BinOp.eq s1 s2)
+      = Except.ok exprSpec) :
+    ∃ v1 v2 fbool, resolveSimpleExpr symEnv s1 = Except.ok v1 ∧
+      resolveSimpleExpr symEnv s2 = Except.ok v2 ∧
+      bool_ffterm gconf sconf (FFTerm.var sconf.nextVarId) = Except.ok fbool ∧
+      exprSpec.outSymEnv = symEnv ∧
+      exprSpec.f = FFFormula.and
+        (FFFormula.eq (FFTerm.var sconf.nextVarId)
+          (FFTerm.ite (FFFormula.eq (simpleSymValToTerm v1) (simpleSymValToTerm v2))
+            (FFTerm.val 1) (FFTerm.val 0)))
+        fbool := by
+  simp only [seEvalExpr, seExprEq] at heq
+  cases hres1 : resolveSimpleExpr symEnv s1 with
+  | error msg => rw [hres1] at heq; simp at heq
+  | ok v1 =>
+      rw [hres1] at heq
+      cases hres2 : resolveSimpleExpr symEnv s2 with
+      | error msg => rw [hres2] at heq; simp at heq
+      | ok v2 =>
+          rw [hres2] at heq
+          cases hbool : bool_ffterm gconf sconf (FFTerm.var sconf.nextVarId) with
+          | error msg => rw [hbool] at heq; simp at heq
+          | ok fbool =>
+              rw [hbool] at heq
+              injection heq with heq
+              subst heq
+              exact ⟨v1, v2, fbool, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- `seEvalExpr` on `.bop .pow s1 s2`, when it succeeds, does so via
     `seExprPowWithConstantExponent`'s exact defining shape (`seExprPow` always falls through to it

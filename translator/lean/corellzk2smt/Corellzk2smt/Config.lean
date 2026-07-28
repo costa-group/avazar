@@ -30,7 +30,7 @@ inductive CmpScm where
     - 'range' scheme encodes that a variable is boolean by checking that it is in the range [0,1].
     - 'mul' scheme encodes that a variable is boolean by checking that x*(1-x) = 0.
 -/
-inductive BoolFFScm where
+inductive BoolFFVarScm where
   | range -- range(x,0,1)
   | mul -- x*(1-x) = 0
   deriving Repr, BEq, Inhabited
@@ -38,7 +38,7 @@ inductive BoolFFScm where
 
 structure SymExecParams (c : ZKConfig) where
   cmpScm : CmpScm := CmpScm.normal
-  boolFFScm : BoolFFScm := BoolFFScm.range
+  boolFFVarScm : BoolFFVarScm := BoolFFVarScm.range
   deriving Inhabited
 
 

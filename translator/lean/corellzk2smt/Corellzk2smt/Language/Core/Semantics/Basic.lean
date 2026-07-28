@@ -286,7 +286,7 @@ def evalBor {c : ZKConfig} (v1 v2 : FF c) : FF c :=
   if v1 = 0 && v2 = 0 then 0 else 1
 
 def evalBand {c : ZKConfig} (v1 v2 : FF c) : FF c :=
-  if v1 ≠ 0 && v2 ≠ 0 then 1 else 0
+  if v1 = 0 || v2 = 0 then 0 else 1
 
 def evalBneg {c : ZKConfig} (v : FF c) : FF c :=
   if v = 0 then 1 else 0
