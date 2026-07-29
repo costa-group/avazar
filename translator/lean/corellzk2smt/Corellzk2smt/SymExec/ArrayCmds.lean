@@ -16,49 +16,163 @@ open Corellzk2smt.FFConstraints.Basic
 
 
 def seNewArray {c : ZKConfig}
-    (_md : CmdMD)
-    (_gconf : GlobalConfig c)
-    (_sconf : SymExecConfig c)
-    (_symEnv : SymEnv c)
-    (_specs : List (FuncSpec c))
-    (_id : VarID)
-    (_size : SimpleExpr c)
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (id : VarID)
+    (size : SimpleExpr c)
     : Except String (CmdsSpec c) :=
-  Except.error "seNewArray: TBD"
+    match tryEvalSimpleExprToFFValue symEnv size with
+    | Except.error msg => Except.error msg
+    | Except.ok sizeValue =>
+      let arr : SymArray c := (List.replicate sizeValue.val (.const 0)).toArray
+      let newSymEnv := setVar symEnv id (SymValue.array arr)
+      Except.ok {
+        inSymEnv := symEnv,
+        outSymEnv := newSymEnv,
+        f := .true,
+        nextVarId := sconf.nextVarId
+      }
 
-def seReadArray {c : ZKConfig}
-    (_md : CmdMD)
-    (_gconf : GlobalConfig c)
-    (_sconf : SymExecConfig c)
-    (_symEnv : SymEnv c)
-    (_specs : List (FuncSpec c))
-    (_out : VarID)
-    (_a : VarID)
-    (_index : SimpleExpr c)
+
+def seReadArrayConstantIdx {c : ZKConfig}
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (out : VarID)
+    (a : VarID)
+    (index : SimpleExpr c)
+    : Except String (CmdsSpec c) :=
+    match tryEvalSimpleExprToFFValue symEnv index with
+    | Except.error msg => Except.error msg
+    | Except.ok indexValue =>
+      match getVar symEnv a with
+      | Except.error msg => Except.error msg
+      | Except.ok (SymValue.array arr) =>
+        if h: indexValue.val < arr.size then
+          let value := arr[indexValue.val]'h
+          let newSymEnv := setVar symEnv out (.simple value)
+          Except.ok {
+            inSymEnv := symEnv,
+            outSymEnv := newSymEnv,
+            f := .true,
+            nextVarId := sconf.nextVarId
+          }
+        else
+          Except.error s!"Index {indexValue.val} is out of bounds for array {a} of size {arr.size}"
+      | Except.ok _ => Except.error s!"Variable {a} is not an array"
+
+def seReadArrayNonConstantIdx {c : ZKConfig}
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (out : VarID)
+    (a : VarID)
+    (index : SimpleExpr c)
     : Except String (CmdsSpec c) :=
   Except.error "seReadArray: TBD"
 
-def seWriteArray {c : ZKConfig}
-    (_md : CmdMD)
-    (_gconf : GlobalConfig c)
-    (_sconf : SymExecConfig c)
-    (_symEnv : SymEnv c)
-    (_specs : List (FuncSpec c))
-    (_a : VarID)
-    (_index : SimpleExpr c)
-    (_value : SimpleExpr c)
+
+def seReadArray {c : ZKConfig}
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (out : VarID)
+    (a : VarID)
+    (index : SimpleExpr c)
+    : Except String (CmdsSpec c) :=
+  match seReadArrayConstantIdx md gconf sconf symEnv specs out a index with
+  | Except.ok spec => Except.ok spec
+  | Except.error _ =>
+    seReadArrayNonConstantIdx md gconf sconf symEnv specs out a index
+
+
+
+def seWriteArrayConstantIdx {c : ZKConfig}
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (a : VarID)
+    (index : SimpleExpr c)
+    (value : SimpleExpr c)
+    : Except String (CmdsSpec c) :=
+    match tryEvalSimpleExprToFFValue symEnv index with
+    | Except.error msg => Except.error msg
+    | Except.ok indexValue =>
+      match getVar symEnv a with
+      | Except.error msg => Except.error msg
+      | Except.ok (SymValue.array arr) =>
+        if h: indexValue.val < arr.size then
+          match resolveSimpleExpr symEnv value with
+          | Except.error msg => Except.error msg
+          | Except.ok v =>
+            let newArr := arr.set indexValue.val v
+            let newSymEnv := setVar symEnv a (SymValue.array newArr)
+            Except.ok {
+              inSymEnv := symEnv,
+              outSymEnv := newSymEnv,
+              f := .true,
+              nextVarId := sconf.nextVarId
+            }
+        else
+          Except.error s!"Index {indexValue.val} is out of bounds for array {a} of size {arr.size}"
+      | Except.ok _ => Except.error s!"Variable {a} is not an array"
+
+def seWriteArrayNonConstantIdx {c : ZKConfig}
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (a : VarID)
+    (index : SimpleExpr c)
+    (value : SimpleExpr c)
     : Except String (CmdsSpec c) :=
   Except.error "seWriteArray: TBD"
 
-def seCopyArray {c : ZKConfig}
-    (_md : CmdMD)
-    (_gconf : GlobalConfig c)
-    (_sconf : SymExecConfig c)
-    (_symEnv : SymEnv c)
-    (_specs : List (FuncSpec c))
-    (_out : VarID)
-    (_a : VarID)
+def seWriteArray {c : ZKConfig}
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (a : VarID)
+    (index : SimpleExpr c)
+    (value : SimpleExpr c)
     : Except String (CmdsSpec c) :=
-  Except.error "seCopyArray: TBD"
+  match seWriteArrayConstantIdx md gconf sconf symEnv specs a index value with
+  | Except.ok spec => Except.ok spec
+  | Except.error _ =>
+    seWriteArrayNonConstantIdx md gconf sconf symEnv specs a index value
+
+def seCopyArray {c : ZKConfig}
+    (md : CmdMD)
+    (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (out : VarID)
+    (a : VarID)
+    : Except String (CmdsSpec c) :=
+    match getVar symEnv a with
+    | Except.error msg => Except.error msg
+    | Except.ok arr =>
+      let newSymEnv := setVar symEnv out arr
+      Except.ok {
+        inSymEnv := symEnv,
+        outSymEnv := newSymEnv,
+        f := .true,
+        nextVarId := sconf.nextVarId
+      }
 
 end Corellzk2smt.SymExec.BigStep

@@ -451,9 +451,8 @@ def evalCopyArray {c : ZKConfig}
   (out a : VarID)
   : Except String (Env c) :=
   match getVar env a with
-  | Except.ok (Value.array arr) =>
-      let new_arr := arr
-      let newAEnv := setVar env out (Value.array new_arr)
+  | Except.ok arr =>
+      let newAEnv := setVar env out arr
       Except.ok newAEnv
   | _ => Except.error s!"Variable '{a}' is not an array"
 
