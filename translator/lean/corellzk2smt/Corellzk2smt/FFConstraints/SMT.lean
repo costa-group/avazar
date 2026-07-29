@@ -2,6 +2,7 @@ import Corellzk2smt.Basic
 import Corellzk2smt.Config
 --import Corellzk2smt.Language.Core.Syntax.AST
 import Corellzk2smt.FFConstraints.Basic
+import Corellzk2smt.Language.Core.Semantics.Basic
 
 /- Printing a constraints system in SMT2 format
 
@@ -14,6 +15,7 @@ namespace Corellzk2smt.FFConstraints.SMT
 --open Corellzk2smt.Language.Core.Syntax.AST
 open Corellzk2smt.Config (GlobalConfig)
 open Corellzk2smt.FFConstraints.Basic
+open Corellzk2smt.Language.Core.Semantics.Basic
 
 
 /- Generates spaces for indentation -/
@@ -87,9 +89,9 @@ def printFormula {c : ZKConfig} (gconf : GlobalConfig c)
       stream.putStr s!"{sp}(ff.range "
       printTerm gconf stream t
       stream.putStr " "
-      stream.putStr s!"{l.val}"
+      stream.putStr s!"{toSigned l}"
       stream.putStr " "
-      stream.putStr s!"{u.val}"
+      stream.putStr s!"{toSigned u}"
       stream.putStr s!"){nl}"
   | .bool v =>
       stream.putStr s!"{sp}{varID gconf (Var.boolv v)}"

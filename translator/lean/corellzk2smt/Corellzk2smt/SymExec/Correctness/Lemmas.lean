@@ -5537,6 +5537,28 @@ def TranslatesExprCorrectly {c : ZKConfig} (gconf : GlobalConfig c) (sconf : Sym
       TranslatesExprCorrectly_soundness gconf specs symEnv espec concrete ∧
       TranslatesExprCorrectly_completeness gconf specs symEnv espec concrete
 
+/-- Transfer a `TranslatesExprCorrectly` proof across two concrete functions that agree on every
+    success (`= Except.ok val`), even if they disagree on `Except.error` (e.g. two evaluation
+    orders that fail with different messages when both operands are individually ill-defined).
+    Lets `seExprGtSigned_correct` (and similarly-shaped commuted/rewritten operators) be derived
+    directly from an already-proved sibling theorem instead of re-running its whole proof. -/
+theorem TranslatesExprCorrectly_of_concrete_iff {c : ZKConfig} (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (specs : List (FuncSpec c)) (ctx : FFFormula c)
+    (concreteA concreteB : Env c → Except String (FF c))
+    (symbolic : SymEnv c → Except String (ExprSpec c))
+    (hiff : ∀ (env : Env c) (val : FF c),
+      concreteA env = Except.ok val ↔ concreteB env = Except.ok val)
+    (h : TranslatesExprCorrectly gconf sconf specs ctx concreteB symbolic) :
+    TranslatesExprCorrectly gconf sconf specs ctx concreteA symbolic := by
+  intro symEnv hbelow hvalid espec hspec_eq
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, hsound, hcomplete⟩ := h symEnv hbelow hvalid espec hspec_eq
+  refine ⟨h1, h2, h3, h4, h5, h6, h7, ?_, ?_⟩
+  · intro env assignment hmatch val hconcreteA
+    exact hsound env assignment hmatch val ((hiff env val).mp hconcreteA)
+  · intro env assignment hmatch assignment' hagrees hform
+    obtain ⟨val, hconcreteB, hrest⟩ := hcomplete env assignment hmatch assignment' hagrees hform
+    exact ⟨val, (hiff env val).mpr hconcreteB, hrest⟩
+
 -- ---------------------------------------------------------------------------
 -- seIfStmt_correct / seCmd_correct / seCmds_correct
 -- ---------------------------------------------------------------------------

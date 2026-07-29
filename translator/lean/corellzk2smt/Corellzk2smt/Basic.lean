@@ -16,6 +16,8 @@ structure ZKConfig where
   p : ℕ  -- the prime number
   midpoint : ℕ := p / 2 + 1 -- the midpoint of the field, used for signed representation
   p_prime : p.Prime -- stating that p is a prime.
+  p_gt_two : 2 < p -- excludes the degenerate p=2 field, where midpoint collapses to 0 and the
+                    -- signed "negative half" becomes empty/indistinguishable from the positive one
   p_fits : p ≥ 2^(k-1) && p < 2^k -- k is indeed the bit-width of p
   midpoint_ok : midpoint = p / 2 + 1 := by rfl -- ensure midpoint is correctly defined
 
@@ -48,15 +50,19 @@ instance {c : ZKConfig} : ToString (FF c) where
 -/
 def mkZKConfig (k_input : Nat) (p_input : Nat) : Except String ZKConfig :=
   if h_prime : Nat.Prime p_input then -- Check if p is Prime
-    if h_fits : p_input ≥ 2^(k_input-1) && p_input < 2^k_input then -- Check if p fits in k bits
-      return {
-        k := k_input
-        p := p_input
-        p_prime := h_prime
-        p_fits  := h_fits
-      }
+    if h_gt_two : 2 < p_input then -- Check if p excludes the degenerate p=2 field
+      if h_fits : p_input ≥ 2^(k_input-1) && p_input < 2^k_input then -- Check if p fits in k bits
+        return {
+          k := k_input
+          p := p_input
+          p_prime := h_prime
+          p_gt_two := h_gt_two
+          p_fits  := h_fits
+        }
+      else
+        throw s!"Error: {p_input} is too large for {k_input} bits."
     else
-      throw s!"Error: {p_input} is too large for {k_input} bits."
+      throw s!"Error: {p_input} must be greater than 2."
   else
     throw s!"Error: {p_input} is not a prime number."
 
@@ -74,6 +80,7 @@ def goldilocks64 : ZKConfig := {
   k := 64
   p := goldilocks_p
   p_prime := goldilocks_is_prime
+  p_gt_two := by decide
   p_fits := by rfl
 }
 
@@ -87,6 +94,7 @@ def F11 : ZKConfig := {
   k := 4
   p := 11
   p_prime := by decide
+  p_gt_two := by decide
   p_fits := by rfl
 }
 
@@ -101,6 +109,7 @@ def F5 : ZKConfig := {
   k := 3
   p := 5
   p_prime := by decide
+  p_gt_two := by decide
   p_fits := by rfl
 }
 

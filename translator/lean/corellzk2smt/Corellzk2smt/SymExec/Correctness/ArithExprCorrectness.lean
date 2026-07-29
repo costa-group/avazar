@@ -1065,6 +1065,360 @@ theorem cast_p_sub_one_eq_neg_one {c : ZKConfig} : ((c.p - 1 : Nat) : FF c) = (-
   have : ((c.p - 1 : Nat) : FF c) - (-1 : FF c) = 0 := by rw [sub_neg_eq_add]; exact heq
   exact sub_eq_zero.mp this
 
+-- ---------------------------------------------------------------------------
+-- `c.midpoint`/`c.midpoint - 1` as the field's own signed extremes -- lets `FFFormula.range`
+-- express a one-sided inequality (`< rhs`/`> lhs`) by picking whichever of these two constants
+-- makes the *other* side of the range a permanent no-op. Used by `seExprLtSigned`'s constant-
+-- operand encodings (`SymExec/BoolExpr.lean`).
+-- ---------------------------------------------------------------------------
+
+/-- `c.midpoint` never exceeds `c.p` -- forced by `midpoint := p/2+1` together with `p ≥ 2`
+    (equality only at the degenerate `p = 2`, where `midpoint` itself reduces to `0` in the
+    field). -/
+theorem midpoint_le_p {c : ZKConfig} : c.midpoint ≤ c.p := by
+  have := c.midpoint_ok; have := c.p_prime.two_le; omega
+
+/-- `c.midpoint`, cast into the field, is the field's own signed-minimum representable value --
+    every other value's signed reading is at least as large. Lets a `FFFormula.range` express "no
+    lower bound" by picking `c.midpoint` as a lower bound that's unconditionally satisfied. -/
+theorem toSigned_midpoint_le {c : ZKConfig} (v : FF c) :
+    toSigned (c.midpoint : FF c) ≤ toSigned v := by
+  have hmpval : (c.midpoint : FF c).val = c.midpoint % c.p := val_natCast_eq c.midpoint
+  have hvlt := ZMod.val_lt v
+  rcases lt_or_eq_of_le (midpoint_le_p (c := c)) with hmplt | hmpeq
+  · have hmpmod : c.midpoint % c.p = c.midpoint := Nat.mod_eq_of_lt hmplt
+    have hmpsigned : toSigned (c.midpoint : FF c) = (c.midpoint : Int) - (c.p : Int) := by
+      simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned, hmpval, hmpmod,
+        if_neg (show ¬ c.midpoint < c.midpoint by omega)]
+    rw [hmpsigned]
+    by_cases hvlow : v.val < c.midpoint
+    · rw [toSigned_of_val_lt_midpoint v hvlow]; omega
+    · have hvsigned : toSigned v = (v.val : Int) - (c.p : Int) := by
+        simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned, if_neg hvlow]
+      rw [hvsigned]; omega
+  · have hzero : (c.midpoint : FF c) = (0 : FF c) := by rw [hmpeq]; exact ZMod.natCast_self c.p
+    rw [hzero]
+    have h0val : (0 : FF c).val = 0 := ZMod.val_zero
+    have h0lt : (0 : FF c).val < c.midpoint := by rw [h0val]; omega
+    rw [toSigned_of_val_lt_midpoint 0 h0lt]
+    have hvlow : v.val < c.midpoint := by omega
+    rw [toSigned_of_val_lt_midpoint v hvlow]
+    omega
+
+/-- `c.midpoint - 1`, cast into the field, is the field's own signed-maximum representable value
+    -- every other value's signed reading is at most as large. Lets a `FFFormula.range` express
+    "no upper bound" by picking `c.midpoint - 1` as an upper bound that's unconditionally
+    satisfied. -/
+theorem toSigned_le_midpoint_sub_one {c : ZKConfig} (v : FF c) :
+    toSigned v ≤ toSigned (c.midpoint - 1 : FF c) := by
+  have hmid2 : 2 ≤ c.midpoint := by have := c.midpoint_ok; have := c.p_prime.two_le; omega
+  have hmple := midpoint_le_p (c := c)
+  have hcast_eq : (c.midpoint - 1 : FF c) = ((c.midpoint - 1 : Nat) : FF c) := by
+    rw [Nat.cast_sub (show 1 ≤ c.midpoint by omega), Nat.cast_one]
+  rw [hcast_eq, toSigned_natCast_of_lt (c.midpoint - 1) (show c.midpoint - 1 < c.p by omega)
+    (show c.midpoint - 1 < c.midpoint by omega)]
+  have hvlt := ZMod.val_lt v
+  by_cases hvlow : v.val < c.midpoint
+  · rw [toSigned_of_val_lt_midpoint v hvlow]; omega
+  · have hvsigned : toSigned v = (v.val : Int) - (c.p : Int) := by
+      simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned, if_neg hvlow]
+    rw [hvsigned]; omega
+
+/-- Subtracting `1` (in the field) subtracts `1` from the *signed* reading too, as long as `x`
+    isn't already the signed minimum (`c.midpoint`, cast into the field) -- the one point where
+    "one less" isn't representable and the field value instead jumps to the signed maximum
+    (see `SymExec/BoolExpr.lean`'s `seExprLtSignedConstantUpperBound` for why that case needs its
+    own guard rather than relying on this lemma). -/
+theorem toSigned_sub_one_of_ne_min {c : ZKConfig} (x : FF c) (hne : x ≠ (c.midpoint : FF c)) :
+    toSigned (x - 1) = toSigned x - 1 := by
+  have hxlt := ZMod.val_lt x
+  have hmid2 : 2 ≤ c.midpoint := by have := c.midpoint_ok; have := c.p_prime.two_le; omega
+  have hmple := midpoint_le_p (c := c)
+  haveI : Fact (1 < c.p) := ⟨c.p_prime.one_lt⟩
+  have h1val : (1 : FF c).val = 1 := ZMod.val_one c.p
+  by_cases hx0 : x.val = 0
+  · have hxeq : x = 0 := (ZMod.val_eq_zero x).mp hx0
+    subst hxeq
+    rcases lt_or_eq_of_le (midpoint_le_p (c := c)) with hmplt | hmpeq
+    · have hsub_eq : (0 : FF c) - 1 = (-1 : FF c) := by ring
+      rw [hsub_eq]
+      have hneg1_val : (-1 : FF c).val = c.p - 1 := by
+        rw [← cast_p_sub_one_eq_neg_one, val_natCast_eq]
+        exact Nat.mod_eq_of_lt (by omega)
+      have h0lt : (0 : FF c).val < c.midpoint := by rw [ZMod.val_zero]; omega
+      rw [toSigned_of_val_lt_midpoint 0 h0lt]
+      have hneg1_ge : ¬ (-1 : FF c).val < c.midpoint := by rw [hneg1_val]; omega
+      simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned, hneg1_val, if_neg hneg1_ge]
+      rw [ZMod.val_zero]
+      have hp2 : 2 ≤ c.p := by omega
+      omega
+    · -- degenerate `p = 2`: `(c.midpoint : FF c) = 0 = x`, contradicting `hne`.
+      exact absurd (by rw [hmpeq]; exact (ZMod.natCast_self c.p).symm) hne
+  · have hxge1 : (1 : FF c).val ≤ x.val := by rw [h1val]; omega
+    have hsubval : (x - 1).val = x.val - 1 := by rw [ZMod.val_sub hxge1, h1val]
+    by_cases hxlow : x.val < c.midpoint
+    · have hsublow : (x - 1).val < c.midpoint := by rw [hsubval]; omega
+      rw [toSigned_of_val_lt_midpoint x hxlow, toSigned_of_val_lt_midpoint _ hsublow, hsubval]
+      omega
+    · have hxne_val : x.val ≠ (c.midpoint : FF c).val := fun heq => hne (ZMod.val_injective c.p heq)
+      have hmpval : (c.midpoint : FF c).val = c.midpoint := by
+        rw [val_natCast_eq]; exact Nat.mod_eq_of_lt (by omega)
+      rw [hmpval] at hxne_val
+      have hxgt : c.midpoint < x.val := lt_of_le_of_ne (by omega) (Ne.symm hxne_val)
+      have hsubge : ¬ (x - 1).val < c.midpoint := by rw [hsubval]; omega
+      have hxsigned : toSigned x = (x.val : Int) - (c.p : Int) := by
+        simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned, if_neg hxlow]
+      have hsubsigned : toSigned (x - 1) = ((x-1).val : Int) - (c.p : Int) := by
+        simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned, if_neg hsubge]
+      rw [hxsigned, hsubsigned, hsubval]
+      omega
+
+/-- Mirror of `toSigned_sub_one_of_ne_min`, for adding `1` -- safe as long as `x` isn't already the
+    signed maximum (`c.midpoint - 1`, cast into the field). -/
+theorem toSigned_add_one_of_ne_max {c : ZKConfig} (x : FF c)
+    (hne : x ≠ (c.midpoint - 1 : FF c)) : toSigned (x + 1) = toSigned x + 1 := by
+  have hxlt := ZMod.val_lt x
+  have hmid2 : 2 ≤ c.midpoint := by have := c.midpoint_ok; have := c.p_prime.two_le; omega
+  have hmple := midpoint_le_p (c := c)
+  haveI : Fact (1 < c.p) := ⟨c.p_prime.one_lt⟩
+  have h1val : (1 : FF c).val = 1 := ZMod.val_one c.p
+  have hmpsub1_val : (c.midpoint - 1 : FF c).val = c.midpoint - 1 := by
+    have hcast_eq : (c.midpoint - 1 : FF c) = ((c.midpoint - 1 : Nat) : FF c) := by
+      rw [Nat.cast_sub (show 1 ≤ c.midpoint by omega), Nat.cast_one]
+    rw [hcast_eq, val_natCast_eq]
+    exact Nat.mod_eq_of_lt (by omega)
+  by_cases hxlow : x.val < c.midpoint - 1
+  · -- positive half, strictly below the max: `x + 1` doesn't wrap at all.
+    have hxlt' : x.val < c.midpoint := by omega
+    have haddval : (x + 1).val = x.val + 1 := by
+      rw [ZMod.val_add_of_lt (by rw [h1val]; omega), h1val]
+    have haddlow : (x + 1).val < c.midpoint := by rw [haddval]; omega
+    rw [toSigned_of_val_lt_midpoint x hxlt', toSigned_of_val_lt_midpoint _ haddlow, haddval]
+    omega
+  · -- `x.val ≥ midpoint - 1`, and `x ≠ midpoint - 1`, so `x.val ≥ midpoint` (negative half) --
+    -- for `p = 2` this is vacuous (`x.val < p = midpoint` always), so nothing further to check.
+    have hxne_val : x.val ≠ c.midpoint - 1 := by
+      intro heq
+      apply hne
+      rw [← hmpsub1_val] at heq
+      exact ZMod.val_injective c.p heq
+    have hxgt : c.midpoint ≤ x.val := by omega
+    have hxnotlow : ¬ x.val < c.midpoint := by omega
+    have hxsigned : toSigned x = (x.val : Int) - (c.p : Int) := by
+      simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned, if_neg hxnotlow]
+    by_cases hxtop : x.val = c.p - 1
+    · -- the least-negative value; `x + 1` wraps to `0`, still consistent (`-1 + 1 = 0`).
+      have hx_eq : x = ((c.p - 1 : Nat) : FF c) := by
+        rw [← hxtop]; exact (ZMod.natCast_rightInverse x).symm
+      have haddx_eq : x + 1 = (0 : FF c) := by rw [hx_eq, cast_p_sub_one_eq_neg_one]; ring
+      rw [haddx_eq]
+      have h0val : (0 : FF c).val = 0 := ZMod.val_zero
+      have h0lt : (0 : FF c).val < c.midpoint := by rw [h0val]; omega
+      rw [toSigned_of_val_lt_midpoint 0 h0lt, hxsigned]
+      have hp2 : 2 ≤ c.p := by omega
+      omega
+    · have haddval : (x + 1).val = x.val + 1 := by
+        rw [ZMod.val_add_of_lt (by rw [h1val]; omega), h1val]
+      have haddge : ¬ (x + 1).val < c.midpoint := by rw [haddval]; omega
+      have haddsigned : toSigned (x + 1) = ((x+1).val : Int) - (c.p : Int) := by
+        simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned, if_neg haddge]
+      rw [hxsigned, haddsigned, haddval]
+      omega
+
+/-- `2 * midpoint = p + 1`, unconditionally -- `c.p_gt_two` rules out the only prime for which this
+    could fail (`p = 2`, where `midpoint = p/2+1 = 2 = p`, giving `2*midpoint = p+2`). -/
+theorem two_mul_midpoint_eq_always {c : ZKConfig} : 2 * c.midpoint = c.p + 1 := by
+  have hmid := c.midpoint_ok
+  have hp2 := c.p_gt_two
+  rcases c.p_prime.eq_two_or_odd with h2 | hodd
+  · omega
+  · omega
+
+/-- Subtracting two field elements known to be on the same side of `midpoint` (both `< midpoint`,
+    i.e. both "non-negative") never wraps outside the representable signed range -- the signed
+    difference is computed directly, with no discontinuity. This is the key fact behind
+    `seExprLtSignedNonConstant`'s "same sign, compare the difference" case. -/
+theorem toSigned_sub_of_both_nonneg {c : ZKConfig} (x y : FF c)
+    (hx : x.val < c.midpoint) (hy : y.val < c.midpoint) :
+    toSigned (x - y) = toSigned x - toSigned y := by
+  have hxsigned : toSigned x = (x.val : Int) := toSigned_of_val_lt_midpoint x hx
+  have hysigned : toSigned y = (y.val : Int) := toSigned_of_val_lt_midpoint y hy
+  rw [hxsigned, hysigned]
+  have h2mid := two_mul_midpoint_eq_always (c := c)
+  by_cases hxy : y.val ≤ x.val
+  · have hsubval : (x - y).val = x.val - y.val := ZMod.val_sub hxy
+    have hsublt : (x - y).val < c.midpoint := by rw [hsubval]; omega
+    rw [toSigned_of_val_lt_midpoint _ hsublt, hsubval]
+    omega
+  · push_neg at hxy
+    have hyxval : (y - x).val = y.val - x.val := ZMod.val_sub (le_of_lt hxy)
+    have hyxne : y - x ≠ 0 := by
+      intro h
+      have hyx : y = x := sub_eq_zero.mp h
+      rw [hyx] at hxy
+      omega
+    have hnegeq : x - y = -(y - x) := by ring
+    have hnegval : (-(y - x) : FF c).val = c.p - (y - x).val := by
+      rw [ZMod.neg_val, if_neg hyxne]
+    have hxlt := ZMod.val_lt x
+    have hylt := ZMod.val_lt y
+    have hsubge : ¬ (-(y - x) : FF c).val < c.midpoint := by rw [hnegval, hyxval]; omega
+    rw [hnegeq]
+    have hsigned2 : toSigned (-(y - x) : FF c)
+        = ((-(y - x) : FF c).val : Int) - (c.p : Int) := by
+      simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned, if_neg hsubge]
+    rw [hsigned2, hnegval, hyxval]
+    omega
+
+/-- Mirror of `toSigned_sub_of_both_nonneg`, for two field elements both `≥ midpoint` (i.e. both
+    "negative"). -/
+theorem toSigned_sub_of_both_neg {c : ZKConfig} (x y : FF c)
+    (hx : c.midpoint ≤ x.val) (hy : c.midpoint ≤ y.val) :
+    toSigned (x - y) = toSigned x - toSigned y := by
+  have hxlt := ZMod.val_lt x
+  have hylt := ZMod.val_lt y
+  have h2mid := two_mul_midpoint_eq_always (c := c)
+  have hxsigned : toSigned x = (x.val : Int) - (c.p : Int) := by
+    simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned,
+      if_neg (show ¬ x.val < c.midpoint by omega)]
+  have hysigned : toSigned y = (y.val : Int) - (c.p : Int) := by
+    simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned,
+      if_neg (show ¬ y.val < c.midpoint by omega)]
+  rw [hxsigned, hysigned]
+  by_cases hxy : y.val ≤ x.val
+  · have hsubval : (x - y).val = x.val - y.val := ZMod.val_sub hxy
+    have hsublt : (x - y).val < c.midpoint := by rw [hsubval]; omega
+    rw [toSigned_of_val_lt_midpoint _ hsublt, hsubval]
+    omega
+  · push_neg at hxy
+    have hyxval : (y - x).val = y.val - x.val := ZMod.val_sub (le_of_lt hxy)
+    have hyxne : y - x ≠ 0 := by
+      intro h
+      have hyx : y = x := sub_eq_zero.mp h
+      rw [hyx] at hxy
+      omega
+    have hnegeq : x - y = -(y - x) := by ring
+    have hnegval : (-(y - x) : FF c).val = c.p - (y - x).val := by
+      rw [ZMod.neg_val, if_neg hyxne]
+    have hsubge : ¬ (-(y - x) : FF c).val < c.midpoint := by rw [hnegval, hyxval]; omega
+    rw [hnegeq]
+    have hsigned2 : toSigned (-(y - x) : FF c)
+        = ((-(y - x) : FF c).val : Int) - (c.p : Int) := by
+      simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned, if_neg hsubge]
+    rw [hsigned2, hnegval, hyxval]
+    omega
+
+/-- `p - 1`, cast into the field via field subtraction (`(↑p : FF c) - 1`, as
+    `seExprLtSignedNonConstant` writes it -- distinct from, but equal to, `cast_p_sub_one_eq_neg_one`'s
+    Nat-subtraction-then-cast version) -- always `-1`. `p ≡ 0` in its own field, so `p - 1 = -1`
+    directly. -/
+theorem cast_p_sub_one_field_eq_neg_one {c : ZKConfig} : (c.p - 1 : FF c) = (-1 : FF c) := by
+  have hp0 : (c.p : FF c) = 0 := ZMod.natCast_self c.p
+  rw [hp0]; ring
+
+/-- `toSigned` of `p - 1`, cast into the field via field subtraction -- always `-1`, the field's
+    own least-negative value. -/
+theorem toSigned_p_sub_one_field {c : ZKConfig} : toSigned (c.p - 1 : FF c) = -1 := by
+  rw [cast_p_sub_one_field_eq_neg_one]
+  have hmid := c.midpoint_ok
+  have hp2 := c.p_gt_two
+  have h1val : (1 : FF c).val = 1 := by
+    haveI : Fact (1 < c.p) := ⟨c.p_prime.one_lt⟩
+    exact ZMod.val_one c.p
+  have h1ne : (1 : FF c) ≠ 0 := by
+    intro h; rw [h] at h1val; simp at h1val
+  have hneg1val : (-1 : FF c).val = c.p - 1 := by
+    rw [ZMod.neg_val, if_neg h1ne, h1val]
+  have hneg1lt : ¬ (-1 : FF c).val < c.midpoint := by rw [hneg1val]; omega
+  simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned, hneg1val, if_neg hneg1lt]
+  omega
+
+/-- `evalFormula` on the "is non-negative" range (`range t 0 (midpoint-1)`) is `true` exactly when
+    the underlying value's signed reading is non-negative -- the upper bound is a permanent no-op
+    (`toSigned_le_midpoint_sub_one`). Used by `seExprLtSignedNonConstant` to test `s1`/`s2`'s
+    sign. -/
+theorem evalFormula_isPositive_iff {c : ZKConfig} (gconf : GlobalConfig c)
+    (assignment : Assignment c) (ms : List (FFMacro c)) (t : FFTerm c) (v : FF c)
+    (ht : evalTerm gconf assignment t ms = Except.ok v) :
+    evalFormula gconf assignment (FFFormula.range t 0 (c.midpoint - 1 : FF c)) ms
+      = Except.ok true ↔ 0 ≤ toSigned v := by
+  rw [evalFormula_range_iff gconf assignment ms t 0 (c.midpoint - 1 : FF c) v ht]
+  have hmax := toSigned_le_midpoint_sub_one v
+  have h0 : toSigned (0 : FF c) = 0 := by
+    have h0lt : (0 : FF c).val < c.midpoint := by
+      rw [ZMod.val_zero]; have := c.midpoint_ok; have := c.p_prime.two_le; omega
+    rw [toSigned_of_val_lt_midpoint 0 h0lt, ZMod.val_zero]
+    norm_num
+  rw [h0]
+  omega
+
+/-- Mirror of `evalFormula_isPositive_iff`, for the "is negative" range
+    (`range t midpoint (p-1)`). -/
+theorem evalFormula_isNegative_iff {c : ZKConfig} (gconf : GlobalConfig c)
+    (assignment : Assignment c) (ms : List (FFMacro c)) (t : FFTerm c) (v : FF c)
+    (ht : evalTerm gconf assignment t ms = Except.ok v) :
+    evalFormula gconf assignment (FFFormula.range t (c.midpoint : FF c) (c.p - 1 : FF c)) ms
+      = Except.ok true ↔ toSigned v < 0 := by
+  rw [evalFormula_range_iff gconf assignment ms t (c.midpoint : FF c) (c.p - 1 : FF c) v ht]
+  have hmin := toSigned_midpoint_le v
+  rw [toSigned_p_sub_one_field]
+  omega
+
+/-- `evalFormula` on a `.range` node, as a plain equality (rather than an iff-to-true) -- restates
+    `evalFormula_range_iff`'s own proof technique with a `decide`-valued conclusion, needed
+    whenever a caller has to know the *exact* result (including `Except.ok false`), not just
+    whether it's `true`. -/
+theorem evalFormula_range_eq {c : ZKConfig} (gconf : GlobalConfig c) (assignment : Assignment c)
+    (ms : List (FFMacro c)) (t : FFTerm c) (l u v : FF c)
+    (ht : evalTerm gconf assignment t ms = Except.ok v) :
+    evalFormula gconf assignment (FFFormula.range t l u) ms
+      = Except.ok (decide (toSigned l ≤ toSigned v ∧ toSigned v ≤ toSigned u)) := by
+  simp only [evalFormula, ht, Corellzk2smt.Language.Core.Semantics.Basic.evalLe]
+  by_cases h1 : toSigned l ≤ toSigned v <;> by_cases h2 : toSigned v ≤ toSigned u <;>
+    simp [h1, h2]
+
+/-- `evalFormula_isPositive_iff`, as a plain equality. -/
+theorem evalFormula_isPositive_eq {c : ZKConfig} (gconf : GlobalConfig c)
+    (assignment : Assignment c) (ms : List (FFMacro c)) (t : FFTerm c) (v : FF c)
+    (ht : evalTerm gconf assignment t ms = Except.ok v) :
+    evalFormula gconf assignment (FFFormula.range t 0 (c.midpoint - 1 : FF c)) ms
+      = Except.ok (decide (0 ≤ toSigned v)) := by
+  rw [evalFormula_range_eq gconf assignment ms t 0 (c.midpoint - 1 : FF c) v ht]
+  have hmax := toSigned_le_midpoint_sub_one v
+  have h0 : toSigned (0 : FF c) = 0 := by
+    have h0lt : (0 : FF c).val < c.midpoint := by
+      rw [ZMod.val_zero]; have := c.midpoint_ok; have := c.p_prime.two_le; omega
+    rw [toSigned_of_val_lt_midpoint 0 h0lt, ZMod.val_zero]; norm_num
+  rw [h0]
+  congr 1
+  rw [decide_eq_decide]
+  omega
+
+/-- `evalFormula_isNegative_iff`, as a plain equality. -/
+theorem evalFormula_isNegative_eq {c : ZKConfig} (gconf : GlobalConfig c)
+    (assignment : Assignment c) (ms : List (FFMacro c)) (t : FFTerm c) (v : FF c)
+    (ht : evalTerm gconf assignment t ms = Except.ok v) :
+    evalFormula gconf assignment (FFFormula.range t (c.midpoint : FF c) (c.p - 1 : FF c)) ms
+      = Except.ok (decide (toSigned v < 0)) := by
+  rw [evalFormula_range_eq gconf assignment ms t (c.midpoint : FF c) (c.p - 1 : FF c) v ht]
+  have hmin := toSigned_midpoint_le v
+  rw [toSigned_p_sub_one_field]
+  congr 1
+  rw [decide_eq_decide]
+  omega
+
+/-- `toSigned v` is negative exactly when `v.val` sits in the field's negative half -- the
+    `.val`-level restatement of `toSigned`'s own two-branch definition, needed to bridge
+    `seExprLtSignedNonConstant`'s sign tests (stated in terms of `toSigned`) to
+    `toSigned_sub_of_both_nonneg`/`toSigned_sub_of_both_neg` (stated in terms of `.val`). -/
+theorem toSigned_lt_zero_iff {c : ZKConfig} (v : FF c) : toSigned v < 0 ↔ c.midpoint ≤ v.val := by
+  have hvlt := ZMod.val_lt v
+  by_cases h : v.val < c.midpoint
+  · rw [toSigned_of_val_lt_midpoint v h]; omega
+  · have hsigned : toSigned v = (v.val : Int) - (c.p : Int) := by
+      simp only [Corellzk2smt.Language.Core.Semantics.Basic.toSigned, if_neg h]
+    rw [hsigned]; omega
+
 /-- `evalFormula` on `range t B (-1)`, for a constant `B` in the field's negative half, reduces to
     the plain unsigned comparison `B.val ≤ tval.val` -- the key fact making
     `uiDivModGadgetLargeDivisor`'s selector correct for *every* dividend in one shot, including the

@@ -217,20 +217,21 @@ theorem seEvalExpr_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List
       simp only [seEvalExpr]; exact seExprId_correct gconf specs sconf ctx md s
 
 /-- `seEvalExpr` never succeeds on a `.bop` shape *other than* `.add`/`.sub`/`.mul`/`.div`/`.pow`/
-    `.uidiv`/`.uimod`/`.eq`/`.neq`/`.bor`/`.band` today -- every remaining dispatch target
-    (`seExprLtSigned`, ...) is still a permanent `"Not implemented yet"` stub. Scoped
-    away from those eleven (via the `hop1`-`hop11` hypotheses), unlike an earlier single lemma
-    covering every `Expr` shape: those eleven dispatch to `seExprAdd`/`seExprSub`/`seExprMul`/
+    `.uidiv`/`.uimod`/`.eq`/`.neq`/`.bor`/`.band`/`.lt`/`.gt` today -- every remaining dispatch
+    target (`seExprLeSigned`, ...) is still a permanent `"Not implemented yet"` stub. Scoped
+    away from those thirteen (via the `hop1`-`hop13` hypotheses), unlike an earlier single lemma
+    covering every `Expr` shape: those thirteen dispatch to `seExprAdd`/`seExprSub`/`seExprMul`/
     `seExprDiv`/`seExprPow`/`seExprUIDiv`/`seExprUIMod`/`seExprEq`/`seExprNeq`/`seExprBor`/
-    `seExprBAnd`, none of which are stubs anymore, so a lemma claiming `seEvalExpr` *always* fails
-    on `.bop` can no longer cover those cases. This will need to shrink further as each remaining
-    `.bop`/`.uop` operator gets implemented for real. -/
+    `seExprBAnd`/`seExprLtSigned`/`seExprGtSigned`, none of which are stubs anymore, so a lemma
+    claiming `seEvalExpr` *always* fails on `.bop` can no longer cover those cases. This will need
+    to shrink further as each remaining `.bop`/`.uop` operator gets implemented for real. -/
 theorem seEvalExpr_bop_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
     (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
     (op : BinOp) (hop1 : op ≠ BinOp.add) (hop2 : op ≠ BinOp.sub) (hop3 : op ≠ BinOp.mul)
     (hop4 : op ≠ BinOp.div) (hop5 : op ≠ BinOp.pow) (hop6 : op ≠ BinOp.uidiv)
     (hop7 : op ≠ BinOp.uimod) (hop8 : op ≠ BinOp.eq) (hop9 : op ≠ BinOp.neq)
-    (hop10 : op ≠ BinOp.bor) (hop11 : op ≠ BinOp.band)
+    (hop10 : op ≠ BinOp.bor) (hop11 : op ≠ BinOp.band) (hop12 : op ≠ BinOp.lt)
+    (hop13 : op ≠ BinOp.gt) (hop14 : op ≠ BinOp.le) (hop15 : op ≠ BinOp.ge)
     (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
     (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop op s1 s2) = Except.ok exprSpec) :
     False := by
@@ -247,9 +248,12 @@ theorem seEvalExpr_bop_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig
     | exact absurd rfl hop9
     | exact absurd rfl hop10
     | exact absurd rfl hop11
+    | exact absurd rfl hop12
+    | exact absurd rfl hop13
+    | exact absurd rfl hop14
+    | exact absurd rfl hop15
     | simp [seEvalExpr,
-        seExprLtSigned,
-        seExprLeSigned, seExprGtSigned, seExprGeSigned, seExprBitwiseAND, seExprBitwiseOR,
+        seExprBitwiseAND, seExprBitwiseOR,
         seExprBitwiseXOR, seExprBitwiseSHL, seExprBitwiseSHR] at heq
 
 /-- `seEvalExpr` on `.bop .bor s1 s2`, when it succeeds, does so via `seExprBor`'s exact defining
@@ -615,6 +619,158 @@ theorem seEvalExpr_uimod_facts {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig
               · exfalso
                 rw [if_neg hBge] at hconst
                 simp at hconst
+
+/-- `seEvalExpr` on `.bop .lt s1 s2`, when it succeeds, does so via one of `seExprLtSigned`'s three
+    branches (constant-RHS, constant-LHS, neither) -- `outSymEnv` is unchanged in all three, and
+    `FormulaNamesBelow` holds regardless of branch/guard outcome since every formula built along
+    the way (`range`/`eq`/`and`/`ite`/`bool_ffterm`) is purely local FF arithmetic, never a macro
+    call. -/
+theorem seEvalExpr_lt_facts {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop BinOp.lt s1 s2)
+      = Except.ok exprSpec) :
+    exprSpec.outSymEnv = symEnv ∧
+      ∀ badName, Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow exprSpec.f badName := by
+  simp only [seEvalExpr, seExprLtSigned] at heq
+  cases hconst1 : seExprLtSignedConstantUpperBound md gconf sconf symEnv specs s1 s2 with
+  | ok result =>
+      rw [hconst1] at heq
+      injection heq with heq
+      subst heq
+      simp only [seExprLtSignedConstantUpperBound] at hconst1
+      cases hres2 : tryEvalSimpleExprToFFValue symEnv s2 with
+      | error msg => rw [hres2] at hconst1; simp at hconst1
+      | ok rhs =>
+          rw [hres2] at hconst1
+          cases hres1 : resolveSimpleExpr symEnv s1 with
+          | error msg => rw [hres1] at hconst1; simp at hconst1
+          | ok lhs =>
+              rw [hres1] at hconst1
+              cases hbool : bool_ffterm gconf sconf (FFTerm.var sconf.nextVarId) with
+              | error msg => rw [hbool] at hconst1; simp at hconst1
+              | ok fbool =>
+                  rw [hbool] at hconst1
+                  injection hconst1 with hconst1
+                  subst hconst1
+                  refine ⟨rfl, fun badName => ?_⟩
+                  by_cases hrhseq : rhs = (c.midpoint : FF c) <;>
+                    simp [Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow,
+                      Corellzk2smt.FFConstraints.Lemmas.TermNamesBelow, hrhseq,
+                      Corellzk2smt.SymExec.Correctness.Lemmas.simpleSymValToTerm_names_below,
+                      FormulaNamesBelow_bool_ffterm_var gconf sconf sconf.nextVarId fbool hbool
+                        badName]
+  | error msg =>
+      rw [hconst1] at heq
+      cases hconst2 : seExprLtSignedConstantLowerBound md gconf sconf symEnv specs s1 s2 with
+      | ok result =>
+          rw [hconst2] at heq
+          injection heq with heq
+          subst heq
+          simp only [seExprLtSignedConstantLowerBound] at hconst2
+          cases hres1 : tryEvalSimpleExprToFFValue symEnv s1 with
+          | error msg => rw [hres1] at hconst2; simp at hconst2
+          | ok lhs =>
+              rw [hres1] at hconst2
+              cases hres2 : resolveSimpleExpr symEnv s2 with
+              | error msg => rw [hres2] at hconst2; simp at hconst2
+              | ok rhs =>
+                  rw [hres2] at hconst2
+                  cases hbool : bool_ffterm gconf sconf (FFTerm.var sconf.nextVarId) with
+                  | error msg => rw [hbool] at hconst2; simp at hconst2
+                  | ok fbool =>
+                      rw [hbool] at hconst2
+                      injection hconst2 with hconst2
+                      subst hconst2
+                      refine ⟨rfl, fun badName => ?_⟩
+                      by_cases hlhseq : lhs = (c.midpoint - 1 : FF c) <;>
+                        simp [Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow,
+                          Corellzk2smt.FFConstraints.Lemmas.TermNamesBelow, hlhseq,
+                          Corellzk2smt.SymExec.Correctness.Lemmas.simpleSymValToTerm_names_below,
+                          FormulaNamesBelow_bool_ffterm_var gconf sconf sconf.nextVarId fbool hbool
+                            badName]
+      | error msg =>
+          rw [hconst2] at heq
+          simp only [seExprLtSignedNonConstant] at heq
+          cases hres1 : resolveSimpleExpr symEnv s1 with
+          | error msg => rw [hres1] at heq; simp at heq
+          | ok lhs =>
+              rw [hres1] at heq
+              cases hres2 : resolveSimpleExpr symEnv s2 with
+              | error msg => rw [hres2] at heq; simp at heq
+              | ok rhs =>
+                  rw [hres2] at heq
+                  cases hbool : bool_ffterm gconf sconf (FFTerm.var sconf.nextVarId) with
+                  | error msg => rw [hbool] at heq; simp at heq
+                  | ok fbool =>
+                      rw [hbool] at heq
+                      injection heq with heq
+                      subst heq
+                      refine ⟨rfl, fun badName => ?_⟩
+                      simp [Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow,
+                        Corellzk2smt.FFConstraints.Lemmas.TermNamesBelow,
+                        Corellzk2smt.SymExec.Correctness.Lemmas.simpleSymValToTerm_names_below,
+                        FormulaNamesBelow_bool_ffterm_var gconf sconf sconf.nextVarId fbool hbool
+                          badName]
+
+/-- `seEvalExpr` on `.bop .gt s1 s2` reduces, by definition, to `.lt` with the operands swapped
+    (`seExprGtSigned md gconf sconf symEnv specs s1 s2 = seExprLtSigned md gconf sconf symEnv
+    specs s2 s1`) -- so this is a direct corollary of `seEvalExpr_lt_facts`, not a re-run of its
+    proof. -/
+theorem seEvalExpr_gt_facts {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop BinOp.gt s1 s2)
+      = Except.ok exprSpec) :
+    exprSpec.outSymEnv = symEnv ∧
+      ∀ badName, Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow exprSpec.f badName := by
+  simp only [seEvalExpr, seExprGtSigned] at heq
+  exact seEvalExpr_lt_facts md gconf sconf symEnv specs s2 s1 exprSpec
+    (by simp only [seEvalExpr]; exact heq)
+
+/-- `seEvalExpr` on `.bop .le s1 s2`, when it succeeds, wraps `seExprGtSigned`'s own spec with one
+    more equation (`outVar = 1 - gtSpec.result`) plus a `bool_ffterm` tag -- `outSymEnv` passes
+    through unchanged (chaining `seEvalExpr_gt_facts`'s own `outSymEnv = symEnv` fact), and
+    `FormulaNamesBelow` holds for all three conjuncts of the wrapped formula (`gtSpec.f` via
+    `seEvalExpr_gt_facts` itself, the new equation via `simpleSymValToTerm_names_below`, the
+    `bool_ffterm` tag via `FormulaNamesBelow_bool_ffterm_var`). -/
+theorem seEvalExpr_le_facts {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop BinOp.le s1 s2)
+      = Except.ok exprSpec) :
+    exprSpec.outSymEnv = symEnv ∧
+      ∀ badName, Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow exprSpec.f badName := by
+  cases hgtSpec : seExprGtSigned md gconf sconf symEnv specs s1 s2 with
+  | error msg => simp [seEvalExpr, seExprLeSigned, hgtSpec] at heq
+  | ok gtSpec =>
+      cases hbool : bool_ffterm gconf sconf (FFTerm.var gtSpec.nextVarId) with
+      | error msg => simp [seEvalExpr, seExprLeSigned, hgtSpec, hbool] at heq
+      | ok fbool =>
+          simp only [seEvalExpr, seExprLeSigned, hgtSpec, hbool] at heq
+          injection heq with heq
+          subst heq
+          obtain ⟨houtSymEnv_gt, hnames_gt⟩ :=
+            seEvalExpr_gt_facts md gconf sconf symEnv specs s1 s2 gtSpec
+              (by simp only [seEvalExpr]; exact hgtSpec)
+          refine ⟨houtSymEnv_gt, fun badName => ?_⟩
+          simp [Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow,
+            Corellzk2smt.FFConstraints.Lemmas.TermNamesBelow, hnames_gt badName,
+            Corellzk2smt.SymExec.Correctness.Lemmas.simpleSymValToTerm_names_below,
+            FormulaNamesBelow_bool_ffterm_var gconf sconf gtSpec.nextVarId fbool hbool badName]
+
+/-- `seEvalExpr` on `.bop .ge s1 s2` reduces, by definition, to `.le` with the operands swapped --
+    mirrors `seEvalExpr_gt_facts` exactly, one level up. -/
+theorem seEvalExpr_ge_facts {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
+    (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
+    (s1 s2 : SimpleExpr c) (exprSpec : ExprSpec c)
+    (heq : seEvalExpr md gconf sconf symEnv specs (Expr.bop BinOp.ge s1 s2)
+      = Except.ok exprSpec) :
+    exprSpec.outSymEnv = symEnv ∧
+      ∀ badName, Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow exprSpec.f badName := by
+  simp only [seEvalExpr, seExprGeSigned] at heq
+  exact seEvalExpr_le_facts md gconf sconf symEnv specs s2 s1 exprSpec
+    (by simp only [seEvalExpr]; exact heq)
 
 /-- Mirror of `seEvalExpr_add_eq`, for `seExprSub` (`outVar = v1 - v2`). -/
 theorem seEvalExpr_sub_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
