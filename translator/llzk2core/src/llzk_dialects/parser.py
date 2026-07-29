@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 from llzk_dialects.core import Operation, BlockOperation
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.llzk import ModuleOp
+from llzk_dialects.loc_parser import LocTable, preprocess
 
 
 class LLZKParser:
@@ -32,7 +33,14 @@ class LLZKParser:
     def __init__(self, lines: List[str]):
         # Strip whitespace and drop blank lines so cursor arithmetic is simple.
         # Block operations receive self.lines directly and rely on this invariant.
-        self.lines: List[str] = [l.strip() for l in lines if l.strip()]
+        raw_lines = [l.strip() for l in lines if l.strip()]
+
+        # Pull out '#locN = loc(...)' alias definitions and strip any trailing
+        # ' loc(...)' suffix from every other line (see loc_parser). This keeps
+        # the dialect regexes below unaware of MLIR debug-info annotations,
+        # while _line_locs/loc_table let us re-attach the resolved location to
+        # whatever Operation/BlockOperation is parsed from each line/range.
+        self.lines, self._line_locs, self.loc_table = preprocess(raw_lines)
         self.dialects: Dict[str, Dialect] = {}
 
     # ── Dialect registration ──────────────────────────────────────────────────
@@ -78,6 +86,23 @@ class LLZKParser:
                 return op_cls
         return None
 
+    # ── Location resolution ───────────────────────────────────────────────────
+
+    def _loc_for_range(self, start: int, end: int) -> Optional[str]:
+        """
+        Resolve the location to attach to an Operation/BlockOperation parsed
+        from self.lines[start:end].
+
+        Block ops (end > start) carry their 'loc(...)' on the closing-brace
+        line, so that's checked first; the opening line is the fallback (also
+        the only line checked for flat, single-line ops, where start == end - 1).
+        """
+        for idx in (end - 1, start):
+            ref = self._line_locs.get(idx)
+            if ref is not None:
+                return self.loc_table.resolve(ref)
+        return None
+
     # ── Core parsing ──────────────────────────────────────────────────────────
 
     def parse_body(self, start: int, end: int) -> List[Operation]:
@@ -106,10 +131,14 @@ class LLZKParser:
 
             if issubclass(op_cls, BlockOperation):
                 # Block ops consume multiple lines and return the next cursor.
+                block_start = cursor
                 op, cursor = op_cls.parse(self.lines, cursor, self.parse_body)
+                op.loc = self._loc_for_range(block_start, cursor)
                 ops.append(op)
             else:
-                ops.append(op_cls.parse(line))
+                op = op_cls.parse(line)
+                op.loc = self._loc_for_range(cursor, cursor + 1)
+                ops.append(op)
                 cursor += 1
 
         return ops
@@ -131,7 +160,9 @@ class LLZKParser:
                 return self.parse_body(0, len(self.lines))
             lang, main_type = ModuleOp.parse_header(self.lines[0])
             body = self.parse_body(body_start + 1, body_end)
-            return [ModuleOp(lang, main_type, body)]
+            module_op = ModuleOp(lang, main_type, body)
+            module_op.loc = self._loc_for_range(0, body_end + 1)
+            return [module_op]
 
         return self.parse_body(0, len(self.lines))
 
