@@ -118,11 +118,15 @@ def sEvalExprDiv {c : ZKConfig}
   let outFFVar : FFVar := { id := cfg.nextId,
                             meta_data := { src_info := md.src_info, orig_name := id}
                           }
+  let f := FFFormula.ite
+                      (FFFormula.eq v2 (FFTerm.val 0))
+                      FFFormula.false
+                      (FFFormula.eq (FFTerm.mul (FFTerm.var outFFVar) v2) v1)
   return {
           inSymEnv := senv,
           outSymEnv := senv,
           -- outVar*v2 = v1
-          f := FFFormula.eq (FFTerm.mul (FFTerm.var outFFVar) v2) v1,  -- (outVar = v1 / v2)
+          f := f
           resTerm := (FFTerm.var outFFVar),
           res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := { outFFVar },
