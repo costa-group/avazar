@@ -225,6 +225,11 @@ class Operation(ABC):
       __repr__()   — human-readable form
     """
 
+    # Resolved source location (e.g. '"file.circom":7:5'), or None if the
+    # input had no 'loc(...)' annotation for this line/range. Set externally
+    # by LLZKParser after parsing — see loc_parser.py.
+    loc: Optional[str] = None
+
     @abstractmethod
     def dialect(self) -> 'Dialect':
         pass
