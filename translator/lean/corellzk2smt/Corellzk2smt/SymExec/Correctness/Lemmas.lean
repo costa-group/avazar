@@ -4796,7 +4796,7 @@ theorem specVars_seqComposition {c : ZKConfig} (gconf : GlobalConfig c) (sconf :
     `SymEnv`/`Assignment` pair" lemma that hasn't been built yet, so it's deferred.) -/
 theorem seqComposition_sound {c : ZKConfig}
     (gconf : GlobalConfig c) (sconf : SymExecConfig c) (specs : List (FuncSpec c))
-    (spec1 spec2 : CmdsSpec c)
+    (spec1 spec2 : CmdsSpec c) (annoStr : String)
     (concrete1 concrete2 : Env c → Except String (Env c))
     (hin1_below : varSetBelow (symEnvVars spec1.inSymEnv) sconf.nextVarId)
     (h1_mono : sconf.nextVarId ≤ spec1.nextVarId)
@@ -4825,7 +4825,7 @@ theorem seqComposition_sound {c : ZKConfig}
       agreesOnFF (symEnvVars spec1.inSymEnv) assignment assignment' ∧
       (∀ n, Var.ffv n ∉ (specVars spec1 ∪ specVars spec2) → assignment'.ff n = assignment.ff n) ∧
       (∀ n, Var.boolv n ∉ (specVars spec1 ∪ specVars spec2) → assignment'.bool n = assignment.bool n) ∧
-      evalFormula gconf assignment' (.and (.anno spec1.f "") spec2.f) (specs.map (·.f)) =
+      evalFormula gconf assignment' (.and (.anno spec1.f annoStr) spec2.f) (specs.map (·.f)) =
         Except.ok true ∧
       EnvMatches assignment' spec2.outSymEnv env' := by
   cases hc1 : concrete1 env with
@@ -4903,8 +4903,8 @@ theorem seqComposition_sound {c : ZKConfig}
       have hn1 : Var.boolv n ∉ specVars spec1 := fun h => hn (Std.TreeSet.mem_union_of_left h)
       have hn2 : Var.boolv n ∉ specVars spec2 := fun h => hn (Std.TreeSet.mem_union_of_right h)
       exact (a2_boolframe n hn2).trans (a1_boolframe n hn1)
-    · exact evalFormula_and_intro gconf assignment2 (.anno spec1.f "") spec2.f (specs.map (·.f))
-        (by rw [evalFormula_anno]; exact h_f1_assignment2) a2_eval
+    · exact evalFormula_and_intro gconf assignment2 (.anno spec1.f annoStr) spec2.f
+        (specs.map (·.f)) (by rw [evalFormula_anno]; exact h_f1_assignment2) a2_eval
 
 -- ---------------------------------------------------------------------------
 -- Completeness of `seqComposition`
@@ -4924,7 +4924,7 @@ theorem seqComposition_sound {c : ZKConfig}
     `h1_complete` into `h2_complete`, never conjured from bare symbolic/assignment data alone. -/
 theorem seqComposition_complete {c : ZKConfig}
     (gconf : GlobalConfig c) (specs : List (FuncSpec c))
-    (spec1 spec2 : CmdsSpec c)
+    (spec1 spec2 : CmdsSpec c) (annoStr : String)
     (concrete1 concrete2 : Env c → Except String (Env c))
     (hlink : spec2.inSymEnv = spec1.outSymEnv)
     (h1_complete : ∀ env assignment, EnvMatches assignment spec1.inSymEnv env →
@@ -4938,11 +4938,11 @@ theorem seqComposition_complete {c : ZKConfig}
     (env : Env c) (assignment : Assignment c) (hmatch : EnvMatches assignment spec1.inSymEnv env)
     (assignment' : Assignment c)
     (h_ff_agree : agreesOnFF (symEnvVars spec1.inSymEnv) assignment assignment')
-    (heval : evalFormula gconf assignment' (.and (.anno spec1.f "") spec2.f) (specs.map (·.f)) =
-      Except.ok true) :
+    (heval : evalFormula gconf assignment' (.and (.anno spec1.f annoStr) spec2.f)
+      (specs.map (·.f)) = Except.ok true) :
     ∃ env', (concrete1 env).bind concrete2 = Except.ok env' ∧
       EnvMatches assignment' spec2.outSymEnv env' := by
-  obtain ⟨heval1, heval2⟩ := evalFormula_and_elim gconf assignment' (.anno spec1.f "") spec2.f
+  obtain ⟨heval1, heval2⟩ := evalFormula_and_elim gconf assignment' (.anno spec1.f annoStr) spec2.f
     (specs.map (·.f)) heval
   rw [evalFormula_anno] at heval1
   obtain ⟨env1, hc1, hmatch1⟩ := h1_complete env assignment hmatch assignment' h_ff_agree heval1
@@ -6218,7 +6218,8 @@ theorem seqComposition_correct {c : ZKConfig} (gconf : GlobalConfig c) (sconf : 
     have h := heq; simp only [seqComposition, Except.ok.injEq] at h; rw [← h]
   have hCompNext : specComposed.nextVarId = spec2.nextVarId := by
     have h := heq; simp only [seqComposition, Except.ok.injEq] at h; rw [← h]
-  have hCompF : specComposed.f = FFFormula.and (.anno spec1.f "") spec2.f := by
+  have hCompF : specComposed.f = FFFormula.and
+      (.anno spec1.f s!":meta-data \"{genCmdAnnotation cmd}\"") spec2.f := by
     have h := heq; simp only [seqComposition, Except.ok.injEq] at h; rw [← h]
   refine ⟨hCompIn.trans h1_in, ?_, ?_, ?_, ?_, ?_, ValidBinRep_trivial gconf _ _, ?_, ?_⟩
   · rw [hCompNext]; exact h1_mono.trans h2_mono
@@ -6244,7 +6245,8 @@ theorem seqComposition_correct {c : ZKConfig} (gconf : GlobalConfig c) (sconf : 
   · intro env assignment hmatch env' hc
     rw [hconcrete] at hc
     obtain ⟨assignment', ff_agree, frame_ff, frame_bool, heval, hmatch'⟩ :=
-      seqComposition_sound gconf sconf specs spec1 spec2 concrete1 concrete2
+      seqComposition_sound gconf sconf specs spec1 spec2
+        s!":meta-data \"{genCmdAnnotation cmd}\"" concrete1 concrete2
         (h1_in ▸ hbelow) h1_mono h1_below h1_sound h2_fresh h2_sound h2_in
         env assignment (h1_in ▸ hmatch) env' hc
     rw [h1_in] at ff_agree
@@ -6261,8 +6263,8 @@ theorem seqComposition_correct {c : ZKConfig} (gconf : GlobalConfig c) (sconf : 
   · intro env assignment hmatch assignment' hagree heval
     rw [hCompF] at heval
     obtain ⟨env', hbind, hmatch'⟩ := seqComposition_complete gconf specs spec1 spec2
-      concrete1 concrete2 h2_in h1_complete h2_complete env assignment (h1_in ▸ hmatch)
-      assignment' (h1_in ▸ hagree) heval
+      s!":meta-data \"{genCmdAnnotation cmd}\"" concrete1 concrete2 h2_in h1_complete h2_complete
+      env assignment (h1_in ▸ hmatch) assignment' (h1_in ▸ hagree) heval
     refine ⟨env', ?_, ?_⟩
     · rw [hconcrete]; exact hbind
     · rw [hCompOut]; exact hmatch'

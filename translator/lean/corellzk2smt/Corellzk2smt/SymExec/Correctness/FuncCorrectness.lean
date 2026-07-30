@@ -3589,7 +3589,10 @@ theorem seFunc_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
                 exact ⟨i, hi_range, hi_eq.symm⟩
               set fMacro : FFMacro c :=
                 { name := name, params := paramVars ++ retVars ++ auxVarsList,
-                  body := FFFormula.and bodySpec.f retEqFormula } with hFMacro_def
+                  body := FFFormula.and bodySpec.f retEqFormula,
+                  vars_info := symEnvToMacroVarsInfo
+                    (retBinds.foldl (fun env (id, sv) => setVar env id sv) bodySpec.outSymEnv) }
+                with hFMacro_def
               have hfm : fetchMacro gconf (fMacro :: specs.map (·.f)) fMacro.name =
                   Except.ok (fMacro, specs.map (·.f)) := by
                 simp [fetchMacro, hFMacro_def]

@@ -294,6 +294,43 @@ def mergeIfBranches {c : ZKConfig}
         nextVarId := nextVarId'
       }
 
+
+def genCondAnnotation {c : ZKConfig} (cond : Cond c) : String :=
+  match cond with
+  | .eq s1 s2 => s!"{s1} == {s2}"
+
+def genExprAnnotation {c : ZKConfig} (e : Expr c) : String :=
+  match e with
+  -- arithmetic
+  | .bop op s1 s2 =>
+      s!"{op} {s1} {s2}"
+  | .uop op s =>
+      s!"{op} {s}"
+  | .id s =>
+      s!"{s}"
+
+def genCmdAnnotation {c : ZKConfig} (i : ComWithMD c) : String :=
+  match i with
+  | .mk _ info =>
+      match info with
+      | .assign out e => s!"{out} := {genExprAnnotation e}"
+      | .if_stmt cond _tb _eb =>
+          s!"if ({genCondAnnotation cond})"
+      | .loop_exp rep _body => s!"repeat_exp {rep}"
+      | .loop _rep _body => panic! "there should be no case for loop with constant repetition"
+      | .new_array out size => s!"array.new {size} {out}"
+      | .read_array out arr idx => s!"array.read {arr}[{idx}] {out}"
+      | .write_array arr idx value => s!"array.write {value} {arr}[{idx}]"
+      | .copy_array out arr => s!"array.copy {arr} {out}"
+      | .func_call outs fname args =>
+         let outsStr := String.intercalate ", " (outs.map (fun v => s!"{v}"))
+         let argsStr := String.intercalate ", " (args.map toString)
+         if (outs == []) then
+            s!"call {fname} ({argsStr})"
+         else
+            s!"call {fname} ({argsStr}) to {outsStr}"
+
+
 /-- Sequence two `CmdsSpec`s: conjoin their formulas and thread the first's output as the
     second's input. Purely structural glue -- doesn't need to know what either half actually
     computes (see `seqComposition_correct`).
@@ -306,16 +343,19 @@ def mergeIfBranches {c : ZKConfig}
 def seqComposition {c : ZKConfig}
     (_gconf : GlobalConfig c)
     (_sconf : SymExecConfig c)
-    (_cmd : ComWithMD c)
+    (cmd : ComWithMD c)
     (cmdSpec1 : CmdsSpec c)
     (cmdsSpec2 : CmdsSpec c)
     : Except String (CmdsSpec c) :=
   Except.ok {
     inSymEnv := cmdSpec1.inSymEnv,
     outSymEnv := cmdsSpec2.outSymEnv,
-    f := FFFormula.and (.anno cmdSpec1.f "") cmdsSpec2.f,
+    f := FFFormula.and (.anno cmdSpec1.f s!":meta-data \"{genCmdAnnotation cmd}\"") cmdsSpec2.f,
     nextVarId := cmdsSpec2.nextVarId
   }
+
+
+
 
 mutual
 
@@ -585,6 +625,23 @@ def mintFreshRetsWithEq {c : ZKConfig} (nextVarId : Nat) (bodySymEnv : SymEnv c)
       | Except.ok (nv2, vs2, binds, restf) =>
         Except.ok (nv2, vs ++ vs2, (r.name, sv) :: binds, FFFormula.and eqf restf)
 
+def symEnvToMacroVarsInfo {c : ZKConfig} (symEnv : SymEnv c) : MacroExitVarsInfo c :=
+  symEnv.toList.foldl (fun acc (id, simpleSymVal) =>
+    match simpleSymVal with
+    | .simple v =>
+      match v with
+      | .ffvar ffVar => (id,(MacroExitVarInfo.ffVar ffVar.var)) :: acc
+      | .const c => (id,(MacroExitVarInfo.const c)) :: acc
+    | .array arr =>
+      let a := arr.toList.map (fun elem =>
+          match elem with
+          | .ffvar ffVar => (.inl ffVar.var)
+          | .const v => (.inr v)
+        )
+      (id, MacroExitVarInfo.array a) :: acc
+  ) []
+
+
 /-- Translate a function definition into a `FuncSpec`: mint fresh vars for the params (the
     entry symbolic environment, matching concrete `zeroInitEnv`+`bindInParams`), symbolically
     execute the body, mint fresh vars (with equality constraints) for the returns, and collect
@@ -630,8 +687,11 @@ def seFunc {c : ZKConfig}
               name := name,
               inSymEnv := inSymEnv,
               outSymEnv := outSymEnv,
-              f := { name := name, params := paramVars ++ retVars ++ auxVarsList,
-                     body := FFFormula.and bodySpec.f retEqFormula },
+              f := { name := name,
+                     params := paramVars ++ retVars ++ auxVarsList,
+                     body := FFFormula.and bodySpec.f retEqFormula
+                     vars_info := symEnvToMacroVarsInfo outSymEnv
+              },
               nextVarId := nv2,
               params := params,
               rets := rets,
