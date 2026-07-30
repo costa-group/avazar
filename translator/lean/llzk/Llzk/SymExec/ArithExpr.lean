@@ -118,11 +118,15 @@ def sEvalExprDiv {c : ZKConfig}
   let outFFVar : FFVar := { id := cfg.nextId,
                             meta_data := { src_info := md.src_info, orig_name := id}
                           }
+  let f := FFFormula.ite
+                      (FFFormula.eq v2 (FFTerm.val 0))
+                      FFFormula.false
+                      (FFFormula.eq (FFTerm.mul (FFTerm.var outFFVar) v2) v1)
   return {
           inSymEnv := senv,
           outSymEnv := senv,
           -- outVar*v2 = v1
-          f := FFFormula.eq (FFTerm.mul (FFTerm.var outFFVar) v2) v1,  -- (outVar = v1 / v2)
+          f := f
           resTerm := (FFTerm.var outFFVar),
           res := SymFFVar.var ⟨outFFVar, none⟩,
           newFFVars := { outFFVar },
@@ -162,7 +166,7 @@ finite field constraints
 
   A = Q * B + R
 
-should I something else to aovid non-determinsim? like R<B?
+should I something else to avoid non-determinism? like R<B?
 
 -/
 
@@ -172,7 +176,18 @@ def sEvalExprUidiv {c : ZKConfig}
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let B ← simpleExprToFF senv s2
-  if B.val > 0 && B.val < c.midpoint then
+  if B.val = 1 then
+    let v ← simpleExprToSymFFVar senv s1
+    return {
+          inSymEnv := senv,
+          outSymEnv := senv,
+          f := .true,
+          resTerm := default,
+          res := v,
+          newFFVars := {},
+          nextId := cfg.nextId
+    }
+  else if B.val > 1 && B.val < c.midpoint then
     let A ← simpleExprToTerm senv s1
     let Q : FFVar := { id := cfg.nextId,
                               meta_data := { src_info := md.src_info, orig_name := id}
@@ -180,9 +195,13 @@ def sEvalExprUidiv {c : ZKConfig}
     let R : FFVar := { id := cfg.nextId+1,
                               meta_data := { src_info := md.src_info, orig_name := id}
                             }
+    let u1 : Nat := c.p-B.val
+    let u2 : Nat := u1 / B.val
+    let u : Nat := u2-1
     let f := FFFormula.and
               (.eq A (.add (.mul (FFTerm.var Q) (FFTerm.val B)) (.var R)))
-              (.range (.var R) 0 (B.val-1 : FF c)) -- R < B
+              (.and (.range (.var R) 0 (B.val-1 : FF c)) -- R < B
+                    (.range (.var Q) 0 (u : FF c))) -- 0 <= Q < (P-B)/B
     return {
             inSymEnv := senv,
             outSymEnv := senv,
@@ -201,7 +220,18 @@ def sEvalExprUimod {c : ZKConfig}
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   let B ← simpleExprToFF senv s2
-  if B.val > 0 && B.val < c.midpoint then
+  if B.val = 1 then
+    let v ← simpleExprToSymFFVar senv s1
+    return {
+          inSymEnv := senv,
+          outSymEnv := senv,
+          f := .true,
+          resTerm := default,
+          res := SymFFVar.const 0,
+          newFFVars := {},
+          nextId := cfg.nextId
+    }
+  else if B.val > 1 && B.val < c.midpoint then
     let A ← simpleExprToTerm senv s1
     let Q : FFVar := { id := cfg.nextId,
                               meta_data := { src_info := md.src_info, orig_name := id}
@@ -209,9 +239,13 @@ def sEvalExprUimod {c : ZKConfig}
     let R : FFVar := { id := cfg.nextId+1,
                               meta_data := { src_info := md.src_info, orig_name := id}
                             }
+    let u1 : Nat := c.p-B.val
+    let u2 : Nat := u1 / B.val
+    let u : Nat := u2-1
     let f := FFFormula.and
               (.eq A (.add (.mul (FFTerm.var Q) (FFTerm.val B)) (.var R)))
-              (.range (.var R) 0 (B.val-1 : FF c)) -- R < B
+              (.and (.range (.var R) 0 (B.val-1 : FF c)) -- R < B
+                    (.range (.var Q) 0 (u : FF c))) -- 0 <= Q < (P-B)/B
     return {
             inSymEnv := senv,
             outSymEnv := senv,

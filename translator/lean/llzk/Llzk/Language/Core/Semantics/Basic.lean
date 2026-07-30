@@ -235,7 +235,7 @@ def toSigned {c : ZKConfig} (x : FF c) : Int :=
   if x.val < c.midpoint then
     (x.val : Int)        -- 0, 1, ... midpoint-1
   else
-    (x.val : Int) - c.p  -- -1 (p-1), -2 (p-2), ... -midpoint (p-midpoint)
+    (x.val : Int) - (c.p : Int)  -- -1 (p-1), -2 (p-2), ... -midpoint (p-midpoint)
 
 def evalLt {c : ZKConfig} (v1 v2 : FF c) : FF c :=
   if toSigned v1 < toSigned v2 then 1 else 0

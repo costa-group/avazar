@@ -91,7 +91,7 @@ def sEvalBor {c : ZKConfig}
                           }
   let f := FFFormula.eq (FFTerm.var outFFVar)
                         (FFTerm.ite
-                          (.or (.eq v1 (.val 0)) (.eq v2 (.val 0)))
+                          (.and (.eq v1 (.val 0)) (.eq v2 (.val 0)))
                           (.val 0)
                           (.val 1))
   let f' := add_bool_ffterm cfg (FFTerm.var outFFVar) f

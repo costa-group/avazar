@@ -64,6 +64,7 @@ def mkZKConfig (k_input : Nat) (p_input : Nat) : Except String ZKConfig :=
 /- A prime number used in the Goldilocks field -/
 def goldilocks_p : ℕ := 18446744069414584321 -- 2^64 - 2^32 + 1
 
+
 /- Use an axiom to provide the proof that goldilocks_p is a prime
    without the kernel "thinking"
 -/
@@ -76,6 +77,7 @@ def goldilocks64 : ZKConfig := {
   p_prime := goldilocks_is_prime
   p_fits := by rfl
 }
+
 
 /- We need to add a fact that myConfig.p is a prime so Lean can
    find it automatically.
