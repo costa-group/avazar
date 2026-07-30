@@ -70,7 +70,7 @@ def printTerm {c : ZKConfig} (gconf : GlobalConfig c)
       stream.putStr ")"
   | .ite c t e =>
       stream.putStr "(ite "
-      printFormula gconf stream c 0 false
+      printFormula gconf stream c 0 false false
       stream.putStr " "
       printTerm gconf stream t
       stream.putStr " "
@@ -79,7 +79,9 @@ def printTerm {c : ZKConfig} (gconf : GlobalConfig c)
 
 /- Prints the boolean formula structure -/
 def printFormula {c : ZKConfig} (gconf : GlobalConfig c)
-  (stream : IO.FS.Stream) (f : FFFormula c) (level : Nat) (indent: Bool): IO Unit := do
+  (stream : IO.FS.Stream) (f : FFFormula c) (level : Nat)
+  (indent: Bool) (escape: Bool)
+  : IO Unit := do
   let sp := if indent then getIndent gconf level else ""
   let nl := if indent then "\n" else ""
   match f with
@@ -104,44 +106,44 @@ def printFormula {c : ZKConfig} (gconf : GlobalConfig c)
   | .and a b =>
       -- we remove trivial cases to simplify the output
       if a == (@FFFormula.true c) then
-        printFormula gconf stream b level indent
+        printFormula gconf stream b level indent escape
       else if b == (@FFFormula.true c) then
-        printFormula gconf stream a level indent
+        printFormula gconf stream a level indent escape
       else
         stream.putStr s!"{sp}(and {nl}"
-        printFormula gconf stream a (level + 1) indent
-        printFormula gconf stream b (level + 1) indent
+        printFormula gconf stream a (level + 1) indent escape
+        printFormula gconf stream b (level + 1) indent escape
         stream.putStr s!"{sp}){nl}"
   | .or a b =>
       -- we remove trivial cases to simplify the output
       if a == (@FFFormula.false c) then
-        printFormula gconf stream b level indent
+        printFormula gconf stream b level indent escape
       else if b == (@FFFormula.false c) then
-        printFormula gconf stream a level indent
+        printFormula gconf stream a level indent escape
       else
         stream.putStr s!"{sp}(or {nl}"
-        printFormula gconf stream a (level + 1) indent
-        printFormula gconf stream b (level + 1) indent
+        printFormula gconf stream a (level + 1) indent escape
+        printFormula gconf stream b (level + 1) indent escape
         stream.putStr s!"{sp}){nl}"
   | .ite c t e =>
       stream.putStr s!"{sp}(ite {nl}"
-      printFormula gconf stream c (level + 1) indent
-      printFormula gconf stream t (level + 1) indent
-      printFormula gconf stream e (level + 1) indent
+      printFormula gconf stream c (level + 1) indent escape
+      printFormula gconf stream t (level + 1) indent escape
+      printFormula gconf stream e (level + 1) indent escape
       stream.putStr s!"{sp}){nl}"
   | .imply a b =>
       stream.putStr s!"{sp}(=> {nl}"
-      printFormula gconf stream a (level + 1) indent
-      printFormula gconf stream b (level + 1) indent
+      printFormula gconf stream a (level + 1) indent escape
+      printFormula gconf stream b (level + 1) indent escape
       stream.putStr s!"{sp}){nl}"
   | .iff a b =>
       stream.putStr s!"{sp}(= {nl}"
-      printFormula gconf stream a (level + 1) indent
-      printFormula gconf stream b (level + 1) indent
+      printFormula gconf stream a (level + 1) indent escape
+      printFormula gconf stream b (level + 1) indent escape
       stream.putStr s!"{sp}){nl}"
   | .not a =>
       stream.putStr s!"{sp}(not {nl}"
-      printFormula gconf stream a (level + 1) indent
+      printFormula gconf stream a (level + 1) indent escape
       stream.putStr s!"{sp}){nl}"
   | .call name args =>
       stream.putStr s!"{sp}({name} "
@@ -152,9 +154,13 @@ def printFormula {c : ZKConfig} (gconf : GlobalConfig c)
       )
       stream.putStr (String.intercalate " " argStrs)
       stream.putStr s!"){nl}"
-  | .anno f _ =>
-      -- TBD for now we ignore the annotation
-      printFormula gconf stream f level indent
+  | .anno f sym =>
+      stream.putStr s!"{sp}(!{nl}"
+      printFormula gconf stream f (level + 1) indent escape
+      -- if escape, replace " by \" in the symbol string
+      let symstr := s!"{sym}"
+      let symstr' := if escape then symstr.replace "\"" "\\\"" else symstr
+      stream.putStr s!"{sp}{symstr'}){nl}"
 
 end
 
@@ -169,7 +175,7 @@ def printMacro {c : ZKConfig} (gconf : GlobalConfig c)
   )
   stream.putStr (String.intercalate " " paramStrs)
   stream.putStrLn ") Bool"
-  printFormula gconf stream m.body 1 true
+  printFormula gconf stream m.body 1 true false
   stream.putStrLn ")"
 
 /- Prints all macros as SMT defined functions -/
@@ -220,7 +226,7 @@ def printConstraintSystem {c : ZKConfig} (gconf : GlobalConfig c)
   printMacros gconf stream sys.macros.reverse -- we assume main is first
   -- Main formula
   stream.putStrLn "(assert "
-  printFormula gconf stream f 1 true
+  printFormula gconf stream f 1 true false
   stream.putStrLn ")"
   stream.flush
 
@@ -283,7 +289,7 @@ def printMacro_asJSON {c : ZKConfig} (gconf : GlobalConfig c)
   printVarsInfo_asJSON gconf stream m.vars_info
   stream.putStrLn "},"
   stream.putStr "        \"formula\": \""
-  printFormula gconf stream m.body 0 false
+  printFormula gconf stream m.body 0 false true
   stream.putStrLn " \""
   stream.putStr "     }"
 
@@ -316,7 +322,7 @@ def printConstraintSystem_asJSON {c : ZKConfig} (gconf : GlobalConfig c)
   printParams_asJSON gconf stream vars
   stream.putStrLn s!"],"
   stream.putStr s!"    \"formula\": \""
-  printFormula gconf stream f 0 false
+  printFormula gconf stream f 0 false true
   stream.putStr s!" \""
   stream.putStrLn " }"
   stream.putStrLn "}"
