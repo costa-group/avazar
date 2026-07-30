@@ -2,15 +2,17 @@ import Corellzk2smt.Language.Core.Syntax.Printer
 import Corellzk2smt.Language.Core.Syntax.Parser
 import Corellzk2smt.Basic
 import Corellzk2smt.Config
-import Corellzk2smt.Language.Core.Analysis.Liveness
+import Corellzk2smt.Language.Core.Analysis.Useless_commands
 import Corellzk2smt.FFConstraints.SMT
-
+import Corellzk2smt.SymExec.BigStep
 import Cli
 
 open Corellzk2smt.Language.Core.Syntax.Printer
 open Corellzk2smt.Language.Core.Syntax.Parser
-open Corellzk2smt.Language.Core.Analysis.Liveness
+open Corellzk2smt.Language.Core.Analysis.Useless_commands
 open Corellzk2smt.Config
+open Corellzk2smt.FFConstraints.SMT
+open Corellzk2smt.SymExec.BigStep
 
 open Cli
 
@@ -36,14 +38,46 @@ def prettyPrinting
      IO.println s!"Parsing {inFile}..."
      let initialState ← ParserM.fromFile gconf inFile
      let (prog,_) ← StateT.run (@parseProg c []) initialState
-     let prog' := if gconf.prog_printer.show_liveness then
-       addLivenessProg prog
-     else
-       prog
      IO.println s!"Pretty printing the input program..."
      IO.println s!""
-     printProg gconf prog' outStream
+     printProg gconf prog outStream
      outStream.flush
+
+
+/- Symbolic execution -/
+def symExec (c : ZKConfig) (gconf : GlobalConfig c) (p : Parsed) (inFile : String) (outStream : IO.FS.Stream) : IO Unit := do
+     IO.println s!"Parsing {inFile}..."
+     let initialState ← ParserM.fromFile gconf inFile
+     let (prog,_) ← StateT.run (@parseProg c []) initialState
+     -- removeUselessProg computes its own liveness information from scratch
+     -- (it never reads pre-existing metadata), so calling addLivenessProg
+     -- first would be redundant, wasted work when -ru is set.
+     let progToExec ←
+       if p.hasFlag "removeuseless" then
+         IO.println s!"Removing useless commands..."
+         pure (removeUselessProg prog)
+       else
+         pure prog
+     IO.println s!"Performing symbolic execution..."
+     let mainFunc := p.flag! "main" |>.as! String
+     match @seExecProg c gconf progToExec mainFunc with
+     | Except.error e =>
+         IO.println s!"Error during symbolic execution: {e}"
+     | Except.ok constraints =>
+         match p.flag! "smt2_format" |>.as! String with
+         | "smtlib" =>
+            IO.println s!"Generating encoding using SMT-LIB format..."
+            IO.println s!""
+            @printConstraintSystem c gconf outStream constraints
+            outStream.flush
+         | "json" =>
+            IO.println s!"Generating encoding using JSON format..."
+            IO.println s!""
+            @printConstraintSystem_asJSON c gconf outStream constraints
+            outStream.flush
+         | fmt =>
+            IO.println s!"Unsupported SMT output format: {fmt}."
+
 
 
 /- Main entry point for the command line interface -/
@@ -69,6 +103,8 @@ def corellzk2smtRunner (p : Parsed) : IO UInt32 := do
   -- Now we can do the action specified by the user
   if p.hasFlag "prettyprint" then
      prettyPrinting zkConfig gconf p input outStream
+  else if p.hasFlag "symbolicexec" then
+     symExec zkConfig gconf p input outStream
   else
      IO.println "No action specified. Use --help for more information."
   return 0
@@ -79,7 +115,6 @@ def corellzk2smtCli : Cmd := `[Cli|
   corellzk2smtCli VIA corellzk2smtRunner; ["0.0.1"]
   "Translator for Core Llzk programs."
   FLAGS:
-    sl, showliveness;        "Show liveness information (when pretty printing programs)."
     pp, prettyprint;         "Parse and pretty print the input program."
     se, symbolicexec;        "Perform symbolic execution of the input program."
     zk, zkconfig : String;   "The ZKConfig to use for symbolic execution (f11,g64). Default is f11."
