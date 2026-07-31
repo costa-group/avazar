@@ -1,0 +1,16 @@
+{
+  "main.out": 1,
+  "main.selector": 2,
+  "main.cst.out[0]": 3,
+  "main.cst.out[1]": 4,
+  "main.mux.out": 5,
+  "main.mux.c[0]": 6,
+  "main.mux.c[1]": 7,
+  "main.mux.s": 8,
+  "main.mux.mux.out[0]": 9,
+  "main.mux.mux.c[0]": 10,
+  "main.mux.mux.c[1]": 11,
+  "main.mux.mux.s": 12,
+  "main.n2b.out[0]": 13,
+  "main.n2b.in": 14
+}
