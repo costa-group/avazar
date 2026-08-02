@@ -170,6 +170,47 @@ should I something else to avoid non-determinism? like R<B?
 
 -/
 
+def uiDivModGadget {c : ZKConfig}
+   (md : CmdMD)
+   (sconf : SymExecConfig c)
+   (A : SymFFVar c)
+   (B : FF c)
+   : FFFormula c × FFVar × FFVar :=
+    let Q : FFVar := { id := sconf.nextId,
+                       meta_data := { src_info := md.src_info, orig_name := default } }
+    let R : FFVar := { id := sconf.nextId + 1,
+                       meta_data := { src_info := md.src_info, orig_name := default } }
+  let uLo : Nat := (c.midpoint - 1) / B.val
+  let lo : Nat := c.midpoint / B.val
+  let hi : Nat := (c.p - 1) / B.val
+  let Aterm := symVarToTerm A
+  let eqn := FFFormula.eq Aterm (FFTerm.add (FFTerm.mul (FFTerm.var Q) (FFTerm.val B)) (FFTerm.var R))
+  let rRange := FFFormula.range (FFTerm.var R) 0 (B.val - 1 : FF c)
+  let lowBranch := FFFormula.and eqn (FFFormula.and rRange (FFFormula.range (FFTerm.var Q) 0 (uLo : FF c)))
+  let highBranch :=
+    FFFormula.and eqn (FFFormula.and rRange (FFFormula.range (FFTerm.var Q) (lo : FF c) (hi : FF c)))
+  let isLow := FFFormula.range Aterm 0 (c.midpoint - 1 : FF c)
+  (FFFormula.ite isLow lowBranch highBranch, Q, R)
+
+def uiDivModGadgetLargeDivisor {c : ZKConfig}
+  (md : CmdMD)
+  (sconf : SymExecConfig c)
+  (A : SymFFVar c)
+  (B : FF c)
+  : FFFormula c × FFVar × FFVar :=
+    let Q : FFVar := { id := sconf.nextId,
+                       meta_data := { src_info := md.src_info, orig_name := default } }
+    let R : FFVar := { id := sconf.nextId + 1,
+                       meta_data := { src_info := md.src_info, orig_name := default } }
+  let Aterm := symVarToTerm A
+  let isHighA := FFFormula.range Aterm B (-1 : FF c)
+  let lowBranch := FFFormula.and (FFFormula.eq (FFTerm.var Q) (FFTerm.val 0))
+    (FFFormula.eq (FFTerm.var R) Aterm)
+  let highBranch := FFFormula.and (FFFormula.eq (FFTerm.var Q) (FFTerm.val 1))
+    (FFFormula.eq (FFTerm.var R) (FFTerm.sub Aterm (FFTerm.val B)))
+  (FFFormula.ite isHighA highBranch lowBranch, Q, R)
+
+
 /- Symbolic expression of .uidiv expression -/
 def sEvalExprUidiv {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
@@ -188,20 +229,20 @@ def sEvalExprUidiv {c : ZKConfig}
           nextId := cfg.nextId
     }
   else if B.val > 1 && B.val < c.midpoint then
-    let A ← simpleExprToTerm senv s1
-    let Q : FFVar := { id := cfg.nextId,
-                              meta_data := { src_info := md.src_info, orig_name := id}
-                            }
-    let R : FFVar := { id := cfg.nextId+1,
-                              meta_data := { src_info := md.src_info, orig_name := id}
-                            }
-    let u1 : Nat := c.p-B.val
-    let u2 : Nat := u1 / B.val
-    let u : Nat := u2-1
-    let f := FFFormula.and
-              (.eq A (.add (.mul (FFTerm.var Q) (FFTerm.val B)) (.var R)))
-              (.and (.range (.var R) 0 (B.val-1 : FF c)) -- R < B
-                    (.range (.var Q) 0 (u : FF c))) -- 0 <= Q < (P-B)/B
+    let A ← simpleExprToSymFFVar senv s1
+    let (f, Q, R) := uiDivModGadget md cfg A B
+    return {
+            inSymEnv := senv,
+            outSymEnv := senv,
+            f := f,
+            resTerm := (FFTerm.var Q),
+            res := SymFFVar.var ⟨Q, none⟩,
+            newFFVars := { Q, R },
+            nextId := cfg.nextId+2
+    }
+    else if B.val ≥ c.midpoint then
+    let A ← simpleExprToSymFFVar senv s1
+    let (f, Q, R) := uiDivModGadgetLargeDivisor md cfg A B
     return {
             inSymEnv := senv,
             outSymEnv := senv,
@@ -212,7 +253,7 @@ def sEvalExprUidiv {c : ZKConfig}
             nextId := cfg.nextId+2
     }
   else
-    throw s!"Error: divisor {B.val} is not in the range [1, midpoint-1] for .uidiv expression."
+    Except.error s!"Error: division by zero for .uidiv expression."
 
 /- Symbolic expression of .uimod expression -/
 def sEvalExprUimod {c : ZKConfig}
@@ -227,25 +268,25 @@ def sEvalExprUimod {c : ZKConfig}
           outSymEnv := senv,
           f := .true,
           resTerm := default,
-          res := SymFFVar.const 0,
+          res := v,
           newFFVars := {},
           nextId := cfg.nextId
     }
   else if B.val > 1 && B.val < c.midpoint then
-    let A ← simpleExprToTerm senv s1
-    let Q : FFVar := { id := cfg.nextId,
-                              meta_data := { src_info := md.src_info, orig_name := id}
-                            }
-    let R : FFVar := { id := cfg.nextId+1,
-                              meta_data := { src_info := md.src_info, orig_name := id}
-                            }
-    let u1 : Nat := c.p-B.val
-    let u2 : Nat := u1 / B.val
-    let u : Nat := u2-1
-    let f := FFFormula.and
-              (.eq A (.add (.mul (FFTerm.var Q) (FFTerm.val B)) (.var R)))
-              (.and (.range (.var R) 0 (B.val-1 : FF c)) -- R < B
-                    (.range (.var Q) 0 (u : FF c))) -- 0 <= Q < (P-B)/B
+    let A ← simpleExprToSymFFVar senv s1
+    let (f, Q, R) := uiDivModGadget md cfg A B
+    return {
+            inSymEnv := senv,
+            outSymEnv := senv,
+            f := f,
+            resTerm := (FFTerm.var R),
+            res := SymFFVar.var ⟨R, none⟩,
+            newFFVars := { Q, R },
+            nextId := cfg.nextId+2
+    }
+    else if B.val ≥ c.midpoint then
+    let A ← simpleExprToSymFFVar senv s1
+    let (f, Q, R) := uiDivModGadgetLargeDivisor md cfg A B
     return {
             inSymEnv := senv,
             outSymEnv := senv,
@@ -256,5 +297,5 @@ def sEvalExprUimod {c : ZKConfig}
             nextId := cfg.nextId+2
     }
   else
-    throw s!"Error: divisor {B.val} is not in the range [1, midpoint-1] for .uimod expression."
+    Except.error s!"Error: division by zero for .uimod expression."
 end Llzk.SymExec.SymInstr
