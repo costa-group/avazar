@@ -1,0 +1,10 @@
+
+Loading CoCoA packages from directory:
+  /home/pablo/Repositorios/ethereum/avazar/ffsol/CoCoALib/src/CoCoA-5/packages
+
+
+##########################################################################
+Executing file ./cocoa_input_q1_p95909_0.cocoa
+##########################################################################
+
+[1]
