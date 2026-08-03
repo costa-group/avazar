@@ -22,6 +22,20 @@ CIRCOM = "circom/target/release/circom"
 CIRCOM_LLZK = "circom-llzk/target/release/circom"
 AVAZAR_TOOL = "avazar_tool/target/release/avazar"
 
+PRIMES = {
+    "goldilocks": 18446744069414584321,
+    "secq256r1": 115792089210356248762697446949407573529996955224253574108868205240008320037127,
+    "pallas": 28948022309329048855892746252171976963363056481941560715954679059200803120067,
+    "vesta": 28948022309329048855892746252171976963363056481941600130006322964104920678209,
+    "bn128": 21888242871839275222246405745257275088548364400416034343698204186575808495617,
+    "grumpkin": 21888242871839275222246405745257275088696311157297823662689037894645226208583,
+    "bls12377": 25866442601296909401065273369489353353639351283510007695335291307297420126659,
+    "bls12381": 52435875175126190479447740508185965837690552500527637822603658699938581184513,
+}
+
+# Ejemplo de uso:
+# print(hex(CIRCOM_PRIMES["goldilocks"]))
+
 def run_command(command: List[str]):
     logging.info(f"Executing: {command}")
     try:
@@ -64,6 +78,10 @@ def main():
     
     #Flag -timeout
     parser.add_argument( "-tout", "--timeout", type=int, required=False, help = "Timeout for the solver expressed in miliseconds")
+
+    #Flag -prime
+
+    parser.add_argument("-p", "--prime", type=str, required=False, choices= ["bn128", "bls12377", "bls12381", "goldilocks", "grumpkin", "pallas", "secq256r1", "vesta"], default="goldilocks", help = "Prime number used to generate the circuit")
     
     args = parser.parse_args()
     
@@ -84,7 +102,7 @@ def main():
         root_name_withoutext = root_name_ext.split(".circom")[0]
         
         #1. run circom to generate r1cs
-        circom_command = [CIRCOM, args.source,"--r1cs", "--O0", "--print_tree_info", "--prime", "goldilocks","--name_to_signal", "--output", out_abs_path]
+        circom_command = [CIRCOM, args.source,"--r1cs", "--O0", "--print_tree_info", "--prime", args.prime, "--name_to_signal", "--output", out_abs_path]
         run_command(circom_command)
 
         #1.b run the linearization
@@ -109,7 +127,7 @@ def main():
         llzk2core_main(llzk2core_args)
 
         #4. call to the solver
-        avazar_tool_command = [AVAZAR_TOOL, out_abs_path+"/"+root_name_withoutext+".r1cs", "--input_structure", out_abs_path+"/"+root_name_withoutext+"_structure.json", "--check_correctness", out_abs_path+"/"+root_name_withoutext+".json", "--correspondence", out_abs_path+"/"+root_name_withoutext+"_signals.json", "--solver", args.solver, "--verbose", "--prime", "18446744069414584321"]
+        avazar_tool_command = [AVAZAR_TOOL, out_abs_path+"/"+root_name_withoutext+".r1cs", "--input_structure", out_abs_path+"/"+root_name_withoutext+"_structure.json", "--check_correctness", out_abs_path+"/"+root_name_withoutext+".json", "--correspondence", out_abs_path+"/"+root_name_withoutext+"_signals.json", "--solver", args.solver, "--verbose", "--prime", str(PRIMES[args.prime])]
 
         if args.timeout != None:
             avazar_tool_command+=["--timeout", args.timeout]
