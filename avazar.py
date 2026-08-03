@@ -57,10 +57,13 @@ def main():
     # parser.add_argument("-llzk", type=str, required=True, help="LLZK file corresponding to the circuit specified in -s"  )
     
     # Flag -out (mandatory)
-    parser.add_argument( "-out", type=str, required=False, default = "/tmp/avazar_output/", help="Output Path"  )
+    parser.add_argument( "-out", "--out", type=str, required=False, default = "/tmp/avazar_output/", help="Output Path"  )
 
     #Flag -solver (default ffsol)
-    parser.add_argument( "-solver", type=str, required=False, default="ffsol", help = "Solver to be used")
+    parser.add_argument( "-solver", "--solver", type=str, required=False, default="ffsol", help = "Solver to be used")
+    
+    #Flag -timeout
+    parser.add_argument( "-tout", "--timeout", type=int, required=False, help = "Timeout for the solver expressed in miliseconds")
     
     args = parser.parse_args()
     
@@ -79,8 +82,7 @@ def main():
             
         root_name_ext = os.path.basename(args.source)
         root_name_withoutext = root_name_ext.split(".circom")[0]
-
-
+        
         #1. run circom to generate r1cs
         circom_command = [CIRCOM, args.source,"--r1cs", "--O0", "--print_tree_info", "--prime", "goldilocks","--name_to_signal", "--output", out_abs_path]
         run_command(circom_command)
@@ -108,6 +110,10 @@ def main():
 
         #4. call to the solver
         avazar_tool_command = [AVAZAR_TOOL, out_abs_path+"/"+root_name_withoutext+".r1cs", "--input_structure", out_abs_path+"/"+root_name_withoutext+"_structure.json", "--check_correctness", out_abs_path+"/"+root_name_withoutext+".json", "--correspondence", out_abs_path+"/"+root_name_withoutext+"_signals.json", "--solver", args.solver, "--verbose", "--prime", "18446744069414584321"]
+
+        if args.timeout != None:
+            avazar_tool_command+=["--timeout", args.timeout]
+            
         print(" ".join(avazar_tool_command))
         res_avazar = run_command(avazar_tool_command)
         print(res_avazar.stdout)
