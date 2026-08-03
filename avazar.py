@@ -26,9 +26,14 @@ def run_command(command: List[str]):
     logging.info(f"Executing: {command}")
     try:
         res = subprocess.run(command,capture_output = True, text=True, check = True)
-    except Exception as e:
-        e.printMessage()
-        
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Command failed with exit code {e.returncode}: {' '.join(command)}")
+        if e.stdout:
+            logging.error(f"stdout:\n{e.stdout}")
+        if e.stderr:
+            logging.error(f"stderr:\n{e.stderr}")
+        raise
+
     logging.info(f"Finished {command}")
     return res
 
