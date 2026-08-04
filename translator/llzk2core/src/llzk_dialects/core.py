@@ -197,6 +197,13 @@ class TranslationContext:
     # LoopIndexedName.
     unroll_index: Optional[int] = None
 
+    # Registered global.def values: sym_name -> a single int (scalar felt) or
+    # a flat, row-major list of ints (felt array, uni- or multi-dimensional).
+    # Populated by a module-level pre-pass over GlobalDef before any function
+    # body is translated (see llzk.py's ModuleOp.to_core) -- circom-llzk may
+    # emit a global.def textually after the struct that reads it.
+    global2value: Dict[str, Union[int, List[int]]] = field(default_factory=dict)
+
 
 def _apply_rename(name: str, rename: Dict[str, str]) -> str:
     """Apply a rename dict to an SSA variable name.

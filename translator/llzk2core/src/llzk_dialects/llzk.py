@@ -81,11 +81,18 @@ class ModuleOp:
         # is enough — no dependency graph/topological sort needed.
         from llzk_dialects.poly import PolyTemplate, _register_pure_function
         from llzk_dialects.function import FunctionDef
+        from llzk_dialects.global_ import GlobalDef, _register_global_def
 
         for operation in self.body:
             if (isinstance(operation, PolyTemplate) and len(operation.body) == 1
                     and isinstance(operation.body[0], FunctionDef)):
                 _register_pure_function(operation.body[0], operation.sym_name.name, ctx)
+            if isinstance(operation, GlobalDef):
+                # global.def is only ever a direct child of ModuleOp, and may
+                # textually appear AFTER the struct that reads it (module-level
+                # symbols, not SSA, don't need to be defined before use) -- see
+                # global_.py's _register_global_def docstring.
+                _register_global_def(operation, ctx)
 
         # Yield operation by operation
         for operation in self.body:
