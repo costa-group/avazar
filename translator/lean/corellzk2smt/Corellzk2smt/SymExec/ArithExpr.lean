@@ -397,7 +397,7 @@ def seExprNeg {c : ZKConfig}
 
 def seExprId {c : ZKConfig}
     (_md : CmdMD)
-    (_gconf : GlobalConfig c)
+    (gconf : GlobalConfig c)
     (sconf : SymExecConfig c)
     (symEnv : SymEnv c)
     (_specs : List (FuncSpec c))
@@ -406,6 +406,17 @@ def seExprId {c : ZKConfig}
   match resolveSimpleExpr symEnv s with
   | Except.error msg => Except.error msg
   | Except.ok v =>
+    if gconf.sym_exec.new_var_assignment then
+      let outFFVar : FFVar := sconf.nextVarId
+      let vTerm := simpleSymValToTerm v
+      let f := FFFormula.eq (FFTerm.var outFFVar) vTerm
+      Except.ok {
+          outSymEnv := symEnv,
+          f := f,
+          nextVarId := sconf.nextVarId+1
+          result := SimpleSymVal.ffvar ⟨outFFVar, none⟩
+      }
+    else
       Except.ok {
           outSymEnv := symEnv,
           f := FFFormula.true,

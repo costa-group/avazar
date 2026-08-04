@@ -886,24 +886,38 @@ theorem seEvalExpr_not_isError {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig
   simp [seEvalExpr, seExprBitwiseNOT] at heq
 
 /-- `seEvalExpr` on `.id s`, when it succeeds, does so via `seExprId`'s exact defining shape --
-    output symbolic environment unchanged, formula trivial. Stated directly against `seExprId`'s
-    implementation (not through `TranslatesExprCorrectly`, which says nothing about `outSymEnv`'s
-    domain/`f`'s shape specifically) since domain-of-defined/names-below bookkeeping is already
-    handled this way for the `.assign` `Const` path -- see
+    output symbolic environment unchanged in both branches of `gconf.sym_exec.new_var_assignment`;
+    `FormulaNamesBelow` holds regardless too (`.true` is trivial, and the mint-fresh-var branch's
+    equation is purely local FF arithmetic over `simpleSymValToTerm`, never a macro call). Stated
+    directly against `seExprId`'s implementation (not through `TranslatesExprCorrectly`, which says
+    nothing about `outSymEnv`'s domain/`f`'s shape specifically) since domain-of-defined/names-below
+    bookkeeping is already handled this way for the `.assign` `Const` path -- see
     `H_simple_domain_holds`/`H_simple_names_below_holds`. -/
 theorem seEvalExpr_id_eq {c : ZKConfig} (md : CmdMD) (gconf : GlobalConfig c)
     (sconf : SymExecConfig c) (symEnv : SymEnv c) (specs : List (FuncSpec c))
     (s : SimpleExpr c) (exprSpec : ExprSpec c)
     (heq : seEvalExpr md gconf sconf symEnv specs (Expr.id s) = Except.ok exprSpec) :
-    exprSpec.outSymEnv = symEnv ∧ exprSpec.f = FFFormula.true := by
+    exprSpec.outSymEnv = symEnv ∧
+      ∀ badName, Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow exprSpec.f badName := by
   simp only [seEvalExpr, seExprId] at heq
   cases hres : resolveSimpleExpr symEnv s with
   | error msg => rw [hres] at heq; simp at heq
   | ok v =>
       rw [hres] at heq
-      injection heq with heq
-      subst heq
-      exact ⟨rfl, rfl⟩
+      cases hnew : gconf.sym_exec.new_var_assignment with
+      | true =>
+          simp only [hnew] at heq
+          injection heq with heq
+          subst heq
+          refine ⟨rfl, fun badName => ?_⟩
+          simp [Corellzk2smt.FFConstraints.Lemmas.FormulaNamesBelow,
+            Corellzk2smt.FFConstraints.Lemmas.TermNamesBelow,
+            Corellzk2smt.SymExec.Correctness.Lemmas.simpleSymValToTerm_names_below]
+      | false =>
+          simp only [hnew] at heq
+          injection heq with heq
+          subst heq
+          exact ⟨rfl, fun _badName => trivial⟩
 
 /-- `seEvalExpr` on `.uop .neg s`, when it succeeds, does so via `seExprNeg`'s exact defining
     shape -- output symbolic environment unchanged, formula the fresh-var tie-back equation

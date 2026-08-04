@@ -121,8 +121,6 @@ def corellzk2smtCli : Cmd := `[Cli|
     m, main : String;        "The main function for symbolic execution (default: main)"
     o, output : String;      "The output file. If not provided, the standard output is used."
     smt2, smt2_format : String;  "The format of the SMT output (smtlib,json). Default is smtlib."
-    cmpscm, comparison_scheme : String; "Encoding of signed comparison (range_of_diff, normal). \
-    Default is range_of_diff."
     boolscm, boolean_scheme : String; "Encoding of boolean variables for bits (range, mul). \
     Default is range."
   ARGS:
@@ -131,7 +129,6 @@ def corellzk2smtCli : Cmd := `[Cli|
     defaultValues! #[("zkconfig", "f11"),
                      ("main", "main"),
                      ("smt2_format", "smtlib"),
-                     ("comparison_scheme", "range_of_diff"),
                      ("boolean_scheme", "range")
                     ]
 ]

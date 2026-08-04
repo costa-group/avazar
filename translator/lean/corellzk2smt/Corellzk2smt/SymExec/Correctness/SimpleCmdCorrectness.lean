@@ -506,7 +506,7 @@ theorem H_simple_domain_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : L
                   simp only [seEvalAssignmentNonConst, hexpr] at heq
                   injection heq with heq
                   subst heq
-                  obtain ⟨houtSymEnv, _hf⟩ :=
+                  obtain ⟨houtSymEnv, _hnames⟩ :=
                     seEvalExpr_id_eq md gconf sconf symEnv specs s exprSpec hexpr
                   intro id'
                   simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.contains_insert,
@@ -576,17 +576,35 @@ theorem H_simple_domain_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : L
                       by_cases h : indexValue.val < arr.size
                       · simp only [Corellzk2smt.SymExec.Basic.getVar,
                           ← Std.TreeMap.get?_eq_getElem?, hg, dif_pos h] at hconst
-                        injection hconst with hconst
-                        subst hconst
-                        intro id'
-                        simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.contains_insert]
-                        by_cases heqid : id' = out
-                        · have hcontains : symEnv.contains out :=
-                            hpre out
-                              (by simp only [definedVarsCom]
-                                  exact Std.TreeSet.mem_insert_self ..)
-                          simp [heqid, hcontains]
-                        · simp [Ne.symm heqid]
+                        cases hnew : gconf.sym_exec.new_var_array_read with
+                        | true =>
+                            simp only [hnew] at hconst
+                            injection hconst with hconst
+                            subst hconst
+                            intro id'
+                            simp only [Corellzk2smt.SymExec.Basic.setVar,
+                              Std.TreeMap.contains_insert]
+                            by_cases heqid : id' = out
+                            · have hcontains : symEnv.contains out :=
+                                hpre out
+                                  (by simp only [definedVarsCom]
+                                      exact Std.TreeSet.mem_insert_self ..)
+                              simp [heqid, hcontains]
+                            · simp [Ne.symm heqid]
+                        | false =>
+                            simp only [hnew] at hconst
+                            injection hconst with hconst
+                            subst hconst
+                            intro id'
+                            simp only [Corellzk2smt.SymExec.Basic.setVar,
+                              Std.TreeMap.contains_insert]
+                            by_cases heqid : id' = out
+                            · have hcontains : symEnv.contains out :=
+                                hpre out
+                                  (by simp only [definedVarsCom]
+                                      exact Std.TreeSet.mem_insert_self ..)
+                              simp [heqid, hcontains]
+                            · simp [Ne.symm heqid]
                       · simp [Corellzk2smt.SymExec.Basic.getVar, ← Std.TreeMap.get?_eq_getElem?,
                           hg, dif_neg h] at hconst
   | .write_array a index value =>
@@ -619,19 +637,34 @@ theorem H_simple_domain_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : L
                             simp [Corellzk2smt.SymExec.Basic.getVar,
                               ← Std.TreeMap.get?_eq_getElem?, hg, dif_pos h, hval] at hconst
                         | ok v =>
-                            simp only [Corellzk2smt.SymExec.Basic.getVar,
-                              ← Std.TreeMap.get?_eq_getElem?, hg, dif_pos h, hval] at hconst
-                            injection hconst with hconst
-                            subst hconst
                             have hcontains : symEnv.contains a :=
                               (Corellzk2smt.SymExec.Correctness.Lemmas.contains_iff_get?_isSome
                                 symEnv a).mpr ⟨SymValue.array arr, hg⟩
-                            intro id'
-                            simp only [Corellzk2smt.SymExec.Basic.setVar,
-                              Std.TreeMap.contains_insert]
-                            by_cases heqid : id' = a
-                            · simp [heqid, hcontains]
-                            · simp [Ne.symm heqid]
+                            cases hnew : gconf.sym_exec.new_var_array_write with
+                            | true =>
+                                simp only [Corellzk2smt.SymExec.Basic.getVar,
+                                  ← Std.TreeMap.get?_eq_getElem?, hg, dif_pos h, hval,
+                                  hnew] at hconst
+                                injection hconst with hconst
+                                subst hconst
+                                intro id'
+                                simp only [Corellzk2smt.SymExec.Basic.setVar,
+                                  Std.TreeMap.contains_insert]
+                                by_cases heqid : id' = a
+                                · simp [heqid, hcontains]
+                                · simp [Ne.symm heqid]
+                            | false =>
+                                simp only [Corellzk2smt.SymExec.Basic.getVar,
+                                  ← Std.TreeMap.get?_eq_getElem?, hg, dif_pos h, hval,
+                                  hnew] at hconst
+                                injection hconst with hconst
+                                subst hconst
+                                intro id'
+                                simp only [Corellzk2smt.SymExec.Basic.setVar,
+                                  Std.TreeMap.contains_insert]
+                                by_cases heqid : id' = a
+                                · simp [heqid, hcontains]
+                                · simp [Ne.symm heqid]
                       · simp [Corellzk2smt.SymExec.Basic.getVar, ← Std.TreeMap.get?_eq_getElem?,
                           hg, dif_neg h] at hconst
   | .copy_array out a =>
@@ -957,10 +990,9 @@ theorem H_simple_names_below_holds {c : ZKConfig} (gconf : GlobalConfig c)
                     simp only [hexpr] at heq
                     injection heq with heq
                     subst heq
-                    obtain ⟨_houtSymEnv, hf⟩ :=
+                    obtain ⟨_houtSymEnv, hnames⟩ :=
                       seEvalExpr_id_eq md gconf sconf symEnv specs s exprSpec hexpr
-                    rw [hf]
-                    trivial
+                    exact hnames badName
         | ok spec' =>
             simp only [seEvalAssignment, hconst] at heq
             injection heq with heq
@@ -1009,9 +1041,18 @@ theorem H_simple_names_below_holds {c : ZKConfig} (gconf : GlobalConfig c)
                         by_cases h : indexValue.val < arr.size
                         · simp only [Corellzk2smt.SymExec.Basic.getVar,
                             ← Std.TreeMap.get?_eq_getElem?, hg, dif_pos h] at hconst
-                          injection hconst with hconst
-                          subst hconst
-                          trivial
+                          cases hnew : gconf.sym_exec.new_var_array_read with
+                          | true =>
+                              simp only [hnew] at hconst
+                              injection hconst with hconst
+                              subst hconst
+                              simp [FormulaNamesBelow, TermNamesBelow,
+                                simpleSymValToTerm_names_below]
+                          | false =>
+                              simp only [hnew] at hconst
+                              injection hconst with hconst
+                              subst hconst
+                              trivial
                         · simp [Corellzk2smt.SymExec.Basic.getVar,
                             ← Std.TreeMap.get?_eq_getElem?, hg, dif_neg h] at hconst
     | .write_array a index value =>
@@ -1044,11 +1085,22 @@ theorem H_simple_names_below_holds {c : ZKConfig} (gconf : GlobalConfig c)
                               simp [Corellzk2smt.SymExec.Basic.getVar,
                                 ← Std.TreeMap.get?_eq_getElem?, hg, dif_pos h, hval] at hconst
                           | ok v =>
-                              simp only [Corellzk2smt.SymExec.Basic.getVar,
-                                ← Std.TreeMap.get?_eq_getElem?, hg, dif_pos h, hval] at hconst
-                              injection hconst with hconst
-                              subst hconst
-                              trivial
+                              cases hnew : gconf.sym_exec.new_var_array_write with
+                              | true =>
+                                  simp only [Corellzk2smt.SymExec.Basic.getVar,
+                                    ← Std.TreeMap.get?_eq_getElem?, hg, dif_pos h, hval,
+                                    hnew] at hconst
+                                  injection hconst with hconst
+                                  subst hconst
+                                  simp [FormulaNamesBelow, TermNamesBelow,
+                                    simpleSymValToTerm_names_below]
+                              | false =>
+                                  simp only [Corellzk2smt.SymExec.Basic.getVar,
+                                    ← Std.TreeMap.get?_eq_getElem?, hg, dif_pos h, hval,
+                                    hnew] at hconst
+                                  injection hconst with hconst
+                                  subst hconst
+                                  trivial
                         · simp [Corellzk2smt.SymExec.Basic.getVar,
                             ← Std.TreeMap.get?_eq_getElem?, hg, dif_neg h] at hconst
     | .copy_array out a =>

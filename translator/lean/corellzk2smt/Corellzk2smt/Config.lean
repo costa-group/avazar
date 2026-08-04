@@ -10,22 +10,6 @@ structure ProgPrinterParams where
 
 
 
-
-/- This defines several schemes that are used to encode signed comparisons of FF values. In
-   particular for 'lt' as other operations are defined in terms of it.
-
-   - 'always_sub_range' scheme always encodes x<y by checking the range x-y.
-   - 'normal' scheme encodes x<y using ranges when x or y are constants, and
-     falls back to a bitwise comparison otherwise.
-
-     For more information see the actual encodings in BoolExpr.lean.
--/
-inductive CmpScm where
-  | range_of_diff -- based one checking the range of x-y to encode x<y
-  | normal
-  deriving Repr, BEq, Inhabited
-
-
 /- How to encode that an FF variable is boolean.
     - 'range' scheme encodes that a variable is boolean by checking that it is in the range [0,1].
     - 'mul' scheme encodes that a variable is boolean by checking that x*(1-x) = 0.
@@ -37,8 +21,10 @@ inductive BoolFFVarScm where
 
 
 structure SymExecParams (c : ZKConfig) where
-  cmpScm : CmpScm := CmpScm.normal
   boolFFVarScm : BoolFFVarScm := BoolFFVarScm.range
+  new_var_assignment : Bool := false -- whether to generate new smt variable
+  new_var_array_read : Bool := false -- whether to generate new smt variable for array read
+  new_var_array_write : Bool := false -- whether to generate new smt variable for array write
   deriving Inhabited
 
 

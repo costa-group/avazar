@@ -20,6 +20,7 @@ open Corellzk2smt.SymExec.Basic
 open Corellzk2smt.SymExec.BigStep
 open Corellzk2smt.FFConstraints.Basic
 open Corellzk2smt.FFConstraints.Satisfiability
+open Corellzk2smt.FFConstraints.Lemmas
 open Corellzk2smt.SymExec.Correctness.Lemmas
 open Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
 open Corellzk2smt.SymExec.Correctness.BinaryExpansionCorrectness
@@ -171,8 +172,6 @@ theorem seReadArrayConstantIdx_correct {c : ZKConfig} (gconf : GlobalConfig c)
               by_cases h : indexValue.val < arr.size
               · simp only [seReadArrayConstantIdx, hidx, Corellzk2smt.SymExec.Basic.getVar,
                   ← Std.TreeMap.get?_eq_getElem?, hg, dif_pos h] at hspec_eq
-                injection hspec_eq with hspec_eq
-                subst hspec_eq
                 have hsub_arr : symValVars (SymValue.array arr) ⊆ symEnvVars symEnv :=
                   symValVars_subset_symEnvVars symEnv a (SymValue.array arr) hg
                 have hmemArr : arr[indexValue.val]'h ∈ arr.toList :=
@@ -180,78 +179,261 @@ theorem seReadArrayConstantIdx_correct {c : ZKConfig} (gconf : GlobalConfig c)
                 have hsub_val : simpleValVars (arr[indexValue.val]'h) ⊆ symEnvVars symEnv :=
                   symValVars_array_mem_below_subset arr (arr[indexValue.val]'h) hmemArr
                     (symEnvVars symEnv) hsub_arr
-                refine ⟨rfl, le_refl _, ?_, ?_, ?_, ?_, ValidBinRep_trivial gconf _ _, ?_, ?_⟩
-                · intro v' hv'
-                  rcases Std.TreeSet.mem_union_iff.mp hv' with h' | h' <;>
-                    simp only [ffVarsOfFormula, bVarsOfFormula] at h' <;>
-                    exact absurd h' Std.TreeSet.not_mem_emptyc
-                · intro v' hv'
-                  rcases Std.TreeSet.mem_union_iff.mp hv' with h' | h' <;>
-                    simp only [ffVarsOfFormula, bVarsOfFormula] at h' <;>
-                    exact absurd h' Std.TreeSet.not_mem_emptyc
-                · intro v' hv'
-                  rcases symEnvVars_setVar_subset symEnv out
-                      (SymValue.simple (arr[indexValue.val]'h)) v' hv' with h' | h'
-                  · exact hbelow v' h'
-                  · exact hbelow v' (hsub_val v' h')
-                · intro v' hv'
-                  rcases symEnvVars_setVar_subset symEnv out
-                      (SymValue.simple (arr[indexValue.val]'h)) v' hv' with h' | h'
-                  · exact Or.inl h'
-                  · exact Or.inl (hsub_val v' h')
-                · intro env assignment hmatch env' hc
-                  have hpoint := hmatch.2
-                  obtain ⟨v, henv, hvv⟩ := hpoint a (SymValue.array arr) hg
-                  cases v with
-                  | scalar _ => simp only [symValMatches] at hvv
-                  | array varr =>
-                      simp only [symValMatches] at hvv
-                      have hlen : arr.toList.length = varr.toList.length := hvv.length_eq
-                      simp only [Array.length_toList] at hlen
-                      have h' : indexValue.val < varr.size := by omega
-                      have hceval := tryEvalSimpleExprToFFValue_correct symEnv index env
-                        assignment indexValue hmatch hidx
-                      simp only [evalReadArray, Corellzk2smt.Language.Core.Semantics.Basic.getVar, hceval, henv,
-                        ← Std.TreeMap.get?_eq_getElem?, dif_pos h'] at hc
-                      injection hc with hc
-                      have hmatchElem : simpleValMatches assignment (arr[indexValue.val]'h)
-                          (varr[indexValue.val]'h') :=
-                        list_forall2_get hvv indexValue.val
-                          (by simp only [Array.length_toList]; exact h)
-                          (by simp only [Array.length_toList]; exact h')
-                      refine ⟨assignment, (fun n _ => rfl), (fun n _ => rfl), (fun n _ => rfl),
-                        (fun n _ => rfl), ?_, ?_⟩
-                      · simp only [evalFormula]
-                      · rw [← hc]
-                        exact EnvMatches_setVar assignment symEnv env out
-                          (SymValue.simple (arr[indexValue.val]'h))
-                          (Value.scalar (varr[indexValue.val]'h')) hmatch hmatchElem
-                · intro env assignment hmatch assignment' hagree _heval_f
-                  have hmatch' := EnvMatches_agreesOnFF_preserves assignment assignment' symEnv
-                    env hagree hmatch
-                  have hpoint := hmatch'.2
-                  obtain ⟨v, henv, hvv⟩ := hpoint a (SymValue.array arr) hg
-                  cases v with
-                  | scalar _ => simp only [symValMatches] at hvv
-                  | array varr =>
-                      simp only [symValMatches] at hvv
-                      have hlen : arr.toList.length = varr.toList.length := hvv.length_eq
-                      simp only [Array.length_toList] at hlen
-                      have h' : indexValue.val < varr.size := by omega
-                      have hceval := tryEvalSimpleExprToFFValue_correct symEnv index env
-                        assignment' indexValue hmatch' hidx
-                      have hmatchElem : simpleValMatches assignment' (arr[indexValue.val]'h)
-                          (varr[indexValue.val]'h') :=
-                        list_forall2_get hvv indexValue.val
-                          (by simp only [Array.length_toList]; exact h)
-                          (by simp only [Array.length_toList]; exact h')
-                      refine ⟨Corellzk2smt.Language.Core.Semantics.Basic.setVar env out
-                        (Value.scalar (varr[indexValue.val]'h')), ?_, ?_⟩
-                      · simp only [evalReadArray, Corellzk2smt.Language.Core.Semantics.Basic.getVar, hceval,
-                          henv, ← Std.TreeMap.get?_eq_getElem?, dif_pos h']
-                      · exact EnvMatches_setVar assignment' symEnv env out
-                          (SymValue.simple (arr[indexValue.val]'h))
-                          (Value.scalar (varr[indexValue.val]'h')) hmatch' hmatchElem
+                cases hnew : gconf.sym_exec.new_var_array_read with
+                | true =>
+                    simp only [hnew] at hspec_eq
+                    injection hspec_eq with hspec_eq
+                    subst hspec_eq
+                    have hmemF : Var.ffv sconf.nextVarId ∈
+                        ffVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                          (simpleSymValToTerm (arr[indexValue.val]'h))) := by
+                      simp only [ffVarsOfFormula, ffVarsOfTerm, Std.TreeSet.mem_union_iff]
+                      exact Or.inl (Std.TreeSet.mem_insert_self ..)
+                    refine ⟨rfl, Nat.le_succ _, ?_, ?_, ?_, ?_, ValidBinRep_trivial gconf _ _,
+                      ?_, ?_⟩
+                    · intro v' hv'
+                      rcases Std.TreeSet.mem_union_iff.mp hv' with hff | hb
+                      · simp only [ffVarsOfFormula, ffVarsOfTerm, ffVarsOfTerm_simpleSymValToTerm,
+                          Std.TreeSet.mem_union_iff] at hff
+                        rcases hff with h1 | h2
+                        · rcases Std.TreeSet.mem_insert.mp h1 with heq | hmem
+                          · rw [← Var_compare_eq_iff_eq.mp heq]
+                            exact Or.inr (le_refl _)
+                          · exact absurd hmem Std.TreeSet.not_mem_emptyc
+                        · exact Or.inl (hsub_val v'
+                            (simpleValOwnVars_subset_simpleValVars (arr[indexValue.val]'h) v' h2))
+                      · simp only [bVarsOfFormula, bVarsOfTerm, bVarsOfTerm_simpleSymValToTerm,
+                          Std.TreeSet.mem_union_iff] at hb
+                        rcases hb with h' | h' <;> exact absurd h' Std.TreeSet.not_mem_emptyc
+                    · intro v' hv'
+                      show varIndex v' < sconf.nextVarId + 1
+                      rcases Std.TreeSet.mem_union_iff.mp hv' with hff | hb
+                      · simp only [ffVarsOfFormula, ffVarsOfTerm, ffVarsOfTerm_simpleSymValToTerm,
+                          Std.TreeSet.mem_union_iff] at hff
+                        rcases hff with h1 | h2
+                        · rcases Std.TreeSet.mem_insert.mp h1 with heq | hmem
+                          · rw [← Var_compare_eq_iff_eq.mp heq]
+                            simp only [varIndex]
+                            omega
+                          · exact absurd hmem Std.TreeSet.not_mem_emptyc
+                        · have := hbelow v' (hsub_val v'
+                            (simpleValOwnVars_subset_simpleValVars (arr[indexValue.val]'h) v' h2))
+                          omega
+                      · simp only [bVarsOfFormula, bVarsOfTerm, bVarsOfTerm_simpleSymValToTerm,
+                          Std.TreeSet.mem_union_iff] at hb
+                        rcases hb with h' | h' <;> exact absurd h' Std.TreeSet.not_mem_emptyc
+                    · intro v' hv'
+                      show varIndex v' < sconf.nextVarId + 1
+                      rcases symEnvVars_setVar_subset symEnv out
+                          (SymValue.simple (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩)) v' hv'
+                        with h' | h'
+                      · have := hbelow v' h'; omega
+                      · simp only [symValVars, simpleValVars, simpleValOwnVars, Option.map_none,
+                          Option.getD_none, Std.TreeSet.mem_union_iff] at h'
+                        rcases h' with h'' | h''
+                        · rcases Std.TreeSet.mem_insert.mp h'' with heq | hmem
+                          · rw [← Var_compare_eq_iff_eq.mp heq]; simp only [varIndex]; omega
+                          · exact absurd hmem Std.TreeSet.not_mem_emptyc
+                        · exact absurd h'' Std.TreeSet.not_mem_emptyc
+                    · intro v' hv'
+                      rcases symEnvVars_setVar_subset symEnv out
+                          (SymValue.simple (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩)) v' hv'
+                        with h' | h'
+                      · exact Or.inl h'
+                      · simp only [symValVars, simpleValVars, simpleValOwnVars, Option.map_none,
+                          Option.getD_none, Std.TreeSet.mem_union_iff] at h'
+                        rcases h' with h'' | h''
+                        · rcases Std.TreeSet.mem_insert.mp h'' with heq | hmem
+                          · rw [← Var_compare_eq_iff_eq.mp heq]; exact Or.inr (le_refl _)
+                          · exact absurd hmem Std.TreeSet.not_mem_emptyc
+                        · exact absurd h'' Std.TreeSet.not_mem_emptyc
+                    · intro env assignment hmatch env' hc
+                      have hpoint := hmatch.2
+                      obtain ⟨v, henv, hvv⟩ := hpoint a (SymValue.array arr) hg
+                      cases v with
+                      | scalar _ => simp only [symValMatches] at hvv
+                      | array varr =>
+                          simp only [symValMatches] at hvv
+                          have hlen : arr.toList.length = varr.toList.length := hvv.length_eq
+                          simp only [Array.length_toList] at hlen
+                          have h' : indexValue.val < varr.size := by omega
+                          have hceval := tryEvalSimpleExprToFFValue_correct symEnv index env
+                            assignment indexValue hmatch hidx
+                          simp only [evalReadArray,
+                            Corellzk2smt.Language.Core.Semantics.Basic.getVar, hceval, henv,
+                            ← Std.TreeMap.get?_eq_getElem?, dif_pos h'] at hc
+                          injection hc with hc
+                          have hmatchElem : simpleValMatches assignment (arr[indexValue.val]'h)
+                              (varr[indexValue.val]'h') :=
+                            list_forall2_get hvv indexValue.val
+                              (by simp only [Array.length_toList]; exact h)
+                              (by simp only [Array.length_toList]; exact h')
+                          set assignment' : Assignment c :=
+                            { assignment with
+                              ff := fun n => if n = sconf.nextVarId then varr[indexValue.val]'h'
+                                else assignment.ff n }
+                            with hassignment'_def
+                          have hagreeff : agreesOnFF (symEnvVars symEnv) assignment assignment' :=
+                            by
+                              intro n hn
+                              have hne : n ≠ sconf.nextVarId :=
+                                Nat.ne_of_lt (hbelow (Var.ffv n) hn)
+                              simp only [hassignment'_def, if_neg hne]
+                          have hagreebool :
+                              agreesOnBool (symEnvVars symEnv) assignment assignment' :=
+                            fun n _ => rfl
+                          have hframeff : ∀ n, Var.ffv n ∉
+                              (ffVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                                (simpleSymValToTerm (arr[indexValue.val]'h))) ∪
+                               bVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                                (simpleSymValToTerm (arr[indexValue.val]'h)))) →
+                              assignment'.ff n = assignment.ff n := by
+                            intro n hn
+                            have hne : n ≠ sconf.nextVarId := by
+                              intro heqn
+                              apply hn
+                              rw [heqn]
+                              exact Std.TreeSet.mem_union_of_left hmemF
+                            simp only [hassignment'_def, if_neg hne]
+                          have hframebool : ∀ n, Var.boolv n ∉
+                              (ffVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                                (simpleSymValToTerm (arr[indexValue.val]'h))) ∪
+                               bVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                                (simpleSymValToTerm (arr[indexValue.val]'h)))) →
+                              assignment'.bool n = assignment.bool n := fun n _ => rfl
+                          have hmatchElem' : simpleValMatches assignment'
+                              (arr[indexValue.val]'h) (varr[indexValue.val]'h') :=
+                            simpleValMatches_agreesOnFF_preserves assignment assignment'
+                              (arr[indexValue.val]'h) (varr[indexValue.val]'h')
+                              (symEnvVars symEnv) hsub_val hagreeff hmatchElem
+                          have hevalTerm' := evalTerm_simpleSymValToTerm gconf assignment'
+                            (arr[indexValue.val]'h) (varr[indexValue.val]'h') (specs.map (·.f))
+                            hmatchElem'
+                          have hffeval : assignment'.ff sconf.nextVarId
+                              = varr[indexValue.val]'h' := by simp [hassignment'_def]
+                          refine ⟨assignment', hagreeff, hagreebool, hframeff, hframebool, ?_, ?_⟩
+                          · simp [evalFormula, evalTerm, hevalTerm', hffeval]
+                          · rw [← hc]
+                            exact EnvMatches_setVar assignment' symEnv env out
+                              (SymValue.simple (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩))
+                              (Value.scalar (varr[indexValue.val]'h'))
+                              (EnvMatches_agreesOnFF_preserves assignment assignment' symEnv env
+                                hagreeff hmatch)
+                              (by simp only [symValMatches, simpleValMatches, hffeval])
+                    · intro env assignment hmatch assignment' hagree heval_f
+                      have hmatch' : EnvMatches assignment' symEnv env :=
+                        EnvMatches_agreesOnFF_preserves assignment assignment' symEnv env hagree
+                          hmatch
+                      have hpoint := hmatch'.2
+                      obtain ⟨v, henv, hvv⟩ := hpoint a (SymValue.array arr) hg
+                      cases v with
+                      | scalar _ => simp only [symValMatches] at hvv
+                      | array varr =>
+                          simp only [symValMatches] at hvv
+                          have hlen : arr.toList.length = varr.toList.length := hvv.length_eq
+                          simp only [Array.length_toList] at hlen
+                          have h' : indexValue.val < varr.size := by omega
+                          have hceval := tryEvalSimpleExprToFFValue_correct symEnv index env
+                            assignment' indexValue hmatch' hidx
+                          have hmatchElem : simpleValMatches assignment' (arr[indexValue.val]'h)
+                              (varr[indexValue.val]'h') :=
+                            list_forall2_get hvv indexValue.val
+                              (by simp only [Array.length_toList]; exact h)
+                              (by simp only [Array.length_toList]; exact h')
+                          have hevalTerm' := evalTerm_simpleSymValToTerm gconf assignment'
+                            (arr[indexValue.val]'h) (varr[indexValue.val]'h') (specs.map (·.f))
+                            hmatchElem
+                          simp only [evalFormula, evalTerm, hevalTerm', Except.ok.injEq]
+                            at heval_f
+                          have hffeq : assignment'.ff sconf.nextVarId = varr[indexValue.val]'h' :=
+                            (beq_iff_eq ..).mp heval_f
+                          refine ⟨Corellzk2smt.Language.Core.Semantics.Basic.setVar env out
+                            (Value.scalar (varr[indexValue.val]'h')), ?_, ?_⟩
+                          · simp only [evalReadArray,
+                              Corellzk2smt.Language.Core.Semantics.Basic.getVar, hceval, henv,
+                              ← Std.TreeMap.get?_eq_getElem?, dif_pos h']
+                          · exact EnvMatches_setVar assignment' symEnv env out
+                              (SymValue.simple (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩))
+                              (Value.scalar (varr[indexValue.val]'h')) hmatch'
+                              (by simp only [symValMatches, simpleValMatches, hffeq])
+                | false =>
+                    simp only [hnew] at hspec_eq
+                    injection hspec_eq with hspec_eq
+                    subst hspec_eq
+                    refine ⟨rfl, le_refl _, ?_, ?_, ?_, ?_, ValidBinRep_trivial gconf _ _, ?_, ?_⟩
+                    · intro v' hv'
+                      rcases Std.TreeSet.mem_union_iff.mp hv' with h' | h' <;>
+                        simp only [ffVarsOfFormula, bVarsOfFormula] at h' <;>
+                        exact absurd h' Std.TreeSet.not_mem_emptyc
+                    · intro v' hv'
+                      rcases Std.TreeSet.mem_union_iff.mp hv' with h' | h' <;>
+                        simp only [ffVarsOfFormula, bVarsOfFormula] at h' <;>
+                        exact absurd h' Std.TreeSet.not_mem_emptyc
+                    · intro v' hv'
+                      rcases symEnvVars_setVar_subset symEnv out
+                          (SymValue.simple (arr[indexValue.val]'h)) v' hv' with h' | h'
+                      · exact hbelow v' h'
+                      · exact hbelow v' (hsub_val v' h')
+                    · intro v' hv'
+                      rcases symEnvVars_setVar_subset symEnv out
+                          (SymValue.simple (arr[indexValue.val]'h)) v' hv' with h' | h'
+                      · exact Or.inl h'
+                      · exact Or.inl (hsub_val v' h')
+                    · intro env assignment hmatch env' hc
+                      have hpoint := hmatch.2
+                      obtain ⟨v, henv, hvv⟩ := hpoint a (SymValue.array arr) hg
+                      cases v with
+                      | scalar _ => simp only [symValMatches] at hvv
+                      | array varr =>
+                          simp only [symValMatches] at hvv
+                          have hlen : arr.toList.length = varr.toList.length := hvv.length_eq
+                          simp only [Array.length_toList] at hlen
+                          have h' : indexValue.val < varr.size := by omega
+                          have hceval := tryEvalSimpleExprToFFValue_correct symEnv index env
+                            assignment indexValue hmatch hidx
+                          simp only [evalReadArray,
+                            Corellzk2smt.Language.Core.Semantics.Basic.getVar, hceval, henv,
+                            ← Std.TreeMap.get?_eq_getElem?, dif_pos h'] at hc
+                          injection hc with hc
+                          have hmatchElem : simpleValMatches assignment (arr[indexValue.val]'h)
+                              (varr[indexValue.val]'h') :=
+                            list_forall2_get hvv indexValue.val
+                              (by simp only [Array.length_toList]; exact h)
+                              (by simp only [Array.length_toList]; exact h')
+                          refine ⟨assignment, (fun n _ => rfl), (fun n _ => rfl), (fun n _ => rfl),
+                            (fun n _ => rfl), ?_, ?_⟩
+                          · simp only [evalFormula]
+                          · rw [← hc]
+                            exact EnvMatches_setVar assignment symEnv env out
+                              (SymValue.simple (arr[indexValue.val]'h))
+                              (Value.scalar (varr[indexValue.val]'h')) hmatch hmatchElem
+                    · intro env assignment hmatch assignment' hagree _heval_f
+                      have hmatch' := EnvMatches_agreesOnFF_preserves assignment assignment'
+                        symEnv env hagree hmatch
+                      have hpoint := hmatch'.2
+                      obtain ⟨v, henv, hvv⟩ := hpoint a (SymValue.array arr) hg
+                      cases v with
+                      | scalar _ => simp only [symValMatches] at hvv
+                      | array varr =>
+                          simp only [symValMatches] at hvv
+                          have hlen : arr.toList.length = varr.toList.length := hvv.length_eq
+                          simp only [Array.length_toList] at hlen
+                          have h' : indexValue.val < varr.size := by omega
+                          have hceval := tryEvalSimpleExprToFFValue_correct symEnv index env
+                            assignment' indexValue hmatch' hidx
+                          have hmatchElem : simpleValMatches assignment' (arr[indexValue.val]'h)
+                              (varr[indexValue.val]'h') :=
+                            list_forall2_get hvv indexValue.val
+                              (by simp only [Array.length_toList]; exact h)
+                              (by simp only [Array.length_toList]; exact h')
+                          refine ⟨Corellzk2smt.Language.Core.Semantics.Basic.setVar env out
+                            (Value.scalar (varr[indexValue.val]'h')), ?_, ?_⟩
+                          · simp only [evalReadArray,
+                              Corellzk2smt.Language.Core.Semantics.Basic.getVar, hceval, henv,
+                              ← Std.TreeMap.get?_eq_getElem?, dif_pos h']
+                          · exact EnvMatches_setVar assignment' symEnv env out
+                              (SymValue.simple (arr[indexValue.val]'h))
+                              (Value.scalar (varr[indexValue.val]'h')) hmatch' hmatchElem
               · simp [seReadArrayConstantIdx, hidx, Corellzk2smt.SymExec.Basic.getVar,
                   ← Std.TreeMap.get?_eq_getElem?, hg, dif_neg h] at hspec_eq
 
@@ -325,110 +507,343 @@ theorem seWriteArrayConstantIdx_correct {c : ZKConfig} (gconf : GlobalConfig c)
                     simp [seWriteArrayConstantIdx, hidx, Corellzk2smt.SymExec.Basic.getVar,
                       ← Std.TreeMap.get?_eq_getElem?, hg, dif_pos h, hval] at hspec_eq
                 | ok v =>
-                    simp only [seWriteArrayConstantIdx, hidx, Corellzk2smt.SymExec.Basic.getVar,
-                      ← Std.TreeMap.get?_eq_getElem?, hg, dif_pos h, hval] at hspec_eq
-                    injection hspec_eq with hspec_eq
-                    subst hspec_eq
                     have hsub_arr : symValVars (SymValue.array arr) ⊆ symEnvVars symEnv :=
                       symValVars_subset_symEnvVars symEnv a (SymValue.array arr) hg
                     have hsub_v : simpleValVars v ⊆ symEnvVars symEnv :=
                       Corellzk2smt.SymExec.Correctness.Lemmas.resolveSimpleExpr_vars_subset symEnv
                         value v hval
-                    have hsub_newArr : symValVars
-                        (SymValue.array (arr.set indexValue.val v)) ⊆ symEnvVars symEnv := by
-                      intro v' hv'
-                      simp only [symValVars] at hv'
-                      rw [← Array.foldl_toList] at hv'
-                      rcases foldl_union_mem_elim simpleValVars
-                          (arr.set indexValue.val v).toList emptyVarSet v' hv' with hh | hh
-                      · exact absurd hh Std.TreeSet.not_mem_emptyc
-                      · obtain ⟨x, hx, hvx⟩ := hh
-                        rw [Array.toList_set] at hx
-                        rcases List.mem_or_eq_of_mem_set hx with hx' | hx'
-                        · exact symValVars_array_mem_below_subset arr x hx' (symEnvVars symEnv)
-                            hsub_arr v' hvx
-                        · rw [hx'] at hvx
-                          exact hsub_v v' hvx
-                    refine ⟨rfl, le_refl _, ?_, ?_, ?_, ?_, ValidBinRep_trivial gconf _ _, ?_, ?_⟩
-                    · intro v' hv'
-                      rcases Std.TreeSet.mem_union_iff.mp hv' with hh | hh <;>
-                        simp only [ffVarsOfFormula, bVarsOfFormula] at hh <;>
-                        exact absurd hh Std.TreeSet.not_mem_emptyc
-                    · intro v' hv'
-                      rcases Std.TreeSet.mem_union_iff.mp hv' with hh | hh <;>
-                        simp only [ffVarsOfFormula, bVarsOfFormula] at hh <;>
-                        exact absurd hh Std.TreeSet.not_mem_emptyc
-                    · intro v' hv'
-                      rcases symEnvVars_setVar_subset symEnv a
-                          (SymValue.array (arr.set indexValue.val v)) v' hv' with hh | hh
-                      · exact hbelow v' hh
-                      · exact hbelow v' (hsub_newArr v' hh)
-                    · intro v' hv'
-                      rcases symEnvVars_setVar_subset symEnv a
-                          (SymValue.array (arr.set indexValue.val v)) v' hv' with hh | hh
-                      · exact Or.inl hh
-                      · exact Or.inl (hsub_newArr v' hh)
-                    · intro env assignment hmatch env' hc
-                      have hpoint := hmatch.2
-                      obtain ⟨vv, henv, hvv⟩ := hpoint a (SymValue.array arr) hg
-                      cases vv with
-                      | scalar _ => simp only [symValMatches] at hvv
-                      | array varr =>
-                          simp only [symValMatches] at hvv
-                          have hlen : arr.toList.length = varr.toList.length := hvv.length_eq
-                          simp only [Array.length_toList] at hlen
-                          have h' : indexValue.val < varr.size := by omega
-                          have hceval := tryEvalSimpleExprToFFValue_correct symEnv index env
-                            assignment indexValue hmatch hidx
-                          obtain ⟨valueVal, hvalceval, hvmatch⟩ :=
-                            resolveSimpleExpr_correct symEnv value env assignment v hmatch hval
-                          simp only [evalWriteArray, hceval, hvalceval,
-                            Corellzk2smt.Language.Core.Semantics.Basic.getVar, henv,
-                            ← Std.TreeMap.get?_eq_getElem?, dif_pos h'] at hc
-                          injection hc with hc
-                          have hmatchArr : List.Forall₂ (simpleValMatches assignment)
-                              (arr.set indexValue.val v).toList
-                              (varr.set indexValue.val valueVal).toList := by
-                            rw [Array.toList_set, Array.toList_set]
-                            exact list_forall2_set hvv indexValue.val v valueVal hvmatch
-                          refine ⟨assignment, (fun n _ => rfl), (fun n _ => rfl),
-                            (fun n _ => rfl), (fun n _ => rfl), ?_, ?_⟩
-                          · simp only [evalFormula]
-                          · rw [← hc]
-                            exact EnvMatches_setVar assignment symEnv env a
-                              (SymValue.array (arr.set indexValue.val v))
-                              (Value.array (varr.set indexValue.val valueVal)) hmatch
-                              (by simp only [symValMatches]; exact hmatchArr)
-                    · intro env assignment hmatch assignment' hagree _heval_f
-                      have hmatch' := EnvMatches_agreesOnFF_preserves assignment assignment'
-                        symEnv env hagree hmatch
-                      have hpoint := hmatch'.2
-                      obtain ⟨vv, henv, hvv⟩ := hpoint a (SymValue.array arr) hg
-                      cases vv with
-                      | scalar _ => simp only [symValMatches] at hvv
-                      | array varr =>
-                          simp only [symValMatches] at hvv
-                          have hlen : arr.toList.length = varr.toList.length := hvv.length_eq
-                          simp only [Array.length_toList] at hlen
-                          have h' : indexValue.val < varr.size := by omega
-                          have hceval := tryEvalSimpleExprToFFValue_correct symEnv index env
-                            assignment' indexValue hmatch' hidx
-                          obtain ⟨valueVal, hvalceval, hvmatch⟩ :=
-                            resolveSimpleExpr_correct symEnv value env assignment' v hmatch' hval
-                          have hmatchArr : List.Forall₂ (simpleValMatches assignment')
-                              (arr.set indexValue.val v).toList
-                              (varr.set indexValue.val valueVal).toList := by
-                            rw [Array.toList_set, Array.toList_set]
-                            exact list_forall2_set hvv indexValue.val v valueVal hvmatch
-                          refine ⟨Corellzk2smt.Language.Core.Semantics.Basic.setVar env a
-                            (Value.array (varr.set indexValue.val valueVal)), ?_, ?_⟩
-                          · simp only [evalWriteArray, hceval, hvalceval,
-                              Corellzk2smt.Language.Core.Semantics.Basic.getVar, henv,
-                              ← Std.TreeMap.get?_eq_getElem?, dif_pos h']
-                          · exact EnvMatches_setVar assignment' symEnv env a
-                              (SymValue.array (arr.set indexValue.val v))
-                              (Value.array (varr.set indexValue.val valueVal)) hmatch'
-                              (by simp only [symValMatches]; exact hmatchArr)
+                    cases hnew : gconf.sym_exec.new_var_array_write with
+                    | true =>
+                        simp only [seWriteArrayConstantIdx, hidx,
+                          Corellzk2smt.SymExec.Basic.getVar, ← Std.TreeMap.get?_eq_getElem?, hg,
+                          dif_pos h, hval, hnew] at hspec_eq
+                        injection hspec_eq with hspec_eq
+                        subst hspec_eq
+                        have hmemF : Var.ffv sconf.nextVarId ∈
+                            ffVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                              (simpleSymValToTerm v)) := by
+                          simp only [ffVarsOfFormula, ffVarsOfTerm, Std.TreeSet.mem_union_iff]
+                          exact Or.inl (Std.TreeSet.mem_insert_self ..)
+                        have hsub_newArr : ∀ v', v' ∈ symValVars (SymValue.array
+                              (arr.set indexValue.val
+                                (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩))) →
+                            v' ∈ symEnvVars symEnv ∨ v' = Var.ffv sconf.nextVarId := by
+                          intro v' hv'
+                          simp only [symValVars] at hv'
+                          rw [← Array.foldl_toList] at hv'
+                          rcases foldl_union_mem_elim simpleValVars
+                              (arr.set indexValue.val
+                                (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩)).toList emptyVarSet
+                              v' hv' with hh | hh
+                          · exact absurd hh Std.TreeSet.not_mem_emptyc
+                          · obtain ⟨x, hx, hvx⟩ := hh
+                            rw [Array.toList_set] at hx
+                            rcases List.mem_or_eq_of_mem_set hx with hx' | hx'
+                            · exact Or.inl (symValVars_array_mem_below_subset arr x hx'
+                                (symEnvVars symEnv) hsub_arr v' hvx)
+                            · rw [hx'] at hvx
+                              simp only [simpleValVars, simpleValOwnVars, Option.map_none,
+                                Option.getD_none, Std.TreeSet.mem_union_iff] at hvx
+                              rcases hvx with hh' | hh'
+                              · rcases Std.TreeSet.mem_insert.mp hh' with heq | hmem
+                                · exact Or.inr (Var_compare_eq_iff_eq.mp heq).symm
+                                · exact absurd hmem Std.TreeSet.not_mem_emptyc
+                              · exact absurd hh' Std.TreeSet.not_mem_emptyc
+                        refine ⟨rfl, Nat.le_succ _, ?_, ?_, ?_, ?_, ValidBinRep_trivial gconf _ _,
+                          ?_, ?_⟩
+                        · intro v' hv'
+                          rcases Std.TreeSet.mem_union_iff.mp hv' with hff | hb
+                          · simp only [ffVarsOfFormula, ffVarsOfTerm,
+                              ffVarsOfTerm_simpleSymValToTerm, Std.TreeSet.mem_union_iff] at hff
+                            rcases hff with h1 | h2
+                            · rcases Std.TreeSet.mem_insert.mp h1 with heq | hmem
+                              · rw [← Var_compare_eq_iff_eq.mp heq]
+                                exact Or.inr (le_refl _)
+                              · exact absurd hmem Std.TreeSet.not_mem_emptyc
+                            · exact Or.inl (hsub_v v'
+                                (simpleValOwnVars_subset_simpleValVars v v' h2))
+                          · simp only [bVarsOfFormula, bVarsOfTerm, bVarsOfTerm_simpleSymValToTerm,
+                              Std.TreeSet.mem_union_iff] at hb
+                            rcases hb with h' | h' <;> exact absurd h' Std.TreeSet.not_mem_emptyc
+                        · intro v' hv'
+                          show varIndex v' < sconf.nextVarId + 1
+                          rcases Std.TreeSet.mem_union_iff.mp hv' with hff | hb
+                          · simp only [ffVarsOfFormula, ffVarsOfTerm,
+                              ffVarsOfTerm_simpleSymValToTerm, Std.TreeSet.mem_union_iff] at hff
+                            rcases hff with h1 | h2
+                            · rcases Std.TreeSet.mem_insert.mp h1 with heq | hmem
+                              · rw [← Var_compare_eq_iff_eq.mp heq]
+                                simp only [varIndex]
+                                omega
+                              · exact absurd hmem Std.TreeSet.not_mem_emptyc
+                            · have := hbelow v'
+                                (hsub_v v' (simpleValOwnVars_subset_simpleValVars v v' h2))
+                              omega
+                          · simp only [bVarsOfFormula, bVarsOfTerm, bVarsOfTerm_simpleSymValToTerm,
+                              Std.TreeSet.mem_union_iff] at hb
+                            rcases hb with h' | h' <;> exact absurd h' Std.TreeSet.not_mem_emptyc
+                        · intro v' hv'
+                          show varIndex v' < sconf.nextVarId + 1
+                          rcases symEnvVars_setVar_subset symEnv a (SymValue.array
+                              (arr.set indexValue.val
+                                (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩))) v' hv'
+                            with hh | hh
+                          · have := hbelow v' hh; omega
+                          · rcases hsub_newArr v' hh with hh' | hh'
+                            · have := hbelow v' hh'; omega
+                            · rw [hh']; simp only [varIndex]; omega
+                        · intro v' hv'
+                          rcases symEnvVars_setVar_subset symEnv a (SymValue.array
+                              (arr.set indexValue.val
+                                (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩))) v' hv'
+                            with hh | hh
+                          · exact Or.inl hh
+                          · rcases hsub_newArr v' hh with hh' | hh'
+                            · exact Or.inl hh'
+                            · rw [hh']; exact Or.inr (le_refl _)
+                        · intro env assignment hmatch env' hc
+                          have hpoint := hmatch.2
+                          obtain ⟨vv, henv, hvv⟩ := hpoint a (SymValue.array arr) hg
+                          cases vv with
+                          | scalar _ => simp only [symValMatches] at hvv
+                          | array varr =>
+                              simp only [symValMatches] at hvv
+                              have hlen : arr.toList.length = varr.toList.length := hvv.length_eq
+                              simp only [Array.length_toList] at hlen
+                              have h' : indexValue.val < varr.size := by omega
+                              have hceval := tryEvalSimpleExprToFFValue_correct symEnv index env
+                                assignment indexValue hmatch hidx
+                              obtain ⟨valueVal, hvalceval, hvmatch⟩ :=
+                                resolveSimpleExpr_correct symEnv value env assignment v hmatch
+                                  hval
+                              simp only [evalWriteArray, hceval, hvalceval,
+                                Corellzk2smt.Language.Core.Semantics.Basic.getVar, henv,
+                                ← Std.TreeMap.get?_eq_getElem?, dif_pos h'] at hc
+                              injection hc with hc
+                              set assignment' : Assignment c :=
+                                { assignment with
+                                  ff := fun n => if n = sconf.nextVarId then valueVal
+                                    else assignment.ff n }
+                                with hassignment'_def
+                              have hagreeff : agreesOnFF (symEnvVars symEnv) assignment
+                                  assignment' := by
+                                intro n hn
+                                have hne : n ≠ sconf.nextVarId :=
+                                  Nat.ne_of_lt (hbelow (Var.ffv n) hn)
+                                simp only [hassignment'_def, if_neg hne]
+                              have hagreebool :
+                                  agreesOnBool (symEnvVars symEnv) assignment assignment' :=
+                                fun n _ => rfl
+                              have hframeff : ∀ n, Var.ffv n ∉
+                                  (ffVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                                    (simpleSymValToTerm v)) ∪
+                                   bVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                                    (simpleSymValToTerm v))) →
+                                  assignment'.ff n = assignment.ff n := by
+                                intro n hn
+                                have hne : n ≠ sconf.nextVarId := by
+                                  intro heqn
+                                  apply hn
+                                  rw [heqn]
+                                  exact Std.TreeSet.mem_union_of_left hmemF
+                                simp only [hassignment'_def, if_neg hne]
+                              have hframebool : ∀ n, Var.boolv n ∉
+                                  (ffVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                                    (simpleSymValToTerm v)) ∪
+                                   bVarsOfFormula (FFFormula.eq (FFTerm.var sconf.nextVarId)
+                                    (simpleSymValToTerm v))) →
+                                  assignment'.bool n = assignment.bool n := fun n _ => rfl
+                              have hsimpleMatchV' : simpleValMatches assignment' v valueVal :=
+                                simpleValMatches_agreesOnFF_preserves assignment assignment' v
+                                  valueVal (symEnvVars symEnv) hsub_v hagreeff hvmatch
+                              have hevalTermV' : evalTerm gconf assignment'
+                                  (simpleSymValToTerm v) (specs.map (·.f)) = Except.ok valueVal :=
+                                evalTerm_simpleSymValToTerm gconf assignment' v valueVal
+                                  (specs.map (·.f)) hsimpleMatchV'
+                              have hffeval : assignment'.ff sconf.nextVarId = valueVal := by
+                                simp [hassignment'_def]
+                              have hsub_arr_elems : ∀ sv ∈ arr.toList,
+                                  simpleValVars sv ⊆ symEnvVars symEnv :=
+                                fun sv hsv => symValVars_array_mem_below_subset arr sv hsv
+                                  (symEnvVars symEnv) hsub_arr
+                              have hvv' : List.Forall₂ (simpleValMatches assignment') arr.toList
+                                  varr.toList :=
+                                forall2_simpleValMatches_agreesOnFF_preserves assignment
+                                  assignment' arr.toList varr.toList (symEnvVars symEnv)
+                                  hsub_arr_elems hagreeff hvv
+                              have hnewElemMatch : simpleValMatches assignment'
+                                  (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩) valueVal := by
+                                simp only [simpleValMatches, hffeval]
+                              have hmatchArr : List.Forall₂ (simpleValMatches assignment')
+                                  (arr.set indexValue.val
+                                    (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩)).toList
+                                  (varr.set indexValue.val valueVal).toList := by
+                                rw [Array.toList_set, Array.toList_set]
+                                exact list_forall2_set hvv' indexValue.val
+                                  (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩) valueVal
+                                  hnewElemMatch
+                              refine ⟨assignment', hagreeff, hagreebool, hframeff, hframebool, ?_,
+                                ?_⟩
+                              · simp [evalFormula, evalTerm, hevalTermV', hffeval]
+                              · rw [← hc]
+                                exact EnvMatches_setVar assignment' symEnv env a
+                                  (SymValue.array (arr.set indexValue.val
+                                    (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩)))
+                                  (Value.array (varr.set indexValue.val valueVal))
+                                  (EnvMatches_agreesOnFF_preserves assignment assignment' symEnv
+                                    env hagreeff hmatch)
+                                  (by simp only [symValMatches]; exact hmatchArr)
+                        · intro env assignment hmatch assignment' hagree heval_f
+                          have hmatch' : EnvMatches assignment' symEnv env :=
+                            EnvMatches_agreesOnFF_preserves assignment assignment' symEnv env
+                              hagree hmatch
+                          have hpoint := hmatch'.2
+                          obtain ⟨vv, henv, hvv⟩ := hpoint a (SymValue.array arr) hg
+                          cases vv with
+                          | scalar _ => simp only [symValMatches] at hvv
+                          | array varr =>
+                              simp only [symValMatches] at hvv
+                              have hlen : arr.toList.length = varr.toList.length := hvv.length_eq
+                              simp only [Array.length_toList] at hlen
+                              have h' : indexValue.val < varr.size := by omega
+                              have hceval := tryEvalSimpleExprToFFValue_correct symEnv index env
+                                assignment' indexValue hmatch' hidx
+                              obtain ⟨valueVal, hvalceval, hvmatch⟩ :=
+                                resolveSimpleExpr_correct symEnv value env assignment' v hmatch'
+                                  hval
+                              have hevalTermV' : evalTerm gconf assignment'
+                                  (simpleSymValToTerm v) (specs.map (·.f)) = Except.ok valueVal :=
+                                evalTerm_simpleSymValToTerm gconf assignment' v valueVal
+                                  (specs.map (·.f)) hvmatch
+                              simp only [evalFormula, evalTerm, hevalTermV', Except.ok.injEq]
+                                at heval_f
+                              have hffeq : assignment'.ff sconf.nextVarId = valueVal :=
+                                (beq_iff_eq ..).mp heval_f
+                              have hnewElemMatch : simpleValMatches assignment'
+                                  (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩) valueVal := by
+                                simp only [simpleValMatches, hffeq]
+                              have hmatchArr : List.Forall₂ (simpleValMatches assignment')
+                                  (arr.set indexValue.val
+                                    (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩)).toList
+                                  (varr.set indexValue.val valueVal).toList := by
+                                rw [Array.toList_set, Array.toList_set]
+                                exact list_forall2_set hvv indexValue.val
+                                  (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩) valueVal
+                                  hnewElemMatch
+                              refine ⟨Corellzk2smt.Language.Core.Semantics.Basic.setVar env a
+                                (Value.array (varr.set indexValue.val valueVal)), ?_, ?_⟩
+                              · simp only [evalWriteArray, hceval, hvalceval,
+                                  Corellzk2smt.Language.Core.Semantics.Basic.getVar, henv,
+                                  ← Std.TreeMap.get?_eq_getElem?, dif_pos h']
+                              · exact EnvMatches_setVar assignment' symEnv env a
+                                  (SymValue.array (arr.set indexValue.val
+                                    (SimpleSymVal.ffvar ⟨sconf.nextVarId, none⟩)))
+                                  (Value.array (varr.set indexValue.val valueVal)) hmatch'
+                                  (by simp only [symValMatches]; exact hmatchArr)
+                    | false =>
+                        simp only [seWriteArrayConstantIdx, hidx,
+                          Corellzk2smt.SymExec.Basic.getVar, ← Std.TreeMap.get?_eq_getElem?, hg,
+                          dif_pos h, hval, hnew] at hspec_eq
+                        injection hspec_eq with hspec_eq
+                        subst hspec_eq
+                        have hsub_newArr : symValVars
+                            (SymValue.array (arr.set indexValue.val v)) ⊆ symEnvVars symEnv := by
+                          intro v' hv'
+                          simp only [symValVars] at hv'
+                          rw [← Array.foldl_toList] at hv'
+                          rcases foldl_union_mem_elim simpleValVars
+                              (arr.set indexValue.val v).toList emptyVarSet v' hv' with hh | hh
+                          · exact absurd hh Std.TreeSet.not_mem_emptyc
+                          · obtain ⟨x, hx, hvx⟩ := hh
+                            rw [Array.toList_set] at hx
+                            rcases List.mem_or_eq_of_mem_set hx with hx' | hx'
+                            · exact symValVars_array_mem_below_subset arr x hx' (symEnvVars symEnv)
+                                hsub_arr v' hvx
+                            · rw [hx'] at hvx
+                              exact hsub_v v' hvx
+                        refine ⟨rfl, le_refl _, ?_, ?_, ?_, ?_, ValidBinRep_trivial gconf _ _, ?_,
+                          ?_⟩
+                        · intro v' hv'
+                          rcases Std.TreeSet.mem_union_iff.mp hv' with hh | hh <;>
+                            simp only [ffVarsOfFormula, bVarsOfFormula] at hh <;>
+                            exact absurd hh Std.TreeSet.not_mem_emptyc
+                        · intro v' hv'
+                          rcases Std.TreeSet.mem_union_iff.mp hv' with hh | hh <;>
+                            simp only [ffVarsOfFormula, bVarsOfFormula] at hh <;>
+                            exact absurd hh Std.TreeSet.not_mem_emptyc
+                        · intro v' hv'
+                          rcases symEnvVars_setVar_subset symEnv a
+                              (SymValue.array (arr.set indexValue.val v)) v' hv' with hh | hh
+                          · exact hbelow v' hh
+                          · exact hbelow v' (hsub_newArr v' hh)
+                        · intro v' hv'
+                          rcases symEnvVars_setVar_subset symEnv a
+                              (SymValue.array (arr.set indexValue.val v)) v' hv' with hh | hh
+                          · exact Or.inl hh
+                          · exact Or.inl (hsub_newArr v' hh)
+                        · intro env assignment hmatch env' hc
+                          have hpoint := hmatch.2
+                          obtain ⟨vv, henv, hvv⟩ := hpoint a (SymValue.array arr) hg
+                          cases vv with
+                          | scalar _ => simp only [symValMatches] at hvv
+                          | array varr =>
+                              simp only [symValMatches] at hvv
+                              have hlen : arr.toList.length = varr.toList.length := hvv.length_eq
+                              simp only [Array.length_toList] at hlen
+                              have h' : indexValue.val < varr.size := by omega
+                              have hceval := tryEvalSimpleExprToFFValue_correct symEnv index env
+                                assignment indexValue hmatch hidx
+                              obtain ⟨valueVal, hvalceval, hvmatch⟩ :=
+                                resolveSimpleExpr_correct symEnv value env assignment v hmatch
+                                  hval
+                              simp only [evalWriteArray, hceval, hvalceval,
+                                Corellzk2smt.Language.Core.Semantics.Basic.getVar, henv,
+                                ← Std.TreeMap.get?_eq_getElem?, dif_pos h'] at hc
+                              injection hc with hc
+                              have hmatchArr : List.Forall₂ (simpleValMatches assignment)
+                                  (arr.set indexValue.val v).toList
+                                  (varr.set indexValue.val valueVal).toList := by
+                                rw [Array.toList_set, Array.toList_set]
+                                exact list_forall2_set hvv indexValue.val v valueVal hvmatch
+                              refine ⟨assignment, (fun n _ => rfl), (fun n _ => rfl),
+                                (fun n _ => rfl), (fun n _ => rfl), ?_, ?_⟩
+                              · simp only [evalFormula]
+                              · rw [← hc]
+                                exact EnvMatches_setVar assignment symEnv env a
+                                  (SymValue.array (arr.set indexValue.val v))
+                                  (Value.array (varr.set indexValue.val valueVal)) hmatch
+                                  (by simp only [symValMatches]; exact hmatchArr)
+                        · intro env assignment hmatch assignment' hagree _heval_f
+                          have hmatch' := EnvMatches_agreesOnFF_preserves assignment assignment'
+                            symEnv env hagree hmatch
+                          have hpoint := hmatch'.2
+                          obtain ⟨vv, henv, hvv⟩ := hpoint a (SymValue.array arr) hg
+                          cases vv with
+                          | scalar _ => simp only [symValMatches] at hvv
+                          | array varr =>
+                              simp only [symValMatches] at hvv
+                              have hlen : arr.toList.length = varr.toList.length := hvv.length_eq
+                              simp only [Array.length_toList] at hlen
+                              have h' : indexValue.val < varr.size := by omega
+                              have hceval := tryEvalSimpleExprToFFValue_correct symEnv index env
+                                assignment' indexValue hmatch' hidx
+                              obtain ⟨valueVal, hvalceval, hvmatch⟩ :=
+                                resolveSimpleExpr_correct symEnv value env assignment' v hmatch'
+                                  hval
+                              have hmatchArr : List.Forall₂ (simpleValMatches assignment')
+                                  (arr.set indexValue.val v).toList
+                                  (varr.set indexValue.val valueVal).toList := by
+                                rw [Array.toList_set, Array.toList_set]
+                                exact list_forall2_set hvv indexValue.val v valueVal hvmatch
+                              refine ⟨Corellzk2smt.Language.Core.Semantics.Basic.setVar env a
+                                (Value.array (varr.set indexValue.val valueVal)), ?_, ?_⟩
+                              · simp only [evalWriteArray, hceval, hvalceval,
+                                  Corellzk2smt.Language.Core.Semantics.Basic.getVar, henv,
+                                  ← Std.TreeMap.get?_eq_getElem?, dif_pos h']
+                              · exact EnvMatches_setVar assignment' symEnv env a
+                                  (SymValue.array (arr.set indexValue.val v))
+                                  (Value.array (varr.set indexValue.val valueVal)) hmatch'
+                                  (by simp only [symValMatches]; exact hmatchArr)
               · simp [seWriteArrayConstantIdx, hidx, Corellzk2smt.SymExec.Basic.getVar,
                   ← Std.TreeMap.get?_eq_getElem?, hg, dif_neg h] at hspec_eq
 

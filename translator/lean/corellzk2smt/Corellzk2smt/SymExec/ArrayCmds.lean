@@ -55,13 +55,25 @@ def seReadArrayConstantIdx {c : ZKConfig}
       | Except.ok (SymValue.array arr) =>
         if h: indexValue.val < arr.size then
           let value := arr[indexValue.val]'h
-          let newSymEnv := setVar symEnv out (.simple value)
-          Except.ok {
-            inSymEnv := symEnv,
-            outSymEnv := newSymEnv,
-            f := .true,
-            nextVarId := sconf.nextVarId
-          }
+          if gconf.sym_exec.new_var_array_read then
+            let outFFVar : FFVar := sconf.nextVarId
+            let valueTerm := simpleSymValToTerm value
+            let f := FFFormula.eq (FFTerm.var outFFVar) valueTerm
+            let newSymEnv := setVar symEnv out (.simple (.ffvar ⟨outFFVar, none⟩))
+            Except.ok {
+              inSymEnv := symEnv,
+              outSymEnv := newSymEnv,
+              f := f,
+              nextVarId := sconf.nextVarId+1
+            }
+          else
+            let newSymEnv := setVar symEnv out (.simple value)
+            Except.ok {
+              inSymEnv := symEnv,
+              outSymEnv := newSymEnv,
+              f := .true,
+              nextVarId := sconf.nextVarId
+            }
         else
           Except.error s!"Index {indexValue.val} is out of bounds for array {a} of size {arr.size}"
       | Except.ok _ => Except.error s!"Variable {a} is not an array"
@@ -116,14 +128,27 @@ def seWriteArrayConstantIdx {c : ZKConfig}
           match resolveSimpleExpr symEnv value with
           | Except.error msg => Except.error msg
           | Except.ok v =>
-            let newArr := arr.set indexValue.val v
-            let newSymEnv := setVar symEnv a (SymValue.array newArr)
-            Except.ok {
-              inSymEnv := symEnv,
-              outSymEnv := newSymEnv,
-              f := .true,
-              nextVarId := sconf.nextVarId
-            }
+            if gconf.sym_exec.new_var_array_write then
+              let outFFVar : FFVar := sconf.nextVarId
+              let newArr := arr.set indexValue.val (.ffvar ⟨outFFVar, none⟩)
+              let newSymEnv := setVar symEnv a (SymValue.array newArr)
+              let vTerm := simpleSymValToTerm v
+              let f := FFFormula.eq (FFTerm.var outFFVar) vTerm
+              Except.ok {
+                inSymEnv := symEnv,
+                outSymEnv := newSymEnv,
+                f := f,
+                nextVarId := sconf.nextVarId+1
+              }
+            else
+              let newArr := arr.set indexValue.val v
+              let newSymEnv := setVar symEnv a (SymValue.array newArr)
+              Except.ok {
+                inSymEnv := symEnv,
+                outSymEnv := newSymEnv,
+                f := .true,
+                nextVarId := sconf.nextVarId
+              }
         else
           Except.error s!"Index {indexValue.val} is out of bounds for array {a} of size {arr.size}"
       | Except.ok _ => Except.error s!"Variable {a} is not an array"
