@@ -1,0 +1,1344 @@
+def @Num2Bits_0(%arg0: ff) -> out: arr<16> {
+  array.new 16 %nondet
+  %felt_const_16 = 16
+  %felt_const_0 = 0
+  %felt_const_1 = 1
+  %felt_const_0_0 = 0
+  %arg1 = %felt_const_0_0
+  %arg2 = %felt_const_1
+  %arg3 = %felt_const_0
+  repeat 16 {
+    %1_aft11 = bit.shr %arg0 %arg1
+    %felt_const_1_1_aft11 = 1
+    %2_aft11 = bit.and %1_aft11 %felt_const_1_1_aft11
+    %3_aft11 = %arg1
+    array.write %2_aft11 %nondet[%3_aft11]
+    %4_aft11 = %arg1
+    array.read %nondet[%4_aft11] %5_aft11
+    %6_aft11 = felt.mul %5_aft11 %arg2
+    %7_aft11 = felt.add %arg3 %6_aft11
+    %8_aft11 = felt.add %arg2 %arg2
+    %felt_const_1_2_aft11 = 1
+    %9_aft11 = felt.add %arg1 %felt_const_1_2_aft11
+    %arg1 = %9_aft11
+    %arg2 = %8_aft11
+    %arg3 = %7_aft11
+    %felt_const_16_1_bef11 = 16
+    %1_bef11 = bool.lt %felt_const_16_1_bef11 %arg1
+    %0#0 = %arg1
+    %0#1 = %arg2
+    %0#2 = %arg3
+  }
+  array.copy %nondet out
+}
+def @BinSub_1(%arg0: arr<32>) -> out: arr<16> {
+  array.new 16 %nondet
+  %felt_const_16 = 16
+  %felt_const_65536 = 65536
+  %felt_const_0 = 0
+  %felt_const_0_0 = 0
+  %felt_const_0_1 = 0
+  %arg1 = %felt_const_0_1
+  %arg2 = %felt_const_65536
+  repeat 16 {
+    %felt_const_0_5_aft81 = 0
+    %6_aft81 = %felt_const_0_5_aft81
+    %7_aft81 = %arg1
+    %8_aft81_s0 = 16
+    %8_aft81_t0 = felt.mul %6_aft81 %8_aft81_s0
+    %8_aft81_t1 = %7_aft81
+    %8_aft81_lin = felt.add %8_aft81_t0 %8_aft81_t1
+    array.read %arg0[%8_aft81_lin] %8_aft81
+    %felt_const_2_aft81 = 2
+    %9_aft81 = felt.pow %felt_const_2_aft81 %arg1
+    %10_aft81 = felt.mul %8_aft81 %9_aft81
+    %11_aft81 = felt.add %arg2 %10_aft81
+    %felt_const_1_6_aft81 = 1
+    %12_aft81 = %felt_const_1_6_aft81
+    %13_aft81 = %arg1
+    %14_aft81_s0 = 16
+    %14_aft81_t0 = felt.mul %12_aft81 %14_aft81_s0
+    %14_aft81_t1 = %13_aft81
+    %14_aft81_lin = felt.add %14_aft81_t0 %14_aft81_t1
+    array.read %arg0[%14_aft81_lin] %14_aft81
+    %felt_const_2_7_aft81 = 2
+    %15_aft81 = felt.pow %felt_const_2_7_aft81 %arg1
+    %16_aft81 = felt.mul %14_aft81 %15_aft81
+    %17_aft81 = felt.sub %11_aft81 %16_aft81
+    %felt_const_1_8_aft81 = 1
+    %18_aft81 = felt.add %arg1 %felt_const_1_8_aft81
+    %arg1 = %18_aft81
+    %arg2 = %17_aft81
+    %felt_const_16_5_bef81 = 16
+    %6_bef81 = bool.lt %felt_const_16_5_bef81 %arg1
+    %0#0 = %arg1
+    %0#1 = %arg2
+  }
+  %felt_const_0_2 = 0
+  %arg1 = %felt_const_0
+  %arg2 = %felt_const_0_2
+  repeat 16 {
+    %6_aft108 = bit.shr %0#1 %arg2
+    %felt_const_1_5_aft108 = 1
+    %7_aft108 = bit.and %6_aft108 %felt_const_1_5_aft108
+    %8_aft108 = %arg2
+    array.write %7_aft108 %nondet[%8_aft108]
+    %9_aft108 = %arg2
+    array.read %nondet[%9_aft108] %10_aft108
+    %felt_const_2_aft108 = 2
+    %11_aft108 = felt.pow %felt_const_2_aft108 %arg2
+    %12_aft108 = felt.mul %10_aft108 %11_aft108
+    %13_aft108 = felt.add %arg1 %12_aft108
+    %felt_const_1_6_aft108 = 1
+    %14_aft108 = felt.add %arg2 %felt_const_1_6_aft108
+    %arg1 = %13_aft108
+    %arg2 = %14_aft108
+    %felt_const_16_5_bef108 = 16
+    %6_bef108 = bool.lt %felt_const_16_5_bef108 %arg2
+    %1#0 = %arg1
+    %1#1 = %arg2
+  }
+  %felt_const_16_3 = 16
+  %2 = bit.shr %0#1 %felt_const_16_3
+  %felt_const_1 = 1
+  %3 = bit.and %2 %felt_const_1
+  aux = %3
+  %felt_const_65536_4 = 65536
+  %4 = felt.mul %3 %felt_const_65536_4
+  %5 = felt.add %1#0 %4
+  array.copy %nondet out
+}
+def @Bits2Num_2(%arg0: arr<16>) -> out: ff {
+  %felt_const_16 = 16
+  %felt_const_0 = 0
+  %felt_const_1 = 1
+  %felt_const_0_0 = 0
+  %arg1 = %felt_const_1
+  %arg2 = %felt_const_0
+  %arg3 = %felt_const_0_0
+  repeat 16 {
+    %1_aft222 = %arg3
+    array.read %arg0[%1_aft222] %2_aft222
+    %3_aft222 = felt.mul %2_aft222 %arg1
+    %4_aft222 = felt.add %arg2 %3_aft222
+    %5_aft222 = felt.add %arg1 %arg1
+    %felt_const_1_1_aft222 = 1
+    %6_aft222 = felt.add %arg3 %felt_const_1_1_aft222
+    %arg1 = %5_aft222
+    %arg2 = %4_aft222
+    %arg3 = %6_aft222
+    %felt_const_16_1_bef222 = 16
+    %1_bef222 = bool.lt %felt_const_16_1_bef222 %arg3
+    %0#0 = %arg1
+    %0#1 = %arg2
+    %0#2 = %arg3
+  }
+  out = %0#1
+}
+def @A_3(%arg0: ff, %arg1: ff) -> out: ff {
+  %c16 = 16
+  %pod_0_@count = %c16
+  %pod_0_@comp_@out = 0
+  array.new 16 b2n.in
+  %c1 = 1
+  %pod_3_@count = %c1
+  array.new 16 %pod_3_@comp_@out
+  %c32 = 32
+  %pod_6_@count = %c32
+  array.new 16 %pod_6_@comp_@out
+  array.new 32 sub.in
+  %c1_9 = 1
+  %pod_10_@count = %c1_9
+  array.new 16 %pod_10_@comp_@out
+  %felt_const_0 = 0
+  n2ba.in = %arg0
+  %0 = %pod_10_@count
+  %c1_12 = 1
+  %1 = felt.sub %0 %c1_12
+  %pod_10_@count = %1
+  %c0 = 0
+  %2 = bool.eq %1 %c0
+  if (%2 == 1) {
+    %15 = n2ba.in
+    call @Num2Bits_0(n2ba.in) to n2ba.out
+    array.copy n2ba.out %pod_10_@comp_@out
+  }
+  n2bb.in = %arg1
+  %3 = %pod_3_@count
+  %c1_13 = 1
+  %4 = felt.sub %3 %c1_13
+  %pod_3_@count = %4
+  %c0_14 = 0
+  %5 = bool.eq %4 %c0_14
+  if (%5 == 1) {
+    %15 = n2bb.in
+    call @Num2Bits_0(n2bb.in) to n2bb.out
+    array.copy n2bb.out %pod_3_@comp_@out
+  }
+  %felt_const_0_15 = 0
+  %arg3 = %felt_const_0_15
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  array.copy %pod_10_@comp_@out %14_aft323_@out
+  array.copy %14_aft323_@out %15_aft323
+  %16_aft323 = %arg3
+  array.read %15_aft323[%16_aft323] %17_aft323
+  %felt_const_0_17_aft323 = 0
+  %19_aft323 = %felt_const_0_17_aft323
+  %20_aft323 = %arg3
+  %17_aft323_s0 = 16
+  %17_aft323_t0 = felt.mul %19_aft323 %17_aft323_s0
+  %17_aft323_t1 = %20_aft323
+  %17_aft323_lin = felt.add %17_aft323_t0 %17_aft323_t1
+  array.write %17_aft323 sub.in[%17_aft323_lin]
+  %21_aft323 = %pod_6_@count
+  %c1_18_aft323 = 1
+  %22_aft323 = felt.sub %21_aft323 %c1_18_aft323
+  %pod_6_@count = %22_aft323
+  %c0_19_aft323 = 0
+  %23_aft323 = bool.eq %22_aft323 %c0_19_aft323
+  if (%23_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %24_aft323_@out
+  array.copy %24_aft323_@out %25_aft323
+  %26_aft323 = %arg3
+  array.read %25_aft323[%26_aft323] %27_aft323
+  %felt_const_1_aft323 = 1
+  %29_aft323 = %felt_const_1_aft323
+  %30_aft323 = %arg3
+  %27_aft323_s0 = 16
+  %27_aft323_t0 = felt.mul %29_aft323 %27_aft323_s0
+  %27_aft323_t1 = %30_aft323
+  %27_aft323_lin = felt.add %27_aft323_t0 %27_aft323_t1
+  array.write %27_aft323 sub.in[%27_aft323_lin]
+  %31_aft323 = %pod_6_@count
+  %c1_20_aft323 = 1
+  %32_aft323 = felt.sub %31_aft323 %c1_20_aft323
+  %pod_6_@count = %32_aft323
+  %c0_21_aft323 = 0
+  %33_aft323 = bool.eq %32_aft323 %c0_21_aft323
+  if (%33_aft323 == 1) {
+    call @BinSub_1(sub.in) to sub.out
+    array.copy sub.out %pod_6_@comp_@out
+  }
+  %felt_const_1_22_aft323 = 1
+  %34_aft323 = felt.add %arg3 %felt_const_1_22_aft323
+  %arg3 = %34_aft323
+  %felt_const_16_bef323 = 16
+  %14_bef323 = bool.lt %felt_const_16_bef323 %arg3
+  %6#1 = %arg3
+  %felt_const_0_16 = 0
+  %arg3 = %felt_const_0_16
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  array.copy %pod_6_@comp_@out %14_aft378_@out
+  array.copy %14_aft378_@out %15_aft378
+  %16_aft378 = %arg3
+  array.read %15_aft378[%16_aft378] %17_aft378
+  %19_aft378 = %arg3
+  array.write %17_aft378 b2n.in[%19_aft378]
+  %20_aft378 = %pod_0_@count
+  %c1_17_aft378 = 1
+  %21_aft378 = felt.sub %20_aft378 %c1_17_aft378
+  %pod_0_@count = %21_aft378
+  %c0_18_aft378 = 0
+  %22_aft378 = bool.eq %21_aft378 %c0_18_aft378
+  if (%22_aft378 == 1) {
+    call @Bits2Num_2(b2n.in) to b2n.out
+    %pod_0_@comp_@out = b2n.out
+  }
+  %felt_const_1_aft378 = 1
+  %23_aft378 = felt.add %arg3 %felt_const_1_aft378
+  %arg3 = %23_aft378
+  %felt_const_16_bef378 = 16
+  %14_bef378 = bool.lt %felt_const_16_bef378 %arg3
+  %7#1 = %arg3
+  %8_@out = %pod_0_@comp_@out
+  %9 = %8_@out
+  out = %9
+  %10_@out = %pod_0_@comp_@out
+  array.copy %pod_6_@comp_@out %11_@out
+  array.copy %pod_10_@comp_@out %12_@out
+  array.copy %pod_3_@comp_@out %13_@out
+}
+def main(%arg0: ff, %arg1: ff) -> out: ff {
+  call @A_3(%arg0, %arg1) to out
+}
