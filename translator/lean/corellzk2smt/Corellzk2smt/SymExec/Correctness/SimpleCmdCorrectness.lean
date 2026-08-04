@@ -539,16 +539,29 @@ theorem H_simple_domain_holds {c : ZKConfig} (gconf : GlobalConfig c) (specs : L
       cases hsize : tryEvalSimpleExprToFFValue symEnv size with
       | error msg => simp [seNewArray, hsize] at heq
       | ok sizeValue =>
-          simp only [seNewArray, hsize] at heq
-          injection heq with heq
-          subst heq
-          intro id'
-          simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.contains_insert]
-          by_cases heqid : id' = id
-          · have hcontains : symEnv.contains id :=
-              hpre id (by simp only [definedVarsCom]; exact Std.TreeSet.mem_insert_self ..)
-            simp [heqid, hcontains]
-          · simp [Ne.symm heqid]
+          cases hnew : gconf.sym_exec.new_var_array_new with
+          | true =>
+              simp only [seNewArray, hsize, hnew] at heq
+              injection heq with heq
+              subst heq
+              intro id'
+              simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.contains_insert]
+              by_cases heqid : id' = id
+              · have hcontains : symEnv.contains id :=
+                  hpre id (by simp only [definedVarsCom]; exact Std.TreeSet.mem_insert_self ..)
+                simp [heqid, hcontains]
+              · simp [Ne.symm heqid]
+          | false =>
+              simp only [seNewArray, hsize, hnew] at heq
+              injection heq with heq
+              subst heq
+              intro id'
+              simp only [Corellzk2smt.SymExec.Basic.setVar, Std.TreeMap.contains_insert]
+              by_cases heqid : id' = id
+              · have hcontains : symEnv.contains id :=
+                  hpre id (by simp only [definedVarsCom]; exact Std.TreeSet.mem_insert_self ..)
+                simp [heqid, hcontains]
+              · simp [Ne.symm heqid]
   | .read_array out a index =>
       simp only [seSimpleCmd] at heq
       cases hconst : seReadArrayConstantIdx md gconf sconf symEnv specs out a index with
@@ -1010,10 +1023,18 @@ theorem H_simple_names_below_holds {c : ZKConfig} (gconf : GlobalConfig c)
         cases hsize : tryEvalSimpleExprToFFValue symEnv size with
         | error msg => simp [seNewArray, hsize] at heq
         | ok sizeValue =>
-            simp only [seNewArray, hsize] at heq
-            injection heq with heq
-            subst heq
-            trivial
+            cases hnew : gconf.sym_exec.new_var_array_new with
+            | true =>
+                simp only [seNewArray, hsize, hnew] at heq
+                injection heq with heq
+                subst heq
+                rw [seNewArray_eqf_eq sconf.nextVarId sizeValue.val]
+                exact newArrayEqf_names_below sconf.nextVarId sizeValue.val badName
+            | false =>
+                simp only [seNewArray, hsize, hnew] at heq
+                injection heq with heq
+                subst heq
+                trivial
     | .read_array out a index =>
         simp only [seSimpleCmd] at heq
         cases hconst : seReadArrayConstantIdx md gconf sconf symEnv specs out a index with

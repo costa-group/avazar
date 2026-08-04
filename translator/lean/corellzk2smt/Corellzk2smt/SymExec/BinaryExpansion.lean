@@ -32,4 +32,16 @@ def bool_ffterm {c : ZKConfig}
                    (FFTerm.val 0))
 
 
+/-- Encodes "`x` is the weighted sum of `bits`, least-significant bit first," i.e.
+    `x = bits[0]*2^0 + bits[1]*2^1 + ...`. -/
+def gen_bin_rep {c : ZKConfig}
+    (_gconf : GlobalConfig c)
+    (_scfg : SymExecConfig c)
+    (bits : List (FFTerm c)) (x : FFTerm c)
+  : FFFormula c :=
+    let sum := (bits.zip (List.range bits.length)).foldl
+      (fun acc (bit, pow) => FFTerm.add acc (FFTerm.mul bit (FFTerm.val (2 ^ pow))))
+      (FFTerm.val 0)
+    FFFormula.eq x sum
+
 end Corellzk2smt.SymExec.BinaryExpansion

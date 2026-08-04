@@ -1,5 +1,6 @@
 import Corellzk2smt.SymExec.Correctness.Lemmas
 import Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
+import Corellzk2smt.SymExec.Correctness.FuncCorrectness
 import Corellzk2smt.SymExec.Correctness.BinaryExpansionCorrectness
 
 /-!
@@ -23,6 +24,7 @@ open Corellzk2smt.FFConstraints.Satisfiability
 open Corellzk2smt.FFConstraints.Lemmas
 open Corellzk2smt.SymExec.Correctness.Lemmas
 open Corellzk2smt.SymExec.Correctness.FuncCallCorrectness
+open Corellzk2smt.SymExec.Correctness.FuncCorrectness
 open Corellzk2smt.SymExec.Correctness.BinaryExpansionCorrectness
 
 /-- Every element of `List.replicate n a` is (definitionally) `a`. -/
@@ -66,11 +68,272 @@ private theorem symValMatches_replicate_const_array {c : ZKConfig} (assignment :
       rw [List.replicate_succ, List.replicate_succ]
       exact List.Forall₂.cons (by simp [simpleValMatches]) ih
 
-/-- `seNewArray` correctly translates `evalNewArray` -- both mint no fresh constraint variable and
-    no formula content (`f := .true`): the only thing that happens is inserting a matching
-    brand-new all-zero array (symbolic `.const 0`s, concrete `(0 : FF c)`s, same length, since both
-    sides compute that length from `size` via `tryEvalSimpleExprToFFValue`/`evalSimpleExprToFFValue`
-    and those agree under a matching environment). -/
+-- ---------------------------------------------------------------------------
+-- Helpers for `seNewArray`'s `new_var_array_new` branch: `size` fresh vars, each tied to `0` via
+-- its own equation, conjoined. All of these are stated over a plain `List.range size`-indexed
+-- formula (`newArrayEqf`), then bridged back to `seNewArray`'s own "`elems.zip ids`" construction
+-- (mirroring `mintFreshRetWithEq`'s array-branch shape) via `seNewArray_eqf_eq` -- the bridge is
+-- needed since `elems` is always the same constant `SimpleSymVal.const 0` here, collapsing the
+-- zip against a `List.range`-indexed list down to a single map.
+-- ---------------------------------------------------------------------------
+
+/-- The conjunction of `size` equations `var (nv+i) = 0`, `i < size`. -/
+def newArrayEqf {c : ZKConfig} (nv size : Nat) : FFFormula c :=
+  ((List.range size).map (fun i => FFFormula.eq (FFTerm.var (nv + i)) (FFTerm.val (0 : FF c)))).foldr
+    FFFormula.and FFFormula.true
+
+/-- Zipping a constant-valued list against a `List.range`-indexed one collapses to a single map --
+    lets `seNewArray`'s own `elems.zip ids` construction (`elems` always `SimpleSymVal.const 0`
+    here) be rewritten down to `newArrayEqf`'s simpler shape. -/
+private theorem zip_range_replicate_const {c : ZKConfig} (v : FF c) :
+    ∀ (size nv : Nat),
+      ((List.replicate size (SimpleSymVal.const v)).zip
+          ((List.range size).map (fun i => nv + i))) =
+        (List.range size).map (fun i => (SimpleSymVal.const v, nv + i)) := by
+  intro size
+  induction size with
+  | zero => intro nv; simp
+  | succ size ih =>
+      intro nv
+      have hcongr1 : (List.range size).map ((fun i => nv + i) ∘ Nat.succ) =
+          (List.range size).map (fun i => nv + 1 + i) := by
+        apply List.map_congr_left; intro i _; show nv + (i + 1) = nv + 1 + i; omega
+      have hcongr2 : (List.range size).map
+          ((fun i => (SimpleSymVal.const v, nv + i)) ∘ Nat.succ) =
+          (List.range size).map (fun i => (SimpleSymVal.const v, nv + 1 + i)) := by
+        apply List.map_congr_left; intro i _
+        show (SimpleSymVal.const v, nv + (i + 1)) = (SimpleSymVal.const v, nv + 1 + i)
+        congr 1; omega
+      rw [List.replicate_succ, List.range_succ_eq_map]
+      simp only [List.map_cons, List.map_map, hcongr1, hcongr2]
+      rw [List.zip_cons_cons, ih (nv + 1)]
+
+/-- `seNewArray`'s `eqf` (the `new_var_array_new` branch's own construction) is `newArrayEqf`. -/
+theorem seNewArray_eqf_eq {c : ZKConfig} (nv size : Nat) :
+    (((List.replicate size (SimpleSymVal.const (0 : FF c))).zip
+        ((List.range size).map (fun i => nv + i))).map
+      (fun p => FFFormula.eq (FFTerm.var p.2) (simpleSymValToTerm p.1))).foldr
+      FFFormula.and FFFormula.true = newArrayEqf nv size := by
+  rw [zip_range_replicate_const 0 size nv]
+  simp only [List.map_map, newArrayEqf]
+  congr 1
+
+/-- Soundness of `newArrayEqf`: if the assignment already reads back `0` on the whole block, the
+    conjunction evaluates to `true`. -/
+private theorem newArrayEqf_sound {c : ZKConfig} (gconf : GlobalConfig c) (ms : List (FFMacro c))
+    (assign : Assignment c) :
+    ∀ (nv size : Nat), (∀ i, i < size → assign.ff (nv + i) = 0) →
+      evalFormula gconf assign (newArrayEqf (c := c) nv size) ms = Except.ok true := by
+  intro nv size
+  induction size generalizing nv with
+  | zero => intro _; simp [newArrayEqf, evalFormula]
+  | succ size ih =>
+      intro hrange
+      have h0 := hrange 0 (by omega)
+      simp only [Nat.add_zero] at h0
+      have hrange' : ∀ i, i < size → assign.ff (nv + 1 + i) = 0 := by
+        intro i hi
+        have h1 := hrange (i + 1) (by omega)
+        have hnat : nv + (i + 1) = nv + 1 + i := by omega
+        rwa [hnat] at h1
+      have hih := ih (nv + 1) hrange'
+      have hcongr : (List.range size).map
+          ((fun i => FFFormula.eq (FFTerm.var (nv + i)) (FFTerm.val (0 : FF c))) ∘ Nat.succ) =
+          (List.range size).map (fun i =>
+            FFFormula.eq (FFTerm.var (nv + 1 + i)) (FFTerm.val (0 : FF c))) := by
+        apply List.map_congr_left; intro i _
+        show FFFormula.eq (FFTerm.var (nv + (i + 1))) (FFTerm.val (0 : FF c)) =
+          FFFormula.eq (FFTerm.var (nv + 1 + i)) (FFTerm.val (0 : FF c))
+        have hi_eq : nv + (i + 1) = nv + 1 + i := by omega
+        rw [hi_eq]
+      simp only [newArrayEqf, List.range_succ_eq_map, List.map_cons, List.map_map, hcongr,
+        List.foldr_cons]
+      simp only [newArrayEqf] at hih
+      simp [evalFormula, evalTerm, Nat.add_zero, h0, hih]
+
+/-- Converse of `newArrayEqf_sound`. -/
+private theorem newArrayEqf_complete {c : ZKConfig} (gconf : GlobalConfig c)
+    (ms : List (FFMacro c)) (assign : Assignment c) :
+    ∀ (nv size : Nat),
+      evalFormula gconf assign (newArrayEqf (c := c) nv size) ms = Except.ok true →
+      ∀ i, i < size → assign.ff (nv + i) = 0 := by
+  intro nv size
+  induction size generalizing nv with
+  | zero => intro _ i hi; omega
+  | succ size ih =>
+      intro heval i hi
+      have hcongr : (List.range size).map
+          ((fun i => FFFormula.eq (FFTerm.var (nv + i)) (FFTerm.val (0 : FF c))) ∘ Nat.succ) =
+          (List.range size).map (fun i =>
+            FFFormula.eq (FFTerm.var (nv + 1 + i)) (FFTerm.val (0 : FF c))) := by
+        apply List.map_congr_left; intro i _
+        show FFFormula.eq (FFTerm.var (nv + (i + 1))) (FFTerm.val (0 : FF c)) =
+          FFFormula.eq (FFTerm.var (nv + 1 + i)) (FFTerm.val (0 : FF c))
+        have hi_eq : nv + (i + 1) = nv + 1 + i := by omega
+        rw [hi_eq]
+      simp only [newArrayEqf, List.range_succ_eq_map, List.map_cons, List.map_map, hcongr,
+        List.foldr_cons, Nat.add_zero] at heval
+      set eqf : FFFormula c := FFFormula.eq (FFTerm.var nv) (FFTerm.val (0 : FF c))
+        with heqf_def
+      set restf : FFFormula c :=
+        List.foldr FFFormula.and FFFormula.true
+          (List.map (fun i => FFFormula.eq (FFTerm.var (nv + 1 + i)) (FFTerm.val (0 : FF c)))
+            (List.range size))
+        with hrestf_def
+      clear_value eqf restf
+      simp only [evalFormula] at heval
+      cases heq1 : evalFormula gconf assign eqf ms with
+      | error e' => rw [heq1] at heval; simp at heval
+      | ok b1 =>
+        rw [heq1] at heval
+        cases heq2 : evalFormula gconf assign restf ms with
+        | error e'' => rw [heq2] at heval; simp at heval
+        | ok b2 =>
+          rw [heq2] at heval
+          simp only [Except.ok.injEq] at heval
+          have hb1 : b1 = true := by by_contra hcon; simp [hcon] at heval
+          have hb2 : b2 = true := by by_contra hcon; simp [hcon] at heval
+          cases i with
+          | zero =>
+              simp only [Nat.add_zero]
+              rw [heqf_def] at heq1
+              simp only [evalFormula] at heq1
+              cases ht1 : evalTerm gconf assign (FFTerm.var nv) ms with
+              | error e3 => rw [ht1] at heq1; simp at heq1
+              | ok ta =>
+                rw [ht1] at heq1
+                cases ht2 : evalTerm gconf assign (FFTerm.val (0 : FF c)) ms with
+                | error e4 => rw [ht2] at heq1; simp at heq1
+                | ok tb =>
+                  rw [ht2] at heq1
+                  simp only [Except.ok.injEq] at heq1
+                  rw [hb1] at heq1
+                  have htab' : ta = tb := by
+                    have hsymm := heq1.symm
+                    simpa using hsymm
+                  have hta : assign.ff nv = ta := by
+                    simp only [evalTerm] at ht1; injection ht1
+                  have htb : (0 : FF c) = tb := by simp only [evalTerm] at ht2; injection ht2
+                  rw [hta, htab', ← htb]
+          | succ i =>
+              have heval2 : evalFormula gconf assign restf ms = Except.ok true :=
+                heq2.trans (congrArg Except.ok hb2)
+              rw [hrestf_def] at heval2
+              have hind := ih (nv + 1) heval2 i (by omega)
+              have hnat : nv + 1 + i = nv + (i + 1) := by omega
+              rwa [hnat] at hind
+
+/-- Every var mentioned by `newArrayEqf nv size` is one of the `size` fresh tie-back vars
+    themselves -- the constant `0` on the other side of each equation contributes no vars. -/
+private theorem newArrayEqf_vars_range {c : ZKConfig} :
+    ∀ (nv size : Nat) (v' : Var),
+      v' ∈ (ffVarsOfFormula (newArrayEqf (c := c) nv size) ∪
+            bVarsOfFormula (newArrayEqf (c := c) nv size)) →
+      ∃ i, i < size ∧ v' = Var.ffv (nv + i) := by
+  intro nv size
+  induction size generalizing nv with
+  | zero => intro v' hv'; simp [newArrayEqf, ffVarsOfFormula, bVarsOfFormula] at hv'
+  | succ size ih =>
+      intro v' hv'
+      have hcongr : (List.range size).map
+          ((fun i => FFFormula.eq (FFTerm.var (nv + i)) (FFTerm.val (0 : FF c))) ∘ Nat.succ) =
+          (List.range size).map (fun i =>
+            FFFormula.eq (FFTerm.var (nv + 1 + i)) (FFTerm.val (0 : FF c))) := by
+        apply List.map_congr_left; intro i _
+        show FFFormula.eq (FFTerm.var (nv + (i + 1))) (FFTerm.val (0 : FF c)) =
+          FFFormula.eq (FFTerm.var (nv + 1 + i)) (FFTerm.val (0 : FF c))
+        have hi_eq : nv + (i + 1) = nv + 1 + i := by omega
+        rw [hi_eq]
+      simp only [newArrayEqf, List.range_succ_eq_map, List.map_cons, List.map_map, hcongr,
+        List.foldr_cons, ffVarsOfFormula, bVarsOfFormula, Std.TreeSet.mem_union_iff,
+        Nat.add_zero] at hv'
+      rcases hv' with (h1 | h1) | (h1 | h1)
+      · simp only [ffVarsOfFormula, ffVarsOfTerm, Std.TreeSet.mem_union_iff] at h1
+        rcases h1 with h1 | h1
+        · rcases Std.TreeSet.mem_insert.mp h1 with heq | hmem
+          · exact ⟨0, by omega, by rw [← Var_compare_eq_iff_eq.mp heq, Nat.add_zero]⟩
+          · exact absurd hmem Std.TreeSet.not_mem_emptyc
+        · exact absurd h1 Std.TreeSet.not_mem_emptyc
+      · have hih := ih (nv + 1) v'
+        simp only [newArrayEqf] at hih
+        obtain ⟨i, hi, hveq⟩ := hih (Std.TreeSet.mem_union_iff.mpr (Or.inl h1))
+        refine ⟨i + 1, by omega, ?_⟩
+        rw [hveq]
+        have hnat : nv + 1 + i = nv + (i + 1) := by omega
+        rw [hnat]
+      · simp only [bVarsOfFormula, bVarsOfTerm, Std.TreeSet.mem_union_iff] at h1
+        rcases h1 with h1 | h1 <;> exact absurd h1 Std.TreeSet.not_mem_emptyc
+      · have hih := ih (nv + 1) v'
+        simp only [newArrayEqf] at hih
+        obtain ⟨i, hi, hveq⟩ := hih (Std.TreeSet.mem_union_iff.mpr (Or.inr h1))
+        refine ⟨i + 1, by omega, ?_⟩
+        rw [hveq]
+        have hnat : nv + 1 + i = nv + (i + 1) := by omega
+        rw [hnat]
+
+/-- Forward direction / converse of `newArrayEqf_vars_range`: every one of the `size` fresh
+    tie-back vars is actually mentioned by `newArrayEqf nv size`. -/
+private theorem newArrayEqf_vars_mem {c : ZKConfig} :
+    ∀ (nv size i : Nat), i < size →
+      Var.ffv (nv + i) ∈ ffVarsOfFormula (newArrayEqf (c := c) nv size) := by
+  intro nv size
+  induction size generalizing nv with
+  | zero => intro i hi; omega
+  | succ size ih =>
+      intro i hi
+      have hcongr : (List.range size).map
+          ((fun i => FFFormula.eq (FFTerm.var (nv + i)) (FFTerm.val (0 : FF c))) ∘ Nat.succ) =
+          (List.range size).map (fun i =>
+            FFFormula.eq (FFTerm.var (nv + 1 + i)) (FFTerm.val (0 : FF c))) := by
+        apply List.map_congr_left; intro i _
+        show FFFormula.eq (FFTerm.var (nv + (i + 1))) (FFTerm.val (0 : FF c)) =
+          FFFormula.eq (FFTerm.var (nv + 1 + i)) (FFTerm.val (0 : FF c))
+        have hi_eq : nv + (i + 1) = nv + 1 + i := by omega
+        rw [hi_eq]
+      simp only [newArrayEqf, List.range_succ_eq_map, List.map_cons, List.map_map, hcongr,
+        List.foldr_cons, ffVarsOfFormula]
+      cases i with
+      | zero =>
+          apply Std.TreeSet.mem_union_of_left
+          simp only [ffVarsOfFormula, ffVarsOfTerm, Std.TreeSet.mem_union_iff]
+          exact Or.inl (Std.TreeSet.mem_insert_self ..)
+      | succ i =>
+          apply Std.TreeSet.mem_union_of_right
+          have hind := ih (nv + 1) i (by omega)
+          simp only [newArrayEqf] at hind
+          have hnat : nv + (i + 1) = nv + 1 + i := by omega
+          rw [hnat]
+          exact hind
+
+/-- `newArrayEqf` never mentions a macro call -- built purely from `.eq`/`.and`/`.true`. -/
+theorem newArrayEqf_names_below {c : ZKConfig} (nv size : Nat) (badName : String) :
+    FormulaNamesBelow (newArrayEqf (c := c) nv size) badName := by
+  induction size generalizing nv with
+  | zero => simp only [newArrayEqf, List.range_zero, List.map_nil, List.foldr_nil]; trivial
+  | succ size ih =>
+      have hcongr : (List.range size).map
+          ((fun i => FFFormula.eq (FFTerm.var (nv + i)) (FFTerm.val (0 : FF c))) ∘ Nat.succ) =
+          (List.range size).map (fun i =>
+            FFFormula.eq (FFTerm.var (nv + 1 + i)) (FFTerm.val (0 : FF c))) := by
+        apply List.map_congr_left; intro i _
+        show FFFormula.eq (FFTerm.var (nv + (i + 1))) (FFTerm.val (0 : FF c)) =
+          FFFormula.eq (FFTerm.var (nv + 1 + i)) (FFTerm.val (0 : FF c))
+        have hi_eq : nv + (i + 1) = nv + 1 + i := by omega
+        rw [hi_eq]
+      simp only [newArrayEqf, List.range_succ_eq_map, List.map_cons, List.map_map, hcongr,
+        List.foldr_cons, FormulaNamesBelow]
+      have hih := ih (nv + 1)
+      simp only [newArrayEqf] at hih
+      exact ⟨⟨trivial, trivial⟩, hih⟩
+
+/-- `seNewArray` correctly translates `evalNewArray`. When `new_var_array_new` is off, both mint
+    no fresh constraint variable and no formula content (`f := .true`): the only thing that happens
+    is inserting a matching brand-new all-zero array (symbolic `.const 0`s, concrete `(0 : FF c)`s,
+    same length). When it's on, `size` fresh constraint variables are minted instead, each tied to
+    `0` via its own equation (`newArrayEqf`) -- the symbolic array is exactly `freshRetSymValue
+    sconf.nextVarId (.array size)`, letting the fresh-block reasoning already established for
+    `mintFreshRetWithEq`'s array branch (`FuncCorrectness.lean`/`FuncCallCorrectness.lean`) carry
+    over directly. -/
 theorem seNewArray_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List (FuncSpec c))
     (sconf : SymExecConfig c) (ctx : FFFormula c) (md : CmdMD) (id : VarID) (size : SimpleExpr c) :
     TranslatesCorrectly gconf sconf specs ctx
@@ -80,55 +343,199 @@ theorem seNewArray_correct {c : ZKConfig} (gconf : GlobalConfig c) (specs : List
   cases hsize : tryEvalSimpleExprToFFValue symEnv size with
   | error msg => simp [seNewArray, hsize] at hspec_eq
   | ok sizeValue =>
-      simp only [seNewArray, hsize] at hspec_eq
-      injection hspec_eq with hspec_eq
-      subst hspec_eq
-      refine ⟨rfl, le_refl _, ?_, ?_, ?_, ?_, ValidBinRep_trivial gconf _ _, ?_, ?_⟩
-      · intro v' hv'
-        rcases Std.TreeSet.mem_union_iff.mp hv' with h | h <;>
-          simp only [ffVarsOfFormula, bVarsOfFormula] at h <;>
-          exact absurd h Std.TreeSet.not_mem_emptyc
-      · intro v' hv'
-        rcases Std.TreeSet.mem_union_iff.mp hv' with h | h <;>
-          simp only [ffVarsOfFormula, bVarsOfFormula] at h <;>
-          exact absurd h Std.TreeSet.not_mem_emptyc
-      · intro v' hv'
-        rcases symEnvVars_setVar_subset symEnv id
-            (SymValue.array (List.replicate sizeValue.val (SimpleSymVal.const (0 : FF c))).toArray)
-            v' hv' with h | h
-        · exact hbelow v' h
-        · exact (symValVars_replicate_const_array sizeValue.val (0 : FF c) v' h).elim
-      · intro v' hv'
-        rcases symEnvVars_setVar_subset symEnv id
-            (SymValue.array (List.replicate sizeValue.val (SimpleSymVal.const (0 : FF c))).toArray)
-            v' hv' with h | h
-        · exact Or.inl h
-        · exact (symValVars_replicate_const_array sizeValue.val (0 : FF c) v' h).elim
-      · intro env assignment hmatch env' hc
-        have hceval := tryEvalSimpleExprToFFValue_correct symEnv size env assignment sizeValue
-          hmatch hsize
-        simp only [evalNewArray, hceval] at hc
-        injection hc with hc
-        refine ⟨assignment, (fun n _ => rfl), (fun n _ => rfl), (fun n _ => rfl),
-          (fun n _ => rfl), ?_, ?_⟩
-        · simp only [evalFormula]
-        · rw [← hc]
-          exact EnvMatches_setVar assignment symEnv env id
-            (SymValue.array (List.replicate sizeValue.val (SimpleSymVal.const (0 : FF c))).toArray)
-            (Value.array (List.replicate sizeValue.val (0 : FF c)).toArray) hmatch
-            (symValMatches_replicate_const_array assignment sizeValue.val 0)
-      · intro env assignment hmatch assignment' hagree _heval_f
-        have hmatch' := EnvMatches_agreesOnFF_preserves assignment assignment' symEnv env hagree
-          hmatch
-        have hceval := tryEvalSimpleExprToFFValue_correct symEnv size env assignment' sizeValue
-          hmatch' hsize
-        refine ⟨Corellzk2smt.Language.Core.Semantics.Basic.setVar env id
-          (Value.array (List.replicate sizeValue.val (0 : FF c)).toArray), ?_, ?_⟩
-        · simp only [evalNewArray, hceval]
-        · exact EnvMatches_setVar assignment' symEnv env id
-            (SymValue.array (List.replicate sizeValue.val (SimpleSymVal.const (0 : FF c))).toArray)
-            (Value.array (List.replicate sizeValue.val (0 : FF c)).toArray) hmatch'
-            (symValMatches_replicate_const_array assignment' sizeValue.val 0)
+      cases hnew : gconf.sym_exec.new_var_array_new with
+      | true =>
+          simp only [seNewArray, hsize, hnew] at hspec_eq
+          injection hspec_eq with hspec_eq
+          subst hspec_eq
+          set nv := sconf.nextVarId with hnv_def
+          set n := sizeValue.val with hn_def
+          have heqf_eq : (((List.replicate n (SimpleSymVal.const (0 : FF c))).zip
+                ((List.range n).map (fun i => nv + i))).map
+              (fun p => FFFormula.eq (FFTerm.var p.2) (simpleSymValToTerm p.1))).foldr
+              FFFormula.and FFFormula.true = newArrayEqf nv n := seNewArray_eqf_eq nv n
+          have harr_eq : SymValue.array
+              (((List.range n).map (fun i => nv + i)).map
+                (fun v => SimpleSymVal.ffvar (⟨v, none⟩ : FFVarWithBinRep c))).toArray =
+              freshRetSymValue (c := c) nv (VarType.array n) := by
+            simp only [freshRetSymValue, List.map_map]
+            rfl
+          clear_value nv n
+          refine ⟨rfl, Nat.le_add_right _ _, ?_, ?_, ?_, ?_, ValidBinRep_trivial gconf _ _, ?_, ?_⟩
+          · intro v' hv'
+            rw [heqf_eq] at hv'
+            obtain ⟨i, hi, hveq⟩ := newArrayEqf_vars_range nv n v' hv'
+            exact Or.inr (by rw [hveq]; simp only [varIndex]; omega)
+          · intro v' hv'
+            show varIndex v' < nv + n
+            rw [heqf_eq] at hv'
+            obtain ⟨i, hi, hveq⟩ := newArrayEqf_vars_range nv n v' hv'
+            rw [hveq]; simp only [varIndex]; omega
+          · intro v' hv'
+            show varIndex v' < nv + n
+            rw [harr_eq] at hv'
+            rcases symEnvVars_setVar_subset symEnv id
+                (freshRetSymValue (c := c) nv (VarType.array n)) v' hv' with h | h
+            · have := hbelow v' h; omega
+            · obtain ⟨m, hveq, hle, hlt⟩ := symValVars_freshRetSymValue_below nv (VarType.array n)
+                v' h
+              simp only [typeSize] at hlt
+              rw [hveq]; simp only [varIndex]; omega
+          · intro v' hv'
+            rw [harr_eq] at hv'
+            rcases symEnvVars_setVar_subset symEnv id
+                (freshRetSymValue (c := c) nv (VarType.array n)) v' hv' with h | h
+            · exact Or.inl h
+            · obtain ⟨m, hveq, hle, _hlt⟩ := symValVars_freshRetSymValue_below nv
+                (VarType.array n) v' h
+              rw [hveq]; exact Or.inr hle
+          · intro env assignment hmatch env' hc
+            have hceval := tryEvalSimpleExprToFFValue_correct symEnv size env assignment
+              sizeValue hmatch hsize
+            simp only [evalNewArray, hceval] at hc
+            injection hc with hc
+            rw [← hn_def] at hc
+            set assignment' : Assignment c :=
+              { assignment with
+                ff := fun m => if nv ≤ m ∧ m < nv + n then 0 else assignment.ff m }
+              with hassignment'_def
+            have hagreeff : agreesOnFF (symEnvVars symEnv) assignment assignment' := by
+              intro m hm
+              have hlt : m < nv := hbelow (Var.ffv m) hm
+              -- `m : FFVar` (an abbrev for `Nat`) confuses `omega`'s atom detection when mixed
+              -- directly with plain `Nat` terms -- bridge through a genuinely `Nat`-typed copy.
+              let m2 : Nat := m
+              have hlt2 : m2 < nv := hlt
+              have hgoal : m2 = m := rfl
+              clear_value m2
+              have hcond : ¬(nv ≤ m ∧ m < nv + n) := by rw [← hgoal]; omega
+              simp only [hassignment'_def, if_neg hcond]
+            have hagreebool : agreesOnBool (symEnvVars symEnv) assignment assignment' :=
+              fun _ _ => rfl
+            have hrangeff : ∀ i, i < n → assignment'.ff (nv + i) = 0 := by
+              intro i hi
+              have hcond : nv ≤ nv + i ∧ nv + i < nv + n := by omega
+              simp only [hassignment'_def, if_pos hcond]
+            have hframeff : ∀ m, Var.ffv m ∉
+                (ffVarsOfFormula (newArrayEqf (c := c) nv n) ∪
+                  bVarsOfFormula (newArrayEqf (c := c) nv n)) →
+                assignment'.ff m = assignment.ff m := by
+              intro m hm
+              have hcond : ¬(nv ≤ m ∧ m < nv + n) := by
+                rintro ⟨hle, hlt⟩
+                apply hm
+                -- same `FFVar`/`omega` bridging as `hagreeff` above.
+                let m2 : Nat := m
+                have hle2 : nv ≤ m2 := hle
+                have hlt2 : m2 < nv + n := hlt
+                have hgoal : m2 = m := rfl
+                clear_value m2
+                have hi : m2 - nv < n := by omega
+                have hnat : nv + (m2 - nv) = m2 := by omega
+                have hmem := newArrayEqf_vars_mem (c := c) nv n (m2 - nv) hi
+                rw [hnat, hgoal] at hmem
+                exact Std.TreeSet.mem_union_of_left hmem
+              simp only [hassignment'_def, if_neg hcond]
+            have hframebool : ∀ m, Var.boolv m ∉
+                (ffVarsOfFormula (newArrayEqf (c := c) nv n) ∪
+                  bVarsOfFormula (newArrayEqf (c := c) nv n)) →
+                assignment'.bool m = assignment.bool m := fun _ _ => rfl
+            refine ⟨assignment', hagreeff, hagreebool, ?_, ?_, ?_, ?_⟩
+            · rw [heqf_eq]; exact hframeff
+            · rw [heqf_eq]; exact hframebool
+            · rw [heqf_eq]; exact newArrayEqf_sound gconf (specs.map (·.f)) assignment' nv n
+                hrangeff
+            · rw [← hc]
+              have hvalmatch : symValMatches assignment' (freshRetSymValue (c := c) nv
+                  (VarType.array n)) (Value.array (List.replicate n (0 : FF c)).toArray) := by
+                apply freshRetSymValue_symValMatches
+                · simp only [ensureCorrectType]
+                  simp
+                · intro i hi
+                  simp only [typeSize] at hi
+                  simp only [flattenValueToFF, List.toList_toArray]
+                  rw [hrangeff i hi]
+                  simp [hi]
+              rw [← harr_eq] at hvalmatch
+              exact EnvMatches_setVar assignment' symEnv env id _ _
+                (EnvMatches_agreesOnFF_preserves assignment assignment' symEnv env hagreeff hmatch)
+                hvalmatch
+          · intro env assignment hmatch assignment' hagree heval_f
+            rw [heqf_eq] at heval_f
+            have hmatch' := EnvMatches_agreesOnFF_preserves assignment assignment' symEnv env
+              hagree hmatch
+            have hceval := tryEvalSimpleExprToFFValue_correct symEnv size env assignment'
+              sizeValue hmatch' hsize
+            have hrangeff := newArrayEqf_complete gconf (specs.map (·.f)) assignment' nv n heval_f
+            have hvalmatch : symValMatches assignment' (freshRetSymValue (c := c) nv
+                (VarType.array n)) (Value.array (List.replicate n (0 : FF c)).toArray) := by
+              apply freshRetSymValue_symValMatches
+              · simp only [ensureCorrectType]
+                simp
+              · intro i hi
+                simp only [typeSize] at hi
+                simp only [flattenValueToFF, List.toList_toArray]
+                rw [hrangeff i hi]
+                simp [hi]
+            rw [← harr_eq] at hvalmatch
+            refine ⟨Corellzk2smt.Language.Core.Semantics.Basic.setVar env id
+              (Value.array (List.replicate n (0 : FF c)).toArray), ?_, ?_⟩
+            · simp only [evalNewArray, hceval, hn_def]
+            · exact EnvMatches_setVar assignment' symEnv env id _ _ hmatch' hvalmatch
+      | false =>
+          simp only [seNewArray, hsize, hnew] at hspec_eq
+          injection hspec_eq with hspec_eq
+          subst hspec_eq
+          refine ⟨rfl, le_refl _, ?_, ?_, ?_, ?_, ValidBinRep_trivial gconf _ _, ?_, ?_⟩
+          · intro v' hv'
+            rcases Std.TreeSet.mem_union_iff.mp hv' with h | h <;>
+              simp only [ffVarsOfFormula, bVarsOfFormula] at h <;>
+              exact absurd h Std.TreeSet.not_mem_emptyc
+          · intro v' hv'
+            rcases Std.TreeSet.mem_union_iff.mp hv' with h | h <;>
+              simp only [ffVarsOfFormula, bVarsOfFormula] at h <;>
+              exact absurd h Std.TreeSet.not_mem_emptyc
+          · intro v' hv'
+            rcases symEnvVars_setVar_subset symEnv id
+                (SymValue.array
+                  (List.replicate sizeValue.val (SimpleSymVal.const (0 : FF c))).toArray)
+                v' hv' with h | h
+            · exact hbelow v' h
+            · exact (symValVars_replicate_const_array sizeValue.val (0 : FF c) v' h).elim
+          · intro v' hv'
+            rcases symEnvVars_setVar_subset symEnv id
+                (SymValue.array
+                  (List.replicate sizeValue.val (SimpleSymVal.const (0 : FF c))).toArray)
+                v' hv' with h | h
+            · exact Or.inl h
+            · exact (symValVars_replicate_const_array sizeValue.val (0 : FF c) v' h).elim
+          · intro env assignment hmatch env' hc
+            have hceval := tryEvalSimpleExprToFFValue_correct symEnv size env assignment sizeValue
+              hmatch hsize
+            simp only [evalNewArray, hceval] at hc
+            injection hc with hc
+            refine ⟨assignment, (fun n _ => rfl), (fun n _ => rfl), (fun n _ => rfl),
+              (fun n _ => rfl), ?_, ?_⟩
+            · simp only [evalFormula]
+            · rw [← hc]
+              exact EnvMatches_setVar assignment symEnv env id
+                (SymValue.array
+                  (List.replicate sizeValue.val (SimpleSymVal.const (0 : FF c))).toArray)
+                (Value.array (List.replicate sizeValue.val (0 : FF c)).toArray) hmatch
+                (symValMatches_replicate_const_array assignment sizeValue.val 0)
+          · intro env assignment hmatch assignment' hagree _heval_f
+            have hmatch' := EnvMatches_agreesOnFF_preserves assignment assignment' symEnv env
+              hagree hmatch
+            have hceval := tryEvalSimpleExprToFFValue_correct symEnv size env assignment'
+              sizeValue hmatch' hsize
+            refine ⟨Corellzk2smt.Language.Core.Semantics.Basic.setVar env id
+              (Value.array (List.replicate sizeValue.val (0 : FF c)).toArray), ?_, ?_⟩
+            · simp only [evalNewArray, hceval]
+            · exact EnvMatches_setVar assignment' symEnv env id
+                (SymValue.array
+                  (List.replicate sizeValue.val (SimpleSymVal.const (0 : FF c))).toArray)
+                (Value.array (List.replicate sizeValue.val (0 : FF c)).toArray) hmatch'
+                (symValMatches_replicate_const_array assignment' sizeValue.val 0)
 
 /-- Pointwise access into `List.Forall₂`: if the relation holds between two lists, it holds
     between their elements at any shared valid index. -/

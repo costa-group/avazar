@@ -25,6 +25,7 @@ structure SymExecParams (c : ZKConfig) where
   new_var_assignment : Bool := false -- whether to generate new smt variable
   new_var_array_read : Bool := false -- whether to generate new smt variable for array read
   new_var_array_write : Bool := false -- whether to generate new smt variable for array write
+  new_var_array_new : Bool := false -- whether to generate new smt variable for array write
   deriving Inhabited
 
 

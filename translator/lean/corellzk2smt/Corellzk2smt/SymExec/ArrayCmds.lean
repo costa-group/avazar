@@ -27,14 +27,30 @@ def seNewArray {c : ZKConfig}
     match tryEvalSimpleExprToFFValue symEnv size with
     | Except.error msg => Except.error msg
     | Except.ok sizeValue =>
-      let arr : SymArray c := (List.replicate sizeValue.val (.const 0)).toArray
-      let newSymEnv := setVar symEnv id (SymValue.array arr)
-      Except.ok {
-        inSymEnv := symEnv,
-        outSymEnv := newSymEnv,
-        f := .true,
-        nextVarId := sconf.nextVarId
-      }
+      if gconf.sym_exec.new_var_array_new then
+        let elems : List (SimpleSymVal c) :=
+          List.replicate sizeValue.val (SimpleSymVal.const (0 : FF c))
+        let ids := (List.range sizeValue.val).map (fun i => sconf.nextVarId + i)
+        let arr : SymArray c := (ids.map (fun v => SimpleSymVal.ffvar ⟨v, none⟩)).toArray
+        let eqf := ((elems.zip ids).map
+            (fun p => FFFormula.eq (FFTerm.var p.2) (simpleSymValToTerm p.1))).foldr
+          FFFormula.and FFFormula.true
+        let newSymEnv := setVar symEnv id (SymValue.array arr)
+        Except.ok {
+          inSymEnv := symEnv,
+          outSymEnv := newSymEnv,
+          f := eqf,
+          nextVarId := sconf.nextVarId + sizeValue.val
+        }
+      else
+        let arr : SymArray c := (List.replicate sizeValue.val (.const 0)).toArray
+        let newSymEnv := setVar symEnv id (SymValue.array arr)
+        Except.ok {
+          inSymEnv := symEnv,
+          outSymEnv := newSymEnv,
+          f := .true,
+          nextVarId := sconf.nextVarId
+        }
 
 
 def seReadArrayConstantIdx {c : ZKConfig}
