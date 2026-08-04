@@ -1,0 +1,185 @@
+{
+  "timing": {
+    "graph_construction": 0.0,
+    "clustering": 0.0,
+    "dag_construction": 0.0,
+    "equivalency": 0.0,
+    "total": 0.0
+  },
+  "nodes": [
+    {
+      "node_name": "Main()",
+      "component_name": "",
+      "node_id": 0,
+      "constraints": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "input_signals": [
+        2
+      ],
+      "output_signals": [
+        1
+      ],
+      "signals": [
+        1,
+        2
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [
+        1,
+        2,
+        4
+      ],
+      "predecessors": []
+    },
+    {
+      "node_name": "Constants()",
+      "component_name": "cst",
+      "node_id": 1,
+      "constraints": [
+        5,
+        6
+      ],
+      "input_signals": [],
+      "output_signals": [
+        3,
+        4
+      ],
+      "signals": [
+        3,
+        4
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [],
+      "predecessors": [
+        0
+      ]
+    },
+    {
+      "node_name": "Mux1()",
+      "component_name": "mux",
+      "node_id": 2,
+      "constraints": [
+        7,
+        8,
+        9,
+        10
+      ],
+      "input_signals": [
+        6,
+        7,
+        8
+      ],
+      "output_signals": [
+        5
+      ],
+      "signals": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [
+        3
+      ],
+      "predecessors": [
+        0
+      ]
+    },
+    {
+      "node_name": "MultiMux1(1)",
+      "component_name": "mux",
+      "node_id": 3,
+      "constraints": [
+        11
+      ],
+      "input_signals": [
+        10,
+        11,
+        12
+      ],
+      "output_signals": [
+        9
+      ],
+      "signals": [
+        9,
+        10,
+        11,
+        12
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [],
+      "predecessors": [
+        2
+      ]
+    },
+    {
+      "node_name": "Num2Bits(1)",
+      "component_name": "n2b",
+      "node_id": 4,
+      "constraints": [
+        12,
+        13
+      ],
+      "input_signals": [
+        14
+      ],
+      "output_signals": [
+        13
+      ],
+      "signals": [
+        13,
+        14
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [],
+      "predecessors": [
+        0
+      ]
+    }
+  ],
+  "equivalency_local": [
+    [
+      2
+    ],
+    [
+      3
+    ],
+    [
+      0
+    ],
+    [
+      1
+    ],
+    [
+      4
+    ]
+  ],
+  "equivalency_structural": [
+    [
+      2
+    ],
+    [
+      3
+    ],
+    [
+      0
+    ],
+    [
+      1
+    ],
+    [
+      4
+    ]
+  ]
+}

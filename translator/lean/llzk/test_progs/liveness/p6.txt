@@ -1,0 +1,12 @@
+func main(x:ff) -> acc:ff {
+  acc = 0
+
+  repeat 5 {
+    junk = felt.add x 1
+  }
+
+  repeat 4 {
+    acc = felt.add acc x
+    junk2 = felt.mul x 3
+  }
+}

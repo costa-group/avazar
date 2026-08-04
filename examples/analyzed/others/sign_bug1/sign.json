@@ -1,0 +1,88 @@
+{
+    "prime": 18446744069414584321,
+    "macros": {
+        "@SignFp_0": {
+            "params": [
+                {
+                    "name": "v_0",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_5",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_2",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_3",
+                    "type": "ff"
+                }
+            ],
+            "vars_info": {
+                "sign": "v_5",
+                "%felt_const_2": 2,
+                "%arg0": "v_0",
+                "%0": "v_3"
+            },
+            "formula": " (and  (and  (! true :meta-data \"%felt_const_2 := 2\") (and  (! (and  (= v_0 (ff.add (ff.mul v_2 2) v_3)) (ff.range v_3 0 1) ) :meta-data \"%0 := felt.uimod %arg0 %felt_const_2\") (! true :meta-data \"sign := %0\") ) ) (= v_5 v_3) ) ",
+            "components_info": {}
+        },
+        "main": {
+            "params": [
+                {
+                    "name": "v_0",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_4",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_1",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_2",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_3",
+                    "type": "ff"
+                }
+            ],
+            "vars_info": {
+                "sign": "v_4",
+                "%arg0": "v_0"
+            },
+            "formula": " (and  (! (@SignFp_0 v_0 v_1 v_2 v_3) :meta-data \"call @SignFp_0 (%arg0) to sign\") (= v_4 v_1) ) ",
+            "components_info": {}
+        }
+    },
+    "main": {
+        "vars": [
+            {
+                "name": "v_0",
+                "type": "ff"
+            },
+            {
+                "name": "v_4",
+                "type": "ff"
+            },
+            {
+                "name": "v_1",
+                "type": "ff"
+            },
+            {
+                "name": "v_2",
+                "type": "ff"
+            },
+            {
+                "name": "v_3",
+                "type": "ff"
+            }
+        ],
+        "formula": " (main v_0 v_4 v_1 v_2 v_3) "
+    }
+}

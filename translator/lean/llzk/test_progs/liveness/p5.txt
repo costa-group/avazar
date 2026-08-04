@@ -1,0 +1,39 @@
+func helper(x:ff, y:ff) -> s:ff, p:ff {
+  s = felt.add x y
+  p = felt.mul x y
+}
+
+func main(x:ff, w:ff) -> result:ff {
+  dead1 = felt.mul x 99
+
+  call helper(x, w) to s2, p2
+
+  call helper(x, w) to sum, prod
+
+  array.new 4 deadarr
+  array.write x deadarr[0]
+
+  array.new 4 livearr
+  array.write w livearr[0]
+  array.read livearr[0] fromArr
+
+  array.copy livearr deadcopy
+
+  cond1 = bool.gt x 0
+  if (cond1 == 1) {
+    junk1 = felt.add x 1
+  } else {
+    junk2 = felt.add x 2
+  }
+
+  cond2 = bool.gt w 0
+  if (cond2 == 1) {
+    junk3 = felt.mul w 3
+    branchval = felt.add w 1
+  } else {
+    junk4 = felt.mul w 4
+  }
+
+  tmp = felt.add sum branchval
+  result = felt.add tmp fromArr
+}

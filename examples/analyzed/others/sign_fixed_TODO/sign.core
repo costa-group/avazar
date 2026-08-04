@@ -1,0 +1,295 @@
+def @Num2Bits_0(%arg0: ff) -> out: arr<64> {
+  array.new 64 %nondet
+  %felt_const_64 = 64
+  %felt_const_0 = 0
+  %felt_const_1 = 1
+  %felt_const_0_0 = 0
+  %arg1 = %felt_const_0
+  %arg2 = %felt_const_0_0
+  %arg3 = %felt_const_1
+  repeat 64 {
+    %1_aft11 = bit.shr %arg0 %arg2
+    %felt_const_1_1_aft11 = 1
+    %2_aft11 = bit.and %1_aft11 %felt_const_1_1_aft11
+    %3_aft11 = %arg2
+    array.write %2_aft11 %nondet[%3_aft11]
+    %4_aft11 = %arg2
+    array.read %nondet[%4_aft11] %5_aft11
+    %6_aft11 = felt.mul %5_aft11 %arg3
+    %7_aft11 = felt.add %arg1 %6_aft11
+    %8_aft11 = felt.add %arg3 %arg3
+    %felt_const_1_2_aft11 = 1
+    %9_aft11 = felt.add %arg2 %felt_const_1_2_aft11
+    %arg1 = %7_aft11
+    %arg2 = %9_aft11
+    %arg3 = %8_aft11
+    %felt_const_64_1_bef11 = 64
+    %1_bef11 = bool.lt %felt_const_64_1_bef11 %arg2
+    %0#0 = %arg1
+    %0#1 = %arg2
+    %0#2 = %arg3
+  }
+  array.copy %nondet out
+}
+def @Num2Bits_1(%arg0: ff) -> out: arr<33> {
+  array.new 33 %nondet
+  %felt_const_33 = 33
+  %felt_const_0 = 0
+  %felt_const_1 = 1
+  %felt_const_0_0 = 0
+  %arg1 = %felt_const_0_0
+  %arg2 = %felt_const_0
+  %arg3 = %felt_const_1
+  repeat 33 {
+    %1_aft79 = bit.shr %arg0 %arg1
+    %felt_const_1_1_aft79 = 1
+    %2_aft79 = bit.and %1_aft79 %felt_const_1_1_aft79
+    %3_aft79 = %arg1
+    array.write %2_aft79 %nondet[%3_aft79]
+    %4_aft79 = %arg1
+    array.read %nondet[%4_aft79] %5_aft79
+    %6_aft79 = felt.mul %5_aft79 %arg3
+    %7_aft79 = felt.add %arg2 %6_aft79
+    %8_aft79 = felt.add %arg3 %arg3
+    %felt_const_1_2_aft79 = 1
+    %9_aft79 = felt.add %arg1 %felt_const_1_2_aft79
+    %arg1 = %9_aft79
+    %arg2 = %7_aft79
+    %arg3 = %8_aft79
+    %felt_const_33_1_bef79 = 33
+    %1_bef79 = bool.lt %felt_const_33_1_bef79 %arg1
+    %0#0 = %arg1
+    %0#1 = %arg2
+    %0#2 = %arg3
+  }
+  array.copy %nondet out
+}
+def @CompConstant_2(%arg0: arr<64>) -> out: ff {
+  array.new 32 %nondet
+  array.new 32 %nondet_0
+  %c1 = 1
+  %pod_1_@count = %c1
+  array.new 33 %pod_1_@comp_@out
+  %felt_const_18446744069414584320 = 18446744069414584320
+  %felt_const_0 = 0
+  %felt_const_0_3 = 0
+  %felt_const_0_4 = 0
+  %felt_const_0_5 = 0
+  %felt_const_1 = 1
+  %felt_const_0_6 = 0
+  %felt_const_0_7 = 0
+  %arg1 = %felt_const_1
+  %arg2 = %felt_const_0_4
+  %arg3 = %felt_const_0_3
+  %arg4 = %felt_const_0_7
+  %arg5 = %felt_const_0_5
+  %arg6 = %felt_const_0
+  repeat 32 {
+    %felt_const_18446744069414584320_10_aft161 = 18446744069414584320
+    %felt_const_2_aft161 = 2
+    %12_aft161 = felt.mul %arg4 %felt_const_2_aft161
+    %13_aft161 = bit.shr %felt_const_18446744069414584320_10_aft161 %12_aft161
+    %felt_const_1_11_aft161 = 1
+    %14_aft161 = bit.and %13_aft161 %felt_const_1_11_aft161
+    %felt_const_18446744069414584320_12_aft161 = 18446744069414584320
+    %felt_const_2_13_aft161 = 2
+    %15_aft161 = felt.mul %arg4 %felt_const_2_13_aft161
+    %felt_const_1_14_aft161 = 1
+    %16_aft161 = felt.add %15_aft161 %felt_const_1_14_aft161
+    %17_aft161 = bit.shr %felt_const_18446744069414584320_12_aft161 %16_aft161
+    %felt_const_1_15_aft161 = 1
+    %18_aft161 = bit.and %17_aft161 %felt_const_1_15_aft161
+    %felt_const_2_16_aft161 = 2
+    %19_aft161 = felt.mul %arg4 %felt_const_2_16_aft161
+    %20_aft161 = %19_aft161
+    array.read %arg0[%20_aft161] %21_aft161
+    %felt_const_2_17_aft161 = 2
+    %22_aft161 = felt.mul %arg4 %felt_const_2_17_aft161
+    %felt_const_1_18_aft161 = 1
+    %23_aft161 = felt.add %22_aft161 %felt_const_1_18_aft161
+    %24_aft161 = %23_aft161
+    array.read %arg0[%24_aft161] %25_aft161
+    %felt_const_0_19_aft161 = 0
+    %26_aft161 = bool.eq %felt_const_0_19_aft161 %18_aft161
+    %felt_const_0_20_aft161 = 0
+    %27_aft161 = bool.eq %felt_const_0_20_aft161 %14_aft161
+    %28_aft161 = bool.and %26_aft161 %27_aft161
+    if (%28_aft161 == 1) {
+      %32_aft161 = felt.mul %25_aft161 %arg1
+      %33_aft161 = felt.mul %21_aft161 %arg1
+      %34_aft161 = felt.add %32_aft161 %33_aft161
+      %35_aft161 = felt.mul %25_aft161 %21_aft161
+      %36_aft161 = felt.mul %35_aft161 %arg1
+      %37_aft161 = felt.sub %34_aft161 %36_aft161
+      %38_aft161 = %arg4
+      array.write %37_aft161 %nondet_0[%38_aft161]
+    }
+    else {
+      %32_aft161 = felt.mul %arg1 %25_aft161
+      %33_aft161 = felt.mul %32_aft161 %21_aft161
+      %34_aft161 = felt.sub %33_aft161 %arg1
+      %35_aft161 = %arg4
+      array.write %34_aft161 %nondet_0[%35_aft161]
+    }
+    %felt_const_0_21_aft161 = 0
+    %29_aft161 = bool.eq %felt_const_0_21_aft161 %arg4
+    if (%29_aft161 == 1) {
+      %felt_const_4294967295_aft161 = 4294967295
+      %felt_const_0_24_aft161 = 0
+      %32_aft161 = %felt_const_0_24_aft161
+      array.read %nondet_0[%32_aft161] %33_aft161
+      %34_aft161 = felt.add %felt_const_4294967295_aft161 %33_aft161
+      %felt_const_0_25_aft161 = 0
+      %35_aft161 = %felt_const_0_25_aft161
+      array.write %34_aft161 %nondet[%35_aft161]
+    }
+    else {
+      %felt_const_1_24_aft161 = 1
+      %32_aft161 = felt.sub %arg4 %felt_const_1_24_aft161
+      %33_aft161 = %32_aft161
+      array.read %nondet[%33_aft161] %34_aft161
+      %35_aft161 = %arg4
+      array.read %nondet_0[%35_aft161] %36_aft161
+      %37_aft161 = felt.add %34_aft161 %36_aft161
+      %38_aft161 = %arg4
+      array.write %37_aft161 %nondet[%38_aft161]
+    }
+    %felt_const_2_22_aft161 = 2
+    %30_aft161 = felt.mul %arg1 %felt_const_2_22_aft161
+    %felt_const_1_23_aft161 = 1
+    %31_aft161 = felt.add %arg4 %felt_const_1_23_aft161
+    %arg1 = %30_aft161
+    %arg2 = %21_aft161
+    %arg3 = %18_aft161
+    %arg4 = %31_aft161
+    %arg5 = %25_aft161
+    %arg6 = %14_aft161
+    %felt_const_32_10_bef161 = 32
+    %12_bef161 = bool.lt %felt_const_32_10_bef161 %arg4
+    %0#0 = %arg1
+    %0#1 = %arg2
+    %0#2 = %arg3
+    %0#3 = %arg4
+    %0#4 = %arg5
+    %0#5 = %arg6
+  }
+  %felt_const_31 = 31
+  %1 = %felt_const_31
+  array.read %nondet[%1] %2
+  Num2Bits_68_1294.in = %2
+  %3 = %pod_1_@count
+  %c1_8 = 1
+  %4 = felt.sub %3 %c1_8
+  %pod_1_@count = %4
+  %c0 = 0
+  %5 = bool.eq %4 %c0
+  if (%5 == 1) {
+    %13 = Num2Bits_68_1294.in
+    call @Num2Bits_1(Num2Bits_68_1294.in) to Num2Bits_68_1294.out
+    array.copy Num2Bits_68_1294.out %pod_1_@comp_@out
+  }
+  array.copy %pod_1_@comp_@out %6_@out
+  array.copy %6_@out %7
+  array.copy %7 num2bits
+  %felt_const_0_9 = 0
+  %arg1 = %felt_const_0_9
+  repeat 32 {
+    %felt_const_1_10_aft260 = 1
+    %12_aft260 = felt.add %arg1 %felt_const_1_10_aft260
+    %arg1 = %12_aft260
+    %felt_const_32_10_bef260 = 32
+    %12_bef260 = bool.lt %felt_const_32_10_bef260 %arg1
+    %8 = %arg1
+  }
+  %felt_const_32 = 32
+  %9 = %felt_const_32
+  array.read %7[%9] %10
+  out = %10
+  array.copy %pod_1_@comp_@out %11_@out
+  array.copy %nondet_0 parts
+  array.copy %nondet sum
+}
+def @AliasCheck_3(%arg0: arr<64>) ->  {
+  %c64 = 64
+  %pod_0_@count = %c64
+  %pod_0_@comp_@out = 0
+  array.new 64 CompConstant_81_1495.in
+  array.copy %arg0 CompConstant_81_1495.in
+  %0 = %pod_0_@count
+  %c1 = 1
+  %1 = felt.sub %0 %c1
+  %pod_0_@count = %1
+  %c0 = 0
+  %2 = bool.eq %1 %c0
+  if (%2 == 1) {
+    call @CompConstant_2(CompConstant_81_1495.in) to CompConstant_81_1495.out
+    %pod_0_@comp_@out = CompConstant_81_1495.out
+  }
+  %3_@out = %pod_0_@comp_@out
+  %4 = %3_@out
+  compConstant = %4
+  %5_@out = %pod_0_@comp_@out
+}
+def @Num2Bits_strict_4(%arg0: ff) -> out: arr<64> {
+  %c64 = 64
+  %pod_0_@count = %c64
+  array.new 64 AliasCheck_91_1681.in
+  %c1 = 1
+  %pod_3_@count = %c1
+  array.new 64 %pod_3_@comp_@out
+  Num2Bits_89_1654.in = %arg0
+  %0 = %pod_3_@count
+  %c1_5 = 1
+  %1 = felt.sub %0 %c1_5
+  %pod_3_@count = %1
+  %c0 = 0
+  %2 = bool.eq %1 %c0
+  if (%2 == 1) {
+    %11 = Num2Bits_89_1654.in
+    call @Num2Bits_0(Num2Bits_89_1654.in) to Num2Bits_89_1654.out
+    array.copy Num2Bits_89_1654.out %pod_3_@comp_@out
+  }
+  array.copy %pod_3_@comp_@out %3_@out
+  array.copy %3_@out %4
+  array.copy %4 n2b
+  array.copy %4 AliasCheck_91_1681.in
+  %5 = %pod_0_@count
+  %c1_6 = 1
+  %6 = felt.sub %5 %c1_6
+  %pod_0_@count = %6
+  %c0_7 = 0
+  %7 = bool.eq %6 %c0_7
+  if (%7 == 1) {
+    call @AliasCheck_3(AliasCheck_91_1681.in) to
+  }
+  array.copy %4 out
+  array.copy %pod_3_@comp_@out %8_@out
+}
+def @SignFp_5(%arg0: ff) -> sign: ff {
+  %c1 = 1
+  %pod_0_@count = %c1
+  array.new 64 %pod_0_@comp_@out
+  Num2Bits_strict_5_100.in = %arg0
+  %0 = %pod_0_@count
+  %c1_2 = 1
+  %1 = felt.sub %0 %c1_2
+  %pod_0_@count = %1
+  %c0 = 0
+  %2 = bool.eq %1 %c0
+  if (%2 == 1) {
+    %9 = Num2Bits_strict_5_100.in
+    call @Num2Bits_strict_4(Num2Bits_strict_5_100.in) to Num2Bits_strict_5_100.out
+    array.copy Num2Bits_strict_5_100.out %pod_0_@comp_@out
+  }
+  array.copy %pod_0_@comp_@out %3_@out
+  array.copy %3_@out %4
+  array.copy %4 a_bits
+  %felt_const_0 = 0
+  %5 = %felt_const_0
+  array.read %4[%5] %6
+  sign = %6
+  array.copy %pod_0_@comp_@out %7_@out
+}
+def main(%arg0: ff) -> sign: ff {
+  call @SignFp_5(%arg0) to sign
+}

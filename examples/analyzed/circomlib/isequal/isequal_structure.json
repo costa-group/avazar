@@ -1,0 +1,80 @@
+{
+  "timing": {
+    "graph_construction": 0.0,
+    "clustering": 0.0,
+    "dag_construction": 0.0,
+    "equivalency": 0.0,
+    "total": 0.0
+  },
+  "nodes": [
+    {
+      "node_name": "IsEqual()",
+      "component_name": "",
+      "node_id": 0,
+      "constraints": [
+        0,
+        1
+      ],
+      "input_signals": [
+        2,
+        3
+      ],
+      "output_signals": [
+        1
+      ],
+      "signals": [
+        1,
+        2,
+        3
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [
+        1
+      ],
+      "predecessors": []
+    },
+    {
+      "node_name": "IsZero()",
+      "component_name": "isz",
+      "node_id": 1,
+      "constraints": [
+        2,
+        3
+      ],
+      "input_signals": [
+        5
+      ],
+      "output_signals": [
+        4
+      ],
+      "signals": [
+        4,
+        5,
+        6
+      ],
+      "is_custom": false,
+      "is_deterministic": false,
+      "successors": [],
+      "predecessors": [
+        0
+      ]
+    }
+  ],
+  "equivalency_local": [
+    [
+      0
+    ],
+    [
+      1
+    ]
+  ],
+  "equivalency_structural": [
+    [
+      0
+    ],
+    [
+      1
+    ]
+  ]
+}

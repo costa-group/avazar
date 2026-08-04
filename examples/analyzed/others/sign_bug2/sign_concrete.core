@@ -1,0 +1,61 @@
+def @Num2Bits_0(%arg0: ff) -> out: arr<64> {
+  array.new 64 %nondet
+  %felt_const_64 = 64
+  %felt_const_0 = 0
+  %felt_const_1 = 1
+  %felt_const_0_0 = 0
+  %arg1 = %felt_const_1
+  %arg2 = %felt_const_0
+  %arg3 = %felt_const_0_0
+  repeat 64 {
+    %1_aft11 = bit.shr %arg0 %arg3
+    %felt_const_1_1_aft11 = 1
+    %2_aft11 = bit.and %1_aft11 %felt_const_1_1_aft11
+    %3_aft11 = %arg3
+    array.write %2_aft11 %nondet[%3_aft11]
+    %4_aft11 = %arg3
+    array.read %nondet[%4_aft11] %5_aft11
+    %6_aft11 = felt.mul %5_aft11 %arg1
+    %7_aft11 = felt.add %arg2 %6_aft11
+    %8_aft11 = felt.add %arg1 %arg1
+    %felt_const_1_2_aft11 = 1
+    %9_aft11 = felt.add %arg3 %felt_const_1_2_aft11
+    %arg1 = %8_aft11
+    %arg2 = %7_aft11
+    %arg3 = %9_aft11
+    %felt_const_64_1_bef11 = 64
+    %1_bef11 = bool.lt %felt_const_64_1_bef11 %arg3
+    %0#0 = %arg1
+    %0#1 = %arg2
+    %0#2 = %arg3
+  }
+  array.copy %nondet out
+}
+def @SignFp_1(%arg0: ff) -> sign: ff {
+  %c1 = 1
+  %pod_0_@count = %c1
+  array.new 64 %pod_0_@comp_@out
+  Num2Bits_5_100.in = %arg0
+  %0 = %pod_0_@count
+  %c1_2 = 1
+  %1 = felt.sub %0 %c1_2
+  %pod_0_@count = %1
+  %c0 = 0
+  %2 = bool.eq %1 %c0
+  if (%2 == 1) {
+    %9 = Num2Bits_5_100.in
+    call @Num2Bits_0(Num2Bits_5_100.in) to Num2Bits_5_100.out
+    array.copy Num2Bits_5_100.out %pod_0_@comp_@out
+  }
+  array.copy %pod_0_@comp_@out %3_@out
+  array.copy %3_@out %4
+  array.copy %4 a_bits
+  %felt_const_0 = 0
+  %5 = %felt_const_0
+  array.read %4[%5] %6
+  sign = %6
+  array.copy %pod_0_@comp_@out %7_@out
+}
+def main(%arg0: ff) -> sign: ff {
+  call @SignFp_1(%arg0) to sign
+}

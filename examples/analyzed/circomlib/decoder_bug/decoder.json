@@ -1,0 +1,312 @@
+{
+    "prime": 18446744069414584321,
+    "macros": {
+        "@Decoder_0": {
+            "params": [
+                {
+                    "name": "v_0",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_46",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_47",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_48",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_49",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_50",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_5",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_8",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_10",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_15",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_18",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_20",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_25",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_28",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_30",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_35",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_38",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_40",
+                    "type": "ff"
+                }
+            ],
+            "vars_info": {
+                "success": "v_50",
+                "out": [
+                    "v_46",
+                    "v_47",
+                    "v_48",
+                    "v_49"
+                ],
+                "%nondet": [
+                    "v_8",
+                    "v_18",
+                    "v_28",
+                    "v_38"
+                ],
+                "%felt_const_1_aft11": 1,
+                "%arg2": 4,
+                "%arg1": "v_40",
+                "%arg0": "v_0",
+                "%5_aft11": 4,
+                "%4_aft11": "v_40",
+                "%3_aft11": "v_38",
+                "%2_aft11": 3,
+                "%0#0": "v_40"
+            },
+            "formula": " (and  (and  (and  (and  (and  (and  (! true :meta-data \"array.new 4 %nondet\") (and  (! true :meta-data \"%felt_const_0 := 0\") (and  (! true :meta-data \"%felt_const_0_0 := 0\") (and  (! true :meta-data \"%arg1 := %felt_const_0\") (and  (! true :meta-data \"%arg2 := %felt_const_0_0\") (and  (! (and  (and  (! (and  (= v_5 (ite  (= 0 v_0) 1 0)) (ff.range v_5 0 1) ) :meta-data \"%1_aft11 := bool.eq %arg2 %arg0\") (and  (! (ite  (= v_5 1) (and  (and  (! true :meta-data \"%felt_const_1_1_aft11 := 1\") (and  (! true :meta-data \"%6_aft11 := %arg2\") (! true :meta-data \"array.write %felt_const_1_1_aft11 %nondet[%6_aft11]\") ) ) (= v_8 1) ) (and  (and  (! true :meta-data \"%felt_const_0_1_aft11 := 0\") (and  (! true :meta-data \"%6_aft11 := %arg2\") (! true :meta-data \"array.write %felt_const_0_1_aft11 %nondet[%6_aft11]\") ) ) (= v_8 0) ) ) :meta-data \"if (%1_aft11 == 1)\") (and  (! true :meta-data \"%2_aft11 := %arg2\") (and  (! true :meta-data \"array.read %nondet[%2_aft11] %3_aft11\") (and  (! (= v_10 (ff.add 0 v_8)) :meta-data \"%4_aft11 := felt.add %arg1 %3_aft11\") (and  (! true :meta-data \"%felt_const_1_aft11 := 1\") (and  (! true :meta-data \"%5_aft11 := felt.add %arg2 %felt_const_1_aft11\") (and  (! true :meta-data \"%arg1 := %4_aft11\") (and  (! true :meta-data \"%arg2 := %5_aft11\") (! true :meta-data \"%0#0 := %arg1\") ) ) ) ) ) ) ) ) ) (and  (and  (! (and  (= v_15 (ite  (= 1 v_0) 1 0)) (ff.range v_15 0 1) ) :meta-data \"%1_aft11 := bool.eq %arg2 %arg0\") (and  (! (ite  (= v_15 1) (and  (and  (! true :meta-data \"%felt_const_1_1_aft11 := 1\") (and  (! true :meta-data \"%6_aft11 := %arg2\") (! true :meta-data \"array.write %felt_const_1_1_aft11 %nondet[%6_aft11]\") ) ) (= v_18 1) ) (and  (and  (! true :meta-data \"%felt_const_0_1_aft11 := 0\") (and  (! true :meta-data \"%6_aft11 := %arg2\") (! true :meta-data \"array.write %felt_const_0_1_aft11 %nondet[%6_aft11]\") ) ) (= v_18 0) ) ) :meta-data \"if (%1_aft11 == 1)\") (and  (! true :meta-data \"%2_aft11 := %arg2\") (and  (! true :meta-data \"array.read %nondet[%2_aft11] %3_aft11\") (and  (! (= v_20 (ff.add v_10 v_18)) :meta-data \"%4_aft11 := felt.add %arg1 %3_aft11\") (and  (! true :meta-data \"%felt_const_1_aft11 := 1\") (and  (! true :meta-data \"%5_aft11 := felt.add %arg2 %felt_const_1_aft11\") (and  (! true :meta-data \"%arg1 := %4_aft11\") (and  (! true :meta-data \"%arg2 := %5_aft11\") (! true :meta-data \"%0#0 := %arg1\") ) ) ) ) ) ) ) ) ) (and  (and  (! (and  (= v_25 (ite  (= 2 v_0) 1 0)) (ff.range v_25 0 1) ) :meta-data \"%1_aft11 := bool.eq %arg2 %arg0\") (and  (! (ite  (= v_25 1) (and  (and  (! true :meta-data \"%felt_const_1_1_aft11 := 1\") (and  (! true :meta-data \"%6_aft11 := %arg2\") (! true :meta-data \"array.write %felt_const_1_1_aft11 %nondet[%6_aft11]\") ) ) (= v_28 1) ) (and  (and  (! true :meta-data \"%felt_const_0_1_aft11 := 0\") (and  (! true :meta-data \"%6_aft11 := %arg2\") (! true :meta-data \"array.write %felt_const_0_1_aft11 %nondet[%6_aft11]\") ) ) (= v_28 0) ) ) :meta-data \"if (%1_aft11 == 1)\") (and  (! true :meta-data \"%2_aft11 := %arg2\") (and  (! true :meta-data \"array.read %nondet[%2_aft11] %3_aft11\") (and  (! (= v_30 (ff.add v_20 v_28)) :meta-data \"%4_aft11 := felt.add %arg1 %3_aft11\") (and  (! true :meta-data \"%felt_const_1_aft11 := 1\") (and  (! true :meta-data \"%5_aft11 := felt.add %arg2 %felt_const_1_aft11\") (and  (! true :meta-data \"%arg1 := %4_aft11\") (and  (! true :meta-data \"%arg2 := %5_aft11\") (! true :meta-data \"%0#0 := %arg1\") ) ) ) ) ) ) ) ) ) (and  (! (and  (= v_35 (ite  (= 3 v_0) 1 0)) (ff.range v_35 0 1) ) :meta-data \"%1_aft11 := bool.eq %arg2 %arg0\") (and  (! (ite  (= v_35 1) (and  (and  (! true :meta-data \"%felt_const_1_1_aft11 := 1\") (and  (! true :meta-data \"%6_aft11 := %arg2\") (! true :meta-data \"array.write %felt_const_1_1_aft11 %nondet[%6_aft11]\") ) ) (= v_38 1) ) (and  (and  (! true :meta-data \"%felt_const_0_1_aft11 := 0\") (and  (! true :meta-data \"%6_aft11 := %arg2\") (! true :meta-data \"array.write %felt_const_0_1_aft11 %nondet[%6_aft11]\") ) ) (= v_38 0) ) ) :meta-data \"if (%1_aft11 == 1)\") (and  (! true :meta-data \"%2_aft11 := %arg2\") (and  (! true :meta-data \"array.read %nondet[%2_aft11] %3_aft11\") (and  (! (= v_40 (ff.add v_30 v_38)) :meta-data \"%4_aft11 := felt.add %arg1 %3_aft11\") (and  (! true :meta-data \"%felt_const_1_aft11 := 1\") (and  (! true :meta-data \"%5_aft11 := felt.add %arg2 %felt_const_1_aft11\") (and  (! true :meta-data \"%arg1 := %4_aft11\") (and  (! true :meta-data \"%arg2 := %5_aft11\") (! true :meta-data \"%0#0 := %arg1\") ) ) ) ) ) ) ) ) ) ) ) ) :meta-data \"repeat_exp 4\") (and  (! true :meta-data \"success := %0#0\") (! true :meta-data \"array.copy %nondet out\") ) ) ) ) ) ) ) (= v_46 v_8) ) (= v_47 v_18) ) (= v_48 v_28) ) (= v_49 v_38) ) (= v_50 v_40) ) ",
+            "components_info": {}
+        },
+        "main": {
+            "params": [
+                {
+                    "name": "v_0",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_18",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_19",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_20",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_21",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_22",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_1",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_2",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_3",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_4",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_5",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_6",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_7",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_8",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_9",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_10",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_11",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_12",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_13",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_14",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_15",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_16",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_17",
+                    "type": "ff"
+                }
+            ],
+            "vars_info": {
+                "success": "v_22",
+                "out": [
+                    "v_18",
+                    "v_19",
+                    "v_20",
+                    "v_21"
+                ],
+                "%arg0": "v_0"
+            },
+            "formula": " (and  (and  (and  (and  (and  (! (@Decoder_0 v_0 v_1 v_2 v_3 v_4 v_5 v_6 v_7 v_8 v_9 v_10 v_11 v_12 v_13 v_14 v_15 v_16 v_17) :meta-data \"call @Decoder_0 (%arg0) to out, success\") (= v_18 v_1) ) (= v_19 v_2) ) (= v_20 v_3) ) (= v_21 v_4) ) (= v_22 v_5) ) ",
+            "components_info": {}
+        }
+    },
+    "main": {
+        "vars": [
+            {
+                "name": "v_0",
+                "type": "ff"
+            },
+            {
+                "name": "v_18",
+                "type": "ff"
+            },
+            {
+                "name": "v_19",
+                "type": "ff"
+            },
+            {
+                "name": "v_20",
+                "type": "ff"
+            },
+            {
+                "name": "v_21",
+                "type": "ff"
+            },
+            {
+                "name": "v_22",
+                "type": "ff"
+            },
+            {
+                "name": "v_1",
+                "type": "ff"
+            },
+            {
+                "name": "v_2",
+                "type": "ff"
+            },
+            {
+                "name": "v_3",
+                "type": "ff"
+            },
+            {
+                "name": "v_4",
+                "type": "ff"
+            },
+            {
+                "name": "v_5",
+                "type": "ff"
+            },
+            {
+                "name": "v_6",
+                "type": "ff"
+            },
+            {
+                "name": "v_7",
+                "type": "ff"
+            },
+            {
+                "name": "v_8",
+                "type": "ff"
+            },
+            {
+                "name": "v_9",
+                "type": "ff"
+            },
+            {
+                "name": "v_10",
+                "type": "ff"
+            },
+            {
+                "name": "v_11",
+                "type": "ff"
+            },
+            {
+                "name": "v_12",
+                "type": "ff"
+            },
+            {
+                "name": "v_13",
+                "type": "ff"
+            },
+            {
+                "name": "v_14",
+                "type": "ff"
+            },
+            {
+                "name": "v_15",
+                "type": "ff"
+            },
+            {
+                "name": "v_16",
+                "type": "ff"
+            },
+            {
+                "name": "v_17",
+                "type": "ff"
+            }
+        ],
+        "formula": " (main v_0 v_18 v_19 v_20 v_21 v_22 v_1 v_2 v_3 v_4 v_5 v_6 v_7 v_8 v_9 v_10 v_11 v_12 v_13 v_14 v_15 v_16 v_17) "
+    }
+}

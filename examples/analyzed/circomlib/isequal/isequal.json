@@ -1,0 +1,244 @@
+{
+    "prime": 18446744069414584321,
+    "macros": {
+        "@IsZero_0": {
+            "params": [
+                {
+                    "name": "v_0",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_12",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_2",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_4",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_6",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_7",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_8",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_10",
+                    "type": "ff"
+                }
+            ],
+            "vars_info": {
+                "out": "v_12",
+                "%felt_const_1": 1,
+                "%arg0": "v_0",
+                "%4": "v_10",
+                "%3": "v_8",
+                "%2": "v_7",
+                "%1": "v_6"
+            },
+            "formula": " (and  (and  (! true :meta-data \"%felt_const_0 := 0\") (and  (! (and  (= v_2 (ite  (= 0 v_0) 0 1)) (ff.range v_2 0 1) ) :meta-data \"%0 := bool.neq %felt_const_0 %arg0\") (and  (! (ite  (= v_2 1) (and  (and  (! true :meta-data \"%felt_const_1_0 := 1\") (and  (! (= (ff.mul v_4 v_0) 1) :meta-data \"%5 := felt.div %felt_const_1_0 %arg0\") (! true :meta-data \"%1 := %5\") ) ) (= v_6 v_4) ) (and  (and  (! true :meta-data \"%felt_const_0_0 := 0\") (! true :meta-data \"%1 := %felt_const_0_0\") ) (= v_6 0) ) ) :meta-data \"if (%0 == 1)\") (and  (! (= v_7 (ff.neg v_0)) :meta-data \"%2 := felt.neg %arg0\") (and  (! (= v_8 (ff.mul v_7 v_6)) :meta-data \"%3 := felt.mul %2 %1\") (and  (! true :meta-data \"%felt_const_1 := 1\") (and  (! (= v_10 (ff.add v_8 1)) :meta-data \"%4 := felt.add %3 %felt_const_1\") (! true :meta-data \"out := %4\") ) ) ) ) ) ) ) (= v_12 v_10) ) ",
+            "components_info": {}
+        },
+        "@IsEqual_1": {
+            "params": [
+                {
+                    "name": "v_0",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_1",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_25",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_9",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_14",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_15",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_16",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_17",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_18",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_19",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_20",
+                    "type": "ff"
+                }
+            ],
+            "vars_info": {
+                "out": "v_25",
+                "isz.out": "v_14",
+                "isz.in": "v_9",
+                "%pod_0_@count": 1,
+                "%pod_0_@comp_@out": "v_14",
+                "%felt_const_1": 1,
+                "%felt_const_0": 0,
+                "%c1_2": 1,
+                "%c1": 1,
+                "%c0": 0,
+                "%arg0": [
+                    "v_0",
+                    "v_1"
+                ],
+                "%9": "v_14",
+                "%8_@out": "v_14",
+                "%7": 1,
+                "%6": 0,
+                "%5": 1,
+                "%4": "v_9",
+                "%3": "v_0",
+                "%2": 0,
+                "%1": "v_1",
+                "%0": 1
+            },
+            "formula": " (and  (and  (! true :meta-data \"%c1 := 1\") (and  (! true :meta-data \"%pod_0_@count := %c1\") (and  (! true :meta-data \"%pod_0_@comp_@out := 0\") (and  (! true :meta-data \"%felt_const_1 := 1\") (and  (! true :meta-data \"%0 := %felt_const_1\") (and  (! true :meta-data \"array.read %arg0[%0] %1\") (and  (! true :meta-data \"%felt_const_0 := 0\") (and  (! true :meta-data \"%2 := %felt_const_0\") (and  (! true :meta-data \"array.read %arg0[%2] %3\") (and  (! (= v_9 (ff.sub v_1 v_0)) :meta-data \"%4 := felt.sub %1 %3\") (and  (! true :meta-data \"isz.in := %4\") (and  (! true :meta-data \"%5 := %pod_0_@count\") (and  (! true :meta-data \"%c1_2 := 1\") (and  (! true :meta-data \"%6 := felt.sub %5 %c1_2\") (and  (! true :meta-data \"%c0 := 0\") (and  (! true :meta-data \"%7 := bool.eq %6 %c0\") (and  (! (and  (! (@IsZero_0 v_9 v_14 v_15 v_16 v_17 v_18 v_19 v_20) :meta-data \"call @IsZero_0 (isz.in) to isz.out\") (! true :meta-data \"%pod_0_@comp_@out := isz.out\") ) :meta-data \"if (%7 == 1)\") (and  (! true :meta-data \"%8_@out := %pod_0_@comp_@out\") (and  (! true :meta-data \"%9 := %8_@out\") (! true :meta-data \"out := %9\") ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) (= v_25 v_14) ) ",
+            "components_info": {
+                "isz": "@IsZero_0"
+            }
+        },
+        "main": {
+            "params": [
+                {
+                    "name": "v_0",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_1",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_11",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_2",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_3",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_4",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_5",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_6",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_7",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_8",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_9",
+                    "type": "ff"
+                },
+                {
+                    "name": "v_10",
+                    "type": "ff"
+                }
+            ],
+            "vars_info": {
+                "out": "v_11",
+                "%arg0": [
+                    "v_0",
+                    "v_1"
+                ]
+            },
+            "formula": " (and  (! (@IsEqual_1 v_0 v_1 v_2 v_3 v_4 v_5 v_6 v_7 v_8 v_9 v_10) :meta-data \"call @IsEqual_1 (%arg0) to out\") (= v_11 v_2) ) ",
+            "components_info": {}
+        }
+    },
+    "main": {
+        "vars": [
+            {
+                "name": "v_0",
+                "type": "ff"
+            },
+            {
+                "name": "v_1",
+                "type": "ff"
+            },
+            {
+                "name": "v_11",
+                "type": "ff"
+            },
+            {
+                "name": "v_2",
+                "type": "ff"
+            },
+            {
+                "name": "v_3",
+                "type": "ff"
+            },
+            {
+                "name": "v_4",
+                "type": "ff"
+            },
+            {
+                "name": "v_5",
+                "type": "ff"
+            },
+            {
+                "name": "v_6",
+                "type": "ff"
+            },
+            {
+                "name": "v_7",
+                "type": "ff"
+            },
+            {
+                "name": "v_8",
+                "type": "ff"
+            },
+            {
+                "name": "v_9",
+                "type": "ff"
+            },
+            {
+                "name": "v_10",
+                "type": "ff"
+            }
+        ],
+        "formula": " (main v_0 v_1 v_11 v_2 v_3 v_4 v_5 v_6 v_7 v_8 v_9 v_10) "
+    }
+}

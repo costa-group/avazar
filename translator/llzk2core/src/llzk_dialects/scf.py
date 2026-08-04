@@ -26,6 +26,7 @@ from llzk_dialects.core_utils import (
 from llzk_dialects.felt import FeltBinary, FeltConst
 from llzk_dialects.bool import BoolCmp
 from llzk_dialects.utils import split_top_level_commas
+from llzk_dialects.loc_parser import strip_trailing_loc
 
 
 def _contains_function_call(ops: List[Operation]) -> bool:
@@ -697,16 +698,35 @@ class SCFWhile(BlockOperation):
 
     @staticmethod
     def _parse_block_args(line: str) -> List[Tuple[SSAVar, Type]]:
-        """Parse a block argument declaration line like `^bb0(%arg0: !type, %arg1: !type):`."""
-        m = re.match(r'\s*\^bb\d+\(\s*(?P<args>[^)]*)\s*\)\s*:', line)
+        """Parse a block argument declaration line like `^bb0(%arg0: !type, %arg1: !type):`.
+
+        Each arg may itself carry an inline ' loc(...)' suffix (e.g.
+        `%arg0: !felt.type<"bn128"> loc("f.circom":1:16)`) from
+        --llzk_plaintext debug info. That embeds its own '('/')' pair, so
+        the outer arg-list close-paren must be found by depth counting
+        rather than matching up to the first ')' in the line.
+        """
+        m = re.match(r'\s*\^bb\d+\(', line)
         if not m:
             return []
-        args_str = m.group('args').strip()
+        start = m.end()
+        depth = 1
+        end = len(line)
+        for i in range(start, len(line)):
+            if line[i] == '(':
+                depth += 1
+            elif line[i] == ')':
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        args_str = line[start:end].strip()
         if not args_str:
             return []
         result = []
         for arg_pair in re.split(r',\s*(?=%)', args_str):
             arg_pair = arg_pair.strip()
+            arg_pair, _ = strip_trailing_loc(arg_pair)
             colon_idx = arg_pair.index(':')
             var_str = arg_pair[:colon_idx].strip()
             type_str = arg_pair[colon_idx + 1:].strip()

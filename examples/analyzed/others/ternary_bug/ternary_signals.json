@@ -1,0 +1,15 @@
+{
+  "main.out[0]": 1,
+  "main.out[1]": 2,
+  "main.out[2]": 3,
+  "main.out[3]": 4,
+  "main.in": 5,
+  "main.ternary_digits[0]": 6,
+  "main.ternary_digits[1]": 7,
+  "main.Num2Bits_16_325#0.out[0]": 8,
+  "main.Num2Bits_16_325#0.out[1]": 9,
+  "main.Num2Bits_16_325#0.in": 10,
+  "main.Num2Bits_16_325#1.out[0]": 11,
+  "main.Num2Bits_16_325#1.out[1]": 12,
+  "main.Num2Bits_16_325#1.in": 13
+}
