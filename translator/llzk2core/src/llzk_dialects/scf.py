@@ -309,14 +309,43 @@ class SCFIf(BlockOperation):
         # * Then we translate the body of the if and of the else. The transformation here just
         #   needs to consider that "scf.yield" assigns the variables yielded to the results
         #   (which can be multiple)
+        #
+        # Core has no compile-time branching, so both branches are always
+        # translated as real runtime code below, unconditionally -- that
+        # part is unchanged. But ctx.var2const is a *compile-time* side
+        # channel for constant folding (see felt.py/bool.py), and without
+        # the bookkeeping below it would simply be left holding whichever
+        # branch was translated last (the else branch, or the then branch if
+        # there's no else) for each declared result, regardless of the
+        # condition's actual value -- silently wrong the moment anything
+        # downstream (e.g. a nested loop's bound) relies on it. When the
+        # condition itself is a known compile-time constant (folded by
+        # bool.py's BoolCmp/BoolBinary/BoolNot), propagate the *taken*
+        # branch's own folded value instead; when it isn't, make sure no
+        # stale value survives.
+        cond_const = ctx.var2const.get(self.condition.name)
+        result_keys = [r.to_core_component(i) for r in self.results for i in range(r.n_components)]
+
         yield f"if ({self.condition.to_core()} == 1) {{"
         yield from self._translate_branch(self.then_body, ctx)
+        then_vals = {key: ctx.var2const.get(key) for key in result_keys}
         yield "}\n"
         # New modification: if can appear with no else, even it empty
+        else_vals = {key: None for key in result_keys}
         if self.else_body is not None:
             yield "else {"
             yield from self._translate_branch(self.else_body, ctx)
+            else_vals = {key: ctx.var2const.get(key) for key in result_keys}
             yield "}"
+
+        for key in result_keys:
+            taken_val = None
+            if cond_const is not None:
+                taken_val = then_vals[key] if cond_const else else_vals[key]
+            if taken_val is not None:
+                ctx.var2const[key] = taken_val
+            else:
+                ctx.var2const.pop(key, None)
 
     def _translate_branch(self, branch_ops: List[Operation], ctx: TranslationContext) -> Generator[str, None, None]:
         # Scoped so a branch-local temporary (e.g. a PodRead/PodNew that
@@ -494,6 +523,14 @@ class SCFFor(BlockOperation):
         self.iter_args = iter_args
         self.body = body
 
+        # Whether this loop's body contains a function.call (drives the
+        # unroll-vs-repeat choice in to_core, below) is a purely structural
+        # property of the already-parsed body -- it never changes after
+        # construction (renaming SSA names doesn't add/remove operations).
+        # Computed once here instead of re-walking the whole (possibly
+        # nested) body tree on every outer-loop iteration during unrolling.
+        self._contains_call = _contains_function_call(body)
+
     def dialect(self) -> Dialect:
         return Dialect("scf")
 
@@ -617,7 +654,7 @@ class SCFFor(BlockOperation):
         # per iteration, since a subcomponent instantiated inside the loop
         # needs a distinct name per iteration (LoopIndexedName, resolved via
         # ctx.unroll_index) that a single generic body has no way to give it.
-        if _contains_function_call(self.body):
+        if self._contains_call:
             prev_unroll_index = ctx.unroll_index
             for i, iv_val in enumerate(range(lb_val, ub_val, step_val)):
                 ctx.var2const[self.iv.name] = iv_val
@@ -688,6 +725,25 @@ class SCFWhile(BlockOperation):
         # way before_rename/after_rename already use it to disambiguate
         # sibling whiles reusing the same LLZK-level SSA numbers.
         self.cursor = cursor
+
+        # Same rationale as SCFFor's self._contains_call: purely structural,
+        # computed once instead of on every outer-loop iteration.
+        self._needs_unroll = (
+            _contains_function_call(before_body) or _contains_function_call(after_body)
+        )
+
+        # Lazily-memoized (var2expression, condition_var) pair built by
+        # _structural_analysis, below. Deliberately NOT computed here in
+        # __init__: at construction time (during parsing), an enclosing
+        # scf.while/scf.for's own before_rename/after_rename/block_arg_rename
+        # has not run yet -- update_variables mutates this object's
+        # already-built before_body/after_body SSAVar names in place, from
+        # the outside, after __init__ returns. Caching var2expression this
+        # early would freeze it against pre-rename names, permanently
+        # mismatched with the post-rename names ctx.var2const is actually
+        # populated under at translation time. Safe once translation starts,
+        # since all parsing/renaming for the whole file finishes first.
+        self._cached_structural_analysis = None
 
     def dialect(self) -> Dialect:
         return Dialect("scf")
@@ -942,7 +998,7 @@ class SCFWhile(BlockOperation):
         # per iteration (LoopIndexedName, resolved via ctx.unroll_index)
         # that a single generic body has no way to give it — see
         # _contains_function_call and SCFFor.to_core's identical branching.
-        needs_unroll = _contains_function_call(self.before_body) or _contains_function_call(self.after_body)
+        needs_unroll = self._needs_unroll
 
         if isinstance(steps, SymbolicSteps):
             if needs_unroll:
@@ -989,11 +1045,25 @@ class SCFWhile(BlockOperation):
             yield from emit_iteration()
             yield f"}}"
 
-    def _extract_step(self, initial_values: Dict[str, int],
-                      ctx: TranslationContext) -> Union[int, SymbolicSteps]:
+    def _structural_analysis(self) -> Tuple[Dict[str, Union[str, Operation]], SSAVar]:
         """
-        Extracts how many iterations are performed in the loop
+        Builds (and lazily memoizes) var2expression/condition_var -- the
+        purely structural part of step extraction, below. This is a pure
+        function of self.before_body/after_body/init_args/after_args and
+        never touches ctx or initial_values, so its answer is identical on
+        every call for a given (fully parsed and renamed) instance -- e.g.
+        every outer-loop iteration when this while is re-translated from
+        scratch during unrolling. Memoized here instead of rebuilt via the
+        full backward walk each time.
+
+        Lazy is required, not just an optimization detail: see __init__'s
+        comment on self._cached_structural_analysis for why this must not
+        run until the first real call (i.e. after all parse-time renaming
+        has completed).
         """
+        if self._cached_structural_analysis is not None:
+            return self._cached_structural_analysis
+
         # We assume the following structure:
         # * Second Region / First region for the first iteration, as the first region
         #   contains the condition to evaluate. We traverse in reverse this structure to
@@ -1046,6 +1116,27 @@ class SCFWhile(BlockOperation):
                 # This is a plain assignment
                 var2expression[arg_var.name] = cond_arg.name
                 while_variables.remove(arg_var.name)
+
+        self._cached_structural_analysis = (var2expression, condition_var)
+        return self._cached_structural_analysis
+
+    def _extract_step(self, initial_values: Dict[str, int],
+                      ctx: TranslationContext) -> Union[int, SymbolicSteps]:
+        """
+        Extracts how many iterations are performed in the loop
+        """
+        var2expression_template, condition_var = self._structural_analysis()
+
+        # infer_n_repetitions_from_expressions (via _infer_from_comparison)
+        # mutates its var2expression argument in place, folding a newly-
+        # resolved free variable in as a constant leaf. Reusing the cached
+        # dict object directly across calls (e.g. across outer-loop
+        # iterations during unrolling) would let one iteration's resolved
+        # value leak into the next as a stale, already-"resolved" entry that
+        # never gets re-checked against this call's own ctx.var2const. A
+        # fresh shallow copy per call avoids this while still skipping the
+        # expensive backward-walk that built the template.
+        var2expression = dict(var2expression_template)
 
         # Finally, using the information from var2expression, we can process the repeat information
         return infer_n_repetitions_from_expressions(var2expression, condition_var.name,

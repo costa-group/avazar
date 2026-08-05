@@ -146,6 +146,21 @@ class FeltUnary(Operation):
         # Unary operations are translated into an assignment
         yield f"{self._result.to_core()} = {self._OPS2CORE.get(self._op, self._op)} {self.operand.to_core()}"
 
+        # If the operand is already a known compile-time constant, fold this
+        # operation too -- needed so a chain of arithmetic rooted at an outer
+        # loop's induction variable (only known once that loop is unrolled)
+        # keeps resolving to a concrete int all the way through to a nested
+        # loop's bound. Guarded: this may be evaluated inside a branch of an
+        # scf.if that's dead for the current concrete iteration (Core always
+        # translates both branches), so a guarded felt.inv-by-zero etc. must
+        # not crash translation -- just skip the fold.
+        operand_val = ctx.var2const.get(self.operand.name)
+        if operand_val is not None:
+            try:
+                ctx.var2const[self._result.name] = self.to_function()(operand_val)
+            except (ZeroDivisionError, ArithmeticError):
+                pass
+
     def __repr__(self):
         type_str = ('' if not self.types
                     else ' : ' + ', '.join(repr(t) for t in self.types))
@@ -246,6 +261,17 @@ class FeltBinary(Operation):
     def to_core(self, ctx: TranslationContext) -> str:
         # Just return the name of the function applied to the arguments
         yield f"{self._result.to_core()} = {self._OPS2CORE.get(self._op, self._op)} {self.lhs.to_core()} {self.rhs.to_core()}"
+
+        # Fold into a compile-time constant when both operands already are
+        # one -- see FeltUnary.to_core's comment for why this matters (tied
+        # nested loops) and why the guard is needed (dead-branch division).
+        lhs_val = ctx.var2const.get(self.lhs.name)
+        rhs_val = ctx.var2const.get(self.rhs.name)
+        if lhs_val is not None and rhs_val is not None:
+            try:
+                ctx.var2const[self._result.name] = self.to_function()(lhs_val, rhs_val)
+            except (ZeroDivisionError, ArithmeticError):
+                pass
 
     def __repr__(self):
         type_str = ('' if not self.types

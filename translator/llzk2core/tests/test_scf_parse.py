@@ -229,6 +229,96 @@ class TestSCF:
         list(op.to_core(ctx))  # previously: "%p" left as {'@b': (...)}
         assert "%p" not in ctx.ssa2pod_var
 
+    # ── SCFIf.to_core constant folding (nested-loop-bound regression) ───────
+    #
+    # SCFIf always translates both branches unconditionally (Core has no
+    # compile-time branching), and each branch's own scoped_branch_registrations
+    # block keeps its own just-computed value for a declared result. Since
+    # the else branch (or whichever branch is translated last) always runs
+    # second, ctx.var2const for the if's result previously ended up holding
+    # that branch's value regardless of the condition's actual value.
+    # Mirrors babypbk_test_concrete.mlir's %17 = scf.if %16 { yield 249 }
+    # else { yield 4 }, whose result feeds two nested scf.while bounds.
+
+    def _felt_if(self, then_val, else_val):
+        then_body = [
+            FeltConst(SSAVar("%c_then"), then_val),
+            SCFYield([SSAVar("%c_then")], [Type("!felt.type")]),
+        ]
+        else_body = [
+            FeltConst(SSAVar("%c_else"), else_val),
+            SCFYield([SSAVar("%c_else")], [Type("!felt.type")]),
+        ]
+        return SCFIf([SSAVar("%r")], SSAVar("%cond"), [Type("!felt.type")],
+                     then_body, else_body)
+
+    def test_if_to_core_folds_taken_branch_when_condition_decidable_true(self):
+        op = self._felt_if(249, 4)
+        ctx = TranslationContext()
+        ctx.var2const["%cond"] = 1  # decidable TRUE -- then-branch is the real one
+        list(op.to_core(ctx))
+        assert ctx.var2const["%r"] == 249
+
+    def test_if_to_core_folds_taken_branch_when_condition_decidable_false(self):
+        op = self._felt_if(249, 4)
+        ctx = TranslationContext()
+        ctx.var2const["%cond"] = 0  # decidable FALSE -- else-branch is the real one
+        list(op.to_core(ctx))
+        assert ctx.var2const["%r"] == 4
+
+    def test_if_to_core_does_not_leave_stale_value_when_condition_undecidable(self):
+        # Before the fix, this silently left ctx.var2const["%r"] == 4 (the
+        # else branch's value) even though the condition is genuinely
+        # unknown -- the single most important case, since a weaker fix
+        # could pass the two tests above while still leaking a stale value
+        # here.
+        op = self._felt_if(249, 4)
+        ctx = TranslationContext()
+        list(op.to_core(ctx))  # %cond is absent from ctx.var2const
+        assert "%r" not in ctx.var2const
+
+    def test_if_to_core_nested_cascade_independent_decidability(self):
+        # An outer decidable if must not interfere with an inner if's own
+        # (independently decidable) result -- mirrors the deeply nested
+        # scf.if/else cascades documented in PROGRESS.md Sec. 24.
+        inner_if = self._felt_if(10, 20)
+        outer_then_body = [inner_if, SCFYield([SSAVar("%r")], [Type("!felt.type")])]
+        outer_else_body = [
+            FeltConst(SSAVar("%c_outer_else"), 99),
+            SCFYield([SSAVar("%c_outer_else")], [Type("!felt.type")]),
+        ]
+        outer_if = SCFIf([SSAVar("%outer_r")], SSAVar("%outer_cond"), [Type("!felt.type")],
+                         outer_then_body, outer_else_body)
+        ctx = TranslationContext()
+        ctx.var2const["%outer_cond"] = 1   # outer: then taken
+        ctx.var2const["%cond"] = 0         # inner: else taken -> 20
+        list(outer_if.to_core(ctx))
+        assert ctx.var2const["%outer_r"] == 20
+
+    def test_if_to_core_multi_component_result_folds_felt_component_only(self):
+        # A multi-result if (felt + pod) -- the felt component should fold,
+        # the pod component's existing (unrelated) handling stays untouched.
+        then_body = [
+            FeltConst(SSAVar("%f_then"), 5),
+            PodNew(SSAVar("%p_then"), {}, {"@x": Type("!felt.type")}),
+            SCFYield([SSAVar("%f_then"), SSAVar("%p_then")],
+                     [Type("!felt.type"), Type("!pod.type<[@x: !felt.type]>")]),
+        ]
+        else_body = [
+            FeltConst(SSAVar("%f_else"), 6),
+            PodNew(SSAVar("%p_else"), {}, {"@x": Type("!felt.type")}),
+            SCFYield([SSAVar("%f_else"), SSAVar("%p_else")],
+                     [Type("!felt.type"), Type("!pod.type<[@x: !felt.type]>")]),
+        ]
+        op = SCFIf([SSAVar("%res", 2)], SSAVar("%cond"),
+                   [Type("!felt.type"), Type("!pod.type<[@x: !felt.type]>")],
+                   then_body, else_body)
+        ctx = TranslationContext()
+        ctx.var2const["%cond"] = 1
+        list(op.to_core(ctx))
+        assert ctx.var2const["%res#0"] == 5
+        assert ctx.ssa2pod_var["%res#1"] == {"@x": ("%res#1_@x", Type("!felt.type"))}
+
     # ── SCFExecuteRegion (BlockOperation) ─────────────────────────────────────
 
     def test_execute_region_no_results(self):
@@ -743,6 +833,114 @@ class TestSCF:
 
         with pytest.raises(NotImplementedError):
             list(op.to_core(ctx))
+
+    # ── Tied nested loops (babypbk_test_concrete.mlir regression) ────────────
+    #
+    # Mirrors babypbk_test_concrete.mlir lines 6274-6379: an outer scf.while
+    # (2 concrete iterations) whose body picks a per-iteration constant via
+    # scf.if, derives a bound from it via plain felt arithmetic, and feeds
+    # that bound to an inner scf.while whose own body contains a
+    # function.call. Before the fix: %sel's scf.if-computed value always
+    # resolved to the else branch's constant regardless of the outer
+    # iteration, felt.mul never folded it further, and the inner while's
+    # symbolic bound + function.call combination raised NotImplementedError.
+
+    def test_nested_while_bound_resolves_per_outer_iteration(self):
+        def make_inner_while():
+            call = FunctionCall([SSAVar("%cr")], GlobalVariable("@Sub"), [SSAVar("%iarg")], None)
+            call._member_hint = LoopIndexedName("last")
+            inner_before = [
+                BoolCmp(SSAVar("%icond2"), "lt", SSAVar("%iarg"), SSAVar("%bound")),
+                SCFCondition(SSAVar("%icond2"), [SSAVar("%iarg")], [Type("!felt.type")]),
+            ]
+            inner_after = [
+                call,
+                FeltConst(SSAVar("%ione"), 1),
+                FeltBinary(SSAVar("%inext"), "felt.add", SSAVar("%iarg"), SSAVar("%ione"), []),
+                SCFYield([SSAVar("%inext")], [Type("!felt.type")]),
+            ]
+            return SCFWhile(
+                [], [(SSAVar("%iarg"), SSAVar("%izero"))],
+                [[Type("!felt.type")], [Type("!felt.type")]],
+                inner_before, [(SSAVar("%iarg"), Type("!felt.type"))], inner_after,
+            )
+
+        def make_outer_while():
+            sel_then = [FeltConst(SSAVar("%c10"), 10), SCFYield([SSAVar("%c10")], [Type("!felt.type")])]
+            sel_else = [FeltConst(SSAVar("%c3"), 3), SCFYield([SSAVar("%c3")], [Type("!felt.type")])]
+            sel_if = SCFIf([SSAVar("%sel")], SSAVar("%icond"), [Type("!felt.type")],
+                           sel_then, sel_else)
+
+            outer_before = [
+                FeltConst(SSAVar("%otwo"), 2),
+                BoolCmp(SSAVar("%ocond"), "lt", SSAVar("%oarg"), SSAVar("%otwo")),
+                SCFCondition(SSAVar("%ocond"), [SSAVar("%oarg")], [Type("!felt.type")]),
+            ]
+            outer_after = [
+                FeltConst(SSAVar("%oone"), 1),
+                BoolCmp(SSAVar("%icond"), "lt", SSAVar("%oarg"), SSAVar("%oone")),
+                sel_if,
+                FeltConst(SSAVar("%othree"), 3),
+                FeltBinary(SSAVar("%bound"), "felt.mul", SSAVar("%sel"), SSAVar("%othree"), []),
+                FeltConst(SSAVar("%izero"), 0),
+                make_inner_while(),
+                FeltConst(SSAVar("%oc1"), 1),
+                FeltBinary(SSAVar("%onext"), "felt.add", SSAVar("%oarg"), SSAVar("%oc1"), []),
+                SCFYield([SSAVar("%onext")], [Type("!felt.type")]),
+            ]
+            return SCFWhile(
+                [], [(SSAVar("%oarg"), SSAVar("%oc0"))],
+                [[Type("!felt.type")], [Type("!felt.type")]],
+                outer_before, [(SSAVar("%oarg"), Type("!felt.type"))], outer_after,
+            )
+
+        op = make_outer_while()
+        ctx = TranslationContext()
+        ctx.var2const["%oc0"] = 0
+        ctx.llzk_func2core["@Sub"] = "Sub"
+        ctx.core_func2args["Sub"] = ([], [("@out", Type("!felt.type"))])
+
+        out = list(op.to_core(ctx))  # must not raise NotImplementedError
+
+        # Iteration 0 (%oarg=0 < 1 -> %sel=10 -> %bound=30) and iteration 1
+        # (%oarg=1, not < 1 -> %sel=3 -> %bound=9): the inner while contains
+        # a call, so each outer iteration unrolls it into %bound literal
+        # copies of the inner body -- 30 then 9, never the same count twice,
+        # and never silently frozen at whichever value the first outer
+        # iteration (or the else branch, per the pre-fix bug) computed.
+        assert "%sel = %c10" in out
+        assert "%sel = %c3" in out
+        assert "%bound = felt.mul %sel %othree" in out
+        # Each outer iteration restarts the inner while's own %iarg at 0.
+        assert out.count("%iarg = %izero") == 2
+        inner_iteration_count = out.count("%inext = felt.add %iarg %ione")
+        assert inner_iteration_count == 30 + 9
+        # Not the "always resolves to the else branch's value" pre-fix bug,
+        # which would have produced 2 outer iterations both unrolling by 9
+        # (the else branch's %sel=3 -> %bound=9), i.e. 18 total.
+        assert inner_iteration_count not in (2 * 9, 2 * 30)
+
+    def test_while_extract_step_reused_instance_does_not_leak_stale_resolution(self):
+        # Guards the memoization added to SCFWhile._structural_analysis:
+        # reusing the SAME SCFWhile instance's cached var2expression across
+        # two separate to_core calls (standing in for two outer-loop
+        # iterations during unrolling) must resolve each call's own free
+        # variable independently -- not leak the first call's resolved
+        # value into the second. Confirmed by direct repro that reusing the
+        # same (mutated-in-place) dict object across calls gives "4" for
+        # BOTH a %bound=4 and a %bound=7 call; a fresh copy per call
+        # correctly gives 4 then 7.
+        op = self._external_bound_while(predicate="lt", cursor=42, bound_name="%bound")
+
+        ctx0 = TranslationContext()
+        ctx0.var2const["%c0"] = 0
+        ctx0.var2const["%bound"] = 4
+        assert list(op.to_core(ctx0))[1] == "repeat 4 {"
+
+        ctx1 = TranslationContext()
+        ctx1.var2const["%c0"] = 0
+        ctx1.var2const["%bound"] = 7
+        assert list(op.to_core(ctx1))[1] == "repeat 7 {"
 
     def test_while_to_core_bool_and_condition_takes_min(self):
         # A condition of the form bool.and(arg1 < 5, arg1 < 3): the loop

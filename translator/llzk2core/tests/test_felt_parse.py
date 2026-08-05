@@ -1,6 +1,6 @@
 import pytest
 from llzk_dialects.felt import FeltUnary, FeltBinary, FeltConst
-from llzk_dialects.core import SSAVar, Type
+from llzk_dialects.core import SSAVar, Type, TranslationContext
 
 
 class TestFelt:
@@ -84,3 +84,73 @@ class TestFelt:
     def test_binary_match(self):
         assert FeltBinary.match("%r = felt.add %x, %y") is True
         assert FeltBinary.match("%r = felt.inv %x") is False
+
+    # ── FeltBinary.to_core constant folding ──────────────────────────────────
+    #
+    # Needed so a chain of arithmetic rooted at an outer loop's induction
+    # variable (only known once that loop is unrolled) keeps resolving to a
+    # concrete int all the way through to a nested loop's bound.
+
+    def test_binary_to_core_folds_when_both_operands_known(self):
+        op = FeltBinary(SSAVar("%r"), "felt.add", SSAVar("%a"), SSAVar("%b"), [])
+        ctx = TranslationContext()
+        ctx.var2const["%a"] = 3
+        ctx.var2const["%b"] = 4
+        list(op.to_core(ctx))
+        assert ctx.var2const["%r"] == 7
+
+    def test_binary_to_core_uintdiv_folds(self):
+        # Mirrors the babypbk_test_concrete.mlir chain: (%17 - 1) uintdiv 3.
+        op = FeltBinary(SSAVar("%19"), "felt.uintdiv", SSAVar("%18"), SSAVar("%c3"), [])
+        ctx = TranslationContext()
+        ctx.var2const["%18"] = 248
+        ctx.var2const["%c3"] = 3
+        list(op.to_core(ctx))
+        assert ctx.var2const["%19"] == 82
+
+    def test_binary_to_core_does_not_fold_when_one_operand_unknown(self):
+        op = FeltBinary(SSAVar("%r"), "felt.mul", SSAVar("%a"), SSAVar("%b"), [])
+        ctx = TranslationContext()
+        ctx.var2const["%a"] = 3
+        list(op.to_core(ctx))
+        assert "%r" not in ctx.var2const
+
+    def test_binary_to_core_does_not_fold_when_both_operands_unknown(self):
+        op = FeltBinary(SSAVar("%r"), "felt.add", SSAVar("%a"), SSAVar("%b"), [])
+        ctx = TranslationContext()
+        list(op.to_core(ctx))
+        assert "%r" not in ctx.var2const
+
+    def test_binary_to_core_div_by_zero_does_not_crash_or_fold(self):
+        # SCFIf always translates both branches unconditionally, so a
+        # guarded division that's only safe in the "real" branch may still
+        # get folded-attempted here on the dead-for-this-iteration branch.
+        op = FeltBinary(SSAVar("%r"), "felt.div", SSAVar("%a"), SSAVar("%b"), [])
+        ctx = TranslationContext()
+        ctx.var2const["%a"] = 10
+        ctx.var2const["%b"] = 0
+        list(op.to_core(ctx))  # must not raise
+        assert "%r" not in ctx.var2const
+
+    def test_binary_to_core_emits_same_line_as_before(self):
+        op = FeltBinary(SSAVar("%r"), "felt.sub", SSAVar("%a"), SSAVar("%b"), [])
+        ctx = TranslationContext()
+        ctx.var2const["%a"] = 5
+        ctx.var2const["%b"] = 2
+        out = list(op.to_core(ctx))
+        assert out == ["%r = felt.sub %a %b"]
+
+    # ── FeltUnary.to_core constant folding ───────────────────────────────────
+
+    def test_unary_to_core_folds_when_operand_known(self):
+        op = FeltUnary(SSAVar("%r"), "felt.neg", SSAVar("%a"), [])
+        ctx = TranslationContext()
+        ctx.var2const["%a"] = 5
+        list(op.to_core(ctx))
+        assert ctx.var2const["%r"] == -5
+
+    def test_unary_to_core_does_not_fold_when_operand_unknown(self):
+        op = FeltUnary(SSAVar("%r"), "felt.neg", SSAVar("%a"), [])
+        ctx = TranslationContext()
+        list(op.to_core(ctx))
+        assert "%r" not in ctx.var2const
