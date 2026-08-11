@@ -1074,7 +1074,8 @@ theorem mergeSimpleSymVal_mono {c : ZKConfig}
   simp only [mergeSimpleSymVal]
   split
   · exact le_refl _
-  · simp only []; omega
+  · simp only []
+    apply Nat.le_succ
 
 /-- Freshness w.r.t. a smaller counter implies freshness w.r.t. any larger one. -/
 theorem varSetBelow_mono {vs : VarSet} {n n' : Nat} (h : n ≤ n') (hvs : varSetBelow vs n) :
@@ -1106,7 +1107,8 @@ theorem mergeSimpleSymVal_result_fresh {c : ZKConfig}
       | ffv m =>
           simp only [varIndex]
           have hnm : nextVarId = m := Nat.compare_eq_eq.mp heq
-          omega
+          rw [hnm]
+          apply Nat.lt_succ_self
       | boolv m =>
           rw [show compare (Var.ffv nextVarId) (Var.boolv m) = Ordering.lt from rfl] at heq
           exact absurd heq (by decide)
@@ -1131,7 +1133,7 @@ theorem mergeSimpleSymVal_merged_subset {c : ZKConfig}
           right
           simp only [varIndex]
           have hnm : nextVarId = m := Nat.compare_eq_eq.mp heq
-          omega
+          rw [hnm]
       | boolv m =>
           rw [show compare (Var.ffv nextVarId) (Var.boolv m) = Ordering.lt from rfl] at heq
           exact absurd heq (by decide)
@@ -1159,7 +1161,10 @@ theorem varSetBelow_singleton_ffv {n : Nat} :
   intro v hv
   rcases Std.TreeSet.mem_insert.mp hv with heq | hmem
   · cases v with
-    | ffv m => simp only [varIndex]; have := Nat.compare_eq_eq.mp heq; omega
+    | ffv m => simp only [varIndex]
+               have h1 := Nat.compare_eq_eq.mp heq
+               rw [h1]
+               apply Nat.lt_succ_self
     | boolv m =>
         rw [show compare (Var.ffv n) (Var.boolv m) = Ordering.lt from rfl] at heq
         exact absurd heq (by decide)
@@ -1296,7 +1301,7 @@ theorem mergeSimpleSymVal_tbExtra_merged_subset {c : ZKConfig}
                 right; right
                 simp only [varIndex]
                 have hnm : nextVarId = m := Nat.compare_eq_eq.mp heq
-                omega
+                rw [hnm]
             | boolv m =>
                 rw [show compare (Var.ffv nextVarId) (Var.boolv m) = Ordering.lt from rfl] at heq
                 exact absurd heq (by decide)
@@ -1331,7 +1336,7 @@ theorem mergeSimpleSymVal_ebExtra_merged_subset {c : ZKConfig}
                 right; right
                 simp only [varIndex]
                 have hnm : nextVarId = m := Nat.compare_eq_eq.mp heq
-                omega
+                rw [hnm]
             | boolv m =>
                 rw [show compare (Var.ffv nextVarId) (Var.boolv m) = Ordering.lt from rfl] at heq
                 exact absurd heq (by decide)
@@ -3079,7 +3084,8 @@ theorem sameShape_of_symValMatches {c : ZKConfig} (assignment1 assignment2 : Ass
                   have h1 : a1.toList.length = a1'.toList.length := hm1.length_eq
                   have h2 : a2.toList.length = a2'.toList.length := hm2.length_eq
                   simp only [Array.length_toList] at h1 h2
-                  omega
+                  rw [h1, h2]
+                  exact hshapeValue
 
 theorem mergeSymValue_succeeds_of_sameShape {c : ZKConfig}
     (nextVarId : Nat) (tbExtra ebExtra : FFFormula c) (svTb svEb : SymValue c)
@@ -4851,7 +4857,8 @@ theorem seqComposition_sound {c : ZKConfig}
         have h1' := h1_below (Var.ffv n) hn1
         have hidx : varIndex (Var.ffv n) = n := rfl
         rw [hidx] at h1' hfresh
-        omega
+        have h1 := Nat.lt_of_le_of_lt hfresh h1'
+        exact absurd h1 (Nat.lt_irrefl spec1.nextVarId)
     have hdisj_bool : ∀ n, Var.boolv n ∈ specVars spec1 → Var.boolv n ∉ specVars spec2 := by
       intro n hn1 hn2
       rcases h2_fresh (Var.boolv n) hn2 with hin | hfresh
@@ -4862,7 +4869,8 @@ theorem seqComposition_sound {c : ZKConfig}
         have h1' := h1_below (Var.boolv n) hn1
         have hidx : varIndex (Var.boolv n) = n := rfl
         rw [hidx] at h1' hfresh
-        omega
+        have h1 := Nat.lt_of_le_of_lt hfresh h1'
+        exact absurd h1 (Nat.lt_irrefl spec1.nextVarId)
     -- a var of spec1's own input: shared with spec2's declared inputs (agree keeps it) or
     -- private to spec2 (frame keeps it) -- either way assignment1 = assignment2 there
     have hcarry_ff : ∀ n, Var.ffv n ∈ symEnvVars spec1.inSymEnv →
@@ -4876,7 +4884,9 @@ theorem seqComposition_sound {c : ZKConfig}
             have h1' := hin1_below (Var.ffv n) hn
             have hidx : varIndex (Var.ffv n) = n := rfl
             rw [hidx] at h1' hfresh
-            omega
+            have h1 := Nat.lt_of_le_of_lt hfresh h1'
+            have h2 := Nat.lt_of_le_of_lt h1_mono h1
+            exact absurd h2 (Nat.lt_irrefl sconf.nextVarId)
         exact a2_ff n hn2in
       · exact (a2_ffframe n hn2).symm
     -- same argument, this time for spec1's own formula footprint
@@ -5041,6 +5051,13 @@ theorem encodeCond_defined {c : ZKConfig} (symEnv : SymEnv c) (cond : Cond c)
 -- (`definedVarsOfFunc`-based pre-population) -- a comparable-sized follow-up, deferred for now.
 -- ---------------------------------------------------------------------------
 
+theorem a_lt_1_plus_b_plus_a (a b : Nat) : a < 1 + b + a := by grind
+theorem a_lt_1_plus_a_plus_b (a b : Nat) : a < 1 + a + b := by grind
+theorem a_le_a_plus_b (a b : Nat) : a ≤ a + b := by grind
+theorem a_le_b_plus_a (a b : Nat) : a ≤ b + a := by grind
+
+
+-- set_option maxHeartbeats 1000000 in
 mutual
 
 theorem seIfStmt_domain_of_defined {c : ZKConfig} (gconf : GlobalConfig c) (sconf : SymExecConfig c)
@@ -5115,14 +5132,14 @@ theorem seIfStmt_domain_of_defined {c : ZKConfig} (gconf : GlobalConfig c) (scon
 termination_by (numOfLoopExpComs tb + numOfLoopExpComs eb, sizeOfComs tb + sizeOfComs eb)
 decreasing_by
   all_goals first
-  | (have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+  | (have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by exact a_le_a_plus_b (numOfLoopExpComs tb) (numOfLoopExpComs eb)
      rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
      · apply Prod.Lex.left
        exact h_less
      · rw [← h_equal]
        apply Prod.Lex.right
        exact sizeOfComs_a_lt_a_plus_b tb eb)
-  | (have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+  | (have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by exact a_le_b_plus_a (numOfLoopExpComs eb) (numOfLoopExpComs tb)
      rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
      · apply Prod.Lex.left
        exact h_less
@@ -5335,7 +5352,7 @@ decreasing_by
       rw [‹cmds = cmd :: rest›, ‹cmd = ComWithMD.mk md cmd'›]
     rw [hcmds_eq]
     have h1 : numOfLoopExpCom (ComWithMD.mk md cmd') ≤
-        numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by grind
+        numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by exact a_le_a_plus_b (numOfLoopExpCom (ComWithMD.mk md cmd')) (numOfLoopExpComs rest)
     rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
     · apply Prod.Lex.left
       simp only [numOfLoopExpComs]
@@ -5344,12 +5361,12 @@ decreasing_by
       rw [← h_equal]
       apply Prod.Lex.right
       simp only [sizeOfComs]
-      grind
+      exact a_lt_1_plus_a_plus_b (sizeOfCom (ComWithMD.mk md cmd')) (sizeOfComs rest)
   -- recursive call into seCmds_domain_of_defined itself, on `rest`
   · have hcmds_eq : cmds = ComWithMD.mk md cmd' :: rest := by
       rw [‹cmds = cmd :: rest›, ‹cmd = ComWithMD.mk md cmd'›]
     have h1 : numOfLoopExpComs rest ≤
-        numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by grind
+        numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by exact a_le_b_plus_a (numOfLoopExpComs rest) (numOfLoopExpCom (ComWithMD.mk md cmd'))
     rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
     · apply Prod.Lex.left
       rw [hcmds_eq]
@@ -5360,7 +5377,7 @@ decreasing_by
       rw [← h_equal]
       apply Prod.Lex.right
       simp only [sizeOfComs]
-      grind
+      exact a_lt_1_plus_b_plus_a (sizeOfComs rest) (sizeOfCom (ComWithMD.mk md cmd'))
 
 end
 
@@ -6274,6 +6291,14 @@ theorem seqComposition_correct {c : ZKConfig} (gconf : GlobalConfig c) (sconf : 
 -- ---------------------------------------------------------------------------
 
 
+theorem loop_unfold_size (a b : Nat) :
+   a < 1 + (b+1) * (1 + a) :=
+   by grind
+
+theorem loop_unfold_size' (a b : Nat) :
+1 + b * (1 + a) < 1 + (b+1) * (1 + a) :=
+   by grind
+
 mutual
 
 theorem seIfStmt_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
@@ -6874,9 +6899,9 @@ decreasing_by
   · apply Prod.Lex.left
     exact a_lt_1_plus_1 (numOfLoopExpComs body)
   · apply Prod.Lex.right
-    grind
+    apply loop_unfold_size
   · apply Prod.Lex.right
-    grind
+    apply loop_unfold_size'
 
 theorem seCmds_correct {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     (specs : List (FuncSpec c))
