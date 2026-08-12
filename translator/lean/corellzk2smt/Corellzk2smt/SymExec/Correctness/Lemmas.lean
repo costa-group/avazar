@@ -5056,6 +5056,15 @@ theorem a_lt_1_plus_a_plus_b (a b : Nat) : a < 1 + a + b := by grind
 theorem a_le_a_plus_b (a b : Nat) : a ≤ a + b := by grind
 theorem a_le_b_plus_a (a b : Nat) : a ≤ b + a := by grind
 
+theorem loop_unfold_size (a b : Nat) :
+   a < 1 + (b+1) * (1 + a) :=
+   by grind
+
+theorem loop_unfold_size' (a b : Nat) :
+1 + b * (1 + a) < 1 + (b+1) * (1 + a) :=
+   by grind
+
+
 
 -- set_option maxHeartbeats 1000000 in
 mutual
@@ -5286,9 +5295,11 @@ theorem seCmd_domain_of_defined {c : ZKConfig} (gconf : GlobalConfig c) (sconf :
       exact H_simple_domain sconf symEnv vars md (Com.copy_array out arr) hpre spec heq
 termination_by (numOfLoopExpCom (ComWithMD.mk md cmd), sizeOfCom (ComWithMD.mk md cmd))
 decreasing_by
-  all_goals first
-    | (simp only [numOfLoopExpCom]; apply Prod.Lex.left; grind)
-    | (apply Prod.Lex.right; simp only [sizeOfCom]; grind)
+  · (apply Prod.Lex.right; simp only [sizeOfCom]; simp [])
+  · (simp only [numOfLoopExpCom]; apply Prod.Lex.left; simp [])
+  · (apply Prod.Lex.right; simp only [sizeOfCom]; exact loop_unfold_size (sizeOfComs body) rep)
+  · (apply Prod.Lex.right; simp only [sizeOfCom]; exact loop_unfold_size' (sizeOfComs body) rep)
+
 
 theorem seCmds_domain_of_defined {c : ZKConfig} (gconf : GlobalConfig c) (sconf : SymExecConfig c)
     (symEnv : SymEnv c) (specs : List (FuncSpec c))
@@ -5863,19 +5874,19 @@ theorem seIfStmt_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c
             hspecs_wf hspecs_cover eb spec hspec_eq
 termination_by (numOfLoopExpComs tb + numOfLoopExpComs eb, sizeOfComs tb + sizeOfComs eb)
 decreasing_by
-  · have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+  · have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by exact a_le_a_plus_b (numOfLoopExpComs tb) (numOfLoopExpComs eb)
     rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
     · exact Prod.Lex.left _ _ h_less
     · rw [← h_equal]; exact Prod.Lex.right _ (sizeOfComs_a_lt_a_plus_b tb eb)
-  · have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+  · have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by exact a_le_b_plus_a (numOfLoopExpComs eb) (numOfLoopExpComs tb)
     rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
     · exact Prod.Lex.left _ _ h_less
     · rw [← h_equal, ← Nat.add_comm]; exact Prod.Lex.right _ (sizeOfComs_a_lt_a_plus_b eb tb)
-  · have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+  · have h1 : numOfLoopExpComs eb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by exact a_le_b_plus_a (numOfLoopExpComs eb) (numOfLoopExpComs tb)
     rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
     · exact Prod.Lex.left _ _ h_less
     · rw [← h_equal, ← Nat.add_comm]; exact Prod.Lex.right _ (sizeOfComs_a_lt_a_plus_b eb tb)
-  · have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by grind
+  · have h1 : numOfLoopExpComs tb ≤ numOfLoopExpComs tb + numOfLoopExpComs eb := by exact a_le_a_plus_b (numOfLoopExpComs tb) (numOfLoopExpComs eb)
     rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
     · exact Prod.Lex.left _ _ h_less
     · rw [← h_equal]; exact Prod.Lex.right _ (sizeOfComs_a_lt_a_plus_b tb eb)
@@ -6015,18 +6026,18 @@ decreasing_by
   · simp only [numOfLoopExpCom]
     apply Prod.Lex.right
     simp only [sizeOfCom]
-    grind
+    simp [Nat.add_assoc]
   · simp only [numOfLoopExpCom]
     apply Prod.Lex.left
-    grind
+    simp []
   · simp only [numOfLoopExpCom]
     apply Prod.Lex.right
     simp only [sizeOfCom]
-    grind
+    exact loop_unfold_size (sizeOfComs body) rep
   · simp only [numOfLoopExpCom]
     apply Prod.Lex.right
     simp only [sizeOfCom]
-    grind
+    exact loop_unfold_size' (sizeOfComs body) rep
 
 theorem seCmds_names_below {c : ZKConfig} (gconf : GlobalConfig c) (p : Prog c)
     (badName : String) (hunreach : ∀ r, fetchFunc p badName ≠ Except.ok r)
@@ -6073,7 +6084,7 @@ termination_by (numOfLoopExpComs cmds, sizeOfComs cmds)
 decreasing_by
   · have h1 : numOfLoopExpCom (ComWithMD.mk md cmd') ≤
         numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by
-      grind
+      exact a_le_a_plus_b (numOfLoopExpCom (ComWithMD.mk md cmd')) (numOfLoopExpComs rest)
     rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
     · apply Prod.Lex.left
       simp only [numOfLoopExpComs]
@@ -6082,10 +6093,10 @@ decreasing_by
       rw [← h_equal]
       apply Prod.Lex.right
       simp only [sizeOfComs]
-      grind
+      exact a_lt_1_plus_a_plus_b (sizeOfCom (ComWithMD.mk md cmd')) (sizeOfComs rest)
   · have h1 : numOfLoopExpComs rest ≤
         numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by
-      grind
+      exact a_le_b_plus_a (numOfLoopExpComs rest) (numOfLoopExpCom (ComWithMD.mk md cmd'))
     rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
     · apply Prod.Lex.left
       simp only [numOfLoopExpComs]
@@ -6094,7 +6105,7 @@ decreasing_by
       rw [← h_equal]
       apply Prod.Lex.right
       simp only [sizeOfComs]
-      grind
+      exact a_lt_1_plus_b_plus_a (sizeOfComs rest) (sizeOfCom (ComWithMD.mk md cmd'))
 end
 
 
@@ -6291,13 +6302,6 @@ theorem seqComposition_correct {c : ZKConfig} (gconf : GlobalConfig c) (sconf : 
 -- ---------------------------------------------------------------------------
 
 
-theorem loop_unfold_size (a b : Nat) :
-   a < 1 + (b+1) * (1 + a) :=
-   by grind
-
-theorem loop_unfold_size' (a b : Nat) :
-1 + b * (1 + a) < 1 + (b+1) * (1 + a) :=
-   by grind
 
 mutual
 
@@ -7032,7 +7036,8 @@ decreasing_by
   · have hcmds_eq : cmds = ComWithMD.mk md cmd' :: rest := by
       rw [‹cmds = cmd :: rest›, ‹cmd = ComWithMD.mk md cmd'›]
     have h1 : numOfLoopExpCom (ComWithMD.mk md cmd') ≤
-        numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by grind
+        numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest :=
+        by exact a_le_a_plus_b (numOfLoopExpCom (ComWithMD.mk md cmd')) (numOfLoopExpComs rest)
     rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
     · apply Prod.Lex.left
       simp only [numOfLoopExpComs]
@@ -7041,12 +7046,13 @@ decreasing_by
       rw [← h_equal]
       apply Prod.Lex.right
       simp only [sizeOfComs]
-      grind
+      exact a_lt_1_plus_a_plus_b (sizeOfCom (ComWithMD.mk md cmd')) (sizeOfComs rest)
   -- recursive call into seCmds_correct itself, on `rest`
   · have hcmds_eq : cmds = ComWithMD.mk md cmd' :: rest := by
       rw [‹cmds = cmd :: rest›, ‹cmd = ComWithMD.mk md cmd'›]
     have h1 : numOfLoopExpComs rest ≤
-        numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by grind
+        numOfLoopExpCom (ComWithMD.mk md cmd') + numOfLoopExpComs rest := by
+        exact a_le_b_plus_a (numOfLoopExpComs rest) (numOfLoopExpCom (ComWithMD.mk md cmd'))
     rcases Nat.lt_or_eq_of_le h1 with h_less | h_equal
     · apply Prod.Lex.left
       simp only [numOfLoopExpComs]
@@ -7055,7 +7061,7 @@ decreasing_by
       rw [← h_equal]
       apply Prod.Lex.right
       simp only [sizeOfComs]
-      grind
+      exact a_lt_1_plus_b_plus_a (sizeOfComs rest) (sizeOfCom (ComWithMD.mk md cmd'))
 
 end
 
