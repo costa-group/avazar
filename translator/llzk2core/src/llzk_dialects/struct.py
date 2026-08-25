@@ -22,7 +22,7 @@ from typing import List, Optional, Tuple, Generator
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, GlobalVariable, Type,
-    TranslationContext, ParseFn, LoopIndexedName,
+    TranslationContext, ParseFn,
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
@@ -166,12 +166,11 @@ def _annotate_array_component_reads(ops, array_member_base, const_map, pod_to_me
         without leaking sideways between sibling branches that may reuse
         the same SSA names, e.g. two scf.for loops in the same function
         both using "%arg1" as their induction variable).
-      - LoopIndexedName(base) when it doesn't — the read sits inside a
-        genuine runtime loop (e.g. an scf.while's after-body), so there is
-        no single instance to name here. SCFFor/SCFWhile.to_core unrolls
-        such a loop (see _contains_function_call) and resolves this into
-        "{base}#{i}" per iteration via ctx.unroll_index; if the loop is
-        somehow not unrolled, it resolves to the bare base name instead.
+      - the bare base name when it doesn't — the read sits inside a genuine
+        runtime loop (e.g. an scf.while's after-body), so there is no
+        single instance to name more specifically at translation time (any
+        further per-iteration disambiguation is resolved afterwards by
+        llzk_cli).
 
     _annotate_function_calls then picks up these entries exactly like the
     scalar-subcomponent ones already in pod_to_member.
@@ -187,7 +186,7 @@ def _annotate_array_component_reads(ops, array_member_base, const_map, pod_to_me
             base = array_member_base[op.arr_ref.name]
             idx_val = local_const_map.get(op.indices[0].name)
             pod_to_member[op._result.name] = (
-                f"{base}_{idx_val}" if idx_val is not None else LoopIndexedName(base)
+                f"{base}_{idx_val}" if idx_val is not None else base
             )
 
         for attr in ('body', 'then_body', 'else_body', 'before_body', 'after_body'):
@@ -210,10 +209,8 @@ def _annotate_input_array_reads(ops, ctx, const_map):
     actually varies per iteration. Trusting that here would misattribute a
     genuinely symbolic loop index (e.g. ternary_concrete.mlir's
     Num2Bits_16_325, instantiated inside a real scf.while) to one specific
-    instance instead of leaving it as LoopIndexedName(member) — resolved by
-    ArrayRead.to_core into "{member}#{i}" per iteration if SCFFor/SCFWhile
-    unrolls that loop (see _contains_function_call), or the bare member
-    name otherwise.
+    instance instead of leaving it as the bare member name — there is no
+    single instance to name more specifically at translation time.
     """
     from llzk_dialects.array import ArrayRead
 
@@ -225,7 +222,7 @@ def _annotate_input_array_reads(ops, ctx, const_map):
             member = ctx.input_pod_to_member.get(op.arr_ref.name)
             if member is not None:
                 idx_val = local_const_map.get(op.indices[0].name)
-                op._semantic_base = f"{member}_{idx_val}" if idx_val is not None else LoopIndexedName(member)
+                op._semantic_base = f"{member}_{idx_val}" if idx_val is not None else member
 
         for attr in ('body', 'then_body', 'else_body', 'before_body', 'after_body'):
             sub = getattr(op, attr, None)
@@ -252,12 +249,12 @@ def _build_component_naming_maps(body, ctx):
     Array-of-component members (see _find_array_component_bases) reuse the
     same pod_to_member map from part 2, keyed by a read of the counting-pod
     array — "last_0" (a plain string) for a compile-time-constant index
-    (matching a scalar subcomponent's own naming), or LoopIndexedName(base)
-    when the read sits inside a genuine runtime loop (index not constant).
-    SCFFor/SCFWhile.to_core unrolls such a loop (see _contains_function_call
-    in scf.py) precisely so this resolves to "Num2Bits_16_325#0",
-    "Num2Bits_16_325#1", etc. per iteration, instead of one bare name shared
-    by every call.
+    (matching a scalar subcomponent's own naming), or the bare base name
+    (e.g. "Num2Bits_16_325") when the read sits inside a genuine runtime
+    loop (index not constant) — there is no single instance to name more
+    specifically at translation time; every call inside such a loop shares
+    that one bare name, with any further per-iteration disambiguation
+    resolved afterwards by llzk_cli.
     """
     from llzk_dialects.scf import SCFWhile
     from llzk_dialects.pod import PodRead
@@ -328,7 +325,7 @@ def _build_component_naming_maps(body, ctx):
     # --- Part 2b: array-of-component members ---
     # A read of a counting-pod array that backs an array-of-component member
     # is named like a scalar subcomponent: "last_0" when the index is a
-    # compile-time constant, or LoopIndexedName(base) when it isn't (a read
+    # compile-time constant, or the bare base name when it isn't (a read
     # inside a genuine runtime loop, e.g. an scf.while's after-body) — see
     # _annotate_array_component_reads.
     array_member_base = _find_array_component_bases(body)

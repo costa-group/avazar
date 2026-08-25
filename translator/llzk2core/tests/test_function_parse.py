@@ -1,6 +1,6 @@
 import pytest
 from llzk_dialects.function import FunctionReturn, FunctionCall, FunctionDef
-from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext, LoopIndexedName
+from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.felt import FeltConst, FeltBinary
 
 
@@ -80,7 +80,7 @@ class TestFunction:
         assert FunctionCall.match("function.call @f(%x)") is True
         assert FunctionCall.match("function.return") is False
 
-    # ── FunctionCall.to_core — LoopIndexedName resolution ────────────────────
+    # ── FunctionCall.to_core — bare member-hint naming ───────────────────────
 
     def _call_ctx(self):
         ctx = TranslationContext()
@@ -88,29 +88,17 @@ class TestFunction:
         ctx.core_func2args["Sub"] = ([], [("@out", Type("!felt.type"))])
         return ctx
 
-    def test_call_to_core_loop_indexed_hint_not_unrolled(self):
-        # _member_hint is a LoopIndexedName when the component array this
-        # call feeds was read at a non-constant index (struct.py's
-        # _annotate_array_component_reads). If the enclosing loop wasn't
-        # unrolled (ctx.unroll_index is None), it resolves to the bare name.
+    def test_call_to_core_member_hint_non_constant_index(self):
+        # _member_hint is the bare member name when the component array
+        # this call feeds was read at a non-constant index (struct.py's
+        # _annotate_array_component_reads) — there's no single instance to
+        # name more specifically at translation time.
         op = FunctionCall.parse("%r = function.call @Sub(%x)")
-        op._member_hint = LoopIndexedName("last")
+        op._member_hint = "last"
         ctx = self._call_ctx()
         lines = list(op.to_core(ctx))
         assert lines == ["call Sub(%x) to last.out"]
         assert ctx.ssa_to_name["%r_@out"] == "last.out"
-
-    def test_call_to_core_loop_indexed_hint_unrolled(self):
-        # SCFFor/SCFWhile.to_core sets ctx.unroll_index while translating
-        # the current copy of a loop it unrolled (because the loop body
-        # contains this very call) — the hint resolves to "last#2".
-        op = FunctionCall.parse("%r = function.call @Sub(%x)")
-        op._member_hint = LoopIndexedName("last")
-        ctx = self._call_ctx()
-        ctx.unroll_index = 2
-        lines = list(op.to_core(ctx))
-        assert lines == ["call Sub(%x) to last#2.out"]
-        assert ctx.ssa_to_name["%r_@out"] == "last#2.out"
 
     # ── FunctionCall.to_core — pure function callee (no struct.def) ──────────
 

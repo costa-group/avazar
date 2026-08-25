@@ -1,6 +1,6 @@
 import pytest
 from llzk_dialects.array import ArrayNew, ArrayRead, ArrayWrite, ArrayExtract, ArrayInsert, ArrayLen
-from llzk_dialects.core import SSAVar, Type, TranslationContext, LoopIndexedName
+from llzk_dialects.core import SSAVar, Type, TranslationContext
 from llzk_dialects.utils import array_felt_dimensions, array_felt_first_dimension, array_dimensions
 
 
@@ -386,39 +386,22 @@ class TestArrayToCore:
         # SSA-derived name must alias to the semantic one too.
         assert ctx.ssa_to_name["%v_@in1_last"] == "last_0.in1_last"
 
-    def test_read_to_core_pod_semantic_naming_loop_indexed_not_unrolled(self):
+    def test_read_to_core_pod_semantic_naming_non_constant_index(self):
         # A registered component array whose index isn't a compile-time
-        # constant (a real runtime loop variable) gets a LoopIndexedName
-        # from the pre-pass. If the enclosing loop wasn't unrolled
-        # (ctx.unroll_index is None — no function.call inside it, so it
-        # stayed a plain "repeat"), it resolves to the bare member name.
+        # constant (a real runtime loop variable) gets the bare member name
+        # from the pre-pass — there's no single instance to name more
+        # specifically at translation time (any further per-iteration
+        # disambiguation is resolved afterwards by llzk_cli).
         op = ArrayRead.parse(
             "%v = array.read %arr [%i]"
             " : !array.type<2 x !pod.type<[@in1_last: !felt.type<\"bn128\">]>>,"
             " !pod.type<[@in1_last: !felt.type<\"bn128\">]>"
         )
-        op._semantic_base = LoopIndexedName("last")
+        op._semantic_base = "last"
         ctx = self._ctx()
         lines = list(op.to_core(ctx))
         assert lines == ["array.read %arr_@in1_last[%i] last.in1_last"]
         assert ctx.ssa2pod_var["%v"]["@in1_last"][0] == "last.in1_last"
-
-    def test_read_to_core_pod_semantic_naming_loop_indexed_unrolled(self):
-        # Same LoopIndexedName, but the enclosing loop *was* unrolled
-        # (SCFFor/SCFWhile.to_core set ctx.unroll_index for this copy of the
-        # loop's body because it contains a function.call) — resolves to
-        # "last#3", matching the naming a scalar subcomponent would get.
-        op = ArrayRead.parse(
-            "%v = array.read %arr [%i]"
-            " : !array.type<2 x !pod.type<[@in1_last: !felt.type<\"bn128\">]>>,"
-            " !pod.type<[@in1_last: !felt.type<\"bn128\">]>"
-        )
-        op._semantic_base = LoopIndexedName("last")
-        ctx = self._ctx()
-        ctx.unroll_index = 3
-        lines = list(op.to_core(ctx))
-        assert lines == ["array.read %arr_@in1_last[%i] last#3.in1_last"]
-        assert ctx.ssa2pod_var["%v"]["@in1_last"][0] == "last#3.in1_last"
 
     # ── ArrayRead — pod nested inside pod (pod-in-pod) ────────────────────────
     # Regression: a nested (non-empty) pod field extracted from an array of

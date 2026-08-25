@@ -9,11 +9,11 @@ Operations:
 """
 
 import re
-from typing import List, Optional, Tuple, Dict, Generator, Union
+from typing import List, Optional, Tuple, Dict, Generator
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, GlobalVariable, Type,
-    TranslationContext, ParseFn, LoopIndexedName,
+    TranslationContext, ParseFn,
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.core_utils import signature_args
@@ -133,11 +133,10 @@ class FunctionCall(Operation):
         self.args = args
         self.func_type = func_type
         # Set by the pre-pass in _build_component_naming_maps; None until
-        # then. A LoopIndexedName means the component array this call feeds
-        # was read at a non-constant index — resolved in to_core below via
-        # ctx.unroll_index if SCFFor/SCFWhile unrolled the enclosing loop
-        # (see scf.py's _contains_function_call), else left bare.
-        self._member_hint: Optional[Union[str, LoopIndexedName]] = None
+        # then, or the bare member name when the component array this call
+        # feeds was read at a non-constant index (there's no single instance
+        # to name more specifically at translation time).
+        self._member_hint: Optional[str] = None
 
     def dialect(self) -> Dialect:
         return Dialect("function")
@@ -200,8 +199,6 @@ class FunctionCall(Operation):
 
         if is_struct_style:
             member = self._member_hint
-            if isinstance(member, LoopIndexedName):
-                member = member.resolve(ctx.unroll_index)
 
             if member:
                 out_var_names = []

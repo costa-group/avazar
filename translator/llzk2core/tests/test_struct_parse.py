@@ -10,7 +10,7 @@ from llzk_dialects.scf import SCFIf, SCFFor
 from llzk_dialects.array import ArrayRead, ArrayWrite
 from llzk_dialects.arith import ArithConst
 from llzk_dialects.cast import CastToIndex
-from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext, LoopIndexedName
+from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.felt import FeltConst
 
 
@@ -361,14 +361,14 @@ class TestAnnotateArrayComponentReads:
         _annotate_array_component_reads([const, cast, read], {"%array": "last"}, {}, pod_to_member)
         assert pod_to_member["%8"] == "last_0"
 
-    def test_non_constant_index_gets_loop_indexed_name(self):
+    def test_non_constant_index_gets_bare_name(self):
         # %arg4 is never folded to a constant anywhere — a genuine loop var.
-        # SCFFor/SCFWhile.to_core resolves this into "Num2Bits_16_325#i" if
-        # it unrolls the enclosing loop, or the bare name otherwise.
+        # There's no single instance to name more specifically at
+        # translation time, so this resolves to the bare base name.
         read = ArrayRead(SSAVar("%15"), SSAVar("%array"), [SSAVar("%arg4")], [])
         pod_to_member = {}
         _annotate_array_component_reads([read], {"%array": "Num2Bits_16_325"}, {}, pod_to_member)
-        assert pod_to_member["%15"] == LoopIndexedName("Num2Bits_16_325")
+        assert pod_to_member["%15"] == "Num2Bits_16_325"
 
     def test_recurses_into_nested_body_using_inherited_constants(self):
         const = FeltConst(SSAVar("%c1"), 1)
@@ -464,14 +464,13 @@ class TestBuildComponentNamingMapsArrays:
         assert call_0._member_hint == "last_0"
         assert call_1._member_hint == "last_1"
 
-    def test_symbolic_loop_index_uses_loop_indexed_name(self):
+    def test_symbolic_loop_index_uses_bare_name(self):
         # Mirrors ternary_concrete.mlir's Num2Bits_16_325: subcomponents are
         # instantiated inside a real (scf.while-style) runtime loop, so the
-        # counting-array read's index is never a compile-time constant.
-        # SCFFor.to_core resolves this into "Num2Bits_16_325#i" per
-        # iteration when it unrolls this exact loop (it does, since the
-        # loop body contains a function.call — see scf.py's
-        # _contains_function_call).
+        # counting-array read's index is never a compile-time constant —
+        # there's no single instance to name more specifically at
+        # translation time, so every call inside the loop shares the bare
+        # member name.
         ctx = TranslationContext()
         loop, writem = self._bulk_copy_and_writem(member="@Num2Bits_16_325")
 
@@ -488,4 +487,4 @@ class TestBuildComponentNamingMapsArrays:
 
         _build_component_naming_maps(body, ctx)
 
-        assert call._member_hint == LoopIndexedName("Num2Bits_16_325")
+        assert call._member_hint == "Num2Bits_16_325"

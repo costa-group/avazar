@@ -1,9 +1,8 @@
 import pytest
 from llzk_dialects.scf import (
     SCFYield, SCFCondition, SCFIf, SCFExecuteRegion, SCFFor, SCFWhile,
-    _contains_function_call,
 )
-from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext, LoopIndexedName
+from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.felt import FeltConst, FeltBinary
 from llzk_dialects.bool import BoolCmp, BoolBinary
 from llzk_dialects.constrain import ConstrainEq
@@ -471,14 +470,14 @@ class TestSCF:
         # Induction variable is not in var2const after the loop.
         assert "%iv_f0" not in ctx.var2const
 
-    def test_for_to_core_unrolls_when_body_has_call(self):
-        # A body containing a function.call is unrolled into one literal
-        # copy per iteration instead of a single generic "repeat" block —
-        # so a subcomponent instantiated inside the loop can be named
-        # per-iteration (LoopIndexedName, resolved via ctx.unroll_index)
-        # instead of sharing one bare name across every iteration.
+    def test_for_to_core_repeat_when_body_has_call(self):
+        # A body containing a function.call translates exactly like a
+        # call-free body -- a single generic "repeat" block, never unrolled
+        # into per-iteration literal copies. Per-iteration subcomponent
+        # naming is no longer this translator's concern (resolved
+        # afterwards by llzk_cli).
         call = FunctionCall([SSAVar("%r")], GlobalVariable("@Sub"), [SSAVar("%iv")], None)
-        call._member_hint = LoopIndexedName("last")
+        call._member_hint = "last"
         op = SCFFor([], SSAVar("%iv"), SSAVar("%c0"), SSAVar("%c2"), SSAVar("%c1"), [], [call])
 
         ctx = TranslationContext()
@@ -491,14 +490,12 @@ class TestSCF:
         out = list(op.to_core(ctx))
         assert out == [
             "%iv = 0",
-            "call Sub(%iv) to last#0.out",
-            "%iv = 1",
-            "call Sub(%iv) to last#1.out",
+            "repeat 2 {",
+            "call Sub(%iv) to last.out",
+            "%iv = felt.add %iv 1",
+            "}",
         ]
-        assert not any("repeat" in line for line in out)
         assert "%iv" not in ctx.var2const
-        # ctx.unroll_index is restored after the loop.
-        assert ctx.unroll_index is None
 
     def test_for_to_core_missing_bound_raises(self):
         lines = [
@@ -587,8 +584,7 @@ class TestSCF:
         A minimal 2-iteration counting while loop (mirrors
         ternary_concrete.mlir's Num2Bits_16_325-instantiating loop, stripped
         to just the counter): %arg1 starts at 0, increments by 1 each pass,
-        stops once %arg1 >= 2. `call`, if given, is spliced into after_body
-        so _contains_function_call detects it.
+        stops once %arg1 >= 2. `call`, if given, is spliced into after_body.
         """
         after_body = [FeltConst(SSAVar("%c1"), 1)]
         if call is not None:
@@ -609,7 +605,7 @@ class TestSCF:
 
     def test_while_to_core_repeat_when_no_call(self):
         # No function.call in the body: translated once, wrapped in a Core
-        # "repeat" block (today's behavior, unaffected by unrolling).
+        # "repeat" block.
         op = self._counting_while()
         ctx = TranslationContext()
         ctx.var2const["%c0"] = 0
@@ -625,15 +621,15 @@ class TestSCF:
             "%cond = bool.lt %c2 %arg1",
             "}",
         ]
-        assert ctx.unroll_index is None
 
-    def test_while_to_core_unrolls_when_body_has_call(self):
-        # A call inside the after-body: unrolled into one literal copy per
-        # iteration (no "repeat" wrapper), each with its own resolved
-        # LoopIndexedName — mirrors ternary_concrete.mlir's
-        # Num2Bits_16_325, instantiated once per while-loop iteration.
+    def test_while_to_core_repeat_when_body_has_call(self):
+        # A call inside the after-body translates exactly like a call-free
+        # body -- a single generic "repeat" block, never unrolled into
+        # per-iteration literal copies. Per-iteration subcomponent naming is
+        # no longer this translator's concern (resolved afterwards by
+        # llzk_cli).
         call = FunctionCall([SSAVar("%r")], GlobalVariable("@Sub"), [SSAVar("%arg1")], None)
-        call._member_hint = LoopIndexedName("last")
+        call._member_hint = "last"
         op = self._counting_while(call=call)
 
         ctx = TranslationContext()
@@ -644,21 +640,15 @@ class TestSCF:
         out = list(op.to_core(ctx))
         assert out == [
             "%arg1 = %c0",
+            "repeat 2 {",
             "%c1 = 1",
-            "call Sub(%arg1) to last#0.out",
+            "call Sub(%arg1) to last.out",
             "%next = felt.add %arg1 %c1",
             "%arg1 = %next",
             "%c2 = 2",
             "%cond = bool.lt %c2 %arg1",
-            "%c1 = 1",
-            "call Sub(%arg1) to last#1.out",
-            "%next = felt.add %arg1 %c1",
-            "%arg1 = %next",
-            "%c2 = 2",
-            "%cond = bool.lt %c2 %arg1",
+            "}",
         ]
-        assert not any("repeat" in line for line in out)
-        assert ctx.unroll_index is None
 
     def test_while_to_core_reassigned_array_loop_carried_value_uses_array_copy(self):
         # Regression test (ternary_modified_concrete.mlir): an array-typed
@@ -806,12 +796,15 @@ class TestSCF:
         assert out[1] == "repeat 4 {"
         assert not any("steps" in line for line in out)
 
-    def test_while_to_core_symbolic_steps_raises_when_body_has_call(self):
-        # A symbolic count can't drive a Python "for i in range(steps)"
-        # unroll -- exactly the wall escalarmulw4table_concrete.mlir's while
-        # (whose body calls pointAdd_1) hits.
+    def test_while_to_core_symbolic_steps_repeat_when_body_has_call(self):
+        # A symbolic count now drives "repeat %steps_N { ... }" exactly like
+        # a call-free body would -- there is no more unroll path that would
+        # need a concrete Python int to know how many literal copies to
+        # emit, so a body containing a function.call (e.g.
+        # escalarmulw4table_concrete.mlir's while, which calls pointAdd_1)
+        # no longer raises.
         call = FunctionCall([SSAVar("%r")], GlobalVariable("@Sub"), [SSAVar("%arg1")], None)
-        call._member_hint = LoopIndexedName("last")
+        call._member_hint = "last"
         before_body = [
             BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg1"), SSAVar("%extern")),
             SCFCondition(SSAVar("%cond"), [SSAVar("%arg1")], [Type("index")]),
@@ -831,116 +824,10 @@ class TestSCF:
         ctx.llzk_func2core["@Sub"] = "Sub"
         ctx.core_func2args["Sub"] = ([], [("@out", Type("!felt.type"))])
 
-        with pytest.raises(NotImplementedError):
-            list(op.to_core(ctx))
-
-    # ── Tied nested loops (babypbk_test_concrete.mlir regression) ────────────
-    #
-    # Mirrors babypbk_test_concrete.mlir lines 6274-6379: an outer scf.while
-    # (2 concrete iterations) whose body picks a per-iteration constant via
-    # scf.if, derives a bound from it via plain felt arithmetic, and feeds
-    # that bound to an inner scf.while whose own body contains a
-    # function.call. Before the fix: %sel's scf.if-computed value always
-    # resolved to the else branch's constant regardless of the outer
-    # iteration, felt.mul never folded it further, and the inner while's
-    # symbolic bound + function.call combination raised NotImplementedError.
-
-    def test_nested_while_bound_resolves_per_outer_iteration(self):
-        def make_inner_while():
-            call = FunctionCall([SSAVar("%cr")], GlobalVariable("@Sub"), [SSAVar("%iarg")], None)
-            call._member_hint = LoopIndexedName("last")
-            inner_before = [
-                BoolCmp(SSAVar("%icond2"), "lt", SSAVar("%iarg"), SSAVar("%bound")),
-                SCFCondition(SSAVar("%icond2"), [SSAVar("%iarg")], [Type("!felt.type")]),
-            ]
-            inner_after = [
-                call,
-                FeltConst(SSAVar("%ione"), 1),
-                FeltBinary(SSAVar("%inext"), "felt.add", SSAVar("%iarg"), SSAVar("%ione"), []),
-                SCFYield([SSAVar("%inext")], [Type("!felt.type")]),
-            ]
-            return SCFWhile(
-                [], [(SSAVar("%iarg"), SSAVar("%izero"))],
-                [[Type("!felt.type")], [Type("!felt.type")]],
-                inner_before, [(SSAVar("%iarg"), Type("!felt.type"))], inner_after,
-            )
-
-        def make_outer_while():
-            sel_then = [FeltConst(SSAVar("%c10"), 10), SCFYield([SSAVar("%c10")], [Type("!felt.type")])]
-            sel_else = [FeltConst(SSAVar("%c3"), 3), SCFYield([SSAVar("%c3")], [Type("!felt.type")])]
-            sel_if = SCFIf([SSAVar("%sel")], SSAVar("%icond"), [Type("!felt.type")],
-                           sel_then, sel_else)
-
-            outer_before = [
-                FeltConst(SSAVar("%otwo"), 2),
-                BoolCmp(SSAVar("%ocond"), "lt", SSAVar("%oarg"), SSAVar("%otwo")),
-                SCFCondition(SSAVar("%ocond"), [SSAVar("%oarg")], [Type("!felt.type")]),
-            ]
-            outer_after = [
-                FeltConst(SSAVar("%oone"), 1),
-                BoolCmp(SSAVar("%icond"), "lt", SSAVar("%oarg"), SSAVar("%oone")),
-                sel_if,
-                FeltConst(SSAVar("%othree"), 3),
-                FeltBinary(SSAVar("%bound"), "felt.mul", SSAVar("%sel"), SSAVar("%othree"), []),
-                FeltConst(SSAVar("%izero"), 0),
-                make_inner_while(),
-                FeltConst(SSAVar("%oc1"), 1),
-                FeltBinary(SSAVar("%onext"), "felt.add", SSAVar("%oarg"), SSAVar("%oc1"), []),
-                SCFYield([SSAVar("%onext")], [Type("!felt.type")]),
-            ]
-            return SCFWhile(
-                [], [(SSAVar("%oarg"), SSAVar("%oc0"))],
-                [[Type("!felt.type")], [Type("!felt.type")]],
-                outer_before, [(SSAVar("%oarg"), Type("!felt.type"))], outer_after,
-            )
-
-        op = make_outer_while()
-        ctx = TranslationContext()
-        ctx.var2const["%oc0"] = 0
-        ctx.llzk_func2core["@Sub"] = "Sub"
-        ctx.core_func2args["Sub"] = ([], [("@out", Type("!felt.type"))])
-
-        out = list(op.to_core(ctx))  # must not raise NotImplementedError
-
-        # Iteration 0 (%oarg=0 < 1 -> %sel=10 -> %bound=30) and iteration 1
-        # (%oarg=1, not < 1 -> %sel=3 -> %bound=9): the inner while contains
-        # a call, so each outer iteration unrolls it into %bound literal
-        # copies of the inner body -- 30 then 9, never the same count twice,
-        # and never silently frozen at whichever value the first outer
-        # iteration (or the else branch, per the pre-fix bug) computed.
-        assert "%sel = %c10" in out
-        assert "%sel = %c3" in out
-        assert "%bound = felt.mul %sel %othree" in out
-        # Each outer iteration restarts the inner while's own %iarg at 0.
-        assert out.count("%iarg = %izero") == 2
-        inner_iteration_count = out.count("%inext = felt.add %iarg %ione")
-        assert inner_iteration_count == 30 + 9
-        # Not the "always resolves to the else branch's value" pre-fix bug,
-        # which would have produced 2 outer iterations both unrolling by 9
-        # (the else branch's %sel=3 -> %bound=9), i.e. 18 total.
-        assert inner_iteration_count not in (2 * 9, 2 * 30)
-
-    def test_while_extract_step_reused_instance_does_not_leak_stale_resolution(self):
-        # Guards the memoization added to SCFWhile._structural_analysis:
-        # reusing the SAME SCFWhile instance's cached var2expression across
-        # two separate to_core calls (standing in for two outer-loop
-        # iterations during unrolling) must resolve each call's own free
-        # variable independently -- not leak the first call's resolved
-        # value into the second. Confirmed by direct repro that reusing the
-        # same (mutated-in-place) dict object across calls gives "4" for
-        # BOTH a %bound=4 and a %bound=7 call; a fresh copy per call
-        # correctly gives 4 then 7.
-        op = self._external_bound_while(predicate="lt", cursor=42, bound_name="%bound")
-
-        ctx0 = TranslationContext()
-        ctx0.var2const["%c0"] = 0
-        ctx0.var2const["%bound"] = 4
-        assert list(op.to_core(ctx0))[1] == "repeat 4 {"
-
-        ctx1 = TranslationContext()
-        ctx1.var2const["%c0"] = 0
-        ctx1.var2const["%bound"] = 7
-        assert list(op.to_core(ctx1))[1] == "repeat 7 {"
+        out = list(op.to_core(ctx))  # must not raise
+        assert out[0] == "%arg1 = %c0"
+        assert any(line.startswith("repeat %steps_") for line in out)
+        assert "call Sub(%arg1) to last.out" in out
 
     def test_while_to_core_bool_and_condition_takes_min(self):
         # A condition of the form bool.and(arg1 < 5, arg1 < 3): the loop
@@ -970,36 +857,6 @@ class TestSCF:
 
         out = list(op.to_core(ctx))
         assert out[1] == "repeat 3 {"
-
-    # ── _contains_function_call ──────────────────────────────────────────────
-
-    def test_contains_call_flat(self):
-        call = FunctionCall([], GlobalVariable("@f"), [], None)
-        assert _contains_function_call([call]) is True
-
-    def test_contains_call_absent(self):
-        assert _contains_function_call([FeltConst(SSAVar("%c"), 1)]) is False
-
-    def test_contains_call_nested_in_if(self):
-        call = FunctionCall([], GlobalVariable("@f"), [], None)
-        inner_if = SCFIf([], SSAVar("%cond"), [], [call], None)
-        assert _contains_function_call([inner_if]) is True
-
-    def test_contains_call_nested_in_for(self):
-        call = FunctionCall([], GlobalVariable("@f"), [], None)
-        loop = SCFFor([], SSAVar("%iv"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"), [], [call])
-        assert _contains_function_call([loop]) is True
-
-    def test_contains_call_nested_in_while_after_body(self):
-        call = FunctionCall([], GlobalVariable("@f"), [], None)
-        while_op = SCFWhile([], [], [[], []], [SCFCondition(SSAVar("%c"), [], [])], [], [call])
-        assert _contains_function_call([while_op]) is True
-
-    def test_contains_call_sibling_branch_without_call_is_false(self):
-        # A call in one sibling branch must not make an unrelated, call-free
-        # branch report True.
-        other_if = SCFIf([], SSAVar("%cond"), [], [FeltConst(SSAVar("%c"), 1)], None)
-        assert _contains_function_call([other_if]) is False
 
     # ── Block-arg name collisions across sibling/nested while/for occurrences ─
     #
