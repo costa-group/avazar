@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 from typing import List
+from execution.signal_renaming import process_components
 from llzk_dialects.parser import LLZKParser
 from llzk_dialects.arith import ArithDialect
 from llzk_dialects.array import ArrayDialect
@@ -88,5 +89,8 @@ def main(args: argparse.Namespace):
         for macro in smt_json["macros"]:
             smt_json["macros"][macro]["components_info"] = translation_context.member_to_struct.get(macro, dict())
 
+    # We also add the variable information for loops
+    modified_smt_json = process_components(smt_json)
+
     with open(smt2_json_path, 'w') as f:
-        json.dump(smt_json, f, indent=4)
+        json.dump(modified_smt_json, f, indent=4)
