@@ -306,6 +306,23 @@ class FunctionDef(BlockOperation):
         # share the same signature (in particular, out_args are usually public
         # struct members — but for a "pure" function with no struct.def
         # wrapping it, they're just its own function.return operand names).
+
+        # A function body is LLZK's own IsolatedFromAbove scope boundary --
+        # SSA numbers (e.g. "%5") are only meaningful within one function and
+        # restart from low integers in every function. ctx.ssa2pod_var and
+        # ctx.var2const are flat, whole-translation dicts keyed by these bare
+        # strings; without clearing them here, a leftover entry from an
+        # earlier, unrelated function's own "%5" silently corrupts this
+        # function's translation the moment it reuses the same name for a
+        # different value (confirmed via pedersen_test_concrete.mlir: two
+        # unrelated structs' @compute both used "%5"/"%2#1" for differently-
+        # shaped pods, and the second one's read crashed on the first one's
+        # stale registration). ctx.ssa_to_name/ctx.input_pod_to_member don't
+        # need the same treatment here -- struct.py's StructDef.to_core
+        # already clears those around each struct's own compute.
+        ctx.ssa2pod_var.clear()
+        ctx.var2const.clear()
+
         core_name = ctx.current_core_function
         in_args, out_args = ctx.core_func2args[core_name]
 

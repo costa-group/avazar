@@ -2,6 +2,7 @@ import pytest
 from llzk_dialects.function import FunctionReturn, FunctionCall, FunctionDef
 from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.felt import FeltConst, FeltBinary
+from llzk_dialects.pod import PodNew, PodRead
 
 
 class TestFunction:
@@ -197,3 +198,46 @@ class TestFunction:
         )
         out = ''.join(op.to_core(ctx))
         assert "def @pointAdd_1(%arg0: ff) -> %nondet: arr<2> {" in out
+
+    # ── FunctionDef.to_core — cross-function scope leak ──────────────────────
+
+    def test_to_core_clears_stale_ssa2pod_var_and_var2const_from_a_prior_function(self):
+        # Regression: pedersen_test_concrete.mlir crashed with
+        # KeyError: '@in' inside PodRead.to_core. Root cause: LLZK/MLIR SSA
+        # numbers restart from %0/%1/... in every function, but
+        # ctx.ssa2pod_var/ctx.var2const are flat, whole-translation dicts
+        # that were never cleared between functions (unlike
+        # ctx.ssa_to_name/ctx.input_pod_to_member, which struct.py's
+        # StructDef.to_core already clears around each struct's own
+        # compute). Two unrelated structs' own @compute bodies each used
+        # "%5" for a differently-shaped pod; the second one's pod.read
+        # crashed on the first one's stale, still-live registration.
+        pod_new = PodNew.parse(
+            '%5 = pod.new {@in = %x} : !pod.type<[@in: !felt.type]>'
+        )
+        pod_read = PodRead.parse(
+            '%6 = pod.read %5 [@in] : !pod.type<[@in: !felt.type]>, !felt.type'
+        )
+        func_return = FunctionReturn.parse('function.return %6 : !felt.type')
+        op = FunctionDef(
+            GlobalVariable.parse("@f"), "%x: !felt.type -> !felt.type",
+            [pod_new, pod_read, func_return],
+        )
+
+        ctx = TranslationContext()
+        ctx.current_core_function = "@f"
+        ctx.core_func2args["@f"] = (
+            [("%x", Type("!felt.type"))], [("%6", Type("!felt.type"))]
+        )
+        # Simulate a PRIOR, unrelated function's leftover state under the
+        # exact same bare SSA name this function also happens to reuse.
+        ctx.ssa2pod_var["%5"] = {"@count": ("%5_@count", Type("index"))}
+        ctx.var2const["%5"] = 999
+
+        out = ''.join(op.to_core(ctx))
+
+        # previously: KeyError on "@in" (the stale "%5" entry only had
+        # "@count", not "@in") -- now the pod.new's own fresh registration
+        # is used instead.
+        assert "%6 = %5_@in" in out
+        assert "%5" not in ctx.var2const
