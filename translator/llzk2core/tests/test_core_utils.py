@@ -8,8 +8,9 @@ from llzk_dialects.core_utils import (
     _collect_free_var_names,
     _detect_affine_step,
     _combine_min_steps,
+    translate_assignment_core_with_ctx,
 )
-from llzk_dialects.core import SSAVar
+from llzk_dialects.core import SSAVar, Type, TranslationContext
 from llzk_dialects.felt import FeltConst, FeltBinary
 from llzk_dialects.bool import BoolCmp, BoolBinary
 
@@ -318,3 +319,87 @@ class TestBoolAndCondition:
         symbolic = SymbolicSteps([], SSAVar("%bound"), 0, "lt", True)
         with pytest.raises(NotImplementedError):
             _combine_min_steps(5, symbolic)
+
+
+class TestAssignPodVarsTypeDriven:
+    """
+    translate_assignment_core_with_ctx's "Assign pod vars" branch must
+    flatten a pod-typed assignment all the way to real leaf storage even
+    when neither side is already a registered ctx.ssa2pod_var key --
+    dispatch is driven by type_ itself (mirroring the !struct.type branch
+    just above it in the same function), not by pre-existing registration.
+
+    Mirrors the poseidon3_test_concrete.mlir shape that produced a broken
+    .core file (llzk_cli: "Variable '...#1_@idx_0' not found"): a
+    scf.if/else cascade re-assigns a pod one level at a time, and some
+    branches mint a fresh pod-typed name (via this same branch's own
+    recursive `dest` derivation) that is itself never pre-registered before
+    being copied again one level up. See DECISIONS.md for why the fix
+    dispatches on type_ rather than on registration.
+    """
+
+    def _ctx_with_ark_struct(self):
+        ctx = TranslationContext()
+        # A minimal stand-in for @Ark_0::@Ark_0's registered @compute
+        # signature -- a single array-typed output "@out" (the real Ark_0
+        # emits a 3-element felt array), matching the real shape's
+        # !struct.type<@Ark_0::@Ark_0<[]>> @comp field.
+        ctx.llzk_func2core["@Ark_0::@Ark_0::@compute"] = "Ark_0"
+        ctx.core_func2args["Ark_0"] = (
+            [], [("@out", Type("!array.type<3 x !felt.type<\"bn128\">>"))]
+        )
+        return ctx
+
+    def _nested_pod_type(self):
+        # Matches the real crashing shape exactly: @count (scalar),
+        # @comp (a struct), @params (an empty pod -- contributes no leaves).
+        return Type(
+            "!pod.type<[@count: index, "
+            "@comp: !struct.type<@Ark_0::@Ark_0<[]>>, "
+            "@params: !pod.type<[]>]>"
+        )
+
+    def test_flattens_fully_even_when_neither_side_is_pre_registered(self):
+        ctx = self._ctx_with_ark_struct()
+        type_ = self._nested_pod_type()
+
+        result = translate_assignment_core_with_ctx(
+            SSAVar("%lhs"), SSAVar("%rhs"), type_, ctx
+        )
+
+        # The bug: a bare "array.copy %rhs %lhs" (or similar), referencing a
+        # name that was never allocated as real storage anywhere. The fix:
+        # a fully-flattened per-leaf copy, same convention as every other
+        # already-correct call site in this codebase.
+        assert result == "%lhs_@count = %rhs_@count\narray.copy %rhs_@comp_@out %lhs_@comp_@out"
+        assert "array.copy %rhs %lhs" not in result
+
+    def test_registers_rhs_and_the_nested_comp_pod_recursively(self):
+        ctx = self._ctx_with_ark_struct()
+        type_ = self._nested_pod_type()
+
+        translate_assignment_core_with_ctx(SSAVar("%lhs"), SSAVar("%rhs"), type_, ctx)
+
+        # rhs itself becomes a registered top-level pod...
+        assert ctx.ssa2pod_var["%rhs"]["@count"][0] == "%rhs_@count"
+        # ...and so does lhs, at every level this branch's own recursion
+        # touches -- proving the fix is self-healing at each depth, not
+        # just the first one.
+        assert ctx.ssa2pod_var["%lhs"]["@count"][0] == "%lhs_@count"
+        assert ctx.ssa2pod_var["%lhs"]["@comp"][0] == "%lhs_@comp"
+
+    def test_pre_registered_rhs_still_takes_this_branch_unchanged(self):
+        # No-regression check: when rhs IS already registered, behavior is
+        # exactly as before this fix (the "if rhs.name not in ctx.ssa2pod_var"
+        # guard is a no-op).
+        ctx = self._ctx_with_ark_struct()
+        ctx.ssa2pod_var["%rhs"] = {
+            "@count": ("%rhs_@count", Type("index")),
+        }
+        type_ = Type("!pod.type<[@count: index]>")
+
+        result = translate_assignment_core_with_ctx(
+            SSAVar("%lhs"), SSAVar("%rhs"), type_, ctx
+        )
+
+        assert result == "%lhs_@count = %rhs_@count"

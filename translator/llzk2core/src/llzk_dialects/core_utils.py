@@ -93,8 +93,23 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
             assignments.append(f"array.copy {src} {dst}")
         return '\n'.join(assignments)
 
-    # Assign pod vars
-    elif rhs.name in ctx.ssa2pod_var:
+    # Assign pod vars. Type-driven (anchored on type_ itself), not merely
+    # registration-driven: rhs.name may be a perfectly good pod-typed value
+    # that simply hasn't been registered in ctx.ssa2pod_var yet -- e.g. a
+    # fresh name minted one level up by this very branch's own recursive
+    # call (see the `dest` derivation below), which only registers itself
+    # AFTER its own recursive translate_assignment_core_with_ctx call
+    # returns. Without this, a pod value born mid-recursion that isn't
+    # already a registered key would silently fall through to the generic
+    # scalar/array-copy fallback at the bottom of this function instead of
+    # flattening into its fields -- producing a copy of a name nothing ever
+    # allocated as real storage. See DECISIONS.md for why this dispatches
+    # on type_ rather than on registration, mirroring the !struct.type
+    # branch above.
+    elif rhs.name in ctx.ssa2pod_var or type_.name.strip().startswith("!pod.type"):
+        if rhs.name not in ctx.ssa2pod_var:
+            from llzk_dialects.pod import _register_pod_top_level, _parse_pod_fields
+            _register_pod_top_level(ctx, rhs.name, _parse_pod_fields(type_.name))
         pod_vars = ctx.ssa2pod_var[rhs.name]
 
         # lhs may be a member-backed pod (e.g. an scf.while block arg backing
