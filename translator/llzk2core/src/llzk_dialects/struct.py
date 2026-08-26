@@ -291,6 +291,54 @@ def _annotate_idx_pod_component_reads(ops, idx_pod_member_types, pod_to_member):
                 _annotate_idx_pod_component_reads(sub, idx_pod_member_types, pod_to_member)
 
 
+def _while_iter_arg_pairs(op):
+    """
+    (flat_result_component_name, (block_arg, init_val)) pairs for one
+    scf.while's own iter-args, in declaration order. Shared by
+    _build_component_naming_maps's result_to_init construction (top-level
+    only) and _collect_while_iter_args (recursive) so both derive the exact
+    same pairing from op.results/op.init_args, never two independently
+    maintained copies of this computation.
+    """
+    flat_results = []
+    for res in op.results:
+        for k in range(res.n_components):
+            flat_results.append(res.to_core_component(k))
+    return list(zip(flat_results, op.init_args))
+
+
+def _collect_while_iter_args(ops, while_iter_args):
+    """
+    Recursively collect every scf.while's own (block_arg_name, init_val_name)
+    iter-arg pairs into while_iter_args, at any nesting depth -- not just
+    ops' own top level. Appends in outer-to-inner traversal order (an op's
+    own pairs before recursing into its sub-bodies), which
+    _build_component_naming_maps's single-pass alias-resolution loop
+    depends on: a doubly (or deeper) nested scf.while's own block-arg name
+    resolves through its immediately enclosing scf.while's
+    ALREADY-resolved alias, one level at a time, with no bound on nesting
+    depth.
+
+    Without this, a $inputs array/pod threaded through more than one level
+    of scf.while (e.g. poseidon3_test_concrete.mlir's "@mixLast$inputs",
+    re-carried by an inner scf.while nested inside an outer one) only gets
+    its OUTERMOST loop's block-arg aliased -- a read using the inner loop's
+    own block-arg name (e.g. "%arg4") never resolves, silently falling back
+    to a raw SSA-derived name instead of the semantic "mixLast_0.in".
+    """
+    from llzk_dialects.scf import SCFWhile
+
+    for op in ops:
+        if isinstance(op, SCFWhile):
+            for _, (block_arg, init_val) in _while_iter_arg_pairs(op):
+                while_iter_args.append((block_arg.name, init_val.name))
+
+        for attr in ('body', 'then_body', 'else_body', 'before_body', 'after_body'):
+            sub = getattr(op, attr, None)
+            if sub:
+                _collect_while_iter_args(sub, while_iter_args)
+
+
 def _annotate_input_array_reads(ops, ctx, const_map):
     """
     Recursively stamp ArrayRead._semantic_base on every read of a registered
@@ -369,22 +417,25 @@ def _build_component_naming_maps(body, ctx, idx_pod_member_types=None):
 
     # --- Part 1: $inputs pod mapping ---
     # Build map: while-result component name -> its initial value name.
-    # Handles chains like "%1#1" -> "%0#1" -> "%pod_0".
+    # Handles chains like "%1#1" -> "%0#1" -> "%pod_0". Only ever queried
+    # (via trace_source, below) from a top-level struct.writem's own value,
+    # so this stays top-level-only -- a nested scf.while's result can only
+    # reach that top-level value by first being yielded into its enclosing
+    # (already top-level, in every case seen so far) while's own result.
     result_to_init = {}
-    # (block_arg_name, init_val_name) for every scf.while iter_arg — the
-    # block_arg is the name a loop-carried value is known by *inside* the
-    # loop body (e.g. "%arg3"), which is what an array.read/write there
-    # actually references, as opposed to the init_val name registered below.
-    while_iter_args = []
     for op in body:
         if isinstance(op, SCFWhile):
-            flat_results = []
-            for res in op.results:
-                for k in range(res.n_components):
-                    flat_results.append(res.to_core_component(k))
-            for comp_name, (block_arg, init_val) in zip(flat_results, op.init_args):
+            for comp_name, (_, init_val) in _while_iter_arg_pairs(op):
                 result_to_init[comp_name] = init_val.name
-                while_iter_args.append((block_arg.name, init_val.name))
+
+    # (block_arg_name, init_val_name) for every scf.while iter_arg, at ANY
+    # nesting depth — the block_arg is the name a loop-carried value is
+    # known by *inside* the loop body (e.g. "%arg3"), which is what an
+    # array.read/write there actually references, as opposed to the
+    # init_val name registered above. See _collect_while_iter_args for why
+    # this must be recursive, not top-level-only like result_to_init.
+    while_iter_args = []
+    _collect_while_iter_args(body, while_iter_args)
 
     def trace_source(name):
         seen = set()

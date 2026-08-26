@@ -7,7 +7,7 @@ from llzk_dialects.struct import (
 )
 from llzk_dialects.function import FunctionCall
 from llzk_dialects.pod import PodNew, PodWrite, PodRead
-from llzk_dialects.scf import SCFIf, SCFFor
+from llzk_dialects.scf import SCFIf, SCFFor, SCFWhile
 from llzk_dialects.array import ArrayRead, ArrayWrite
 from llzk_dialects.arith import ArithConst
 from llzk_dialects.cast import CastToIndex
@@ -695,3 +695,57 @@ class TestBuildComponentNamingMapsIdxPods:
         # existing (array/scalar) call signature and behavior unaffected.
         ctx = TranslationContext()
         _build_component_naming_maps([], ctx)  # must not raise
+
+
+# ── _build_component_naming_maps — $inputs array through nested scf.while ─────
+
+class TestBuildComponentNamingMapsNestedWhileInputs:
+    """
+    A $inputs array threaded through TWO nested scf.while loops (mirrors
+    poseidon3_test_concrete.mlir's "@mixLast$inputs": an outer scf.while
+    carries the array as %arg2, whose after_body contains a second, inner
+    scf.while re-carrying it as %arg4) must get BOTH loops' own block-arg
+    names aliased to the same member base -- not just the outermost one,
+    which is all the previous (non-recursive) while_iter_args collection
+    covered.
+    """
+
+    ARR_TYPE = Type("!array.type<1 x !pod.type<[@in: !felt.type]>>")
+
+    def test_inner_while_block_arg_aliased_and_read_named(self):
+        ctx = TranslationContext()
+
+        # Inner while: (%arg4 = %arg2) -- re-carries the same $inputs array
+        # one level deeper. Its body reads element 0 (a compile-time
+        # constant index) via its OWN block-arg name, %arg4.
+        const0 = FeltConst(SSAVar("%c0"), 0)
+        idx0 = CastToIndex(SSAVar("%i0"), SSAVar("%c0"))
+        read = ArrayRead(SSAVar("%588"), SSAVar("%arg4"), [SSAVar("%i0")], [])
+        inner_while = SCFWhile(
+            [SSAVar("%567", n_components=1)],
+            [(SSAVar("%arg4"), SSAVar("%arg2"))],
+            [[self.ARR_TYPE], [self.ARR_TYPE]],
+            [], [], [const0, idx0, read],
+        )
+
+        # Outer while: (%arg2 = %array_117) -- the top-level alias that
+        # already worked before this fix; its after_body contains the
+        # inner while nested one level deeper.
+        outer_while = SCFWhile(
+            [SSAVar("%422", n_components=1)],
+            [(SSAVar("%arg2"), SSAVar("%array_117"))],
+            [[self.ARR_TYPE], [self.ARR_TYPE]],
+            [], [], [inner_while],
+        )
+
+        writem = StructWritem(
+            SSAVar("%self"), GlobalVariable("@mixLast_inputs"), SSAVar("%422"),
+            [self.ARR_TYPE],
+        )
+
+        body = [outer_while, writem]
+        _build_component_naming_maps(body, ctx)
+
+        assert ctx.input_pod_to_member["%arg2"] == "mixLast"
+        assert ctx.input_pod_to_member["%arg4"] == "mixLast"
+        assert read._semantic_base == "mixLast_0"
