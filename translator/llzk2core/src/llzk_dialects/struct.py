@@ -18,7 +18,7 @@ Operations:
 """
 
 import re
-from typing import List, Optional, Tuple, Generator
+from typing import Dict, List, Optional, Tuple, Generator
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, GlobalVariable, Type,
@@ -195,6 +195,102 @@ def _annotate_array_component_reads(ops, array_member_base, const_map, pod_to_me
                 _annotate_array_component_reads(sub, array_member_base, local_const_map, pod_to_member)
 
 
+def _is_idx_pod_component_member(type_str: str) -> Optional[Dict[str, Type]]:
+    """
+    A heterogeneous array-of-components member: a pod whose fields are all
+    literal @idx_N records (_is_idx_pod_fields) AND whose field values are
+    all !struct.type -- the shape LLZK lowers a Circom collection to when
+    each index instantiates a *different* template (so it can't be a real
+    !array.type<N x !struct.type<...>>, which requires one shared type).
+
+    Returns the parsed field dict (@idx_N -> struct Type) on a match, else
+    None. The all-struct-typed-fields check distinguishes this from the
+    member's own "$inputs" companion pod (e.g. "@ark_inputs"), whose @idx_N
+    fields are themselves !pod.type, not !struct.type.
+    """
+    from llzk_dialects.pod import _parse_pod_fields, _is_idx_pod_fields
+
+    if "!pod.type" not in type_str:
+        return None
+    fields = _parse_pod_fields(type_str)
+    if not _is_idx_pod_fields(fields):
+        return None
+    if not all(t.name.strip().startswith("!struct.type") for t in fields.values()):
+        return None
+    return fields
+
+
+def _idx_read_matches_member(result_type: Optional[Type], expected_struct_type: Type) -> bool:
+    """
+    True iff a pod.read[@idx_N]'s own declared RESULT type corresponds to
+    `expected_struct_type` (the struct type @idx_N is declared as on the
+    struct.member itself, e.g. "!struct.type<@Ark_0::@Ark_0<[]>>") --
+    either directly (the read yields the struct value itself) or through a
+    "counting pod" wrapper's own @comp field.
+
+    The wrapped case is what real LLZK output actually uses throughout
+    compute: a heterogeneous slot's counting-pod holder is read as a whole
+    (pod.read %holder[@idx_N] : ..., !pod.type<[@count: index,
+    @comp: !struct.type<@Ark_N::@Ark_N<[]>>, @params: !pod.type<[]>]>) --
+    the SAME @count/@comp/@params bookkeeping idiom this codebase already
+    uses uniformly for scalar and homogeneous-array subcomponent tracking
+    (_find_array_component_bases) -- and it is that read's OWN result which
+    a later pod.write[@comp]/pod.new{@comp=...} in the same scope targets,
+    not the member's own final declared type (only assembled once, straight
+    -line, at the very end of compute, from already-computed @comp values
+    -- see _annotate_idx_pod_component_reads).
+    """
+    if result_type is None:
+        return False
+    if result_type == expected_struct_type:
+        return True
+    if "!pod.type" not in result_type.name:
+        return False
+    from llzk_dialects.pod import _parse_pod_fields
+    return _parse_pod_fields(result_type.name).get("@comp") == expected_struct_type
+
+
+def _annotate_idx_pod_component_reads(ops, idx_pod_member_types, pod_to_member):
+    """
+    Recursively scan a body for pod.read [@idx_N] of a pod matching one of
+    the struct's own heterogeneous array-of-components members
+    (idx_pod_member_types, from StructDef.to_core's struct.member scan --
+    see _is_idx_pod_component_member), stamping
+    pod_to_member[read_result] = "{member}#{N}". That read's result is
+    exactly the "counting pod" value a later pod.write[@comp]/
+    pod.new{@comp=...} targets, so the existing _annotate_function_calls
+    picks this up exactly like the scalar/homogeneous-array cases already
+    in pod_to_member -- no change needed there.
+
+    Unlike _annotate_array_component_reads (the homogeneous-array case), no
+    constant-folding or scope-copied state is needed: @idx_N is always a
+    literal pod field name in the LLZK IR, never a runtime-computed index,
+    so there is no "was this index a compile-time constant" question to
+    resolve. Matching is instead done purely on each read's own declared
+    RESULT type (_idx_read_matches_member), which works uniformly no matter
+    which control-flow shape a given read happens to sit inside
+    (straight-line unrolled code, a genuine scf.while, or a runtime-index
+    scf.if/scf.execute_region dispatch ladder) -- unlike the homogeneous
+    case, this never needs to trace an SSA's origin through
+    scf.while/scf.if aliasing at all.
+    """
+    from llzk_dialects.pod import PodRead, _IDX_FIELD_RE, _idx_pod_child_name
+
+    for op in ops:
+        if isinstance(op, PodRead) and _IDX_FIELD_RE.match(op.record_name.name):
+            for member, fields in idx_pod_member_types.items():
+                expected = fields.get(op.record_name.name)
+                if expected is not None and _idx_read_matches_member(op.result_type, expected):
+                    pod_to_member[op._result.name] = _idx_pod_child_name(
+                        member, op.record_name.name)
+                    break
+
+        for attr in ('body', 'then_body', 'else_body', 'before_body', 'after_body'):
+            sub = getattr(op, attr, None)
+            if sub:
+                _annotate_idx_pod_component_reads(sub, idx_pod_member_types, pod_to_member)
+
+
 def _annotate_input_array_reads(ops, ctx, const_map):
     """
     Recursively stamp ArrayRead._semantic_base on every read of a registered
@@ -230,7 +326,7 @@ def _annotate_input_array_reads(ops, ctx, const_map):
                 _annotate_input_array_reads(sub, ctx, local_const_map)
 
 
-def _build_component_naming_maps(body, ctx):
+def _build_component_naming_maps(body, ctx, idx_pod_member_types=None):
     """
     Pre-pass: scan a compute function body to build naming maps.
 
@@ -255,6 +351,15 @@ def _build_component_naming_maps(body, ctx):
     specifically at translation time; every call inside such a loop shares
     that one bare name, with any further per-iteration disambiguation
     resolved afterwards by llzk_cli.
+
+    `idx_pod_member_types` (from StructDef.to_core's struct.member scan,
+    see _is_idx_pod_component_member) covers a *third*, heterogeneous shape:
+    a member whose array-of-components elements don't all share one struct
+    type, so LLZK lowers it to a pod with one @idx_N field per index instead
+    of a real !array.type. Unlike the other two cases, @idx_N is always a
+    compile-time-literal field name (never a genuine runtime index), so it
+    is named "{member}#{idx}" unconditionally — see
+    _annotate_idx_pod_component_reads.
     """
     from llzk_dialects.scf import SCFWhile
     from llzk_dialects.pod import PodRead
@@ -331,6 +436,13 @@ def _build_component_naming_maps(body, ctx):
     array_member_base = _find_array_component_bases(body)
     if array_member_base:
         _annotate_array_component_reads(body, array_member_base, {}, pod_to_member)
+
+    # --- Part 2c: heterogeneous (idx-pod) array-of-component members ---
+    # Every pod.read[@idx_N] of a pod matching one of this struct's own
+    # idx-pod component members is named "{member}#{idx}" directly — see
+    # _annotate_idx_pod_component_reads.
+    if idx_pod_member_types:
+        _annotate_idx_pod_component_reads(body, idx_pod_member_types, pod_to_member)
 
     _annotate_function_calls(body, pod_to_member)
 
@@ -682,13 +794,27 @@ class StructDef(BlockOperation):
         # A direct struct member adds one entry; an array-of-structs member
         # expands into N numbered entries (1-indexed).
         subcomponent_members = {}
+        # Heterogeneous array-of-components members: member_name ->
+        # {@idx_N: struct Type}, populated below and fed into the naming
+        # pre-pass (see _is_idx_pod_component_member).
+        idx_pod_member_types: Dict[str, Dict[str, Type]] = {}
         for op in self.body:
             if not isinstance(op, StructMember):
                 continue
             type_str = op.member_type.name
+            member_name = op.sym_name.name[1:]  # strip leading @
+            # Checked first, and unconditionally `continue`s on a match, so
+            # this never falls into the "!struct.type" substring check below
+            # -- a pod's field textually containing "!struct.type" (as an
+            # idx-pod's own @idx_N fields do) would otherwise wrongly match
+            # it, per the same anchoring pitfall documented in DECISIONS.md
+            # §19/§21/§22.
+            idx_fields = _is_idx_pod_component_member(type_str)
+            if idx_fields is not None:
+                idx_pod_member_types[member_name] = idx_fields
+                continue
             if "!struct.type" not in type_str:
                 continue
-            member_name = op.sym_name.name[1:]  # strip leading @
             full_ref = struct_type_name(type_str)
             referred = full_ref.split("::")[-1]
             arr_m = re.search(r"!array\.type<\s*(\d+)\s+x\s+!struct\.type<", type_str)
@@ -701,7 +827,7 @@ class StructDef(BlockOperation):
             ctx.member_to_struct[core_name] = subcomponent_members
 
         # Pre-pass: build naming maps so calls use semantic signal names
-        _build_component_naming_maps(compute_op.body, ctx)
+        _build_component_naming_maps(compute_op.body, ctx, idx_pod_member_types)
 
         # After setting the translation, we just need to render the function
         # considering the out arguments we have generated

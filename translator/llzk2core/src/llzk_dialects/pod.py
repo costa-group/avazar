@@ -44,7 +44,38 @@ def _parse_pod_fields(pod_type_str: str) -> Dict[str, Type]:
     return result
 
 
-def _register_nested_pod_vars(ctx: TranslationContext, var_name: str, type_str: str) -> None:
+_IDX_FIELD_RE = re.compile(r'^@idx_\d+$')
+
+
+def _is_idx_pod_fields(fields: Dict[str, Type]) -> bool:
+    """
+    True iff `fields` is a non-empty pod field dict where every field is a
+    literal @idx_N record -- the shape LLZK lowers a heterogeneous
+    array-of-components collection to (each index instantiates a
+    *different* struct/pod type, so it can't be represented as a real
+    !array.type). Requires ALL fields to match, not just one, so an
+    unrelated pod that happens to have a single field coincidentally named
+    @idx_0 among otherwise differently-named fields is never misdetected.
+    """
+    return bool(fields) and all(_IDX_FIELD_RE.match(f) for f in fields)
+
+
+def _idx_pod_child_name(base: str, record: str) -> str:
+    """
+    Child variable name for one @idx_N record of an idx-pod: "{base}#{N}"
+    (e.g. "ark#5"), regardless of whether `base` is a semantic name or a
+    raw SSA-derived one. "#" is a valid Core identifier character
+    (CORELLZK.md's id grammar) and is never used for an ordinary
+    underscore-joined field/member name, so this can never collide with
+    the "{member}.{record}" / "{var_name}_{record}" naming used for a
+    non-idx pod field.
+    """
+    idx = record[len("@idx_"):]
+    return f"{base}#{idx}"
+
+
+def _register_nested_pod_vars(ctx: TranslationContext, var_name: str, type_str: str,
+                              top_level_join: bool = False) -> None:
     """
     Register ctx.ssa2pod_var[var_name] for a pod-typed variable, then recurse
     into any field that is itself pod-typed (pod nested inside another pod).
@@ -58,6 +89,14 @@ def _register_nested_pod_vars(ctx: TranslationContext, var_name: str, type_str: 
     itself, so a later pod.read/pod.write chained through that intermediate
     pod (e.g. `pod.read (pod.read %p[@a])[@b]`) finds nothing and either
     KeyErrors or silently falls through to an unregistered plain copy.
+
+    `top_level_join`: when True (and var_name is semantic), this level's own
+    fields join with "." instead of the usual "_" -- used when var_name was
+    just minted as "{member}#{idx}" for one @idx_N record of an idx-pod (see
+    _register_pod_top_level/_is_idx_pod_fields), so its own fields read as
+    "{member}#{idx}.{field}" -- matching the ordinary "member.signal"
+    convention -- rather than "{member}#{idx}_{field}". Recursion below this
+    first level always falls back to "_" as before.
     """
     if "!pod.type" not in type_str:
         return
@@ -65,6 +104,8 @@ def _register_nested_pod_vars(ctx: TranslationContext, var_name: str, type_str: 
     is_semantic = not var_name.startswith("%")
 
     def child_name(field: str) -> str:
+        if top_level_join and is_semantic:
+            return f"{var_name}.{field[1:]}"
         return f"{var_name}_{field[1:]}" if is_semantic else f"{var_name}_{field}"
 
     ctx.ssa2pod_var[var_name] = {
@@ -84,11 +125,24 @@ def _register_pod_top_level(ctx: TranslationContext, var_name: str,
     (e.g. "last1.in1_last") instead of the default SSA-derived names (e.g.
     "%pod_5_@in1_last"). Shared by PodNew and any other pod-typed value with
     no operand of its own to copy field names from (e.g. llzk.nondet).
+
+    When this pod is member-backed AND is itself an idx-pod
+    (_is_idx_pod_fields -- every field a literal @idx_N, the shape a
+    heterogeneous array-of-components collection lowers to), each record
+    instead joins with "#" (_idx_pod_child_name) -- e.g. "ark#5" instead of
+    "ark.idx_5" -- so it reads as one disambiguated component instance
+    name, matching the existing "#i" convention this codebase already uses
+    elsewhere for a distinguished array-of-components index
+    (signal_renaming.py). This only applies to the semantic-naming path: a
+    raw SSA-derived pod's own field naming is purely an implementation
+    detail nothing downstream reads semantically, so it is left unchanged.
     """
     member = ctx.input_pod_to_member.get(var_name)
+    is_idx_pod = member is not None and _is_idx_pod_fields(fields)
     if member:
         mapping = {
-            record: (f"{member}.{record[1:]}", type_)
+            record: (_idx_pod_child_name(member, record) if is_idx_pod
+                      else f"{member}.{record[1:]}", type_)
             for record, type_ in fields.items()
         }
     else:
@@ -99,14 +153,18 @@ def _register_pod_top_level(ctx: TranslationContext, var_name: str,
     ctx.ssa2pod_var[var_name] = mapping
 
     # A field that is itself pod-typed needs its own representative name
-    # (e.g. "ark.idx_7") registered as a KEY of ctx.ssa2pod_var, not merely
+    # (e.g. "ark#7") registered as a KEY of ctx.ssa2pod_var, not merely
     # left as a value inside var_name's dict -- otherwise a later pod.read/
     # pod.write chained through it (pod-in-pod) finds nothing. Mirrors
     # _register_nested_pod_vars' own recursive step, which this delegates to.
+    # top_level_join=is_idx_pod: once an @idx_N record has been collapsed
+    # into "{base}#{idx}", its OWN fields should read as "{base}#{idx}.field"
+    # (ordinary member.signal convention), not "..._field".
     for record, type_ in fields.items():
         if "!pod.type" in type_.name:
             child_name, _ = mapping[record]
-            _register_nested_pod_vars(ctx, child_name, type_.name)
+            _register_nested_pod_vars(ctx, child_name, type_.name,
+                                      top_level_join=is_idx_pod)
 
 
 def _resolve_pod_field_var(ctx: TranslationContext, var_name: str,
@@ -118,8 +176,8 @@ def _resolve_pod_field_var(ctx: TranslationContext, var_name: str,
     _register_nested_pod_vars) -- rather than deriving it in one shot via
     _container_field_var, which always keeps the leading "@" and so
     disagrees with a semantic base's own per-level naming (e.g. produces
-    "ark.idx_0_@in" where _register_nested_pod_vars registered
-    "ark.idx_0_in"). Falls back to _container_field_var for any suffix past
+    "ark#0_@in" where _register_nested_pod_vars registered
+    "ark#0.in"). Falls back to _container_field_var for any suffix past
     the last registered prefix -- e.g. once field_path crosses into a
     struct-typed field, which _register_nested_pod_vars does not recurse
     into -- so a var_name with no pod-var registration at all (the plain
@@ -163,7 +221,15 @@ def _allocate_pod_field_storage(ctx: TranslationContext, var_name: str,
             f"Pod field storage allocation: a field that is itself an array "
             f"of struct/pod ({var_name}: {type_}) is not yet supported"
         )
-        if "!pod.type" in type_.name:
+        # Every call site (PodNew, register_and_allocate_pod) already
+        # registers var_name via _register_pod_top_level/
+        # _register_nested_pod_vars before calling here -- this is a
+        # defensive fallback for a hypothetical un-pre-registered call, not
+        # the normal path. Skipping when already registered matters now:
+        # re-deriving it here would use the plain "_"-joined convention
+        # unconditionally, clobbering a "." (idx-pod) join the earlier
+        # registration may have chosen (see _register_pod_top_level).
+        if "!pod.type" in type_.name and var_name not in ctx.ssa2pod_var:
             _register_nested_pod_vars(ctx, var_name, type_.name)
         for field_path, leaf_type in _flatten_container_fields(type_.name, ctx):
             leaf_size = array_total_size(leaf_type.name)

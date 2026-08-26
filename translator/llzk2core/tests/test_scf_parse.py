@@ -1041,7 +1041,7 @@ class TestSCF:
         # deep). The arg's *initial* value comes from a plain raw-SSA pod
         # (mirroring an llzk.nondet result) -- previously, copying that in
         # would derive a throwaway "%arg9_..._@idx_7" name instead of the
-        # semantic "ark.idx_7", and the SAME clobbering happened again on
+        # semantic "ark#7", and the SAME clobbering happened again on
         # the yield-back, eventually stranding a name nothing could resolve
         # through. A pod.read/pod.read chain inside the body
         # (%598 = pod.read %arg9[@idx_7]; %599 = pod.read %598[@in]) is the
@@ -1088,8 +1088,8 @@ class TestSCF:
         for type_, (lhs, rhs) in zip(op.func_type[0], op.init_args):
             translate_assignment_core_with_ctx(lhs, rhs, type_, ctx)
 
-        assert ctx.ssa2pod_var[arg9_name]["@idx_7"][0] == "ark.idx_7"
-        assert ctx.ssa2pod_var["ark.idx_7"]["@in"][0] == "ark.idx_7_in"
+        assert ctx.ssa2pod_var[arg9_name]["@idx_7"][0] == "ark#7"
+        assert ctx.ssa2pod_var["ark#7"]["@in"][0] == "ark#7.in"
 
         # Body: the pod.read/pod.read chain must resolve without a
         # KeyError -- this is the exact crash this fix targets.
@@ -1104,5 +1104,5 @@ class TestSCF:
 
         # The semantic destination must survive the yield-back too -- not be
         # clobbered a second time by a fresh raw derived name.
-        assert ctx.ssa2pod_var[arg9_name]["@idx_7"][0] == "ark.idx_7"
-        assert ctx.ssa2pod_var["ark.idx_7"]["@in"][0] == "ark.idx_7_in"
+        assert ctx.ssa2pod_var[arg9_name]["@idx_7"][0] == "ark#7"
+        assert ctx.ssa2pod_var["ark#7"]["@in"][0] == "ark#7.in"

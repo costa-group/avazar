@@ -3,6 +3,7 @@ from llzk_dialects.struct import (
     StructMember, StructNew, StructReadm, StructWritem, StructDef,
     _annotate_function_calls, _fold_index_constants, _find_array_component_bases,
     _annotate_array_component_reads, _build_component_naming_maps,
+    _is_idx_pod_component_member, _idx_read_matches_member, _annotate_idx_pod_component_reads,
 )
 from llzk_dialects.function import FunctionCall
 from llzk_dialects.pod import PodNew, PodWrite, PodRead
@@ -488,3 +489,209 @@ class TestBuildComponentNamingMapsArrays:
         _build_component_naming_maps(body, ctx)
 
         assert call._member_hint == "Num2Bits_16_325"
+
+
+# ── _is_idx_pod_component_member / _pod_fields_match ───────────────────────────
+
+class TestIsIdxPodComponentMember:
+    """
+    A heterogeneous array-of-components member: every field a literal
+    @idx_N record, AND every field's own type !struct.type (distinguishing
+    it from the member's "$inputs" companion pod, whose @idx_N fields are
+    themselves !pod.type) -- see poseidon3_test_concrete.mlir's "@ark".
+    """
+
+    def test_struct_typed_idx_fields_matches(self):
+        type_str = ("!pod.type<[@idx_0: !struct.type<@Ark_0::@Ark_0<[]>>, "
+                    "@idx_1: !struct.type<@Ark_2::@Ark_2<[]>>]>")
+        fields = _is_idx_pod_component_member(type_str)
+        assert fields is not None
+        assert set(fields.keys()) == {"@idx_0", "@idx_1"}
+
+    def test_pod_typed_idx_fields_is_inputs_shape_not_matched(self):
+        # The "$inputs" companion shape (e.g. "@ark_inputs"): @idx_N fields
+        # are !pod.type, not !struct.type -- must not be mistaken for the
+        # component-holding member itself.
+        type_str = "!pod.type<[@idx_0: !pod.type<[@in: !felt.type]>]>"
+        assert _is_idx_pod_component_member(type_str) is None
+
+    def test_non_idx_pod_not_matched(self):
+        type_str = "!pod.type<[@count: index, @comp: !struct.type<@S::@S<[]>>]>"
+        assert _is_idx_pod_component_member(type_str) is None
+
+    def test_plain_struct_type_not_matched(self):
+        assert _is_idx_pod_component_member("!struct.type<@Foo::@Foo<[]>>") is None
+
+
+class TestIdxReadMatchesMember:
+    """
+    _idx_read_matches_member: matches a pod.read[@idx_N]'s own declared
+    RESULT type against @idx_N's struct type as declared on the struct
+    member -- either directly, or (the shape real LLZK output actually
+    uses) through a "counting pod" (@count/@comp/@params) wrapper's own
+    @comp field.
+    """
+
+    ARK_0 = Type("!struct.type<@Ark_0::@Ark_0<[]>>")
+
+    def test_direct_struct_type_match(self):
+        assert _idx_read_matches_member(self.ARK_0, self.ARK_0) is True
+
+    def test_counting_pod_wrapper_comp_field_matches(self):
+        wrapped = Type(
+            "!pod.type<[@count: index, @comp: !struct.type<@Ark_0::@Ark_0<[]>>, "
+            "@params: !pod.type<[]>]>"
+        )
+        assert _idx_read_matches_member(wrapped, self.ARK_0) is True
+
+    def test_counting_pod_wrapper_different_comp_type_no_match(self):
+        wrapped = Type(
+            "!pod.type<[@count: index, @comp: !struct.type<@Ark_2::@Ark_2<[]>>, "
+            "@params: !pod.type<[]>]>"
+        )
+        assert _idx_read_matches_member(wrapped, self.ARK_0) is False
+
+    def test_unrelated_pod_type_no_match(self):
+        other = Type("!pod.type<[@in: !felt.type]>")
+        assert _idx_read_matches_member(other, self.ARK_0) is False
+
+    def test_none_result_type_no_match(self):
+        assert _idx_read_matches_member(None, self.ARK_0) is False
+
+
+# ── _annotate_idx_pod_component_reads ───────────────────────────────────────────
+
+def _counting_pod_type(struct_type_str: str) -> Type:
+    """
+    The real shape a heterogeneous slot's counting-pod holder is read as in
+    actual LLZK output: pod.read %holder[@idx_N] : ...,
+    !pod.type<[@count: index, @comp: !struct.type<...>, @params: !pod.type<[]>]>
+    -- see _idx_read_matches_member.
+    """
+    return Type(f"!pod.type<[@count: index, @comp: {struct_type_str}, "
+               f"@params: !pod.type<[]>]>")
+
+
+class TestAnnotateIdxPodComponentReads:
+
+    ARK_FIELDS = {
+        "@idx_0": Type("!struct.type<@Ark_0::@Ark_0<[]>>"),
+        "@idx_1": Type("!struct.type<@Ark_2::@Ark_2<[]>>"),
+    }
+
+    def test_matching_read_registered_as_member_hash_idx(self):
+        read = PodRead(SSAVar("%577"), SSAVar("%holder"), GlobalVariable("@idx_0"),
+                       {}, _counting_pod_type("!struct.type<@Ark_0::@Ark_0<[]>>"))
+        pod_to_member = {}
+        _annotate_idx_pod_component_reads([read], {"ark": self.ARK_FIELDS}, pod_to_member)
+        assert pod_to_member["%577"] == "ark#0"
+
+    def test_second_idx_uses_its_own_number(self):
+        read = PodRead(SSAVar("%578"), SSAVar("%holder"), GlobalVariable("@idx_1"),
+                       {}, _counting_pod_type("!struct.type<@Ark_2::@Ark_2<[]>>"))
+        pod_to_member = {}
+        _annotate_idx_pod_component_reads([read], {"ark": self.ARK_FIELDS}, pod_to_member)
+        assert pod_to_member["%578"] == "ark#1"
+
+    def test_direct_struct_result_type_also_matches(self):
+        # The un-wrapped shape (a bare struct value, no counting-pod
+        # wrapper) is also accepted -- see _idx_read_matches_member.
+        read = PodRead(SSAVar("%577"), SSAVar("%holder"), GlobalVariable("@idx_0"),
+                       {}, Type("!struct.type<@Ark_0::@Ark_0<[]>>"))
+        pod_to_member = {}
+        _annotate_idx_pod_component_reads([read], {"ark": self.ARK_FIELDS}, pod_to_member)
+        assert pod_to_member["%577"] == "ark#0"
+
+    def test_recurses_into_nested_bodies(self):
+        # Mirrors the real file's runtime-index scf.if dispatch ladder: the
+        # matching pod.read sits inside a nested scf.if branch, not at the
+        # top level.
+        read = PodRead(SSAVar("%577"), SSAVar("%holder"), GlobalVariable("@idx_0"),
+                       {}, _counting_pod_type("!struct.type<@Ark_0::@Ark_0<[]>>"))
+        branch = SCFIf([], SSAVar("%cond"), [], [read], None)
+        pod_to_member = {}
+        _annotate_idx_pod_component_reads([branch], {"ark": self.ARK_FIELDS}, pod_to_member)
+        assert pod_to_member["%577"] == "ark#0"
+
+    def test_non_idx_record_ignored(self):
+        read = PodRead(SSAVar("%1"), SSAVar("%holder"), GlobalVariable("@comp"),
+                       {}, _counting_pod_type("!struct.type<@Ark_0::@Ark_0<[]>>"))
+        pod_to_member = {}
+        _annotate_idx_pod_component_reads([read], {"ark": self.ARK_FIELDS}, pod_to_member)
+        assert pod_to_member == {}
+
+    def test_mismatched_comp_struct_type_ignored(self):
+        # Same @idx_0 record name, but the read's own counting-pod @comp
+        # type doesn't match "ark"'s @idx_0 declared struct type -- must
+        # not be misattributed.
+        read = PodRead(SSAVar("%1"), SSAVar("%holder"), GlobalVariable("@idx_0"),
+                       {}, _counting_pod_type("!struct.type<@Other_0::@Other_0<[]>>"))
+        pod_to_member = {}
+        _annotate_idx_pod_component_reads([read], {"ark": self.ARK_FIELDS}, pod_to_member)
+        assert pod_to_member == {}
+
+
+# ── _build_component_naming_maps — heterogeneous (idx-pod) integration ────────
+
+class TestBuildComponentNamingMapsIdxPods:
+    """
+    Heterogeneous array-of-components member (poseidon3_test_concrete.mlir's
+    "@ark": each index instantiates a *different* template, e.g. Ark_0 at
+    idx_0, Ark_2 at idx_1 -- so LLZK lowers it to a pod with one @idx_N
+    field per index instead of a real !array.type). Unlike the homogeneous
+    array case (TestBuildComponentNamingMapsArrays), the index is always a
+    compile-time-literal pod field name, so every occurrence -- no matter
+    which control-flow shape it sits inside -- is named "{member}#{idx}"
+    unconditionally, with no compile-time-constant-vs-runtime-loop
+    distinction to make.
+    """
+
+    ARK_FIELDS = {
+        "@idx_0": Type("!struct.type<@Ark_0::@Ark_0<[]>>"),
+        "@idx_1": Type("!struct.type<@Ark_2::@Ark_2<[]>>"),
+    }
+
+    def test_idx_pod_reads_named_and_calls_annotated(self):
+        ctx = TranslationContext()
+
+        read_0 = PodRead(SSAVar("%577"), SSAVar("%holder"), GlobalVariable("@idx_0"),
+                         {}, _counting_pod_type("!struct.type<@Ark_0::@Ark_0<[]>>"))
+        call_0 = FunctionCall([SSAVar("%584")], GlobalVariable("@Ark_0"), [], None)
+        write_0 = PodWrite(SSAVar("%577"), GlobalVariable("@comp"), SSAVar("%584"), {}, None)
+
+        # idx_1's occurrence sits inside a nested scf.if, mirroring the real
+        # file's per-idx runtime dispatch branches -- confirms the
+        # recursive walk reaches it regardless of nesting depth.
+        read_1 = PodRead(SSAVar("%578"), SSAVar("%holder"), GlobalVariable("@idx_1"),
+                         {}, _counting_pod_type("!struct.type<@Ark_2::@Ark_2<[]>>"))
+        call_1 = FunctionCall([SSAVar("%585")], GlobalVariable("@Ark_2"), [], None)
+        write_1 = PodWrite(SSAVar("%578"), GlobalVariable("@comp"), SSAVar("%585"), {}, None)
+        branch_1 = SCFIf([], SSAVar("%cond1"), [], [read_1, call_1, write_1], None)
+
+        body = [read_0, call_0, write_0, branch_1]
+
+        _build_component_naming_maps(body, ctx, {"ark": self.ARK_FIELDS})
+
+        assert call_0._member_hint == "ark#0"
+        assert call_1._member_hint == "ark#1"
+
+    def test_unrelated_pod_type_not_misattributed(self):
+        # A pod.read[@idx_N] whose counting-pod @comp type doesn't match
+        # any registered idx-pod member's declared struct type must not be
+        # attributed to it.
+        ctx = TranslationContext()
+        read = PodRead(SSAVar("%1"), SSAVar("%holder"), GlobalVariable("@idx_0"),
+                       {}, _counting_pod_type("!struct.type<@Other_0::@Other_0<[]>>"))
+        call = FunctionCall([SSAVar("%2")], GlobalVariable("@Other_0"), [], None)
+        write = PodWrite(SSAVar("%1"), GlobalVariable("@comp"), SSAVar("%2"), {}, None)
+
+        body = [read, call, write]
+        _build_component_naming_maps(body, ctx, {"ark": self.ARK_FIELDS})
+
+        assert call._member_hint is None
+
+    def test_no_idx_pod_members_argument_is_backward_compatible(self):
+        # idx_pod_member_types omitted (defaults to None) must leave the
+        # existing (array/scalar) call signature and behavior unaffected.
+        ctx = TranslationContext()
+        _build_component_naming_maps([], ctx)  # must not raise

@@ -276,9 +276,10 @@ class TestPodToCore:
         assert ctx.ssa2pod_var["%p_@f"]["@in"][0] == "%p_@f_@in"
 
     def test_new_member_pod_nonempty_nested_field_registers_recursively(self):
-        # Mirrors the real "ark.idx_0" shape from
-        # poseidon3_test_concrete.mlir: a $inputs pod for a struct member
-        # (semantic naming), with a non-empty nested pod field.
+        # Mirrors the real "ark#0" shape from poseidon3_test_concrete.mlir:
+        # a $inputs pod for a struct member (semantic naming), with every
+        # field a literal @idx_N record (a heterogeneous
+        # array-of-components collection) and a non-empty nested pod field.
         ctx = self._ctx()
         ctx.input_pod_to_member["%p"] = "ark"
         op = PodNew.parse(
@@ -286,17 +287,17 @@ class TestPodToCore:
             "!pod.type<[@idx_0: !pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>]>"
         )
         lines = list(op.to_core(ctx))
-        assert ctx.ssa2pod_var["%p"]["@idx_0"][0] == "ark.idx_0"
-        assert ctx.ssa2pod_var["ark.idx_0"]["@in"][0] == "ark.idx_0_in"
+        assert ctx.ssa2pod_var["%p"]["@idx_0"][0] == "ark#0"
+        assert ctx.ssa2pod_var["ark#0"]["@in"][0] == "ark#0.in"
         # The allocated storage line must target the SAME name that got
         # registered above -- previously it was derived independently via
         # _container_field_var (which never strips "@"), producing
-        # "ark.idx_0_@in", a variable distinct from (and never assigned to)
-        # the registered "ark.idx_0_in".
-        assert lines == ["array.new 3 ark.idx_0_in"]
+        # "ark#0_@in", a variable distinct from (and never assigned to)
+        # the registered "ark#0.in".
+        assert lines == ["array.new 3 ark#0.in"]
 
     def test_new_member_pod_field_with_initial_value_registers_recursively(self):
-        # Same "ark.idx_0" shape as above, but the nested pod field is given
+        # Same "ark#0" shape as above, but the nested pod field is given
         # an explicit initial value in the pod.new record list (instead of
         # being left to _allocate_pod_field_storage) -- exercises
         # translate_assignment_core_with_ctx's own pod-copy branch directly,
@@ -312,9 +313,9 @@ class TestPodToCore:
             "!pod.type<[@idx_0: !pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>]>"
         )
         lines = list(op.to_core(ctx))
-        assert ctx.ssa2pod_var["%p"]["@idx_0"][0] == "ark.idx_0"
-        assert ctx.ssa2pod_var["ark.idx_0"]["@in"][0] == "ark.idx_0_in"
-        assert lines == ["array.copy %src_@in ark.idx_0_in"]
+        assert ctx.ssa2pod_var["%p"]["@idx_0"][0] == "ark#0"
+        assert ctx.ssa2pod_var["ark#0"]["@in"][0] == "ark#0.in"
+        assert lines == ["array.copy %src_@in ark#0.in"]
 
     def test_translate_assignment_preserves_member_backed_lhs_semantic_dest(self):
         # Mirrors the poseidon3_test_concrete.mlir scf.while shape that
@@ -322,10 +323,10 @@ class TestPodToCore:
         # member "ark") never yet registered as its own ctx.ssa2pod_var key,
         # assigned from a plain raw-SSA-named pod (rhs, mirroring an
         # llzk.nondet result). The assignment must give lhs's own "@idx_7"
-        # field its semantic destination ("ark.idx_7"), not a throwaway
+        # field its semantic destination ("ark#7"), not a throwaway
         # "%lhs_@idx_7" derived name -- and that destination must itself be
         # recursively registered so a later pod.read chained through it
-        # ("ark.idx_7"'s own "@in" field) resolves.
+        # ("ark#7"'s own "@in" field) resolves.
         ctx = self._ctx()
         ctx.input_pod_to_member["%lhs"] = "ark"
         ctx.ssa2pod_var["%rhs"] = {
@@ -341,9 +342,9 @@ class TestPodToCore:
         )
         lines = translate_assignment_core_with_ctx(SSAVar("%lhs"), SSAVar("%rhs"), pod_type, ctx)
 
-        assert ctx.ssa2pod_var["%lhs"]["@idx_7"][0] == "ark.idx_7"
-        assert ctx.ssa2pod_var["ark.idx_7"]["@in"][0] == "ark.idx_7_in"
-        assert lines == "array.copy %rhs_@idx_7_@in ark.idx_7_in"
+        assert ctx.ssa2pod_var["%lhs"]["@idx_7"][0] == "ark#7"
+        assert ctx.ssa2pod_var["ark#7"]["@in"][0] == "ark#7.in"
+        assert lines == "array.copy %rhs_@idx_7_@in ark#7.in"
 
         # A pod.read/pod.read chain through lhs must now resolve without a
         # KeyError -- this is the exact crash this fix targets.
@@ -365,7 +366,7 @@ class TestPodToCore:
         # array.write into it will use the alias directly) -- see
         # PodRead.to_core's own array_felt_first_dimension early-return.
         assert leaf_lines == []
-        assert ctx.ssa_to_name["%599"] == "ark.idx_7_in"
+        assert ctx.ssa_to_name["%599"] == "ark#7.in"
 
     def test_pod_in_pod_chain_nonempty_field_resolves_without_keyerror(self):
         # Mirrors the poseidon3_test_concrete.mlir shape that originally
@@ -426,3 +427,88 @@ class TestPodToCore:
 
         assert ctx.ssa2pod_var["%outer_@idx_0"]["@count"][0] == "%outer_@idx_0_@count"
         assert ctx.ssa2pod_var["%outer_@idx_0"]["@comp"][0] == "%outer_@idx_0_@comp"
+
+
+class TestIsIdxPodFields:
+    """
+    _is_idx_pod_fields: detects a pod whose fields are ALL literal @idx_N
+    records -- the shape LLZK lowers a heterogeneous array-of-components
+    collection to (e.g. poseidon3_test_concrete.mlir's "@ark", where each
+    index instantiates a different round-constant template).
+    """
+
+    def test_all_idx_fields_true(self):
+        from llzk_dialects.pod import _is_idx_pod_fields
+        fields = {
+            "@idx_0": Type("!struct.type<@Ark_0::@Ark_0<[]>>"),
+            "@idx_1": Type("!struct.type<@Ark_2::@Ark_2<[]>>"),
+            "@idx_7": Type("!struct.type<@Ark_67::@Ark_67<[]>>"),
+        }
+        assert _is_idx_pod_fields(fields) is True
+
+    def test_single_idx_field_true(self):
+        from llzk_dialects.pod import _is_idx_pod_fields
+        assert _is_idx_pod_fields({"@idx_0": Type("!felt.type")}) is True
+
+    def test_empty_fields_false(self):
+        from llzk_dialects.pod import _is_idx_pod_fields
+        assert _is_idx_pod_fields({}) is False
+
+    def test_no_idx_fields_false(self):
+        from llzk_dialects.pod import _is_idx_pod_fields
+        fields = {"@in": Type("!felt.type"), "@out": Type("!felt.type")}
+        assert _is_idx_pod_fields(fields) is False
+
+    def test_mixed_idx_and_non_idx_fields_false(self):
+        # A pod with one field coincidentally named @idx_0 among otherwise
+        # differently-named fields must NOT be misdetected as an idx-pod --
+        # ALL fields must match.
+        from llzk_dialects.pod import _is_idx_pod_fields
+        fields = {"@idx_0": Type("!felt.type"), "@count": Type("index")}
+        assert _is_idx_pod_fields(fields) is False
+
+    def test_idx_like_but_not_matching_field_name_false(self):
+        # "@idx" (no trailing digits) and "@idxA" must not match.
+        from llzk_dialects.pod import _is_idx_pod_fields
+        assert _is_idx_pod_fields({"@idx": Type("!felt.type")}) is False
+        assert _is_idx_pod_fields({"@idxA": Type("!felt.type")}) is False
+
+
+class TestIdxPodInputNaming:
+    """
+    _register_pod_top_level / _register_nested_pod_vars: a member-backed
+    idx-pod (e.g. "@ark$inputs") is named "{member}#{idx}.{field}" instead
+    of "{member}.idx_{idx}_{field}" -- see poseidon3_test_concrete.mlir's
+    "@ark" (heterogeneous array-of-components, each index a different
+    template).
+    """
+
+    def _ctx(self):
+        return TranslationContext()
+
+    def test_multi_field_idx_pod_input_names(self):
+        # Mirrors the real "@ark$inputs" shape: multiple @idx_N fields, each
+        # itself a pod with an @in field.
+        ctx = self._ctx()
+        ctx.input_pod_to_member["%p"] = "ark"
+        op = PodNew.parse(
+            "%p = pod.new : "
+            "!pod.type<[@idx_0: !pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>, "
+            "@idx_1: !pod.type<[@in: !array.type<3 x !felt.type<\"bn128\">>]>]>"
+        )
+        lines = list(op.to_core(ctx))
+        assert ctx.ssa2pod_var["%p"]["@idx_0"][0] == "ark#0"
+        assert ctx.ssa2pod_var["%p"]["@idx_1"][0] == "ark#1"
+        assert ctx.ssa2pod_var["ark#0"]["@in"][0] == "ark#0.in"
+        assert ctx.ssa2pod_var["ark#1"]["@in"][0] == "ark#1.in"
+        assert sorted(lines) == ["array.new 3 ark#0.in", "array.new 3 ark#1.in"]
+
+    def test_non_idx_pod_unaffected(self):
+        # A plain (non-idx-pod) member-backed pod keeps its existing
+        # "member.field" dot-join -- confirms the idx-pod branch is
+        # correctly gated and doesn't leak into the ordinary case.
+        ctx = self._ctx()
+        ctx.input_pod_to_member["%p"] = "mux"
+        op = PodNew.parse("%p = pod.new {@c = %v} : !pod.type<[@c: !felt.type]>")
+        list(op.to_core(ctx))
+        assert ctx.ssa2pod_var["%p"]["@c"][0] == "mux.c"
