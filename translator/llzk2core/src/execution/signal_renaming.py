@@ -104,6 +104,21 @@ def process_components(smt_json: Dict) -> Dict:
     Given a JSON containing multiple components with smt formula, adds to the mapping of variables
     (vars_info) a distinct name for each core variable in each iteration, following the convention
     described above.
+
+    A component's real array index (for an array-of-components member left
+    at its bare name -- no single compile-time-known instance, see
+    struct.py's array-component index-sequence pre-pass) is looked up from
+    "components_index_sequences" -- the translator's own static analysis of
+    the population loop's actual traversal order, keyed by the occurrence
+    number (0-indexed) at which a given component_name is seen in this
+    macro's own call trace. This generalizes the previous behavior (which
+    just used that same occurrence number directly as a single "#i" index)
+    to any array dimensionality and any traversal order -- a flat "#i" is
+    both the wrong shape for an N-D member (its own "components_info" keys
+    are "member#i1#i2..."-shaped) and wrong for any population order other
+    than simple sequential 0,1,2,... visitation. A component with no
+    registered sequence (its population loop's own bound wasn't statically
+    resolvable) falls back to that original flat-counter behavior.
     """
     extended_smt_json = deepcopy(smt_json)
     for macro_name, current_macro in smt_json["macros"].items():
@@ -111,18 +126,33 @@ def process_components(smt_json: Dict) -> Dict:
 
         calls = extract_calls(current_formula)
         components = current_macro.get("components_info", {})
+        index_sequences = current_macro.get("components_index_sequences", {})
 
-        # Dict that counts the current iteration for each of the traversed components so far
+        # Dict that counts the current occurrence for each of the traversed components so far
         component2iteration = Counter()
 
         for call in calls:
             # First we extract the information from the formula
             in_vars_info, out_vars_info, metadata = extract_vars_info_from_concrete_call(call)
+
             component_name = extract_component(metadata)
             if component_name is None:
                 continue
 
-            component_iteration = f"{component_name}#{component2iteration[component_name]}"
+            occurrence = component2iteration[component_name]
+            component2iteration[component_name] += 1
+
+            sequence = index_sequences.get(component_name)
+            if sequence is not None:
+                if occurrence >= len(sequence):
+                    # More calls observed in the trace than the static
+                    # analysis predicted for this component -- skip rather
+                    # than guess (same "don't rename what we can't
+                    # confidently attribute" philosophy as decision 20).
+                    continue
+                component_iteration = component_name + "".join(f"#{i}" for i in sequence[occurrence])
+            else:
+                component_iteration = f"{component_name}#{occurrence}"
 
             # We only need to handle arrays of components, as other signals
             # are already processed in the mapping dict. This already appear in the components
@@ -138,8 +168,5 @@ def process_components(smt_json: Dict) -> Dict:
                     signal_name = core_var[len(component_name) + 1:]
                     new_signal_name = f"{component_iteration}.{signal_name}"
                     extended_smt_json["macros"][macro_name]["vars_info"][new_signal_name] = smt_var
-
-            # Advance to the next iteration
-            component2iteration[component_name] += 1
 
     return extended_smt_json
