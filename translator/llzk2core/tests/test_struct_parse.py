@@ -4,15 +4,19 @@ from llzk_dialects.struct import (
     _annotate_function_calls, _fold_index_constants, _find_array_component_bases,
     _annotate_array_component_reads, _build_component_naming_maps,
     _is_idx_pod_component_member, _idx_read_matches_member, _annotate_idx_pod_component_reads,
+    _is_population_write, _trace_to_enclosing_loop, _loop_own_sequence,
+    _resolve_population_nest_sequence, _collect_population_write_candidates,
+    _walk_array_component_population, _find_array_component_population_sequences,
 )
 from llzk_dialects.function import FunctionCall
 from llzk_dialects.pod import PodNew, PodWrite, PodRead
-from llzk_dialects.scf import SCFIf, SCFFor, SCFWhile
+from llzk_dialects.scf import SCFIf, SCFFor, SCFWhile, SCFCondition, SCFYield
 from llzk_dialects.array import ArrayRead, ArrayWrite
 from llzk_dialects.arith import ArithConst
 from llzk_dialects.cast import CastToIndex
 from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext
-from llzk_dialects.felt import FeltConst
+from llzk_dialects.felt import FeltConst, FeltBinary
+from llzk_dialects.bool import BoolCmp
 
 
 class TestStruct:
@@ -905,3 +909,386 @@ class TestBuildComponentNamingMapsNestedWhileInputs:
         assert ctx.input_pod_to_member["%arg2"] == "mixLast"
         assert ctx.input_pod_to_member["%arg4"] == "mixLast"
         assert read._semantic_base == "mixLast#0"
+
+
+# ── _is_population_write ────────────────────────────────────────────────────
+
+class TestIsPopulationWrite:
+    """
+    _is_population_write: a real read-modify-write population write (its
+    value traces back to an ArrayRead of the SAME array) vs. e.g. the
+    array's own initial-fill loop (a fresh pod.new written into every slot,
+    never read from first).
+    """
+
+    def test_read_modify_write_is_population(self):
+        read = ArrayRead(SSAVar("%14"), SSAVar("%array"), [SSAVar("%i"), SSAVar("%j")], [])
+        write = ArrayWrite(SSAVar("%array"), [SSAVar("%i"), SSAVar("%j")], SSAVar("%14"), [])
+        def_map = {"%14": read}
+        assert _is_population_write(write, def_map) is True
+
+    def test_fresh_value_is_not_population(self):
+        fresh = PodNew(SSAVar("%pod_8"), {}, {})
+        write = ArrayWrite(SSAVar("%array"), [SSAVar("%i"), SSAVar("%j")], SSAVar("%pod_8"), [])
+        def_map = {"%pod_8": fresh}
+        assert _is_population_write(write, def_map) is False
+
+    def test_read_of_different_array_is_not_population(self):
+        read = ArrayRead(SSAVar("%14"), SSAVar("%other_array"), [SSAVar("%i"), SSAVar("%j")], [])
+        write = ArrayWrite(SSAVar("%array"), [SSAVar("%i"), SSAVar("%j")], SSAVar("%14"), [])
+        def_map = {"%14": read}
+        assert _is_population_write(write, def_map) is False
+
+    def test_unknown_source_is_not_population(self):
+        write = ArrayWrite(SSAVar("%array"), [SSAVar("%i"), SSAVar("%j")], SSAVar("%unknown"), [])
+        assert _is_population_write(write, {}) is False
+
+
+# ── _trace_to_enclosing_loop ────────────────────────────────────────────────
+
+class TestTraceToEnclosingLoop:
+    """
+    Resolves an index name back through cast.toindex/cast.tofelt to
+    whichever loop_stack member it equals -- by SSA identity, never
+    positionally (an array's own dimension order need not match its
+    population loop's own nesting order).
+    """
+
+    def _for_loop(self, iv):
+        return SCFFor([], SSAVar(iv), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"), [], [])
+
+    def test_direct_match_scf_for(self):
+        loop = self._for_loop("%iv")
+        assert _trace_to_enclosing_loop("%iv", [loop], {}) is loop
+
+    def test_match_through_cast(self):
+        loop = self._for_loop("%iv")
+        cast = CastToIndex(SSAVar("%7"), SSAVar("%iv"))
+        def_map = {"%7": cast}
+        assert _trace_to_enclosing_loop("%7", [loop], def_map) is loop
+
+    def test_scf_while_matches_its_own_after_arg(self):
+        while_op = SCFWhile([], [(SSAVar("%arg2"), SSAVar("%init"))], [[Type("index")]],
+                            [], [(SSAVar("%arg2"), Type("index"))], [])
+        assert _trace_to_enclosing_loop("%arg2", [while_op], {}) is while_op
+
+    def test_not_positional_inner_loop_drives_outer_dimension(self):
+        # Mirrors arbitrary_traversal_array_components.circom exactly:
+        # "components[i][j]" (array dim 0 = i, dim 1 = j) with i driven by
+        # the INNER loop and j by the OUTER one -- resolution must find the
+        # correct loop regardless of where it sits in loop_stack, never by
+        # position.
+        outer = self._for_loop("%j")   # loop_stack[0], drives array dim 1
+        inner = self._for_loop("%i")   # loop_stack[1], drives array dim 0
+        assert _trace_to_enclosing_loop("%i", [outer, inner], {}) is inner
+        assert _trace_to_enclosing_loop("%j", [outer, inner], {}) is outer
+
+    def test_unresolvable_returns_none(self):
+        loop = self._for_loop("%iv")
+        assert _trace_to_enclosing_loop("%unrelated", [loop], {}) is None
+
+
+# ── _loop_own_sequence ──────────────────────────────────────────────────────
+
+class TestLoopOwnSequence:
+
+    def test_scf_for_range(self):
+        loop = SCFFor([], SSAVar("%iv"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"), [], [])
+        const_map = {"%lb": 0, "%ub": 6, "%step": 2}
+        assert _loop_own_sequence(loop, const_map) == [0, 2, 4]
+
+    def test_scf_for_default_step_one(self):
+        loop = SCFFor([], SSAVar("%iv"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"), [], [])
+        const_map = {"%lb": 0, "%ub": 3}
+        assert _loop_own_sequence(loop, const_map) == [0, 1, 2]
+
+    def test_scf_for_unresolvable_bound_returns_none(self):
+        loop = SCFFor([], SSAVar("%iv"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"), [], [])
+        assert _loop_own_sequence(loop, {"%lb": 0}) is None
+
+    def _while_loop(self, bound_name="%c3", bound_op=None):
+        after_body = [
+            FeltConst(SSAVar("%c1"), 1),
+            FeltBinary(SSAVar("%next"), "felt.add", SSAVar("%arg1"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next")], [Type("index")]),
+        ]
+        before_ops = []
+        if bound_op is not None:
+            before_ops.append(bound_op)
+        before_ops += [
+            BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg1"), SSAVar(bound_name)),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%arg1")], [Type("index")]),
+        ]
+        return SCFWhile(
+            [], [(SSAVar("%arg1"), SSAVar("%c0"))], [[Type("index")], [Type("index")]],
+            before_ops, [(SSAVar("%arg1"), Type("index"))], after_body,
+        )
+
+    def test_scf_while_sequence(self):
+        loop = self._while_loop(bound_op=FeltConst(SSAVar("%c3"), 3))
+        assert _loop_own_sequence(loop, {"%c0": 0}) == [0, 1, 2]
+
+    def test_scf_while_unresolvable_returns_none(self):
+        loop = self._while_loop(bound_name="%bound")
+        assert _loop_own_sequence(loop, {"%c0": 0}) is None
+
+    def test_not_a_loop_returns_none(self):
+        assert _loop_own_sequence(object(), {}) is None
+
+
+# ── _resolve_population_nest_sequence ───────────────────────────────────────
+
+class TestResolvePopulationNestSequence:
+    """
+    Combines the implicated loops' own sequences into one nest's list of
+    index tuples, in ARRAY DIMENSION order (matching the write's own index
+    order) -- which is not necessarily the same as loop_stack's own
+    (outer-to-inner) nesting order.
+    """
+
+    def test_positional_2d_outer_slow_inner_fast(self):
+        # Nesting order matches dimension order here (the common/simple
+        # case): outer loop = dim 0, inner loop = dim 1.
+        outer = SCFFor([], SSAVar("%j"), SSAVar("%lb_j"), SSAVar("%ub_j"), SSAVar("%step_j"), [], [])
+        inner = SCFFor([], SSAVar("%i"), SSAVar("%lb_i"), SSAVar("%ub_i"), SSAVar("%step_i"), [], [])
+        write = ArrayWrite(SSAVar("%array"), [SSAVar("%j"), SSAVar("%i")], SSAVar("%14"), [])
+        const_map = {"%lb_j": 0, "%ub_j": 2, "%step_j": 1, "%lb_i": 0, "%ub_i": 3, "%step_i": 1}
+        result = _resolve_population_nest_sequence(write, [outer, inner], {}, const_map)
+        assert result == [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2)]
+
+    def test_non_positional_dimension_order_differs_from_nesting(self):
+        # Mirrors arbitrary_traversal_array_components.circom: "components[i][j]"
+        # (array dim 0 = i, dim 1 = j), with i (inner loop) fast-varying and
+        # j (outer loop) slow-varying -- the write's own index list is
+        # [i-derived, j-derived], the OPPOSITE of loop_stack's nesting order.
+        outer_j = SCFFor([], SSAVar("%j"), SSAVar("%lb_j"), SSAVar("%ub_j"), SSAVar("%step_j"), [], [])
+        inner_i = SCFFor([], SSAVar("%i"), SSAVar("%lb_i"), SSAVar("%ub_i"), SSAVar("%step_i"), [], [])
+        cast_i = CastToIndex(SSAVar("%7"), SSAVar("%i"))
+        cast_j = CastToIndex(SSAVar("%8"), SSAVar("%j"))
+        write = ArrayWrite(SSAVar("%array"), [SSAVar("%7"), SSAVar("%8")], SSAVar("%14"), [])
+        def_map = {"%7": cast_i, "%8": cast_j}
+        const_map = {"%lb_j": 0, "%ub_j": 4, "%step_j": 2, "%lb_i": 0, "%ub_i": 6, "%step_i": 2}
+        result = _resolve_population_nest_sequence(write, [outer_j, inner_i], def_map, const_map)
+        # j (outer) varies slowest: j=0 -> i=0,2,4; j=2 -> i=0,2,4. Each
+        # tuple is (i, j) -- ARRAY dimension order, not nesting order.
+        assert result == [(0, 0), (2, 0), (4, 0), (0, 2), (2, 2), (4, 2)]
+
+    def test_unrelated_enclosing_loop_ignored(self):
+        # An enclosing loop that doesn't drive any of this write's indices
+        # doesn't need to be resolvable at all.
+        unrelated = SCFFor([], SSAVar("%k"), SSAVar("%lb_k"), SSAVar("%ub_k"), SSAVar("%step_k"), [], [])
+        only = SCFFor([], SSAVar("%i"), SSAVar("%lb_i"), SSAVar("%ub_i"), SSAVar("%step_i"), [], [])
+        write = ArrayWrite(SSAVar("%array"), [SSAVar("%i")], SSAVar("%14"), [])
+        const_map = {"%lb_i": 0, "%ub_i": 2, "%step_i": 1}  # no %lb_k etc. at all
+        result = _resolve_population_nest_sequence(write, [unrelated, only], {}, const_map)
+        assert result == [(0,), (1,)]
+
+    def test_unresolvable_index_returns_none(self):
+        loop = SCFFor([], SSAVar("%i"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"), [], [])
+        write = ArrayWrite(SSAVar("%array"), [SSAVar("%unrelated")], SSAVar("%14"), [])
+        assert _resolve_population_nest_sequence(write, [loop], {}, {"%lb": 0, "%ub": 2}) is None
+
+    def test_unresolvable_loop_sequence_returns_none(self):
+        loop = SCFFor([], SSAVar("%i"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"), [], [])
+        write = ArrayWrite(SSAVar("%array"), [SSAVar("%i")], SSAVar("%14"), [])
+        assert _resolve_population_nest_sequence(write, [loop], {}, {}) is None
+
+
+# ── _collect_population_write_candidates ────────────────────────────────────
+
+class TestCollectPopulationWriteCandidates:
+    """
+    More than one structurally-valid population write can exist in the same
+    scope -- LLZK re-checks "ready to call yet?" once per input-signal
+    assignment for a multi-input component, each with its own full
+    call+array-write scaffolding, but only the textually LAST one is ever
+    satisfied at runtime (confirmed via
+    arbitrary_traversal_array_components_concrete.mlir's 2-input IsZero).
+    """
+
+    def _population_write(self, ssa="%14"):
+        read = ArrayRead(SSAVar(ssa), SSAVar("%array"), [SSAVar("%i")], [])
+        write = ArrayWrite(SSAVar("%array"), [SSAVar("%i")], SSAVar(ssa), [])
+        return read, write
+
+    def test_single_candidate_found(self):
+        read, write = self._population_write()
+        branch = SCFIf([], SSAVar("%cond"), [], [read, write], None)
+        out = []
+        _collect_population_write_candidates([branch], {"%array": "comp"}, {}, {}, out)
+        assert len(out) == 1
+        assert out[0][0] is write
+
+    def test_multiple_sibling_candidates_all_collected_in_order(self):
+        # Mirrors the real shape: two SIBLING scf.if blocks (one per input
+        # signal checkpoint) at the same body level, each independently
+        # writing to the same registered array.
+        read1, write1 = self._population_write(ssa="%14")
+        branch1 = SCFIf([], SSAVar("%cond1"), [], [read1, write1], None)
+        read2, write2 = self._population_write(ssa="%32")
+        branch2 = SCFIf([], SSAVar("%cond2"), [], [read2, write2], None)
+
+        out = []
+        _collect_population_write_candidates([branch1, branch2], {"%array": "comp"}, {}, {}, out)
+        assert [c[0] for c in out] == [write1, write2]
+
+    def test_does_not_cross_into_nested_loop(self):
+        # A write inside a FURTHER nested scf.for is a different dimension's
+        # own population site, not this scope's -- must not be collected
+        # here (the caller handles it via its own separate recursion).
+        read, write = self._population_write()
+        nested_for = SCFFor([], SSAVar("%k"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"),
+                            [], [read, write])
+        out = []
+        _collect_population_write_candidates([nested_for], {"%array": "comp"}, {}, {}, out)
+        assert out == []
+
+    def test_non_population_write_not_collected(self):
+        # A write whose value is a fresh pod.new (not read-modify-write) --
+        # e.g. the array's own init-fill loop -- is filtered out by
+        # _is_population_write, same as at the top level.
+        fresh = PodNew(SSAVar("%pod_8"), {}, {})
+        write = ArrayWrite(SSAVar("%array"), [SSAVar("%i")], SSAVar("%pod_8"), [])
+        out = []
+        _collect_population_write_candidates([fresh, write], {"%array": "comp"}, {}, {}, out)
+        assert out == []
+
+
+# ── _find_array_component_population_sequences (full integration) ─────────────
+
+class TestFindArrayComponentPopulationSequences:
+    """
+    End-to-end: for each array-of-components member populated inside at
+    least one genuinely symbolic loop, computes the real sequence of
+    concrete array-index tuples the population loop(s) actually visit, in
+    true execution order.
+    """
+
+    def _population_nest(self, array="%array", idx_names=("%i",), lb=0, ub=2, step=1):
+        """
+        A single scf.for population nest: reads the counting-pod array,
+        writes it straight back (a trivial but valid read-modify-write),
+        indexed by one or more freshly-declared induction variables (one
+        scf.for per name, innermost holding the read/write).
+        """
+        read = ArrayRead(SSAVar("%14"), SSAVar(array), [SSAVar(n) for n in idx_names], [])
+        write = ArrayWrite(SSAVar(array), [SSAVar(n) for n in idx_names], SSAVar("%14"), [])
+        body = [read, write]
+        for name in reversed(idx_names):
+            body = [SCFFor([], SSAVar(name), SSAVar(f"%lb{name}"), SSAVar(f"%ub{name}"),
+                           SSAVar(f"%step{name}"), [], body)]
+        const_map = {}
+        for name in idx_names:
+            const_map[f"%lb{name}"] = lb
+            const_map[f"%ub{name}"] = ub
+            const_map[f"%step{name}"] = step
+        return body, const_map
+
+    def _consts(self, const_map):
+        return [FeltConst(SSAVar(name), value) for name, value in const_map.items()]
+
+    def test_simple_scf_for_population(self):
+        nest, const_map = self._population_nest(idx_names=("%i",), lb=0, ub=3, step=1)
+        body = self._consts(const_map) + nest
+        result = _find_array_component_population_sequences(body, {"%array": "comp"})
+        assert result == {"comp": [(0,), (1,), (2,)]}
+
+    def test_simple_scf_while_population(self):
+        after_body = [
+            FeltConst(SSAVar("%c1"), 1),
+            ArrayRead(SSAVar("%14"), SSAVar("%array"), [SSAVar("%arg1")], []),
+            ArrayWrite(SSAVar("%array"), [SSAVar("%arg1")], SSAVar("%14"), []),
+            FeltBinary(SSAVar("%next"), "felt.add", SSAVar("%arg1"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next")], [Type("index")]),
+        ]
+        before_body = [
+            FeltConst(SSAVar("%c2"), 2),
+            BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg1"), SSAVar("%c2")),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%arg1")], [Type("index")]),
+        ]
+        loop = SCFWhile(
+            [], [(SSAVar("%arg1"), SSAVar("%c0"))], [[Type("index")], [Type("index")]],
+            before_body, [(SSAVar("%arg1"), Type("index"))], after_body,
+        )
+        body = [FeltConst(SSAVar("%c0"), 0), loop]
+        result = _find_array_component_population_sequences(body, {"%array": "comp"})
+        assert result == {"comp": [(0,), (1,)]}
+
+    def test_2d_dimension_order_differs_from_nesting_order(self):
+        # Mirrors arbitrary_traversal_array_components.circom's actual
+        # shape: components[i][j], i (dim 0) driven by the INNER loop, j
+        # (dim 1) by the OUTER loop.
+        read = ArrayRead(SSAVar("%14"), SSAVar("%array"), [SSAVar("%7"), SSAVar("%8")], [])
+        write = ArrayWrite(SSAVar("%array"), [SSAVar("%7"), SSAVar("%8")], SSAVar("%14"), [])
+        cast_i = CastToIndex(SSAVar("%7"), SSAVar("%i"))
+        cast_j = CastToIndex(SSAVar("%8"), SSAVar("%j"))
+        inner_i = SCFFor([], SSAVar("%i"), SSAVar("%lbi"), SSAVar("%ubi"), SSAVar("%stepi"),
+                         [], [cast_i, cast_j, read, write])
+        outer_j = SCFFor([], SSAVar("%j"), SSAVar("%lbj"), SSAVar("%ubj"), SSAVar("%stepj"),
+                         [], [inner_i])
+        body = [
+            FeltConst(SSAVar("%lbi"), 0), FeltConst(SSAVar("%ubi"), 5), FeltConst(SSAVar("%stepi"), 2),
+            FeltConst(SSAVar("%lbj"), 0), FeltConst(SSAVar("%ubj"), 4), FeltConst(SSAVar("%stepj"), 2),
+            outer_j,
+        ]
+        result = _find_array_component_population_sequences(body, {"%array": "components"})
+        assert result == {"components": [(0, 0), (2, 0), (4, 0), (0, 2), (2, 2), (4, 2)]}
+
+    def test_two_separate_nests_concatenated_in_body_order(self):
+        # Mirrors arbitrary_traversal_array_components.circom's own
+        # even-index and odd-index nests -- two SEPARATE scf.for loops
+        # populating the same member, run strictly sequentially. Each
+        # nest's own induction variable and bounds get distinct SSA names,
+        # matching real LLZK output's own SSA-uniqueness guarantee (a
+        # literal name is never redefined with a different value within
+        # the same function).
+        nest1, const1 = self._population_nest(idx_names=("%i1",), lb=0, ub=2, step=1)
+        nest2, const2 = self._population_nest(idx_names=("%i2",), lb=2, ub=4, step=1)
+        body = self._consts(const1) + nest1 + self._consts(const2) + nest2
+        result = _find_array_component_population_sequences(body, {"%array": "comp"})
+        assert result == {"comp": [(0,), (1,), (2,), (3,)]}
+
+    def test_unresolvable_bound_member_absent_from_result(self):
+        # No consts defining %lb/%ub at all -- the population site is found
+        # structurally but its own sequence can't be computed.
+        nest, _ = self._population_nest(idx_names=("%i",))
+        result = _find_array_component_population_sequences(nest, {"%array": "comp"})
+        assert result == {}
+
+    def test_no_population_at_all_returns_empty(self):
+        result = _find_array_component_population_sequences([], {"%array": "comp"})
+        assert result == {}
+
+    def test_duplicate_checkpoints_in_same_scope_keeps_only_last(self):
+        # Mirrors the real multi-input-signal shape: two structurally valid
+        # population writes exist in the SAME scf.for body (one per
+        # checkpoint) -- only the textually last is the real one.
+        read1 = ArrayRead(SSAVar("%14"), SSAVar("%array"), [SSAVar("%i")], [])
+        write1 = ArrayWrite(SSAVar("%array"), [SSAVar("%i")], SSAVar("%14"), [])
+        branch1 = SCFIf([], SSAVar("%cond1"), [], [read1, write1], None)
+
+        read2 = ArrayRead(SSAVar("%32"), SSAVar("%array"), [SSAVar("%i")], [])
+        write2 = ArrayWrite(SSAVar("%array"), [SSAVar("%i")], SSAVar("%32"), [])
+        branch2 = SCFIf([], SSAVar("%cond2"), [], [read2, write2], None)
+
+        loop = SCFFor([], SSAVar("%i"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"),
+                      [], [branch1, branch2])
+        body = [FeltConst(SSAVar("%lb"), 0), FeltConst(SSAVar("%ub"), 3), FeltConst(SSAVar("%step"), 1), loop]
+        result = _find_array_component_population_sequences(body, {"%array": "comp"})
+        # Exactly one sequence recorded (not duplicated 2x) -- the dedup
+        # itself is what's under test; the exact write chosen is opaque
+        # from the outside since both are structurally identical.
+        assert result == {"comp": [(0,), (1,), (2,)]}
+
+    def test_compile_time_constant_index_skipped(self):
+        # A write outside any loop (loop_stack empty) is the ALREADY-fully-
+        # resolved compile-time-constant case (Part 2b) -- this pre-pass
+        # must not also produce a (spurious, single-element) sequence for
+        # it.
+        const0 = FeltConst(SSAVar("%c0"), 0)
+        cast0 = CastToIndex(SSAVar("%i0"), SSAVar("%c0"))
+        read = ArrayRead(SSAVar("%14"), SSAVar("%array"), [SSAVar("%i0")], [])
+        write = ArrayWrite(SSAVar("%array"), [SSAVar("%i0")], SSAVar("%14"), [])
+        body = [const0, cast0, read, write]
+        result = _find_array_component_population_sequences(body, {"%array": "comp"})
+        assert result == {}

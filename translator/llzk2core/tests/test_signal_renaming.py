@@ -246,3 +246,100 @@ class TestSignalRenaming:
         assert vars_info["Num2Bits_18_416#0.out"] == ["v_144", "v_145"]
         assert vars_info["Num2Bits_18_416#1.in"] == "v_241"
         assert vars_info["Num2Bits_18_416#1.out"] == ["v_353", "v_354"]
+
+    # ── process_components — components_index_sequences (N-D / arbitrary order) ──
+
+    def _sigmaf_smt_json(self):
+        """
+        A trimmed, N-D fixture mirroring poseidon3_test_concrete.mlir's
+        real "@sigmaF" (!array.type<8,3 x !struct.type<@Sigma_1::...>>,
+        populated inside a genuinely symbolic loop): two calls, each
+        attributable to a real (i, j) pair via components_index_sequences
+        rather than a flat per-call counter. The exact shape (call/vars
+        format, "sigmaF#0#0"-keyed components_info) is confirmed end-to-end
+        against real llzk_cli output for poseidon3_test_concrete.mlir --
+        see PROGRESS.md.
+        """
+        call0 = (
+            ':meta-data "call @Sigma_1 (sigmaF.in) to sigmaF.out" '
+            ':in-vars-info "{\\"sigmaF.in\\": \\"v_1\\"}" '
+            ':out-vars-info "{\\"sigmaF.out\\": \\"v_2\\"}"'
+        )
+        call1 = (
+            ':meta-data "call @Sigma_1 (sigmaF.in) to sigmaF.out" '
+            ':in-vars-info "{\\"sigmaF.in\\": \\"v_3\\"}" '
+            ':out-vars-info "{\\"sigmaF.out\\": \\"v_4\\"}"'
+        )
+        formula = f"(and (! (@Sigma_1 v_1) {call0}) (! (@Sigma_1 v_3) {call1}))"
+        return {
+            "macros": {
+                "@PoseidonEx_69": {
+                    "formula": formula,
+                    "components_info": {
+                        "sigmaF#0#0": "@Sigma_1",
+                        "sigmaF#0#1": "@Sigma_1",
+                    },
+                    "components_index_sequences": {
+                        "sigmaF": [[0, 0], [0, 1]],
+                    },
+                    "vars_info": {},
+                },
+            },
+        }
+
+    def test_nd_sequence_used_to_build_component_iteration(self):
+        # The core fix: a flat "#i" counter can never match an N-D
+        # component_info key -- the real (i, j) pair from
+        # components_index_sequences is what makes this resolve at all.
+        smt_json = self._sigmaf_smt_json()
+        result = process_components(smt_json)
+        vars_info = result["macros"]["@PoseidonEx_69"]["vars_info"]
+
+        assert vars_info["sigmaF#0#0.in"] == "v_1"
+        assert vars_info["sigmaF#0#0.out"] == "v_2"
+        assert vars_info["sigmaF#0#1.in"] == "v_3"
+        assert vars_info["sigmaF#0#1.out"] == "v_4"
+
+    def test_no_registered_sequence_falls_back_to_flat_counter(self):
+        # A component_name absent from components_index_sequences entirely
+        # (an older JSON without the field, or a member whose population
+        # loop's own bound wasn't statically resolvable) keeps the
+        # original flat "#i" behavior -- not a regression for that case.
+        smt_json = self._sigmaf_smt_json()
+        del smt_json["macros"]["@PoseidonEx_69"]["components_index_sequences"]
+        smt_json["macros"]["@PoseidonEx_69"]["components_info"] = {
+            "sigmaF#0": "@Sigma_1",
+            "sigmaF#1": "@Sigma_1",
+        }
+        result = process_components(smt_json)
+        vars_info = result["macros"]["@PoseidonEx_69"]["vars_info"]
+
+        assert vars_info["sigmaF#0.in"] == "v_1"
+        assert vars_info["sigmaF#0.out"] == "v_2"
+        assert vars_info["sigmaF#1.in"] == "v_3"
+        assert vars_info["sigmaF#1.out"] == "v_4"
+
+    def test_more_calls_observed_than_sequence_length_skips_extra(self):
+        # The static analysis predicted only ONE occurrence, but the trace
+        # has two calls -- the second is skipped rather than guessed at
+        # (same "don't rename what we can't confidently attribute"
+        # philosophy as decision 20), and does not corrupt the first.
+        smt_json = self._sigmaf_smt_json()
+        smt_json["macros"]["@PoseidonEx_69"]["components_index_sequences"]["sigmaF"] = [[0, 0]]
+        result = process_components(smt_json)
+        vars_info = result["macros"]["@PoseidonEx_69"]["vars_info"]
+
+        assert vars_info["sigmaF#0#0.in"] == "v_1"
+        assert vars_info["sigmaF#0#0.out"] == "v_2"
+        assert "sigmaF#0#1.in" not in vars_info
+        assert "sigmaF#0#1.out" not in vars_info
+
+    def test_missing_components_index_sequences_field_is_backward_compatible(self):
+        # An older-shaped JSON with no "components_index_sequences" key at
+        # all (not even an empty dict) must not raise -- falls back to the
+        # flat counter for every component, same as before this feature.
+        smt_json = self._num2ternary_smt_json()
+        assert "components_index_sequences" not in smt_json["macros"]["@Num2Ternary_1"]
+        result = process_components(smt_json)
+        vars_info = result["macros"]["@Num2Ternary_1"]["vars_info"]
+        assert vars_info["Num2Bits_17_364#0.in"] == "v_32"

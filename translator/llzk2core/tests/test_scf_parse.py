@@ -622,6 +622,37 @@ class TestSCF:
             "}",
         ]
 
+    def test_extract_index_sequence_returns_visited_values(self):
+        # _extract_index_sequence: like _extract_step, but returns the
+        # actual sequence of values %arg1 visits (not just the count) --
+        # used by struct.py's array-component index-sequence pre-pass, not
+        # by to_core (this is a NEW method, to_core/_extract_step are
+        # unchanged). Takes a plain var2const dict directly, since the
+        # pre-pass runs before real ctx.var2const is ever populated.
+        op = self._counting_while()
+        result = op._extract_index_sequence({"%arg1": 0}, {})
+        assert result == [0, 1]
+
+    def test_extract_index_sequence_none_when_bound_unresolvable(self):
+        # Mirrors _extract_step's own SymbolicSteps fallback -- here there's
+        # no way to list concrete values for an unresolvable bound, so this
+        # returns None instead.
+        after_body = [
+            FeltConst(SSAVar("%c1"), 1),
+            FeltBinary(SSAVar("%next"), "felt.add", SSAVar("%arg1"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next")], [Type("index")]),
+        ]
+        before_body = [
+            BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg1"), SSAVar("%bound")),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%arg1")], [Type("index")]),
+        ]
+        op = SCFWhile(
+            [], [(SSAVar("%arg1"), SSAVar("%c0"))], [[Type("index")], [Type("index")]],
+            before_body, [(SSAVar("%arg1"), Type("index"))], after_body,
+        )
+        result = op._extract_index_sequence({"%arg1": 0}, {})
+        assert result is None
+
     def test_while_to_core_repeat_when_body_has_call(self):
         # A call inside the after-body translates exactly like a call-free
         # body -- a single generic "repeat" block, never unrolled into

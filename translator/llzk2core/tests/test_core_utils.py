@@ -1,8 +1,10 @@
 import pytest
 from llzk_dialects.core_utils import (
     infer_n_repetitions_from_expressions,
+    infer_iteration_sequence_from_expressions,
     construct_function_from_expressions,
     count_iterations,
+    iterate_values,
     SymbolicSteps,
     _collect_setup_ops,
     _collect_free_var_names,
@@ -319,6 +321,108 @@ class TestBoolAndCondition:
         symbolic = SymbolicSteps([], SSAVar("%bound"), 0, "lt", True)
         with pytest.raises(NotImplementedError):
             _combine_min_steps(5, symbolic)
+
+
+class TestIterateValues:
+    """
+    iterate_values: like count_iterations, but returns the actual sequence
+    of values visited instead of just the count.
+    """
+
+    def test_returns_sequence_not_just_count(self):
+        assert iterate_values(0, lambda x: x < 4, lambda x: x + 1) == [0, 1, 2, 3]
+
+    def test_step_other_than_one(self):
+        assert iterate_values(0, lambda x: x < 6, lambda x: x + 2) == [0, 2, 4]
+
+    def test_zero_iterations(self):
+        assert iterate_values(5, lambda x: x < 5, lambda x: x + 1) == []
+
+
+class TestInferIterationSequence:
+    """
+    infer_iteration_sequence_from_expressions: like
+    infer_n_repetitions_from_expressions, but returns the actual sequence of
+    values the loop-carried variable visits instead of just the count --
+    used by struct.py's array-component index-sequence pre-pass. Shares its
+    resolution logic with the count-only path (_resolve_comparison_recurrence)
+    so the two can never silently disagree about what a while loop does.
+    """
+
+    def _basic_var2expression(self, bound_name="%c2", predicate="lt"):
+        return {
+            "%cond": BoolCmp(SSAVar("%cond"), predicate, SSAVar("%arg1"), SSAVar(bound_name)),
+            "%arg1": "%next",
+            "%next": _felt_binary("%next", "felt.add", "%arg1", "%c1"),
+            "%c1": _felt_const("%c1", 1),
+        }
+
+    def test_simple_form_returns_concrete_sequence(self):
+        var2expression = self._basic_var2expression()
+        var2expression["%c2"] = _felt_const("%c2", 3)
+        result = infer_iteration_sequence_from_expressions(
+            var2expression, "%cond", {"%arg1": 0}
+        )
+        assert result == [0, 1, 2]
+
+    def test_free_variable_resolved_via_var2const(self):
+        var2expression = self._basic_var2expression(bound_name="%bound")
+        result = infer_iteration_sequence_from_expressions(
+            var2expression, "%cond", {"%arg1": 0}, var2const={"%bound": 4}
+        )
+        assert result == [0, 1, 2, 3]
+
+    def test_unresolved_bound_returns_none(self):
+        # Mirrors test_unresolved_bound_returns_symbolic_steps_lt in
+        # TestInferNRepetitions -- there's no way to list concrete values
+        # for a count that's itself only known as a Core-level formula.
+        var2expression = self._basic_var2expression(bound_name="%bound")
+        result = infer_iteration_sequence_from_expressions(
+            var2expression, "%cond", {"%arg1": 0}
+        )
+        assert result is None
+
+    def test_bool_and_takes_shorter_sequence(self):
+        # Mirrors TestBoolAndCondition.test_same_loop_variable_takes_min --
+        # the loop stops as soon as either half first goes false, so the
+        # shorter (not necessarily lexicographically smaller) sequence wins.
+        var2expression = {
+            "%cond": _bool_and("%cond", "%c1cond", "%c2cond"),
+            "%c1cond": BoolCmp(SSAVar("%c1cond"), "lt", SSAVar("%arg1"), SSAVar("%b1")),
+            "%b1": _felt_const("%b1", 5),
+            "%c2cond": BoolCmp(SSAVar("%c2cond"), "lt", SSAVar("%arg1"), SSAVar("%b2")),
+            "%b2": _felt_const("%b2", 3),
+            "%arg1": "%next",
+            "%next": _felt_binary("%next", "felt.add", "%arg1", "%c1"),
+            "%c1": _felt_const("%c1", 1),
+        }
+        result = infer_iteration_sequence_from_expressions(var2expression, "%cond", {"%arg1": 0})
+        assert result == [0, 1, 2]
+
+    def test_bool_and_either_half_unresolved_returns_none(self):
+        var2expression = {
+            "%cond": _bool_and("%cond", "%c1cond", "%c2cond"),
+            "%c1cond": BoolCmp(SSAVar("%c1cond"), "lt", SSAVar("%arg1"), SSAVar("%extern")),
+            "%c2cond": BoolCmp(SSAVar("%c2cond"), "lt", SSAVar("%arg1"), SSAVar("%b2")),
+            "%b2": _felt_const("%b2", 3),
+            "%arg1": "%next",
+            "%next": _felt_binary("%next", "felt.add", "%arg1", "%c1"),
+            "%c1": _felt_const("%c1", 1),
+        }
+        result = infer_iteration_sequence_from_expressions(var2expression, "%cond", {"%arg1": 0})
+        assert result is None
+
+    def test_raises_when_operand_not_boolcmp(self):
+        var2expression = {
+            "%cond": _bool_and("%cond", "%nested_and", "%c2cond"),
+            "%nested_and": _bool_and("%nested_and", "%c1cond", "%c1cond"),
+            "%c1cond": BoolCmp(SSAVar("%c1cond"), "lt", SSAVar("%arg1"), SSAVar("%b1")),
+            "%b1": _felt_const("%b1", 5),
+            "%c2cond": BoolCmp(SSAVar("%c2cond"), "lt", SSAVar("%arg1"), SSAVar("%b2")),
+            "%b2": _felt_const("%b2", 3),
+        }
+        with pytest.raises(AssertionError):
+            infer_iteration_sequence_from_expressions(var2expression, "%cond", {"%arg1": 0})
 
 
 class TestAssignPodVarsTypeDriven:

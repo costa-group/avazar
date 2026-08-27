@@ -377,21 +377,86 @@ def _combine_min_steps(a: Union[int, SymbolicSteps], b: Union[int, SymbolicSteps
     )
 
 
-def _infer_from_comparison(initial_comparison: BoolCmp,
-                           var2expression: Dict[str, Union[str, Operation]],
-                           initial_values: Dict[str, int],
-                           var2const: Dict[str, int]) -> Union[int, SymbolicSteps]:
+def infer_iteration_sequence_from_expressions(var2expression: Dict[str, Union[str, Operation]],
+                                              condition_var_core: str,
+                                              initial_values: Dict[str, int],
+                                              var2const: Optional[Dict[str, int]] = None
+                                              ) -> Optional[List[int]]:
     """
-    Infers the number of iterations a while's exit condition allows, given a
-    single BoolCmp (one half of a bool.and, or the whole condition).
+    Like infer_n_repetitions_from_expressions, but returns the actual
+    sequence of values the loop-carried variable visits (one per iteration,
+    in order) instead of just the count -- used to attribute each concrete
+    call inside an array-of-components population loop to the real array
+    index it was called with, rather than assuming sequential 0,1,2,...
+    visitation (see struct.py's array-component index-sequence pre-pass).
+
+    Returns None whenever the count itself isn't a concrete int (a
+    SymbolicSteps-shaped bound, or -- for a bool.and -- either half not
+    reducing to a concrete sequence): there's no way to list values for an
+    iteration count only known as a Core-level formula.
+    """
+    var2const = var2const or {}
+
+    condition = var2expression[condition_var_core]
+
+    if isinstance(condition, BoolCmp):
+        return _infer_sequence_from_comparison(condition, var2expression, initial_values, var2const)
+
+    if isinstance(condition, BoolBinary) and condition.op == "bool.and":
+        lhs_condition = var2expression[condition.lhs.name]
+        rhs_condition = var2expression[condition.rhs.name]
+        assert isinstance(lhs_condition, BoolCmp) and isinstance(rhs_condition, BoolCmp), \
+            f"For now, a bool.and while condition must combine two BoolCmp: {condition}"
+
+        lhs_seq = _infer_sequence_from_comparison(lhs_condition, var2expression, initial_values, var2const)
+        rhs_seq = _infer_sequence_from_comparison(rhs_condition, var2expression, initial_values, var2const)
+        if lhs_seq is None or rhs_seq is None:
+            return None
+        # The loop stops as soon as either half first goes false -- the
+        # shorter sequence is the one that actually happened, same
+        # reasoning as _combine_min_steps.
+        return lhs_seq if len(lhs_seq) <= len(rhs_seq) else rhs_seq
+
+    raise NotImplementedError(
+        f"For now, only BoolCmp or bool.and-of-BoolCmp whiles are handled: {condition}"
+    )
+
+
+@dataclass
+class _ResolvedRecurrence:
+    """
+    A while condition's loop-carried variable fully resolved to a concrete
+    initial value, per-iteration update function, and continuation
+    predicate -- everything needed to either count iterations
+    (count_iterations) or list the actual values visited (iterate_values).
+    Shared by _infer_from_comparison and _infer_sequence_from_comparison so
+    the two can never silently drift apart.
+    """
+    initial_value: int
+    compare_func: Callable[[int], bool]
+    update_func: Callable[[int], int]
+
+
+def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
+                                   var2expression: Dict[str, Union[str, Operation]],
+                                   initial_values: Dict[str, int],
+                                   var2const: Dict[str, int]) -> Union[_ResolvedRecurrence, SymbolicSteps]:
+    """
+    Resolves a single BoolCmp while condition (one half of a bool.and, or the
+    whole condition) to either a _ResolvedRecurrence (initial value, update
+    function, continuation predicate all concrete) or a SymbolicSteps formula
+    (the bound depends on an unresolved free variable, but the loop
+    variable's own recurrence is a simple +-1 step). Shared resolution logic
+    for both "how many iterations" (_infer_from_comparison) and "what values
+    are actually visited" (_infer_sequence_from_comparison) -- see
+    _ResolvedRecurrence.
 
     The condition's bound may reference, besides the loop-carried variable
     itself, other free variables not defined anywhere inside the while (e.g.
     an enclosing function's own parameter). Those are resolved via var2const
     when known (folded in as constants, same as a literal felt.const); when
-    they aren't, the iteration count is instead derived as a SymbolicSteps
-    formula, provided the loop variable's own recurrence is a simple +-1
-    step.
+    they aren't, a SymbolicSteps formula is returned instead, provided the
+    loop variable's own recurrence is a simple +-1 step.
 
     The loop-carried variable is identified directly from the condition's own
     operands, via initial_values membership (only ever populated for the
@@ -465,7 +530,7 @@ def _infer_from_comparison(initial_comparison: BoolCmp,
         else:
             compare_func = (lambda x: bound_value < x) if op == "lt" else (lambda x: bound_value <= x)
 
-        return count_iterations(initial_value, compare_func, update_func)
+        return _ResolvedRecurrence(initial_value, compare_func, update_func)
 
     # The bound depends on a value that isn't known here (e.g. an enclosing
     # function's own parameter). Fall back to a symbolic Core expression for
@@ -489,6 +554,38 @@ def _infer_from_comparison(initial_comparison: BoolCmp,
 
     setup_ops = _collect_setup_ops(bound, var2expression, set())
     return SymbolicSteps(setup_ops, bound, initial_value, op, variable_is_lhs)
+
+
+def _infer_from_comparison(initial_comparison: BoolCmp,
+                           var2expression: Dict[str, Union[str, Operation]],
+                           initial_values: Dict[str, int],
+                           var2const: Dict[str, int]) -> Union[int, SymbolicSteps]:
+    """
+    Infers the number of iterations a while's exit condition allows, given a
+    single BoolCmp (one half of a bool.and, or the whole condition). See
+    _resolve_comparison_recurrence for the shared resolution logic.
+    """
+    resolved = _resolve_comparison_recurrence(initial_comparison, var2expression, initial_values, var2const)
+    if isinstance(resolved, SymbolicSteps):
+        return resolved
+    return count_iterations(resolved.initial_value, resolved.compare_func, resolved.update_func)
+
+
+def _infer_sequence_from_comparison(initial_comparison: BoolCmp,
+                                    var2expression: Dict[str, Union[str, Operation]],
+                                    initial_values: Dict[str, int],
+                                    var2const: Dict[str, int]) -> Optional[List[int]]:
+    """
+    Like _infer_from_comparison, but returns the actual list of values the
+    loop-carried variable visits (one per iteration, in order) instead of
+    just the count. Returns None when the recurrence isn't fully concrete
+    (a SymbolicSteps-shaped bound) -- there's no way to list values for a
+    count that's itself only known as a Core-level formula.
+    """
+    resolved = _resolve_comparison_recurrence(initial_comparison, var2expression, initial_values, var2const)
+    if isinstance(resolved, SymbolicSteps):
+        return None
+    return iterate_values(resolved.initial_value, resolved.compare_func, resolved.update_func)
 
 
 def construct_function_from_expressions(current_expr: SSAVar,
@@ -533,3 +630,18 @@ def count_iterations(initial_value, condition_fn, update_fn):
         value = update_fn(value)
         count += 1
     return count
+
+
+def iterate_values(initial_value, condition_fn, update_fn) -> List[int]:
+    """
+    Like count_iterations, but returns the actual sequence of values the
+    loop-carried variable takes -- one entry per iteration, in order (the
+    value the variable holds *during* that iteration, before its update),
+    rather than just how many there are.
+    """
+    values = []
+    value = initial_value
+    while condition_fn(value):
+        values.append(value)
+        value = update_fn(value)
+    return values

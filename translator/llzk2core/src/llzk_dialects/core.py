@@ -176,6 +176,24 @@ class TranslationContext:
     # emit a global.def textually after the struct that reads it.
     global2value: Dict[str, Union[int, List[int]]] = field(default_factory=dict)
 
+    # For an array-of-components member populated inside a genuinely
+    # symbolic (non-compile-time-constant-index) loop, the real sequence of
+    # concrete array-index tuples the population loop(s) will visit, in true
+    # execution order:
+    #   core_function_name -> {member_name -> [(idx1, idx2, ...), ...]}
+    # e.g. {"PoseidonEx_69": {"sigmaF": [(0, 0), (0, 1), ..., (7, 2)]}}
+    # Populated by struct.py's array-component index-sequence pre-pass (see
+    # StructDef.to_core) and exported into the SMT JSON alongside
+    # member_to_struct's own "components_info", for signal_renaming.py to
+    # consume in place of a flat per-call counter -- which only ever
+    # produced a single "#i" segment (wrong shape for an N-D member) and
+    # silently assumed sequential 0,1,2,... visitation (wrong for a member
+    # populated by more than one loop nest, or any non-row-major traversal).
+    # Absent (or missing a given member) when a population loop's own bound
+    # can't be resolved statically -- signal_renaming.py falls back to its
+    # original counter-based behavior for that member in that case.
+    array_component_index_sequences: Dict[str, Dict[str, List[Tuple[int, ...]]]] = field(default_factory=dict)
+
 
 def _apply_rename(name: str, rename: Dict[str, str]) -> str:
     """Apply a rename dict to an SSA variable name.

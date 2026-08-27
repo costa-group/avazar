@@ -226,6 +226,279 @@ def _annotate_array_component_reads(ops, array_member_base, const_map, pod_to_me
                 _annotate_array_component_reads(sub, array_member_base, local_const_map, pod_to_member)
 
 
+def _trace_to_enclosing_loop(name, loop_stack, def_map):
+    """
+    Resolve `name` back through cast.toindex/cast.tofelt identity casts
+    (using def_map, the SSA definitions visible at this point) until it
+    matches one of loop_stack's own induction variable (scf.for) or
+    after-region block-arg (scf.while) names. Returns the matching loop
+    object, or None if it can't be resolved to any of them.
+
+    Deliberately does NOT assume positional correspondence between an
+    array read's index list and loop_stack's own nesting order -- an
+    array's declared dimension order need not match its population loop's
+    own nesting order (confirmed via
+    arbitrary_traversal_array_components.circom: "components[i][j]" has i,
+    array dimension 0, driven by the INNER loop, and j, dimension 1, by
+    the OUTER one).
+    """
+    from llzk_dialects.scf import SCFFor, SCFWhile
+    from llzk_dialects.cast import CastToIndex, CastToFelt
+
+    seen = set()
+    while name not in seen:
+        seen.add(name)
+        for loop in loop_stack:
+            if isinstance(loop, SCFFor) and loop.iv.name == name:
+                return loop
+            if isinstance(loop, SCFWhile) and any(arg.name == name for arg, _ in loop.after_args):
+                return loop
+        defining_op = def_map.get(name)
+        if isinstance(defining_op, (CastToIndex, CastToFelt)):
+            name = defining_op.value.name
+        else:
+            return None
+    return None
+
+
+def _loop_own_sequence(loop, const_map):
+    """
+    The real sequence of values `loop`'s own induction variable /
+    after-region block-arg takes across its iterations, in order -- or
+    None if it can't be statically determined (a bound that isn't
+    resolvable via const_map, or -- for scf.while -- a SymbolicSteps-shaped
+    recurrence). const_map is the caller's own pre-pass-time constant fold
+    (never real ctx.var2const, which is empty at pre-pass time -- see
+    _find_array_component_population_sequences).
+    """
+    from llzk_dialects.scf import SCFFor, SCFWhile
+
+    if isinstance(loop, SCFFor):
+        lb = const_map.get(loop.lb.name)
+        ub = const_map.get(loop.ub.name)
+        step = const_map.get(loop.step.name, 1)
+        if lb is None or ub is None:
+            return None
+        return list(range(lb, ub, step))
+
+    if isinstance(loop, SCFWhile):
+        initial_values = {}
+        for block_arg, init_val in loop.init_args:
+            value = const_map.get(init_val.name)
+            if value is not None:
+                initial_values[block_arg.name] = value
+        try:
+            return loop._extract_index_sequence(initial_values, const_map)
+        except (NotImplementedError, KeyError, AssertionError):
+            # Best-effort static analysis: any shape _extract_index_sequence
+            # doesn't (yet) handle degrades to "can't resolve" rather than
+            # aborting the whole translation.
+            return None
+
+    return None
+
+
+def _resolve_population_nest_sequence(write, loop_stack, def_map, const_map):
+    """
+    For one array-of-components population write (an ArrayWrite into a
+    registered counting-pod array, with at least one non-compile-time-
+    constant index), resolve each of its indices back to the specific
+    enclosing loop that produces it (_trace_to_enclosing_loop -- by SSA
+    identity, never by position) and combine the implicated loops' own
+    sequences (_loop_own_sequence) into this nest's list of concrete
+    index tuples, in ARRAY DIMENSION order (matching the write's own index
+    order), with the outer-to-inner loop nesting order determining which
+    combination is visited when (true execution order: the outermost
+    implicated loop varies slowest).
+
+    Returns None if any index can't be resolved to a loop_stack member, or
+    if any implicated loop's own sequence can't be statically determined.
+    """
+    dim_to_loop = {}
+    for dim, idx in enumerate(write.indices):
+        loop = _trace_to_enclosing_loop(idx.name, loop_stack, def_map)
+        if loop is None:
+            return None
+        dim_to_loop[dim] = loop
+
+    # Only the loops actually used to index this array matter for THIS
+    # write -- an enclosing loop that doesn't drive any of its indices
+    # doesn't need to be resolvable at all. Preserve loop_stack's own
+    # outer-to-inner order.
+    ordered_loops = [loop for loop in loop_stack if loop in dim_to_loop.values()]
+
+    per_loop_sequence = {}
+    for loop in ordered_loops:
+        sequence = _loop_own_sequence(loop, const_map)
+        if sequence is None:
+            return None
+        per_loop_sequence[id(loop)] = sequence
+
+    num_dims = len(write.indices)
+    nest_tuples = []
+    for combo in itertools.product(*(per_loop_sequence[id(loop)] for loop in ordered_loops)):
+        loop_to_value = dict(zip((id(loop) for loop in ordered_loops), combo))
+        nest_tuples.append(tuple(loop_to_value[id(dim_to_loop[d])] for d in range(num_dims)))
+    return nest_tuples
+
+
+def _is_population_write(write, def_map):
+    """
+    True iff `write` (an ArrayWrite into a registered counting-pod array)
+    is a real read-modify-write population write -- its own value traces
+    directly back to an ArrayRead of that SAME array -- as opposed to, say,
+    the array's own initial fill loop (a fresh pod.new written into every
+    slot, with the array never read from at all first). Both shapes are
+    ordinary ArrayWrites into the registered array with non-constant
+    indices, so the read-modify-write pattern is what actually
+    distinguishes "this iteration corresponds to a real @compute call" from
+    "this is just allocating backing storage" -- confirmed necessary via
+    arbitrary_traversal_array_components_concrete.mlir, whose init loop
+    (array.write %array[%arg1, %arg2] = %pod_8, %pod_8 a fresh pod.new) was
+    otherwise indistinguishable from a genuine population write and
+    produced a spurious extra 30-entry row-major sequence.
+    """
+    from llzk_dialects.array import ArrayRead
+
+    source = def_map.get(write.rvalue.name)
+    return isinstance(source, ArrayRead) and source.arr_ref.name == write.arr_ref.name
+
+
+def _collect_population_write_candidates(ops, array_member_base, const_map, def_map, out):
+    """
+    Collect every population-write candidate (ArrayWrite into a registered
+    counting-pod array, non-constant indices, _is_population_write)
+    reachable from `ops` WITHOUT crossing into a nested scf.for/scf.while
+    -- i.e. everything still within the current loop iteration's own
+    scope, recursing through scf.if/scf.execute_region nesting (neither of
+    which starts a new array dimension). Appends
+    (write, const_map_at_that_point, def_map_at_that_point) to `out`, in
+    program order.
+
+    More than one candidate can genuinely exist in the same scope: LLZK
+    lowers a multi-input-signal component's "ready to call yet?" check to
+    fire once per input-signal assignment (@count starts at the input
+    count and is decremented each time), each with its own full call +
+    array-write scaffolding -- but only the LAST such checkpoint's
+    condition is ever true at runtime (count only reaches exactly 0 once,
+    after the final signal is assigned). Confirmed via
+    arbitrary_traversal_array_components_concrete.mlir's IsZero component
+    (2 input signals): both checkpoints structurally qualify, but only the
+    second is ever the real one -- the caller keeps only the last entry in
+    `out`.
+    """
+    from llzk_dialects.scf import SCFFor, SCFWhile
+    from llzk_dialects.array import ArrayWrite
+
+    local_const_map = dict(const_map)
+    local_const_map.update(_fold_index_constants(ops))
+    local_def_map = dict(def_map)
+    for op in ops:
+        if getattr(op, 'result', None) is not None:
+            local_def_map[op.result.name] = op
+
+    for op in ops:
+        if isinstance(op, (SCFFor, SCFWhile)):
+            continue  # starts a new dimension -- handled by the caller separately
+
+        if (isinstance(op, ArrayWrite) and op.arr_ref.name in array_member_base
+                and not all(idx.name in local_const_map for idx in op.indices)
+                and _is_population_write(op, local_def_map)):
+            out.append((op, local_const_map, local_def_map))
+
+        for attr in ('then_body', 'else_body', 'body'):
+            sub = getattr(op, attr, None)
+            if sub:
+                _collect_population_write_candidates(sub, array_member_base, local_const_map,
+                                                      local_def_map, out)
+
+
+def _walk_array_component_population(ops, array_member_base, const_map, loop_stack, def_map, member_nests):
+    """
+    Recursively find every scf.for/scf.while in `ops` (crossing through
+    scf.if/scf.execute_region nesting freely, since neither starts a new
+    array dimension), growing loop_stack as each is entered. For each
+    loop's own direct body (once entered), collects every population-write
+    candidate reachable from it without crossing into a FURTHER nested
+    scf.for/scf.while (_collect_population_write_candidates) and keeps only
+    the LAST one found -- see that function's own docstring for why more
+    than one can exist. Then keeps looking, inside that same body, for a
+    further nested loop (the next array dimension).
+
+    member_nests accumulates member_base -> [nest_sequence, ...], one entry
+    per distinct population site, in body-encounter order -- which is also
+    true execution order, since separate population loop nests for the same
+    member (e.g. arbitrary_traversal_array_components.circom's even-index
+    and odd-index nests) run strictly sequentially in the source.
+    """
+    from llzk_dialects.scf import SCFFor, SCFWhile
+
+    local_const_map = dict(const_map)
+    local_const_map.update(_fold_index_constants(ops))
+
+    local_def_map = dict(def_map)
+    for op in ops:
+        if getattr(op, 'result', None) is not None:
+            local_def_map[op.result.name] = op
+
+    for op in ops:
+        if not isinstance(op, (SCFFor, SCFWhile)):
+            for attr in ('then_body', 'else_body', 'body'):
+                sub = getattr(op, attr, None)
+                if sub:
+                    _walk_array_component_population(sub, array_member_base, local_const_map,
+                                                     loop_stack, local_def_map, member_nests)
+            continue
+
+        next_stack = loop_stack + [op]
+        for attr in ('body', 'before_body', 'after_body'):
+            sub = getattr(op, attr, None)
+            if not sub:
+                continue
+
+            candidates = []
+            _collect_population_write_candidates(sub, array_member_base, local_const_map,
+                                                  local_def_map, candidates)
+            if candidates:
+                write, write_const_map, write_def_map = candidates[-1]
+                member = array_member_base[write.arr_ref.name]
+                nest_sequence = _resolve_population_nest_sequence(
+                    write, next_stack, write_def_map, write_const_map)
+                if nest_sequence is not None:
+                    member_nests.setdefault(member, []).append(nest_sequence)
+
+            # Keep looking for a further nested loop (the next dimension)
+            # inside this same body.
+            _walk_array_component_population(sub, array_member_base, local_const_map,
+                                             next_stack, local_def_map, member_nests)
+
+
+def _find_array_component_population_sequences(body, array_member_base):
+    """
+    For each array-of-components member (array_member_base) populated
+    inside at least one genuinely symbolic loop, computes the real sequence
+    of concrete array-index tuples the population loop(s) actually visit,
+    in true execution order -- for signal_renaming.py to attribute each
+    call in llzk_cli's own SMT-level unrolled trace to the real array index
+    it was called with, instead of assuming sequential 0,1,2,... visitation
+    (wrong for an N-D member, or any non-row-major traversal order).
+
+    Returns member_base -> List[Tuple[int, ...]], concatenating multiple
+    separate population loop nests for the same member (see
+    arbitrary_traversal_array_components.circom) in body-encounter order.
+    A member with no genuinely-symbolic population site at all, or whose
+    population loop's own bound isn't statically resolvable, is simply
+    absent from the result -- signal_renaming.py falls back to its
+    original counter-based behavior for it in that case.
+    """
+    member_nests = {}
+    _walk_array_component_population(body, array_member_base, {}, [], {}, member_nests)
+    return {
+        member: [idx_tuple for nest in nests for idx_tuple in nest]
+        for member, nests in member_nests.items()
+    }
+
+
 def _is_idx_pod_component_member(type_str: str) -> Optional[Dict[str, Type]]:
     """
     A heterogeneous array-of-components member: a pod whose fields are all
@@ -514,10 +787,10 @@ def _build_component_naming_maps(body, ctx, idx_pod_member_types=None):
 
     # --- Part 2b: array-of-component members ---
     # A read of a counting-pod array that backs an array-of-component member
-    # is named like a scalar subcomponent: "last_0" when the index is a
-    # compile-time constant, or the bare base name when it isn't (a read
-    # inside a genuine runtime loop, e.g. an scf.while's after-body) — see
-    # _annotate_array_component_reads.
+    # is named like a scalar subcomponent: "last#0" (one "#idx" segment per
+    # dimension) when every index is a compile-time constant, or the bare
+    # base name when any isn't (a read inside a genuine runtime loop, e.g.
+    # an scf.while's after-body) — see _annotate_array_component_reads.
     array_member_base = _find_array_component_bases(body)
     if array_member_base:
         _annotate_array_component_reads(body, array_member_base, {}, pod_to_member)
@@ -530,6 +803,20 @@ def _build_component_naming_maps(body, ctx, idx_pod_member_types=None):
         _annotate_idx_pod_component_reads(body, idx_pod_member_types, pod_to_member)
 
     _annotate_function_calls(body, pod_to_member)
+
+    # --- Part 2d: real traversal order for genuinely-symbolic array
+    # population, for signal_renaming.py ---
+    # A member left at the bare base name by Part 2b (no single
+    # compile-time-known instance) still needs *some* way to attribute each
+    # concrete call in llzk_cli's own SMT-level unrolled trace back to the
+    # real array index it was called with. See
+    # _find_array_component_population_sequences.
+    array_component_index_sequences = {}
+    if array_member_base:
+        array_component_index_sequences = _find_array_component_population_sequences(
+            body, array_member_base)
+
+    return array_component_index_sequences
 
 
 class StructMember(Operation):
@@ -913,8 +1200,17 @@ class StructDef(BlockOperation):
         if subcomponent_members:
             ctx.member_to_struct[core_name] = subcomponent_members
 
-        # Pre-pass: build naming maps so calls use semantic signal names
-        _build_component_naming_maps(compute_op.body, ctx, idx_pod_member_types)
+        # Pre-pass: build naming maps so calls use semantic signal names.
+        # Also returns, for a member left at its bare name (no single
+        # compile-time-known instance), the real array-index traversal
+        # order its population loop(s) actually visit -- exported below for
+        # signal_renaming.py, since a bare-named call's own concrete
+        # instance can only be recovered from llzk_cli's own SMT-level
+        # execution trace, not from this translator's emitted .core text.
+        array_component_index_sequences = _build_component_naming_maps(
+            compute_op.body, ctx, idx_pod_member_types)
+        if array_component_index_sequences:
+            ctx.array_component_index_sequences[core_name] = array_component_index_sequences
 
         # After setting the translation, we just need to render the function
         # considering the out arguments we have generated

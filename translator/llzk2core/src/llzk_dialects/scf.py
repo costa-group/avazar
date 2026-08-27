@@ -20,7 +20,8 @@ from llzk_dialects.core import (
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.core_utils import (
-    translate_assignment_core_with_ctx, infer_n_repetitions_from_expressions, SymbolicSteps,
+    translate_assignment_core_with_ctx, infer_n_repetitions_from_expressions,
+    infer_iteration_sequence_from_expressions, SymbolicSteps,
     scoped_branch_registrations,
 )
 from llzk_dialects.felt import FeltBinary, FeltConst
@@ -960,10 +961,15 @@ class SCFWhile(BlockOperation):
             yield from emit_iteration()
             yield f"}}"
 
-    def _extract_step(self, initial_values: Dict[str, int],
-                      ctx: TranslationContext) -> Union[int, SymbolicSteps]:
+    def _build_while_var_expressions(self) -> Tuple[Dict[str, "Union[str, Operation]"], SSAVar]:
         """
-        Extracts how many iterations are performed in the loop
+        Structural analysis shared by _extract_step (how many iterations)
+        and _extract_index_sequence (what values are actually visited):
+        builds var2expression (the condition's own free variables, resolved
+        back through the before/after regions and the yield linking them)
+        and identifies the condition variable itself. Extracted verbatim
+        from _extract_step's own original body so both callers can never
+        drift apart.
         """
         # We assume the following structure:
         # * Second Region / First region for the first iteration, as the first region
@@ -1018,9 +1024,37 @@ class SCFWhile(BlockOperation):
                 var2expression[arg_var.name] = cond_arg.name
                 while_variables.remove(arg_var.name)
 
-        # Finally, using the information from var2expression, we can process the repeat information
+        return var2expression, condition_var
+
+    def _extract_step(self, initial_values: Dict[str, int],
+                      ctx: TranslationContext) -> Union[int, SymbolicSteps]:
+        """
+        Extracts how many iterations are performed in the loop
+        """
+        var2expression, condition_var = self._build_while_var_expressions()
         return infer_n_repetitions_from_expressions(var2expression, condition_var.name,
                                                     initial_values, ctx.var2const)
+
+    def _extract_index_sequence(self, initial_values: Dict[str, int],
+                                var2const: Dict[str, int]) -> Optional[List[int]]:
+        """
+        Like _extract_step, but returns the actual sequence of values the
+        loop-carried variable visits (one per iteration, in order) instead
+        of just the count -- used by struct.py's array-component
+        index-sequence pre-pass to attribute each concrete call inside an
+        array-of-components population loop to the real array index it was
+        called with. Unlike _extract_step, takes a plain var2const dict
+        directly (not a TranslationContext) since this pre-pass runs before
+        real to_core translation, when ctx.var2const is still empty --
+        callers supply their own statically-folded map instead.
+
+        Returns None when the sequence isn't fully concrete (a
+        SymbolicSteps-shaped bound) -- see
+        infer_iteration_sequence_from_expressions.
+        """
+        var2expression, condition_var = self._build_while_var_expressions()
+        return infer_iteration_sequence_from_expressions(var2expression, condition_var.name,
+                                                          initial_values, var2const)
 
     def _process_while_variables(self, operations: List[Operation], while_variables: Set[str],
                                  var2expression: Dict[str, Union[str, Operation]]):
