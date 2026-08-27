@@ -17,6 +17,7 @@ Operations:
   StructDef    — struct.def     (BlockOperation: define a circuit component)
 """
 
+import itertools
 import re
 from typing import Dict, List, Optional, Tuple, Generator
 
@@ -26,7 +27,7 @@ from llzk_dialects.core import (
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
-from llzk_dialects.utils import split_top_level_commas, struct_type_name
+from llzk_dialects.utils import array_dimensions, split_top_level_commas, struct_type_name
 from llzk_dialects.core_utils import translate_assignment_core_with_ctx
 
 
@@ -97,36 +98,39 @@ def _fold_index_constants(ops):
     return const_map
 
 
-def _find_array_component_bases(body):
+def _walk_for_bulk_copy_nest(ops, iv_stack, target_to_counting):
     """
-    Detect array-of-component members: a struct member holding an array of
-    subcomponents (e.g. "@last : !array.type<2 x !struct.type<...>>") is
-    populated, at the end of compute, by a bulk-copy scf.for loop that reads
-    each "counting pod" array element's @comp field (the just-computed
-    subcomponent) and writes it into the array that is then struct-written
-    into that member.
+    Recursively walk a (possibly nested) chain of scf.for loops looking for
+    the bulk-copy triple (array.read a counting-pod array; pod.read its
+    @comp field; array.write the result into the target array) at every
+    level, indexed by ALL enclosing loops' own induction variables in
+    outer-to-inner order.
 
-    Returns a dict mapping the counting-pod array's own SSA name to the
-    member's base name (no @), so a later constant-indexed read of that
-    counting array (see _build_component_naming_maps) can be attributed to
-    a specific component instance, e.g. "last_0".
+    An N-D array-of-components member's bulk copy nests N scf.for loops,
+    one per dimension -- so the triple only actually matches at the
+    innermost level, where len(indices) == len(iv_stack) == N. At any
+    non-innermost level the triple check simply finds nothing (the index
+    count doesn't match yet) and recursion carries on deeper; this reduces
+    to exactly the original single-scf.for, single-index behavior when
+    there's no nesting at all (iv_stack of length 1).
     """
     from llzk_dialects.scf import SCFFor
     from llzk_dialects.pod import PodRead
     from llzk_dialects.array import ArrayRead, ArrayWrite
 
-    # target array SSA (the array-of-struct member's value) -> counting array SSA
-    target_to_counting = {}
-    for op in body:
+    for op in ops:
         if not isinstance(op, SCFFor):
             continue
+        ivs = iv_stack + [op.iv]
+
         # array.read result -> counting array ssa, restricted to reads
-        # indexed by this loop's own induction variable
+        # indexed by every enclosing loop's own induction variable, in order
         comp_reads = {
             inner._result.name: inner.arr_ref.name
             for inner in op.body
             if isinstance(inner, ArrayRead)
-            and len(inner.indices) == 1 and inner.indices[0].name == op.iv.name
+            and len(inner.indices) == len(ivs)
+            and all(idx.name == iv.name for idx, iv in zip(inner.indices, ivs))
         }
         # pod.read(@comp) result -> counting array ssa
         comp_vals = {}
@@ -136,11 +140,35 @@ def _find_array_component_bases(body):
                 if counting_arr is not None:
                     comp_vals[inner._result.name] = counting_arr
         for inner in op.body:
-            if (isinstance(inner, ArrayWrite) and len(inner.indices) == 1
-                    and inner.indices[0].name == op.iv.name):
+            if (isinstance(inner, ArrayWrite) and len(inner.indices) == len(ivs)
+                    and all(idx.name == iv.name for idx, iv in zip(inner.indices, ivs))):
                 counting_arr = comp_vals.get(inner.rvalue.name)
                 if counting_arr is not None:
                     target_to_counting[inner.arr_ref.name] = counting_arr
+
+        # Recurse into this loop's own body to find a nested scf.for
+        # continuing the bulk-copy nest one dimension deeper.
+        _walk_for_bulk_copy_nest(op.body, ivs, target_to_counting)
+
+
+def _find_array_component_bases(body):
+    """
+    Detect array-of-component members: a struct member holding an array of
+    subcomponents (e.g. "@last : !array.type<2 x !struct.type<...>>", or,
+    for an N-D collection, "!array.type<M,N x !struct.type<...>>") is
+    populated, at the end of compute, by a bulk-copy nest of scf.for loops
+    (one per dimension) that reads each "counting pod" array element's
+    @comp field (the just-computed subcomponent) and writes it into the
+    array that is then struct-written into that member.
+
+    Returns a dict mapping the counting-pod array's own SSA name to the
+    member's base name (no @), so a later constant-indexed read of that
+    counting array (see _build_component_naming_maps) can be attributed to
+    a specific component instance, e.g. "last#0" (or "last#0#1" for a 2-D
+    collection).
+    """
+    target_to_counting = {}
+    _walk_for_bulk_copy_nest(body, [], target_to_counting)
 
     array_member_base = {}
     for op in body:
@@ -160,17 +188,20 @@ def _annotate_array_component_reads(ops, array_member_base, const_map, pod_to_me
     _find_array_component_bases), stamping pod_to_member[read_result] with
     a name for the slot that was read:
 
-      - "{base}_{idx}" (a plain string) when the index resolves to a
+      - "{base}#{idx1}#{idx2}#..." (a plain string, one "#idx" segment per
+        dimension) when EVERY one of the read's indices resolves to a
         compile-time constant (via a local constant fold — const_map
         carries constants folded in enclosing scopes down into this one,
         without leaking sideways between sibling branches that may reuse
         the same SSA names, e.g. two scf.for loops in the same function
         both using "%arg1" as their induction variable).
-      - the bare base name when it doesn't — the read sits inside a genuine
-        runtime loop (e.g. an scf.while's after-body), so there is no
-        single instance to name more specifically at translation time (any
-        further per-iteration disambiguation is resolved afterwards by
-        llzk_cli).
+      - the bare base name when any index doesn't — the read sits inside a
+        genuine runtime loop (e.g. an scf.while's after-body), so there is
+        no single instance to name more specifically at translation time
+        (any further per-iteration disambiguation is resolved afterwards
+        by llzk_cli). A partially-resolved index (some constant, some not)
+        still isn't enough to name one specific instance, so it's treated
+        the same as fully-unresolved.
 
     _annotate_function_calls then picks up these entries exactly like the
     scalar-subcomponent ones already in pod_to_member.
@@ -181,13 +212,13 @@ def _annotate_array_component_reads(ops, array_member_base, const_map, pod_to_me
     local_const_map.update(_fold_index_constants(ops))
 
     for op in ops:
-        if (isinstance(op, ArrayRead) and len(op.indices) == 1
-                and op.arr_ref.name in array_member_base):
+        if isinstance(op, ArrayRead) and op.arr_ref.name in array_member_base:
             base = array_member_base[op.arr_ref.name]
-            idx_val = local_const_map.get(op.indices[0].name)
-            pod_to_member[op._result.name] = (
-                f"{base}_{idx_val}" if idx_val is not None else base
-            )
+            idx_vals = [local_const_map.get(idx.name) for idx in op.indices]
+            if idx_vals and all(v is not None for v in idx_vals):
+                pod_to_member[op._result.name] = base + "".join(f"#{v}" for v in idx_vals)
+            else:
+                pod_to_member[op._result.name] = base
 
         for attr in ('body', 'then_body', 'else_body', 'before_body', 'after_body'):
             sub = getattr(op, attr, None)
@@ -324,7 +355,7 @@ def _collect_while_iter_args(ops, while_iter_args):
     re-carried by an inner scf.while nested inside an outer one) only gets
     its OUTERMOST loop's block-arg aliased -- a read using the inner loop's
     own block-arg name (e.g. "%arg4") never resolves, silently falling back
-    to a raw SSA-derived name instead of the semantic "mixLast_0.in".
+    to a raw SSA-derived name instead of the semantic "mixLast#0.in".
     """
     from llzk_dialects.scf import SCFWhile
 
@@ -362,11 +393,14 @@ def _annotate_input_array_reads(ops, ctx, const_map):
     local_const_map.update(_fold_index_constants(ops))
 
     for op in ops:
-        if isinstance(op, ArrayRead) and len(op.indices) == 1:
+        if isinstance(op, ArrayRead):
             member = ctx.input_pod_to_member.get(op.arr_ref.name)
             if member is not None:
-                idx_val = local_const_map.get(op.indices[0].name)
-                op._semantic_base = f"{member}_{idx_val}" if idx_val is not None else member
+                idx_vals = [local_const_map.get(idx.name) for idx in op.indices]
+                if idx_vals and all(v is not None for v in idx_vals):
+                    op._semantic_base = member + "".join(f"#{v}" for v in idx_vals)
+                else:
+                    op._semantic_base = member
 
         for attr in ('body', 'then_body', 'else_body', 'before_body', 'after_body'):
             sub = getattr(op, attr, None)
@@ -843,7 +877,8 @@ class StructDef(BlockOperation):
 
         # Record subcomponent members (struct-typed) for this function.
         # A direct struct member adds one entry; an array-of-structs member
-        # expands into N numbered entries (1-indexed).
+        # expands into one "#i" (or, for an N-D array, "#i1#i2#...") entry
+        # per element, 0-indexed per dimension.
         subcomponent_members = {}
         # Heterogeneous array-of-components members: member_name ->
         # {@idx_N: struct Type}, populated below and fed into the naming
@@ -868,10 +903,11 @@ class StructDef(BlockOperation):
                 continue
             full_ref = struct_type_name(type_str)
             referred = full_ref.split("::")[-1]
-            arr_m = re.search(r"!array\.type<\s*(\d+)\s+x\s+!struct\.type<", type_str)
-            if arr_m:
-                for i in range(int(arr_m.group(1))):
-                    subcomponent_members[f"{member_name}#{i}"] = referred
+            dims = array_dimensions(type_str)
+            if dims:
+                for combo in itertools.product(*(range(d) for d in dims)):
+                    suffix = "".join(f"#{i}" for i in combo)
+                    subcomponent_members[f"{member_name}{suffix}"] = referred
             else:
                 subcomponent_members[member_name] = referred
         if subcomponent_members:

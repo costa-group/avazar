@@ -473,6 +473,47 @@ class TestIsIdxPodFields:
         assert _is_idx_pod_fields({"@idx": Type("!felt.type")}) is False
         assert _is_idx_pod_fields({"@idxA": Type("!felt.type")}) is False
 
+    def test_2d_idx_fields_true(self):
+        # multidimensional_components_concrete.mlir's "@components" shape:
+        # a 2-D heterogeneous collection, each field @idx_{i}_{j}.
+        from llzk_dialects.pod import _is_idx_pod_fields
+        fields = {
+            "@idx_0_0": Type("!struct.type<@Num2Ternary_0::@Num2Ternary_0<[]>>"),
+            "@idx_0_1": Type("!struct.type<@Num2Ternary_1::@Num2Ternary_1<[]>>"),
+            "@idx_1_0": Type("!struct.type<@Num2Ternary_0::@Num2Ternary_0<[]>>"),
+            "@idx_1_1": Type("!struct.type<@Num2Ternary_1::@Num2Ternary_1<[]>>"),
+        }
+        assert _is_idx_pod_fields(fields) is True
+
+    def test_mixed_dimensionality_fields_still_true(self):
+        # _IDX_FIELD_RE only constrains the SHAPE of each field name (one or
+        # more underscore-separated numbers); it doesn't require every
+        # field to have the same number of indices. Not expected to occur
+        # in practice (a real collection has one consistent dimensionality)
+        # but documents the actual (permissive) matching behavior.
+        from llzk_dialects.pod import _is_idx_pod_fields
+        fields = {"@idx_0": Type("!felt.type"), "@idx_0_0": Type("!felt.type")}
+        assert _is_idx_pod_fields(fields) is True
+
+
+class TestIdxPodChildName:
+    """
+    _idx_pod_child_name: builds the "#"-joined child name for one @idx_N
+    (or, for an N-D collection, @idx_{i1}_..._{iK}) record.
+    """
+
+    def test_single_index(self):
+        from llzk_dialects.pod import _idx_pod_child_name
+        assert _idx_pod_child_name("ark", "@idx_5") == "ark#5"
+
+    def test_two_indices(self):
+        from llzk_dialects.pod import _idx_pod_child_name
+        assert _idx_pod_child_name("components", "@idx_0_1") == "components#0#1"
+
+    def test_three_indices(self):
+        from llzk_dialects.pod import _idx_pod_child_name
+        assert _idx_pod_child_name("cube", "@idx_1_2_3") == "cube#1#2#3"
+
 
 class TestIdxPodInputNaming:
     """
@@ -512,3 +553,23 @@ class TestIdxPodInputNaming:
         op = PodNew.parse("%p = pod.new {@c = %v} : !pod.type<[@c: !felt.type]>")
         list(op.to_core(ctx))
         assert ctx.ssa2pod_var["%p"]["@c"][0] == "mux.c"
+
+    def test_2d_idx_pod_input_names(self):
+        # Mirrors the real "@components$inputs" shape from
+        # multidimensional_components_concrete.mlir: a 2-D heterogeneous
+        # collection, each field @idx_{i}_{j}, each itself a pod with an
+        # @in field.
+        ctx = self._ctx()
+        ctx.input_pod_to_member["%p"] = "components"
+        op = PodNew.parse(
+            "%p = pod.new : "
+            "!pod.type<[@idx_0_0: !pod.type<[@in: !felt.type<\"bn128\">]>, "
+            "@idx_0_1: !pod.type<[@in: !felt.type<\"bn128\">]>, "
+            "@idx_1_0: !pod.type<[@in: !felt.type<\"bn128\">]>, "
+            "@idx_1_1: !pod.type<[@in: !felt.type<\"bn128\">]>]>"
+        )
+        list(op.to_core(ctx))
+        assert ctx.ssa2pod_var["%p"]["@idx_0_0"][0] == "components#0#0"
+        assert ctx.ssa2pod_var["%p"]["@idx_1_1"][0] == "components#1#1"
+        assert ctx.ssa2pod_var["components#0#0"]["@in"][0] == "components#0#0.in"
+        assert ctx.ssa2pod_var["components#1#1"]["@in"][0] == "components#1#1.in"

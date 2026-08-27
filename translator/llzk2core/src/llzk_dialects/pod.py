@@ -44,34 +44,36 @@ def _parse_pod_fields(pod_type_str: str) -> Dict[str, Type]:
     return result
 
 
-_IDX_FIELD_RE = re.compile(r'^@idx_\d+$')
+_IDX_FIELD_RE = re.compile(r'^@idx_\d+(?:_\d+)*$')
 
 
 def _is_idx_pod_fields(fields: Dict[str, Type]) -> bool:
     """
     True iff `fields` is a non-empty pod field dict where every field is a
-    literal @idx_N record -- the shape LLZK lowers a heterogeneous
-    array-of-components collection to (each index instantiates a
-    *different* struct/pod type, so it can't be represented as a real
-    !array.type). Requires ALL fields to match, not just one, so an
-    unrelated pod that happens to have a single field coincidentally named
-    @idx_0 among otherwise differently-named fields is never misdetected.
+    literal @idx_N (or, for an N-D collection, @idx_{i1}_{i2}_..._{iK})
+    record -- the shape LLZK lowers a heterogeneous array-of-components
+    collection to (each index instantiates a *different* struct/pod type,
+    so it can't be represented as a real !array.type). Requires ALL fields
+    to match, not just one, so an unrelated pod that happens to have a
+    single field coincidentally named @idx_0 among otherwise
+    differently-named fields is never misdetected.
     """
     return bool(fields) and all(_IDX_FIELD_RE.match(f) for f in fields)
 
 
 def _idx_pod_child_name(base: str, record: str) -> str:
     """
-    Child variable name for one @idx_N record of an idx-pod: "{base}#{N}"
-    (e.g. "ark#5"), regardless of whether `base` is a semantic name or a
-    raw SSA-derived one. "#" is a valid Core identifier character
-    (CORELLZK.md's id grammar) and is never used for an ordinary
-    underscore-joined field/member name, so this can never collide with
-    the "{member}.{record}" / "{var_name}_{record}" naming used for a
-    non-idx pod field.
+    Child variable name for one @idx_{i1}_{i2}_..._{iK} record of an
+    idx-pod: "{base}#{i1}#{i2}#...#{iK}" (e.g. "ark#5" for a 1-D
+    collection, "components#0#0" for a 2-D one), regardless of whether
+    `base` is a semantic name or a raw SSA-derived one. "#" is a valid
+    Core identifier character (CORELLZK.md's id grammar) and is never used
+    for an ordinary underscore-joined field/member name, so this can never
+    collide with the "{member}.{record}" / "{var_name}_{record}" naming
+    used for a non-idx pod field.
     """
-    idx = record[len("@idx_"):]
-    return f"{base}#{idx}"
+    indices = record[len("@idx_"):].split("_")
+    return base + "".join(f"#{i}" for i in indices)
 
 
 def _register_nested_pod_vars(ctx: TranslationContext, var_name: str, type_str: str,
