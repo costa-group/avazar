@@ -88,6 +88,8 @@ def main(args: argparse.Namespace):
         # Store the "components_info" information
         for macro in smt_json["macros"]:
             smt_json["macros"][macro]["components_info"] = translation_context.member_to_struct.get(macro, dict())
+            smt_json["macros"][macro]["components_index_sequences"] = \
+                translation_context.array_component_index_sequences.get(macro, dict())
 
     # We also add the variable information for loops
     modified_smt_json = process_components(smt_json)

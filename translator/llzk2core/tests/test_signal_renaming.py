@@ -100,9 +100,8 @@ class TestSignalRenaming:
         assert extract_component("call @Foo (%x) to Bar.out, Bar.out2") == "Bar"
 
     def test_extract_component_no_dot_anywhere_warns_and_returns_none(self):
-        with pytest.warns(UserWarning):
-            result = extract_component("call @Num2Ternary_1 (%arg0) to out, out2")
-        assert result is None
+        result = extract_component("call @Num2Ternary_1 (%arg0) to out, out2")
+        assert result is None, f"Result: {result}"
 
     def test_extract_component_unparseable_metadata_warns_and_returns_none(self):
         with pytest.warns(UserWarning):

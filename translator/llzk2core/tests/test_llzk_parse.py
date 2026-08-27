@@ -3,6 +3,7 @@ from llzk_dialects.llzk import LLZKNondet, ModuleOp
 from llzk_dialects.core import SSAVar, Type, GlobalVariable, TranslationContext
 from llzk_dialects.poly import PolyTemplate
 from llzk_dialects.function import FunctionDef, FunctionReturn, FunctionCall
+from llzk_dialects.struct import StructDef
 
 
 class TestLLZK:
@@ -145,3 +146,109 @@ class TestLLZK:
         next(gen)  # the pre-pass runs synchronously, before the first yield
         assert ctx.llzk_func2core["@Callee::@Callee"] == "@Callee"
         assert ctx.llzk_func2core["@Caller::@Caller"] == "@Caller"
+
+    # ── ModuleOp.to_core — pure-function emission-order hoisting ────────────
+
+    @staticmethod
+    def _pure_template(name: str, calls: list) -> PolyTemplate:
+        """
+        A pure-function poly.template (bare function.def, no struct.def)
+        named `name` (e.g. "@A", template and function share the name, as
+        in every real example), whose body issues one function.call per
+        (callee_name, result_name) pair in `calls` before returning a felt.
+        """
+        body = []
+        for callee_name, result_name in calls:
+            body.append(FunctionCall(
+                [SSAVar(result_name)], GlobalVariable(f"{callee_name}::{callee_name}"),
+                [SSAVar("%arg0")], None,
+            ))
+        ret_val = calls[-1][1] if calls else "%arg0"
+        body.append(FunctionReturn([SSAVar(ret_val)], [Type("!felt.type")]))
+        func = FunctionDef(GlobalVariable(name), "(%arg0: !felt.type) -> !felt.type", body)
+        return PolyTemplate(GlobalVariable(name), [func])
+
+    @staticmethod
+    def _dummy_main_type(ctx: TranslationContext) -> Type:
+        """
+        A minimal llzk.main registration these tests don't otherwise care
+        about, so draining ModuleOp.to_core() fully (to inspect the body's
+        own emitted order) doesn't crash in _yield_main_function for lack
+        of a real struct.
+        """
+        ctx.llzk_func2core["@Main::@Main::@compute"] = "@Main"
+        ctx.core_func2args["@Main"] = ([], [])
+        return Type('!struct.type<@Main::@Main<[]>>')
+
+    def test_module_hoists_transitive_forward_referenced_pure_functions(self):
+        # A -> B -> C, declared in the reverse of dependency order
+        # ([A, B, C]), mirrors sha256_2_test_concrete.mlir's real shape:
+        # ssigma1_1/ssigma0_2/bsigma1_3 each call rrot_8, declared later in
+        # the file. Every def must precede every call referencing it, and
+        # (per the DFS-based sort) each callee's own def precedes its
+        # caller's def too.
+        c_template = self._pure_template("@C", [])
+        b_template = self._pure_template("@B", [("@C", "%r")])
+        a_template = self._pure_template("@A", [("@B", "%r")])
+
+        ctx = TranslationContext()
+        module = ModuleOp(
+            lang=True, main_type=self._dummy_main_type(ctx),
+            body=[a_template, b_template, c_template],
+        )
+        text = "".join(module.to_core(ctx))
+
+        assert text.index("def @C") < text.index("def @B") < text.index("def @A")
+        assert text.index("def @C") < text.index("call @C")
+        assert text.index("def @B") < text.index("call @B")
+
+    def test_module_pure_function_ordering_is_stable_when_independent(self):
+        # Two pure functions with no call between them: no reordering should
+        # occur -- they keep their original relative (file) order.
+        first = self._pure_template("@First", [])
+        second = self._pure_template("@Second", [])
+
+        ctx = TranslationContext()
+        module = ModuleOp(lang=True, main_type=self._dummy_main_type(ctx), body=[first, second])
+        text = "".join(module.to_core(ctx))
+
+        assert text.index("def @First") < text.index("def @Second")
+
+    def test_module_hoists_pure_function_ahead_of_struct_that_calls_it(self):
+        # A struct.def (@compute) declared before the pure function it
+        # calls -- mirrors sha256_2_test_concrete.mlir's
+        # sha256compression_0 struct calling ssigma1_1 etc.
+        call = FunctionCall([SSAVar("%r")], GlobalVariable("@Pure::@Pure"), [SSAVar("%x")], None)
+        compute = FunctionDef(
+            GlobalVariable("@compute"), "(%x: !felt.type) -> !felt.type",
+            [call, FunctionReturn([SSAVar("%r")], [Type("!felt.type")])],
+        )
+        struct_template = PolyTemplate(GlobalVariable("@S"), [StructDef(GlobalVariable("@S"), [compute])])
+
+        pure_func = FunctionDef(
+            GlobalVariable("@Pure"), "(%arg0: !felt.type) -> !felt.type",
+            [FunctionReturn([SSAVar("%arg0")], [Type("!felt.type")])],
+        )
+        pure_template = PolyTemplate(GlobalVariable("@Pure"), [pure_func])
+
+        # Struct declared first, its pure-function dependency declared after.
+        module = ModuleOp(
+            lang=True, main_type=Type('!struct.type<@S::@S<[]>>'),
+            body=[struct_template, pure_template],
+        )
+        ctx = TranslationContext()
+        text = "".join(module.to_core(ctx))
+
+        assert text.index("def @Pure") < text.index("call @Pure")
+
+    def test_topo_sort_raises_on_pure_function_cycle(self):
+        # Two pure functions calling each other -- mutual recursion among
+        # pure functions is not supported; must fail loudly, not silently
+        # emit an arbitrary (broken) order.
+        a_template = self._pure_template("@A", [("@B", "%r")])
+        b_template = self._pure_template("@B", [("@A", "%r")])
+
+        module = ModuleOp(lang=True, main_type=None, body=[a_template, b_template])
+        ctx = TranslationContext()
+        with pytest.raises(ValueError):
+            list(module.to_core(ctx))

@@ -16,7 +16,7 @@ Attributes (represented as type annotations, not parsed independently):
 """
 
 import re
-from typing import List, Optional, TYPE_CHECKING, Generator
+from typing import Dict, Iterator, List, Optional, Set, Tuple, TYPE_CHECKING, Generator
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.utils import is_array_type, array_total_size
@@ -24,6 +24,86 @@ from llzk_dialects.core_utils import signature_args, invocation_args
 
 if TYPE_CHECKING:
     pass  # avoid circular imports
+
+
+def _collect_function_calls(ops: List[Operation]) -> 'Iterator':
+    """
+    Recursively yield every FunctionCall found in ops, descending into
+    nested block bodies the same way scf.py's _collect_result_names does
+    (explicit per-class checks for the shapes with more than one body
+    list, falling back to a generic 'body' attribute) -- a pure function's
+    own call(s) to another pure function may be nested inside scf.if/for/
+    while, not just at the top level of its own body.
+    """
+    from llzk_dialects.function import FunctionCall
+    from llzk_dialects.scf import SCFIf, SCFFor, SCFWhile, SCFExecuteRegion
+
+    for op in ops:
+        if isinstance(op, FunctionCall):
+            yield op
+        if isinstance(op, SCFIf):
+            yield from _collect_function_calls(op.then_body)
+            if op.else_body:
+                yield from _collect_function_calls(op.else_body)
+        elif isinstance(op, SCFFor):
+            yield from _collect_function_calls(op.body)
+        elif isinstance(op, SCFWhile):
+            yield from _collect_function_calls(op.before_body)
+            yield from _collect_function_calls(op.after_body)
+        elif isinstance(op, SCFExecuteRegion):
+            yield from _collect_function_calls(op.body)
+        elif hasattr(op, 'body'):
+            yield from _collect_function_calls(op.body)
+
+
+def _topo_sort_pure_functions(entries: 'List[Tuple["PolyTemplate", str, "FunctionDef"]]') -> 'List["PolyTemplate"]':
+    """
+    Topologically sort pure-function poly.template's by their own call
+    graph (a pure function may call another pure function declared later
+    in the source -- e.g. sha256_2_test_concrete.mlir's ssigma1_1 calls
+    rrot_8, declared afterwards), so that every callee's def text is
+    emitted before any call to it, however many levels deep the chain
+    goes.
+
+    entries: (template_op, llzk_name, func_def) triples, in original file
+    order. Visits entries in that order and recurses into dependencies
+    first (DFS), so a pair with no dependency between them keeps its
+    original relative order -- only real forward references cause
+    reordering. Raises ValueError on a dependency cycle (mutual recursion
+    among pure functions isn't supported).
+    """
+    name2template = {name: template for template, name, _ in entries}
+    name2deps: Dict[str, Set[str]] = {}
+    for _template, name, func_def in entries:
+        known = set(name2template)
+        name2deps[name] = {
+            call.callee.name for call in _collect_function_calls(func_def.body)
+            if call.callee.name in known
+        }
+
+    sorted_names: List[str] = []
+    visited: Set[str] = set()
+    visiting: Set[str] = set()
+
+    def visit(name: str) -> None:
+        if name in visited:
+            return
+        if name in visiting:
+            raise ValueError(
+                f"Cycle detected among pure function templates involving {name!r}: "
+                "mutual recursion is not supported"
+            )
+        visiting.add(name)
+        for dep in name2deps[name]:
+            visit(dep)
+        visiting.discard(name)
+        visited.add(name)
+        sorted_names.append(name)
+
+    for _template, name, _func_def in entries:
+        visit(name)
+
+    return [name2template[name] for name in sorted_names]
 
 
 class ModuleOp:
@@ -78,15 +158,32 @@ class ModuleOp:
         # Registration only reads the already-fully-parsed FunctionDef itself
         # (signature + its own function.return), with no dependency on any
         # other function being registered first, so a single unordered scan
-        # is enough — no dependency graph/topological sort needed.
+        # is enough to register every signature.
+        #
+        # Registering the signature is only enough to make a *call* resolve,
+        # though -- it says nothing about the *def*'s own text position in
+        # the output. A pure function may also call another pure function
+        # declared later in the file (e.g. sha256_2_test_concrete.mlir's
+        # ssigma1_1 calls rrot_8, declared afterwards) -- a real,
+        # potentially multi-level dependency chain. So every pure-function
+        # template is hoisted to the front of the emitted output, in
+        # topologically-sorted order (_topo_sort_pure_functions), ahead of
+        # every other top-level item (structs etc., which keep their
+        # existing relative order -- nothing depends on a pure function's
+        # textual position relative to a struct, only on it existing before
+        # any call to it).
         from llzk_dialects.poly import PolyTemplate, _register_pure_function
         from llzk_dialects.function import FunctionDef
         from llzk_dialects.global_ import GlobalDef, _register_global_def
 
+        pure_function_entries = []
         for operation in self.body:
             if (isinstance(operation, PolyTemplate) and len(operation.body) == 1
                     and isinstance(operation.body[0], FunctionDef)):
-                _register_pure_function(operation.body[0], operation.sym_name.name, ctx)
+                func_def = operation.body[0]
+                _register_pure_function(func_def, operation.sym_name.name, ctx)
+                llzk_name = f"{operation.sym_name.name}::{func_def.sym_name.name}"
+                pure_function_entries.append((operation, llzk_name, func_def))
             if isinstance(operation, GlobalDef):
                 # global.def is only ever a direct child of ModuleOp, and may
                 # textually appear AFTER the struct that reads it (module-level
@@ -94,8 +191,14 @@ class ModuleOp:
                 # global_.py's _register_global_def docstring.
                 _register_global_def(operation, ctx)
 
+        sorted_pure_templates = _topo_sort_pure_functions(pure_function_entries)
+        pure_templates = {template for template, _name, _func_def in pure_function_entries}
+        emission_order = sorted_pure_templates + [
+            operation for operation in self.body if operation not in pure_templates
+        ]
+
         # Yield operation by operation
-        for operation in self.body:
+        for operation in emission_order:
             yield from operation.to_core(ctx)
         yield from self._yield_main_function(ctx)
 
