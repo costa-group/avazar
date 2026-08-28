@@ -37,13 +37,62 @@ def printVarBool (stream : IO.FS.Stream) (v : BoolVar) : IO Unit := do
 --  stream.putStr s!"v_{v.id}"
   stream.putStr s!"{boolVarID v}"
 
+
+  -- stream.putStr "        \"vars_info\": {"
+  -- printVarsInfo_asJSON stream m.vars_info
+  -- stream.putStrLn "},"
+
+def printVarInfo_asJSON' {c : ZKConfig}
+  (stream : IO.FS.Stream) (var : MacroVarInfo c) (quote : String) : IO Unit := do
+  match var with
+  | .ffVar ffVar => stream.putStr s!"{quote}{ffVarID ffVar}{quote}"
+  | .const val => stream.putStr s!"{val.val}"
+  | .array arr =>
+      stream.putStr "["
+      let varStrs := arr.map (fun v =>
+        match v with
+        | .inl ffVar => s!"{quote}{ffVarID ffVar}{quote}"
+        | .inr val => s!"{val.val}"
+      )
+      stream.putStr (String.intercalate ", " varStrs)
+      stream.putStr "]"
+
+def printVarsInfo_asJSON' {c : ZKConfig}
+  (stream : IO.FS.Stream) (vs : MacroVarsInfo c) (quote : String) : IO Unit := do
+  match vs with
+  | [] => return ()
+  | (id,v) :: rest =>
+      stream.putStr s!"{quote}{id}{quote}: "
+      printVarInfo_asJSON' stream v quote
+      if rest != [] then
+        stream.putStr ", "
+      printVarsInfo_asJSON' stream rest quote
+
+
+def printAnnotation {c : ZKConfig}
+  (stream : IO.FS.Stream) (a : FormulaAnnotation c) (sp : String) (indent : Bool) (escape : Bool)
+  : IO Unit := do
+  let quote := if escape then "\\\"" else "\""
+  let quote' := if escape then "\\\\\\\"" else "\\\""
+  stream.putStr s!"{sp}:meta-data {quote}{a.meta_data}{quote}"
+  match a.var_info with
+  | none => return ()
+  | some (inVarsInfo, outVarsInfo) =>
+    stream.putStr s!" :in-vars-info {quote}\{"
+    printVarsInfo_asJSON' stream inVarsInfo quote'
+    stream.putStr s!"}{quote}"
+    stream.putStr s!" :out-vars-info {quote}\{"
+    printVarsInfo_asJSON' stream outVarsInfo quote'
+    stream.putStr s!"}{quote}"
+
+
 mutual
 /-- Prints a term as an S-expression: (+ a b) -/
 def printTerm {c : ZKConfig}
   (stream : IO.FS.Stream) (t : FFTerm c) : IO Unit := do
   match t with
   | .val val =>
-      stream.putStr s!"{val.val}"
+      stream.putStr s!"(as ff{val.val} FFp)"
   | .var v =>
       printVarFF stream v
   | .add a b =>
@@ -96,9 +145,9 @@ def printFormula {c : ZKConfig}
         stream.putStr s!"{sp}(ff.range "
         printTerm stream t
         stream.putStr " "
-        stream.putStr s!"{int_of_l}"
+        stream.putStr s!"(as ff{int_of_l} FFp)"
         stream.putStr " "
-        stream.putStr s!"{int_of_u}"
+        stream.putStr s!"(as ff{int_of_u} FFp)"
         stream.putStr s!"){nl}"
   | .bool v =>
       stream.putStr s!"{sp}{boolVarID v}"
@@ -188,10 +237,13 @@ def printFormula {c : ZKConfig}
   | .anno a sym => -- (! Formula :named Symbol)
       stream.putStr s!"{sp}(!{nl}"
       printFormula stream a (level + 1) indent escape
-      -- if escape, replace " by \" in the symbol string
-      let symstr := s!"{sym}"
-      let symstr' := if escape then symstr.replace "\"" "\\\"" else symstr
-      stream.putStr s!"{sp}{symstr'}){nl}"
+      printAnnotation stream sym sp indent escape
+      stream.putStr s!"){nl}"
+
+      -- -- if escape, replace " by \" in the symbol string
+      -- let symstr := s!"{annotationToString sym}"
+      -- let symstr' := if escape then symstr.replace "\"" "\\\"" else symstr
+      -- stream.putStr s!"{sp}{symstr'}){nl}"
 
 end
 
@@ -301,6 +353,8 @@ def printVarsInfo_asJSON {c : ZKConfig}
       if rest != [] then
         stream.putStr ", "
       printVarsInfo_asJSON stream rest
+
+
 
 
 def printMacro_asJSON {c : ZKConfig}

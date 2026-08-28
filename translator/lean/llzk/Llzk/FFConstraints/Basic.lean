@@ -114,6 +114,20 @@ abbrev emptyFFVarSet : FFVarSet := Std.TreeSet.empty
 abbrev BoolVarSet := Std.TreeSet BoolVar compare
 abbrev emptyBoolVarSet : BoolVarSet := Std.TreeSet.empty
 
+inductive MacroVarInfo (c : ZKConfig)
+| ffVar (v : FFVar)
+| const (val : FF c)
+| array (arr : List (FFVar ⊕ FF c)) -- an array can contain either variables or constants
+  deriving Repr, BEq, Inhabited
+
+abbrev MacroVarsInfo (c : ZKConfig) := List (VarID × MacroVarInfo c)
+
+
+structure FormulaAnnotation (c : ZKConfig) where
+  meta_data : String
+  var_info : Option (MacroVarsInfo c × MacroVarsInfo c) := none
+  deriving Repr, BEq, Inhabited
+
 
 mutual
 /- Term is a polynomial expression over finite fields -/
@@ -147,7 +161,7 @@ inductive FFFormula (c : ZKConfig) where
   | imply  : FFFormula c → FFFormula c → FFFormula c  -- implication
   | iff    : FFFormula c → FFFormula c → FFFormula c  -- if and only if
   | call   : String → List (MacroCallParam c) → FFFormula c  -- macro call
-  | anno   : FFFormula c → String → FFFormula c  -- annotation for debugging
+  | anno   : FFFormula c → FormulaAnnotation c → FFFormula c  -- annotation for debugging
   deriving Repr, BEq, Inhabited
 
 end
@@ -184,15 +198,6 @@ def sizeOfFormula {c : ZKConfig} : FFFormula c → Nat
   | .anno a _ => 1 + sizeOfFormula a
 
 end
-
-
-inductive MacroVarInfo (c : ZKConfig)
-| ffVar (v : FFVar)
-| const (val : FF c)
-| array (arr : List (FFVar ⊕ FF c)) -- an array can contain either variables or constants
-  deriving Repr, BEq, Inhabited
-
-abbrev MacroVarsInfo (c : ZKConfig) := List (VarID × MacroVarInfo c)
 
 
 

@@ -108,9 +108,17 @@ def prettyPrinting
 def getZKConfig (p : Parsed) : IO ZKConfig := do
   let zkConfigStr := p.flag! "zkconfig" |>.as! String
   match zkConfigStr with
+  | "f7" => return F7
   | "f11" => return F11
-  | "f5" => return F5
-  | "g64" => return goldilocks64
+  | "g64" => return goldilocks
+  | "goldilocks" => return goldilocks
+  | "secp256r1" => return secp256r1
+  | "pallas" => return pallas
+  | "vesta" => return vesta
+  | "bn128" => return bn128
+  | "grumpkin" => return grumpkin
+  | "bls12377" => return bls12377
+  | "bls12381" => return bls12381
   | _ => panic! s!"Unsupported ZKConfig: {zkConfigStr}"
 
 /- Main entry point for the command line interface -/
@@ -141,7 +149,7 @@ def llzkCmd : Cmd := `[Cli|
     ru, removeuseless;       "Remove useless commands from the program."
     pp, prettyprint;         "Parse and pretty-print the input program."
     se, symbolicexec;        "Perform symbolic execution of the input program."
-    zk, zkconfig : String;   "The ZKConfig to use for symbolic execution (f11,g64). Default is f11."
+    zk, zkconfig : String;   "The ZKConfig to use for symbolic execution (f7,f11,g64,goldilocks, secq256r1, pallas, vesta, bn128, grumpkin, bls12377, bls12381). Default is f11."
     m, main : String;        "The main function for symbolic execution (default: main)"
     o, output : String;      "The output file. If not provided, stdout is used."
     smt2, smt2_format : String;  "The format of the SMT output (smtlib,json). Default is smtlib."

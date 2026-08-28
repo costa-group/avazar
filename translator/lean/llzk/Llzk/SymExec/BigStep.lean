@@ -331,6 +331,22 @@ def seFuncCall {c : ZKConfig}
   }
 
 
+def symEnvToMacroVarsInfo {c : ZKConfig} (symEnv : SymEnv c) : MacroVarsInfo c :=
+  symEnv.toList.foldl (fun acc (id, symVal) =>
+    match symVal with
+    | .ffVar v =>
+      match v with
+      | .var ffVar => (id,(MacroVarInfo.ffVar ffVar.var)) :: acc
+      | .const c => (id,(MacroVarInfo.const c)) :: acc
+    | .ffArray arr =>
+      let a := arr.toList.map (fun elem =>
+          match elem with
+          | .var ffVar => (.inl ffVar.var)
+          | .const v => (.inr v)
+        )
+      (id, MacroVarInfo.array a) :: acc
+  ) []
+
 
 def genCondAnnotation {c : ZKConfig} (cond : Cond c) : String :=
   match cond with
@@ -346,8 +362,8 @@ def genExprAnnotation {c : ZKConfig} (e : Expr c) : String :=
   | .id s =>
       s!"{s}"
 
-def genCmdAnnotation {c : ZKConfig} (i : ComWithMD c) : String :=
-  match i with
+def genCmdAnnotation' {c : ZKConfig} (cmd : ComWithMD c) (inSymEnv outSymEnv: SymEnv c) : String :=
+  match cmd with
   | .mk _ info =>
       match info with
       | .skip => s!"skip"
@@ -364,10 +380,53 @@ def genCmdAnnotation {c : ZKConfig} (i : ComWithMD c) : String :=
          let outsStr := String.intercalate ", " (outs.map (fun v => s!"{v}"))
          let argsStr := String.intercalate ", " (args.map toString)
          if (outs == []) then
-            s!"call {fname} ({argsStr})"
+            s!"call {fname} ({argsStr})  | no return"
          else
             s!"call {fname} ({argsStr}) to {outsStr}"
 
+def symEnvToMacroVarsInfo' {c : ZKConfig} (symEnv : SymEnv c) (args : List VarID)
+  : MacroVarsInfo c :=
+  -- keep only vars that are in the argument list
+  args.foldl (fun acc id =>
+    match getVar symEnv id with
+    | Except.ok (.ffVar v) =>
+      match v with
+      | .var ffVar => (id,(MacroVarInfo.ffVar ffVar.var)) :: acc
+      | .const c => (id,(MacroVarInfo.const c)) :: acc
+    | Except.ok (.ffArray arr) =>
+      let a := arr.toList.map (fun elem =>
+          match elem with
+          | .var ffVar => (.inl ffVar.var)
+          | .const v => (.inr v)
+        )
+      (id, MacroVarInfo.array a) :: acc
+    | Except.error _ => acc -- this should not happen
+  ) []
+
+def genVarsInfo {c : ZKConfig} (cmd : ComWithMD c) (inSymEnv outSymEnv : SymEnv c) :
+  Option (MacroVarsInfo c × MacroVarsInfo c) :=
+  match cmd with
+  | .mk _ info =>
+      match info with
+      | .func_call outs _fname args =>
+        let args' := args.foldl (fun acc arg =>
+                      match arg with
+                      | SimpleExpr.var id => id :: acc
+                      | SimpleExpr.val _ => acc
+                ) []
+        some (symEnvToMacroVarsInfo' inSymEnv args', symEnvToMacroVarsInfo' outSymEnv outs)
+      | _ => none
+
+
+def genCmdAnnotation {c : ZKConfig} (cmd : ComWithMD c) (inSymEnv outSymEnv : SymEnv c)
+  : FormulaAnnotation c :=
+  let metaData := genCmdAnnotation' cmd inSymEnv outSymEnv
+  let varsInfo := genVarsInfo cmd inSymEnv outSymEnv
+  {
+    meta_data := metaData,
+    var_info := varsInfo
+  }
+-- symEnvToMacroVarsInfo senv'
 
 mutual
 
@@ -514,7 +573,7 @@ def seCmds {c : ZKConfig}
       inSymEnv := symEnv,
       outSymEnv := cmdsSpec.outSymEnv,
       --f := .and cmdSpec.f cmdsSpec.f
-      f := .and (.anno cmdSpec.f s!":meta-data \"{genCmdAnnotation cmd}\"")
+      f := .and (.anno cmdSpec.f (genCmdAnnotation cmd symEnv cmdSpec.outSymEnv))
                 cmdsSpec.f,
       nextId := cmdsSpec.nextId,
       newFFVars := cmdSpec.newFFVars ∪ cmdsSpec.newFFVars,
@@ -654,21 +713,6 @@ def genRetsBinding {c : ZKConfig}
   loop rets cfg.nextId [] bodySpecF
 
 
-def symEnvToMacroVarsInfo {c : ZKConfig} (symEnv : SymEnv c) : MacroVarsInfo c :=
-  symEnv.toList.foldl (fun acc (id, symVal) =>
-    match symVal with
-    | .ffVar v =>
-      match v with
-      | .var ffVar => (id,(MacroVarInfo.ffVar ffVar.var)) :: acc
-      | .const c => (id,(MacroVarInfo.const c)) :: acc
-    | .ffArray arr =>
-      let a := arr.toList.map (fun elem =>
-          match elem with
-          | .var ffVar => (.inl ffVar.var)
-          | .const v => (.inr v)
-        )
-      (id, MacroVarInfo.array a) :: acc
-  ) []
 
 def seExecFunc {c : ZKConfig}
     (cfg : SymExecConfig c) (md : FuncMD)
