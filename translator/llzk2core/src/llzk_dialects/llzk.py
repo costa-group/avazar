@@ -17,7 +17,7 @@ Attributes (represented as type annotations, not parsed independently):
 
 import re
 from typing import Dict, Iterator, List, Optional, Set, Tuple, TYPE_CHECKING, Generator
-from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
+from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext, GlobalVariable
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.utils import is_array_type, array_total_size
 from llzk_dialects.core_utils import signature_args, invocation_args
@@ -106,6 +106,234 @@ def _topo_sort_pure_functions(entries: 'List[Tuple["PolyTemplate", str, "Functio
     return [name2template[name] for name in sorted_names]
 
 
+def _collect_while_loops(ops: List[Operation]) -> 'Iterator':
+    """
+    Recursively yield every SCFWhile found in ops, same recursive-descent
+    shape as _collect_function_calls -- a pure function's own while loop
+    may be nested inside an outer scf.if/for/while, not just at the top
+    level of its own body.
+
+    scf.for is deliberately not covered here: no real example has a
+    for-loop bound depending on a pure function's own parameter (its
+    to_core already requires a concrete lb/ub, so that shape would already
+    fail loudly rather than silently), and speculative coverage isn't
+    warranted (see llzk2core's DECISIONS.md philosophy on this).
+    """
+    from llzk_dialects.scf import SCFIf, SCFFor, SCFWhile, SCFExecuteRegion
+
+    for op in ops:
+        if isinstance(op, SCFWhile):
+            yield op
+            yield from _collect_while_loops(op.before_body)
+            yield from _collect_while_loops(op.after_body)
+        elif isinstance(op, SCFIf):
+            yield from _collect_while_loops(op.then_body)
+            if op.else_body:
+                yield from _collect_while_loops(op.else_body)
+        elif isinstance(op, SCFFor):
+            yield from _collect_while_loops(op.body)
+        elif isinstance(op, SCFExecuteRegion):
+            yield from _collect_while_loops(op.body)
+        elif hasattr(op, 'body'):
+            yield from _collect_while_loops(op.body)
+
+
+def _build_ops_var2expression(ops: List[Operation]) -> 'Dict[str, object]':
+    """
+    Maps every SSA name defined by a single-result operation in ops (or
+    nested inside it, recursing the same way _collect_function_calls does)
+    to the operation that defines it -- a flat forward map suitable for
+    core_utils.construct_function_from_expressions to walk backward from
+    any SSA name used within these ops to the constant (or unresolvable)
+    expression that produced it.
+
+    Unlike scf.py's SCFWhile._process_while_variables (which only tracks
+    variables transitively relevant to one specific target, discovered via
+    a backward prune from a while condition), this maps every op's result
+    unconditionally -- appropriate here since the target name (a while's
+    own init-arg initial value, or a function.call's own argument) isn't
+    known in advance. A multi-result op (e.g. a nested scf.while's own
+    result) is deliberately left unmapped: construct_function_from_expressions
+    correctly raises a KeyError if such a value is ever referenced
+    directly, rather than silently mis-resolving it.
+    """
+    from llzk_dialects.scf import SCFIf, SCFFor, SCFWhile, SCFExecuteRegion
+
+    var2expression = {}
+    for op in ops:
+        result = getattr(op, 'result', None)
+        if result is not None:
+            var2expression[result.name] = op
+
+        if isinstance(op, SCFIf):
+            var2expression.update(_build_ops_var2expression(op.then_body))
+            if op.else_body:
+                var2expression.update(_build_ops_var2expression(op.else_body))
+        elif isinstance(op, SCFFor):
+            var2expression.update(_build_ops_var2expression(op.body))
+        elif isinstance(op, SCFWhile):
+            var2expression.update(_build_ops_var2expression(op.before_body))
+            var2expression.update(_build_ops_var2expression(op.after_body))
+        elif isinstance(op, SCFExecuteRegion):
+            var2expression.update(_build_ops_var2expression(op.body))
+        elif hasattr(op, 'body'):
+            var2expression.update(_build_ops_var2expression(op.body))
+    return var2expression
+
+
+def _resolve_constant(var: SSAVar, var2expression: 'Dict[str, object]') -> Optional[int]:
+    """
+    Attempts to fold var down to a concrete Python int using the existing
+    core_utils.construct_function_from_expressions evaluator (the same one
+    while-bound resolution already uses, called with a dummy input since a
+    pure-constant expression tree ignores it -- see core_utils.py's own
+    `bound_func(0)` convention). Returns None whenever the chain bottoms
+    out at something with no var2expression entry (e.g. an array.read, an
+    llzk.nondet, or an external parameter with no further alias) or an
+    operation with no to_function() implementation -- i.e. "not a
+    compile-time constant here", not an error.
+    """
+    from llzk_dialects.core_utils import construct_function_from_expressions
+
+    try:
+        return construct_function_from_expressions(var, var2expression, set())(0)
+    except (KeyError, NotImplementedError, AttributeError):
+        return None
+
+
+def _collect_calling_function_defs(module_body: List[Operation]) -> 'List["FunctionDef"]':
+    """
+    Every FunctionDef in the module that can itself contain a
+    function.call: a pure function's own body, plus every struct's
+    @compute and @constrain (struct.py's StructDef.body is a flat mix of
+    StructMember and FunctionDef children).
+    """
+    from llzk_dialects.function import FunctionDef
+    from llzk_dialects.poly import PolyTemplate
+    from llzk_dialects.struct import StructDef
+
+    defs = []
+    for operation in module_body:
+        if not isinstance(operation, PolyTemplate) or len(operation.body) != 1:
+            continue
+        child = operation.body[0]
+        if isinstance(child, FunctionDef):
+            defs.append(child)
+        elif isinstance(child, StructDef):
+            defs.extend(op for op in child.body if isinstance(op, FunctionDef))
+    return defs
+
+
+def _parametric_params_for_while(while_op: 'SCFWhile', in_arg_names: Set[str]) -> Set[str]:
+    """
+    A while loop is "loop-bound-parametric" on the subset of in_arg_names
+    its own condition transitively references but never defines -- exactly
+    the situation core_utils.py's SymbolicSteps fallback already detects,
+    specialized to the case where the unresolved name is one of the
+    enclosing function's own parameters (rather than some other external
+    value core_utils.py can't identify).
+    """
+    from llzk_dialects.core_utils import _collect_free_var_names
+
+    var2expression, condition_var = while_op._build_while_var_expressions()
+    free_names = _collect_free_var_names(condition_var, var2expression, set())
+    return free_names & in_arg_names
+
+
+def _specialize_loop_bound_parametric_pure_functions(
+        pure_function_entries: 'List[Tuple["PolyTemplate", str, "FunctionDef"]]',
+        module_body: List[Operation], ctx: TranslationContext) -> None:
+    """
+    For every pure function whose own while-loop bound depends on one of
+    its own parameters (e.g. EscalarMulW4Table_0's `arg3 < arg1*4`, "k" =
+    arg1 -- escalarmulw4table_concrete.mlir and 6 sibling files), resolves
+    every call site across the whole module and, when every one of them
+    passes a compile-time-constant value for the relevant parameter(s),
+    clones the function body once per distinct constant value/tuple
+    actually used, redirecting each call site to its own clone. This lets
+    the existing, unmodified concrete-bound resolution in
+    core_utils.py's _resolve_comparison_recurrence produce a real integer
+    `repeat` count instead of a `SymbolicSteps` formula llzk_cli's own
+    symbolic execution can't run (`Variable '%steps_N' is a symbolic`).
+
+    A function is left entirely unspecialized -- today's unchanged
+    behavior -- the moment any single call site's relevant argument fails
+    to resolve to a concrete int (e.g. pointbits_loopback_concrete.mlir's
+    sqrt_0, whose parameter traces back to a genuine runtime witness
+    signal, never a constant), or when it has no loop-bound-parametric
+    while at all.
+    """
+    callers = _collect_calling_function_defs(module_body)
+
+    for template, llzk_name, func_def in pure_function_entries:
+        in_arg_names = {name for name, _ in func_def.in_args}
+
+        parametric_params: Set[str] = set()
+        for while_op in _collect_while_loops(func_def.body):
+            parametric_params |= _parametric_params_for_while(while_op, in_arg_names)
+        if not parametric_params:
+            continue
+
+        # Deterministic order, matching in_args' own declaration order.
+        param_order = [name for name, _ in func_def.in_args if name in parametric_params]
+        param_index = {name: i for i, (name, _) in enumerate(func_def.in_args)}
+
+        resolved_calls: 'List[Tuple[FunctionCall, Tuple[int, ...]]]' = []
+        aborted = False
+        for caller in callers:
+            calls = [c for c in _collect_function_calls(caller.body) if c.callee.name == llzk_name]
+            if not calls:
+                continue
+            caller_map = _build_ops_var2expression(caller.body)
+            for call in calls:
+                values = []
+                for name in param_order:
+                    value = _resolve_constant(call.args[param_index[name]], caller_map)
+                    if value is None:
+                        aborted = True
+                        break
+                    values.append(value)
+                if aborted:
+                    break
+                resolved_calls.append((call, tuple(values)))
+            if aborted:
+                break
+
+        if aborted or not resolved_calls:
+            continue
+
+        distinct_value_tuples = sorted({values for _call, values in resolved_calls})
+        core_base = func_def.sym_name.name  # e.g. "@EscalarMulW4Table_0"
+        arg_display_names = func_def.in_arg_names
+
+        def _clone_name(values: 'Tuple[int, ...]') -> str:
+            if len(distinct_value_tuples) == 1:
+                return core_base
+            suffix = "".join(
+                f"__{arg_display_names.get(name, name.lstrip('%'))}{value}"
+                for name, value in zip(param_order, values)
+            )
+            return f"{core_base}{suffix}"
+
+        in_args, out_args = ctx.core_func2args[core_base]
+        specializations = []
+        value_tuple_to_clone_name = {}
+        for values in distinct_value_tuples:
+            clone_name = _clone_name(values)
+            value_tuple_to_clone_name[values] = clone_name
+            seed = dict(zip(param_order, values))
+            specializations.append((clone_name, seed))
+
+            clone_llzk_name = f"{template.sym_name.name}::{clone_name}"
+            ctx.llzk_func2core[clone_llzk_name] = clone_name
+            ctx.core_func2args[clone_name] = (in_args, out_args)
+
+        ctx.pure_function_specializations[llzk_name] = specializations
+
+        for call, values in resolved_calls:
+            call.callee = GlobalVariable(f"{template.sym_name.name}::{value_tuple_to_clone_name[values]}")
+
+
 class ModuleOp:
     """
     Top-level LLZK module.
@@ -192,6 +420,18 @@ class ModuleOp:
                 _register_global_def(operation, ctx)
 
         sorted_pure_templates = _topo_sort_pure_functions(pure_function_entries)
+
+        # Specialize any pure function whose own while-loop bound depends
+        # on one of its own parameters, when that parameter is a
+        # compile-time constant at every one of its call sites (see
+        # _specialize_loop_bound_parametric_pure_functions). Runs after
+        # topo-sort deliberately: topo-sort orders on the *original*,
+        # unspecialized call graph -- a pure function's dependency on
+        # another pure function doesn't change just because the callee
+        # later gets cloned, and specialization only relabels which
+        # concrete def a call site ends up targeting.
+        _specialize_loop_bound_parametric_pure_functions(pure_function_entries, self.body, ctx)
+
         pure_templates = {template for template, _name, _func_def in pure_function_entries}
         emission_order = sorted_pure_templates + [
             operation for operation in self.body if operation not in pure_templates

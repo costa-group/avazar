@@ -194,6 +194,24 @@ class TranslationContext:
     # original counter-based behavior for that member in that case.
     array_component_index_sequences: Dict[str, Dict[str, List[Tuple[int, ...]]]] = field(default_factory=dict)
 
+    # One-shot seed applied into var2const by FunctionDef.to_core right
+    # after it clears var2const, then reset to {} -- lets a pure function's
+    # own translation be specialized to a known constant value for one or
+    # more of its own parameters (see llzk.py's pure-function loop-bound
+    # specialization pre-pass). Empty (a no-op) for every non-specialized
+    # function, i.e. almost all of them.
+    pending_const_seed: Dict[str, int] = field(default_factory=dict)
+
+    # llzk_name (e.g. "EscalarMulW4Table_0::EscalarMulW4Table_0") -> list of
+    # (clone_core_name, seed) pairs, when a pure function's own loop bound
+    # depends on a parameter that's a compile-time constant at every one of
+    # its call sites. Populated by llzk.py's specialization pre-pass;
+    # consulted by poly.py's PolyTemplate.to_core, which emits one `def` per
+    # clone (each with its own pending_const_seed) instead of a single
+    # generic body. Absent (or no entry) for every pure function that isn't
+    # specialized -- unaffected, unchanged single-emission behavior.
+    pure_function_specializations: Dict[str, List[Tuple[str, Dict[str, int]]]] = field(default_factory=dict)
+
 
 def _apply_rename(name: str, rename: Dict[str, str]) -> str:
     """Apply a rename dict to an SSA variable name.

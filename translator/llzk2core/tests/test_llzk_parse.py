@@ -4,6 +4,9 @@ from llzk_dialects.core import SSAVar, Type, GlobalVariable, TranslationContext
 from llzk_dialects.poly import PolyTemplate
 from llzk_dialects.function import FunctionDef, FunctionReturn, FunctionCall
 from llzk_dialects.struct import StructDef
+from llzk_dialects.scf import SCFWhile, SCFCondition, SCFYield
+from llzk_dialects.bool import BoolCmp
+from llzk_dialects.felt import FeltConst, FeltBinary
 
 
 class TestLLZK:
@@ -252,3 +255,141 @@ class TestLLZK:
         ctx = TranslationContext()
         with pytest.raises(ValueError):
             list(module.to_core(ctx))
+
+
+class TestPureFunctionSpecialization:
+    """
+    ModuleOp.to_core's loop-bound-parametric pure function specialization
+    pre-pass (llzk.py's _specialize_loop_bound_parametric_pure_functions):
+    a pure function whose own while-loop bound depends on one of its own
+    parameters gets cloned once per distinct compile-time-constant value
+    that parameter takes across all its call sites -- mirrors
+    EscalarMulW4Table_0's real shape (escalarmulw4table_concrete.mlir),
+    whose bound `arg3 < arg1*4` depends on its own "k" parameter.
+    """
+
+    @staticmethod
+    def _table_template() -> PolyTemplate:
+        """
+        A pure function @Table(%arg0 aka "k") -> felt, counting from 0 up
+        to its own parameter (bound = %arg0 directly, no arithmetic needed
+        to keep the fixture minimal) and returning the while's own external
+        result. Structurally the same shape as EscalarMulW4Table_0's
+        problematic loop: the bound is unresolvable within the function's
+        own scope alone, since %arg0 is a parameter, not a loop-carried
+        variable or a literal.
+        """
+        felt = Type('!felt.type<"bn128">')
+        after_body = [
+            FeltConst(SSAVar("%c1"), 1),
+            FeltBinary(SSAVar("%next"), "felt.add", SSAVar("%ctr"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next")], [felt]),
+        ]
+        before_body = [
+            BoolCmp(SSAVar("%cond"), "lt", SSAVar("%ctr"), SSAVar("%arg0")),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%ctr")], [felt]),
+        ]
+        while_op = SCFWhile(
+            [SSAVar("%result")], [(SSAVar("%ctr"), SSAVar("%c0"))], [[felt], [felt]],
+            before_body, [(SSAVar("%ctr"), felt)], after_body,
+        )
+        func = FunctionDef(
+            GlobalVariable("@Table"),
+            '(%arg0: !felt.type<"bn128"> {function.arg_name = "k"}) -> !felt.type<"bn128">',
+            [FeltConst(SSAVar("%c0"), 0), while_op, FunctionReturn([SSAVar("%result")], [felt])],
+        )
+        return PolyTemplate(GlobalVariable("@Table"), [func])
+
+    @staticmethod
+    def _caller_compute(calls_and_values: list) -> PolyTemplate:
+        """
+        A @Main struct's @compute calling @Table once per (result_name,
+        value) pair in calls_and_values, each with a fresh felt.const
+        argument -- mirrors Main_0::@compute's real call sites in
+        escalarmulw4table_concrete.mlir.
+        """
+        felt = Type('!felt.type<"bn128">')
+        body = []
+        for result_name, value in calls_and_values:
+            const_name = f"%c_{result_name.lstrip('%')}"
+            body.append(FeltConst(SSAVar(const_name), value))
+            body.append(FunctionCall(
+                [SSAVar(result_name)], GlobalVariable("@Table::@Table"),
+                [SSAVar(const_name)], None,
+            ))
+        ret_val = calls_and_values[-1][0] if calls_and_values else "%c0"
+        body.append(FunctionReturn([SSAVar(ret_val)], [felt]))
+        compute = FunctionDef(GlobalVariable("@compute"), "() -> !felt.type<\"bn128\">", body)
+        return PolyTemplate(GlobalVariable("@Main"), [StructDef(GlobalVariable("@Main"), [compute])])
+
+    def _translate(self, calls_and_values: list) -> 'tuple[str, TranslationContext]':
+        table_template = self._table_template()
+        struct_template = self._caller_compute(calls_and_values)
+        module = ModuleOp(
+            lang=True, main_type=Type('!struct.type<@Main::@Main<[]>>'),
+            body=[struct_template, table_template],
+        )
+        ctx = TranslationContext()
+        text = "".join(module.to_core(ctx))
+        return text, ctx
+
+    def test_single_constant_value_keeps_original_name(self):
+        # Every call site (just one, here) passes the same constant (3):
+        # no need to rename -- the generic def is specialized in place.
+        text, ctx = self._translate([("%r0", 3)])
+
+        assert "def @Table(" in text
+        assert "repeat 3 {" in text
+        assert "call @Table(" in text
+        assert "@Table::@Table" in ctx.pure_function_specializations
+        assert ctx.pure_function_specializations["@Table::@Table"] == [("@Table", {"%arg0": 3})]
+
+    def test_multiple_distinct_values_get_suffixed_clones(self):
+        # Two call sites with different constants (1 and 2) -- mirrors
+        # escalarmul_test_concrete.mlir's 64 distinct-k call sites (one per
+        # scalar-multiplication window). Each gets its own clone, named
+        # using the "k" function.arg_name (not the raw "%arg0" SSA name).
+        text, ctx = self._translate([("%r1", 1), ("%r2", 2)])
+
+        assert "def @Table__k1(" in text
+        assert "def @Table__k2(" in text
+        assert "repeat 1 {" in text
+        assert "repeat 2 {" in text
+        assert "call @Table__k1(" in text
+        assert "call @Table__k2(" in text
+        # The generic, unspecialized def must not survive alongside the
+        # clones -- every call site was resolved and redirected.
+        assert "def @Table(" not in text
+
+        specs = ctx.pure_function_specializations["@Table::@Table"]
+        assert sorted(specs) == [
+            ("@Table__k1", {"%arg0": 1}),
+            ("@Table__k2", {"%arg0": 2}),
+        ]
+
+    def test_unresolvable_call_argument_leaves_function_unspecialized(self):
+        # The call's own argument (%witness) has no defining operation
+        # anywhere in the calling function's body -- mirrors
+        # pointbits_loopback_concrete.mlir's sqrt_0, whose parameter traces
+        # back to a genuine runtime witness signal, never a constant. The
+        # whole function must be left exactly as today: one generic def,
+        # no specialization entry, no renamed call site.
+        felt = Type('!felt.type<"bn128">')
+        call = FunctionCall([SSAVar("%r")], GlobalVariable("@Table::@Table"), [SSAVar("%witness")], None)
+        compute = FunctionDef(
+            GlobalVariable("@compute"), "() -> !felt.type<\"bn128\">",
+            [call, FunctionReturn([SSAVar("%r")], [felt])],
+        )
+        struct_template = PolyTemplate(GlobalVariable("@Main"), [StructDef(GlobalVariable("@Main"), [compute])])
+        table_template = self._table_template()
+
+        module = ModuleOp(
+            lang=True, main_type=Type('!struct.type<@Main::@Main<[]>>'),
+            body=[struct_template, table_template],
+        )
+        ctx = TranslationContext()
+        text = "".join(module.to_core(ctx))
+
+        assert "@Table::@Table" not in ctx.pure_function_specializations
+        assert text.count("def @Table(") == 1
+        assert "call @Table(" in text

@@ -436,9 +436,26 @@ class PolyTemplate(BlockOperation):
             # did, for a forward-referenced pure function) and emit its body
             # directly; there are no struct members or a separate @constrain.
             _register_pure_function(child, self.sym_name.name, ctx)
-            ctx.current_core_function = child.sym_name.name
-            yield from child.to_core(ctx)
-            ctx.current_core_function = None
+
+            llzk_name = f"{self.sym_name.name}::{child.sym_name.name}"
+            specializations = ctx.pure_function_specializations.get(llzk_name)
+            if specializations:
+                # A loop-bound-parametric pure function (llzk.py's
+                # specialization pre-pass) -- every call site resolved its
+                # relevant parameter(s) to a compile-time constant, so the
+                # generic (still-unresolvable-bound) body is superseded
+                # entirely by one `def` per distinct constant value/tuple,
+                # each translated with that value folded into var2const via
+                # pending_const_seed.
+                for clone_core_name, seed in specializations:
+                    ctx.current_core_function = clone_core_name
+                    ctx.pending_const_seed = seed
+                    yield from child.to_core(ctx)
+                ctx.current_core_function = None
+            else:
+                ctx.current_core_function = child.sym_name.name
+                yield from child.to_core(ctx)
+                ctx.current_core_function = None
         else:
             # Although it is just one element, we iterate for completeness just in case
             for struct_element in self.body:

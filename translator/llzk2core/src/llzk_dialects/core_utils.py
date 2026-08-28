@@ -482,7 +482,7 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
         lhs, rhs = initial_comparison.lhs, initial_comparison.rhs
         op = initial_comparison.predicate
 
-    assert op in ("lt", "le"), "Only inequalities are implemented"
+    assert op in ("lt", "le"), f"Only inequalities are implemented. Operation: {op}"
 
     lhs_is_variable = lhs.name in initial_values
     rhs_is_variable = rhs.name in initial_values

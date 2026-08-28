@@ -18,6 +18,7 @@ from llzk_dialects.core import (
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.core_utils import signature_args
 from llzk_dialects.utils import split_top_level_commas
+from llzk_dialects.loc_parser import strip_trailing_loc
 
 
 def _parse_in_arg(arg: str) -> Tuple[str, str, str]:
@@ -30,9 +31,23 @@ def _parse_in_arg(arg: str) -> Tuple[str, str, str]:
     a multi-attribute dict — whose own comma would otherwise be mistaken for
     an argument separator by a naive split — is correctly recognised and
     stripped from the type instead of leaking into it.
+
+    Real --llzk_plaintext output attaches its own ' loc(...)' suffix to
+    almost every argument individually (e.g. '... {function.arg_name =
+    "k"} loc("f.circom":31:28)'), not just once at the end of the whole
+    function.def line -- LLZKParser's own line-level loc-stripping
+    (loc_parser.py) only ever removes the outermost/last such suffix on a
+    line, leaving every other argument's embedded loc(...) in place. Without
+    stripping it here too, `rest` never ends with '}' and the whole
+    attribute dict (function.arg_name included) silently leaks into the
+    type string instead of being recognised -- in practice, in_arg_names
+    returns {} for every real multi-arg example, never just the synthetic
+    loc-free fixtures unit tests use.
     """
     arg = arg.strip()
     name, _, rest = arg.partition(":")
+    rest = rest.strip()
+    rest, _loc = strip_trailing_loc(rest)
     rest = rest.strip()
     attrs = ""
     if rest.endswith("}"):
@@ -322,6 +337,14 @@ class FunctionDef(BlockOperation):
         # already clears those around each struct's own compute.
         ctx.ssa2pod_var.clear()
         ctx.var2const.clear()
+
+        # Specialization seed (see core.py's pending_const_seed): a pure
+        # function whose own loop bound depends on a parameter that's a
+        # compile-time constant at every call site gets that parameter
+        # folded in here, once per clone -- empty (a no-op) for every
+        # non-specialized function.
+        ctx.var2const.update(ctx.pending_const_seed)
+        ctx.pending_const_seed = {}
 
         core_name = ctx.current_core_function
         in_args, out_args = ctx.core_func2args[core_name]

@@ -891,6 +891,29 @@ class SCFWhile(BlockOperation):
             if constant is not None:
                 initial_values[lhs.name] = constant
 
+        # Also bind the while's own external result name(s) to the same
+        # initial values, mirroring SCFCondition.to_core's own
+        # component-wise pairing (self.results against the loop-carried
+        # args, in the same order). A 0-repetition loop is entirely
+        # legitimate (e.g. a specialized pure function's loop bound
+        # resolving to 0 -- see llzk.py's loop-bound-parametric pure
+        # function specialization) and never reaches
+        # SCFCondition.to_core at all, since that only runs once per
+        # actual iteration inside the repeat block below; without this,
+        # code after the loop would reference an always-undefined
+        # variable in that case. Redundant (but harmless -- Core allows
+        # reassignment, same as the loop body's own per-iteration
+        # rebinding of the block args) whenever the loop does run, since
+        # the last iteration's own binding simply overwrites this one.
+        cond_res_index = 0
+        for result in self.results:
+            for component in range(result.n_components):
+                lhs = SSAVar(result.to_core_component(component))
+                _block_arg, initial_rhs = first_region_args[cond_res_index]
+                yield translate_assignment_core_with_ctx(
+                    lhs, initial_rhs, in_types[cond_res_index], ctx)
+                cond_res_index += 1
+
         # Then, we determine the number of steps in the while loop and
         # assign it to repeat
         steps = self._extract_step(initial_values, ctx)

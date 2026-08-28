@@ -622,6 +622,42 @@ class TestSCF:
             "}",
         ]
 
+    def test_while_to_core_zero_iterations_still_binds_result(self):
+        # A while whose bound is already met before the first iteration
+        # (steps == 0) is legitimate -- e.g. a specialized pure function's
+        # own loop-bound parameter resolving to 0 (see llzk.py's
+        # loop-bound-parametric pure function specialization) -- but never
+        # reaches SCFCondition.to_core, since that only runs inside the
+        # (here, never-executed) repeat block. Code emitted after the loop
+        # must still see the while's own external result name bound to its
+        # initial value, not left undefined.
+        after_body = [
+            FeltConst(SSAVar("%c1"), 1),
+            FeltBinary(SSAVar("%next"), "felt.add", SSAVar("%arg1"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next")], [Type("index")]),
+        ]
+        before_body = [
+            BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg1"), SSAVar("%bound")),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%arg1")], [Type("index")]),
+        ]
+        op = SCFWhile(
+            [SSAVar("%result")], [(SSAVar("%arg1"), SSAVar("%c0"))],
+            [[Type("index")], [Type("index")]],
+            before_body, [(SSAVar("%arg1"), Type("index"))], after_body,
+        )
+        ctx = TranslationContext()
+        ctx.var2const["%c0"] = 0
+        ctx.var2const["%bound"] = 0
+
+        out = list(op.to_core(ctx))
+        assert out[0] == "%arg1 = %c0"
+        assert out[1] == "%result = %c0"
+        assert out[2] == "repeat 0 {"
+        # The result is harmlessly rebound again inside the (dead) repeat
+        # block too, same as the loop-carried arg itself -- Core allows
+        # reassignment, mirroring the existing per-iteration rebind.
+        assert "%result = %arg1" in out
+
     def test_extract_index_sequence_returns_visited_values(self):
         # _extract_index_sequence: like _extract_step, but returns the
         # actual sequence of values %arg1 visits (not just the count) --
