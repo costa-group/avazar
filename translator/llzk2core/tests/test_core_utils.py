@@ -115,6 +115,35 @@ class TestInferNRepetitions:
         result = infer_n_repetitions_from_expressions(var2expression, "%cond", {"%arg1": 0})
         assert result == 2
 
+    def test_ne_predicate_concrete_bound(self):
+        # "ne" (concrete bound only -- see core_utils.py:485's assert):
+        # continues while unequal, same trip count as the equivalent "lt"
+        # here since the step is a plain +1 -- mirrors
+        # smtprocessor10_test_concrete.mlir's "for (i=nLevels-1; i!=-1; i--)"
+        # shape (ascending here for simplicity; the descending/wraparound
+        # case is covered by TestPrimeAwareSimulation below).
+        var2expression = self._basic_var2expression(predicate="ne")
+        var2expression["%c2"] = _felt_const("%c2", 2)
+        result = infer_n_repetitions_from_expressions(var2expression, "%cond", {"%arg1": 0})
+        assert result == 2
+
+    def test_eq_predicate_concrete_bound(self):
+        # "eq": continues while EQUAL -- the mirror image of "ne". Starting
+        # equal to the bound (0) runs exactly one iteration before the
+        # update makes it diverge.
+        var2expression = self._basic_var2expression(bound_name="%c0", predicate="eq")
+        var2expression["%c0"] = _felt_const("%c0", 0)
+        result = infer_n_repetitions_from_expressions(var2expression, "%cond", {"%arg1": 0})
+        assert result == 1
+
+    def test_ne_predicate_unresolved_bound_raises(self):
+        # eq/ne stay concrete-bound-only: no known example needs a symbolic
+        # eq/ne formula, and an eq/ne loop's termination isn't a monotonic
+        # bound crossing the way lt/le/gt/ge's SymbolicSteps formula assumes.
+        var2expression = self._basic_var2expression(bound_name="%bound", predicate="ne")
+        with pytest.raises(NotImplementedError):
+            infer_n_repetitions_from_expressions(var2expression, "%cond", {"%arg1": 0})
+
     def test_edge_case_collapsed_recurrence_to_constant(self):
         # Regression test: mirrors mux1_1_concrete.mlir's while, whose loop
         # variable is unconditionally reset to a literal each iteration
@@ -184,6 +213,75 @@ class TestInferNRepetitions:
         assert isinstance(result, SymbolicSteps)
         assert result.bound_var == SSAVar("%boundexpr")
         assert [op.result for op in result.setup_ops] == [SSAVar("%four"), SSAVar("%boundexpr")]
+
+
+class TestPrimeAwareSimulation:
+    """
+    construct_function_from_expressions (and therefore
+    infer_n_repetitions_from_expressions/count_iterations) reduces every
+    composed operation modulo `prime` -- this is what makes a descending
+    counter correctly wrap to prime-1 instead of drifting off as a raw
+    negative Python int, mirroring smtprocessor10_test_concrete.mlir's real
+    "for (i=nLevels-1; i!=-1; i--)" shape, where circom's "-1" is
+    represented as the field-wrapped prime-1.
+    """
+
+    def test_ne_predicate_wraps_at_prime_like_a_countdown_to_minus_one(self):
+        # %arg1 starts at 2, decrements by 1 each pass, condition is
+        # "%arg1 != 6" -- with prime=7, 6 is exactly how "-1" looks after
+        # wraparound (7 - 1). Without prime-aware simulation this would
+        # never terminate (2, 1, 0, -1, -2, ... never equals 6).
+        var2expression = {
+            "%cond": BoolCmp(SSAVar("%cond"), "ne", SSAVar("%arg1"), SSAVar("%bound")),
+            "%bound": _felt_const("%bound", 6),
+            "%arg1": "%next",
+            "%next": _felt_binary("%next", "felt.sub", "%arg1", "%c1"),
+            "%c1": _felt_const("%c1", 1),
+        }
+        result = infer_n_repetitions_from_expressions(
+            var2expression, "%cond", {"%arg1": 2}, prime=7
+        )
+        # Visits 2, 1, 0 -- then 0 - 1 wraps to 6, matching the bound.
+        assert result == 3
+
+    def test_construct_function_from_expressions_reduces_modulo_prime(self):
+        var2expression = {
+            "%r": _felt_binary("%r", "felt.sub", "%zero", "%one"),
+            "%zero": _felt_const("%zero", 0),
+            "%one": _felt_const("%one", 1),
+        }
+        fn = construct_function_from_expressions(SSAVar("%r"), var2expression, set(), prime=7)
+        assert fn(0) == 6  # -1 mod 7
+
+    def test_construct_function_from_expressions_defaults_to_goldilocks(self):
+        var2expression = {
+            "%r": _felt_binary("%r", "felt.sub", "%zero", "%one"),
+            "%zero": _felt_const("%zero", 0),
+            "%one": _felt_const("%one", 1),
+        }
+        fn = construct_function_from_expressions(SSAVar("%r"), var2expression, set())
+        assert fn(0) == 18446744069414584321 - 1
+
+
+class TestSimulationSafetyCap:
+    """
+    count_iterations/iterate_values fail fast on a non-terminating
+    recurrence instead of hanging indefinitely -- a genuinely
+    non-terminating shape (a translator bug, or one this codebase doesn't
+    model correctly yet) should never silently freeze the translator.
+    """
+
+    def test_count_iterations_raises_instead_of_hanging(self, monkeypatch):
+        import llzk_dialects.core_utils as core_utils_module
+        monkeypatch.setattr(core_utils_module, "_MAX_SIMULATED_ITERATIONS", 100)
+        with pytest.raises(RuntimeError):
+            count_iterations(0, lambda x: True, lambda x: x + 1)
+
+    def test_iterate_values_raises_instead_of_hanging(self, monkeypatch):
+        import llzk_dialects.core_utils as core_utils_module
+        monkeypatch.setattr(core_utils_module, "_MAX_SIMULATED_ITERATIONS", 100)
+        with pytest.raises(RuntimeError):
+            iterate_values(0, lambda x: True, lambda x: x + 1)
 
 
 class TestCollectHelpers:

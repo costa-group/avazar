@@ -4,11 +4,38 @@ Module for useful methods applies to the classes in core.py
 import re
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import List, Set, Dict, Union, Optional, Callable, Tuple
+from typing import List, Set, Dict, Union, Optional, Callable, Tuple, NoReturn
 from llzk_dialects.core import SSAVar, TranslationContext, Type, Operation
 from llzk_dialects.utils import translate_assignment_core, struct_type_name, is_array_type
 from llzk_dialects.bool import BoolCmp, BoolBinary
 from llzk_dialects.felt import FeltConst, FeltBinary
+
+
+# Prime for each finite field llzk2core/circom-llzk/complete_avazar.py can
+# target, keyed by the same --prime name complete_avazar.py itself accepts.
+# Deliberately duplicated from complete_avazar.py's own PRIMES dict (not
+# imported across the repo boundary -- llzk2core is meant to stay a
+# self-contained subproject, and complete_avazar.py already only imports
+# *from* llzk2core, never the reverse) -- keep the two in sync by hand if
+# either changes.
+FIELD_PRIMES: Dict[str, int] = {
+    "goldilocks": 18446744069414584321,
+    "secq256r1": 115792089210356248762697446949407573529996955224253574108868205240008320037127,
+    "pallas": 28948022309329048855892746252171976963363056481941560715954679059200803120067,
+    "vesta": 28948022309329048855892746252171976963363056481941600130006322964104920678209,
+    "bn128": 21888242871839275222246405745257275088548364400416034343698204186575808495617,
+    "grumpkin": 21888242871839275222246405745257275088696311157297823662689037894645226208583,
+    "bls12377": 25866442601296909401065273369489353353639351283510007695335291307297420126659,
+    "bls12381": 52435875175126190479447740508185965837690552500527637822603658699938581184513,
+}
+
+# Generous upper bound on the number of iterations a while-loop trip-count
+# simulation (count_iterations/iterate_values) will run before giving up --
+# far above any real circuit loop, just enough to turn a genuinely
+# non-terminating recurrence (a translator bug, or a shape this codebase
+# doesn't understand yet) into a fast, clear failure instead of an
+# indefinite hang.
+_MAX_SIMULATED_ITERATIONS = 1_000_000
 
 
 def signature_args(args: List[Tuple[str, Type]]) -> str:
@@ -324,7 +351,8 @@ def _collect_free_var_names(var: SSAVar,
 def infer_n_repetitions_from_expressions(var2expression: Dict[str, Union[str, Operation]],
                                          condition_var_core: str,
                                          initial_values: Dict[str, int],
-                                         var2const: Optional[Dict[str, int]] = None
+                                         var2const: Optional[Dict[str, int]] = None,
+                                         prime: int = FIELD_PRIMES["goldilocks"]
                                          ) -> Union[int, SymbolicSteps]:
     """
     Using the information retrieved from all involved expressions in the condition
@@ -338,13 +366,20 @@ def infer_n_repetitions_from_expressions(var2expression: Dict[str, Union[str, Op
     (correct regardless of whether the two halves reference the same or
     different loop-carried variables -- each count already fully accounts for
     its own condition's failure point in isolation).
+
+    `prime` is the finite field the while's own arithmetic is defined over --
+    threaded down into construct_function_from_expressions so the simulated
+    loop-carried variable wraps the same way the real field does (e.g. a
+    decrementing counter that goes below 0 becomes prime-1, not a raw
+    negative Python int) -- defaults to goldilocks, matching every existing
+    example.
     """
     var2const = var2const or {}
 
     condition = var2expression[condition_var_core]
 
     if isinstance(condition, BoolCmp):
-        return _infer_from_comparison(condition, var2expression, initial_values, var2const)
+        return _infer_from_comparison(condition, var2expression, initial_values, var2const, prime)
 
     if isinstance(condition, BoolBinary) and condition.op == "bool.and":
         lhs_condition = var2expression[condition.lhs.name]
@@ -352,8 +387,8 @@ def infer_n_repetitions_from_expressions(var2expression: Dict[str, Union[str, Op
         assert isinstance(lhs_condition, BoolCmp) and isinstance(rhs_condition, BoolCmp), \
             f"For now, a bool.and while condition must combine two BoolCmp: {condition}"
 
-        lhs_steps = _infer_from_comparison(lhs_condition, var2expression, initial_values, var2const)
-        rhs_steps = _infer_from_comparison(rhs_condition, var2expression, initial_values, var2const)
+        lhs_steps = _infer_from_comparison(lhs_condition, var2expression, initial_values, var2const, prime)
+        rhs_steps = _infer_from_comparison(rhs_condition, var2expression, initial_values, var2const, prime)
         return _combine_min_steps(lhs_steps, rhs_steps)
 
     raise NotImplementedError(
@@ -380,7 +415,8 @@ def _combine_min_steps(a: Union[int, SymbolicSteps], b: Union[int, SymbolicSteps
 def infer_iteration_sequence_from_expressions(var2expression: Dict[str, Union[str, Operation]],
                                               condition_var_core: str,
                                               initial_values: Dict[str, int],
-                                              var2const: Optional[Dict[str, int]] = None
+                                              var2const: Optional[Dict[str, int]] = None,
+                                              prime: int = FIELD_PRIMES["goldilocks"]
                                               ) -> Optional[List[int]]:
     """
     Like infer_n_repetitions_from_expressions, but returns the actual
@@ -393,14 +429,15 @@ def infer_iteration_sequence_from_expressions(var2expression: Dict[str, Union[st
     Returns None whenever the count itself isn't a concrete int (a
     SymbolicSteps-shaped bound, or -- for a bool.and -- either half not
     reducing to a concrete sequence): there's no way to list values for an
-    iteration count only known as a Core-level formula.
+    iteration count only known as a Core-level formula. See
+    infer_n_repetitions_from_expressions for `prime`.
     """
     var2const = var2const or {}
 
     condition = var2expression[condition_var_core]
 
     if isinstance(condition, BoolCmp):
-        return _infer_sequence_from_comparison(condition, var2expression, initial_values, var2const)
+        return _infer_sequence_from_comparison(condition, var2expression, initial_values, var2const, prime)
 
     if isinstance(condition, BoolBinary) and condition.op == "bool.and":
         lhs_condition = var2expression[condition.lhs.name]
@@ -408,8 +445,8 @@ def infer_iteration_sequence_from_expressions(var2expression: Dict[str, Union[st
         assert isinstance(lhs_condition, BoolCmp) and isinstance(rhs_condition, BoolCmp), \
             f"For now, a bool.and while condition must combine two BoolCmp: {condition}"
 
-        lhs_seq = _infer_sequence_from_comparison(lhs_condition, var2expression, initial_values, var2const)
-        rhs_seq = _infer_sequence_from_comparison(rhs_condition, var2expression, initial_values, var2const)
+        lhs_seq = _infer_sequence_from_comparison(lhs_condition, var2expression, initial_values, var2const, prime)
+        rhs_seq = _infer_sequence_from_comparison(rhs_condition, var2expression, initial_values, var2const, prime)
         if lhs_seq is None or rhs_seq is None:
             return None
         # The loop stops as soon as either half first goes false -- the
@@ -440,7 +477,9 @@ class _ResolvedRecurrence:
 def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
                                    var2expression: Dict[str, Union[str, Operation]],
                                    initial_values: Dict[str, int],
-                                   var2const: Dict[str, int]) -> Union[_ResolvedRecurrence, SymbolicSteps]:
+                                   var2const: Dict[str, int],
+                                   prime: int = FIELD_PRIMES["goldilocks"]
+                                   ) -> Union[_ResolvedRecurrence, SymbolicSteps]:
     """
     Resolves a single BoolCmp while condition (one half of a bool.and, or the
     whole condition) to either a _ResolvedRecurrence (initial value, update
@@ -468,8 +507,12 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
     survives as a leftover, even though it's still a bona fide loop-carried
     variable.
     """
-    # For now, we only handle lt, le, gt and ge
-    # TODO: cover more cases if needed
+    # lt/le/gt/ge (inequalities) and eq/ne (equality checks) are handled.
+    # eq/ne are symmetric -- no lhs/rhs swap needed, unlike gt/ge normalizing
+    # to lt/le -- and only supported here in the concrete-bound branch below
+    # (SymbolicSteps stays lt/le-only: no known example needs a symbolic
+    # eq/ne formula, and an eq/ne loop's termination isn't a monotonic bound
+    # crossing the way lt/le/gt/ge's is).
 
     # Reverse the arguments
     if initial_comparison.predicate == "gt":
@@ -482,7 +525,8 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
         lhs, rhs = initial_comparison.lhs, initial_comparison.rhs
         op = initial_comparison.predicate
 
-    assert op in ("lt", "le"), f"Only inequalities are implemented. Operation: {op}"
+    assert op in ("lt", "le", "eq", "ne"), \
+        f"Only inequalities and equality checks are implemented. Operation: {op}"
 
     lhs_is_variable = lhs.name in initial_values
     rhs_is_variable = rhs.name in initial_values
@@ -505,7 +549,7 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
         )
 
     initial_value = initial_values[variable.name]
-    update_func = construct_function_from_expressions(variable, var2expression, set())
+    update_func = construct_function_from_expressions(variable, var2expression, set(), prime)
 
     # Resolve any free variable the bound references but that isn't defined
     # anywhere inside the while itself (e.g. an enclosing function's own
@@ -522,15 +566,26 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
         # Every value the bound depends on is now known (either an original
         # literal or a free variable just resolved via var2const above), so
         # it can be evaluated to a concrete int, same as a bare constant.
-        bound_func = construct_function_from_expressions(bound, var2expression, set())
+        bound_func = construct_function_from_expressions(bound, var2expression, set(), prime)
         bound_value = bound_func(0)
 
-        if variable_is_lhs:
+        if op in ("eq", "ne"):
+            # Symmetric: which side is "the variable" doesn't affect the
+            # comparison itself, only how it was identified above.
+            compare_func = (lambda x: x == bound_value) if op == "eq" else (lambda x: x != bound_value)
+        elif variable_is_lhs:
             compare_func = (lambda x: x < bound_value) if op == "lt" else (lambda x: x <= bound_value)
         else:
             compare_func = (lambda x: bound_value < x) if op == "lt" else (lambda x: bound_value <= x)
 
         return _ResolvedRecurrence(initial_value, compare_func, update_func)
+
+    if op in ("eq", "ne"):
+        raise NotImplementedError(
+            f"While condition depends on unresolved variable(s) {unresolved_free_vars} "
+            f"with an '{op}' predicate -- only a concrete (fully-resolved) bound is "
+            "supported for eq/ne; no known example needs a symbolic eq/ne formula"
+        )
 
     # The bound depends on a value that isn't known here (e.g. an enclosing
     # function's own parameter). Fall back to a symbolic Core expression for
@@ -559,13 +614,14 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
 def _infer_from_comparison(initial_comparison: BoolCmp,
                            var2expression: Dict[str, Union[str, Operation]],
                            initial_values: Dict[str, int],
-                           var2const: Dict[str, int]) -> Union[int, SymbolicSteps]:
+                           var2const: Dict[str, int],
+                           prime: int = FIELD_PRIMES["goldilocks"]) -> Union[int, SymbolicSteps]:
     """
     Infers the number of iterations a while's exit condition allows, given a
     single BoolCmp (one half of a bool.and, or the whole condition). See
     _resolve_comparison_recurrence for the shared resolution logic.
     """
-    resolved = _resolve_comparison_recurrence(initial_comparison, var2expression, initial_values, var2const)
+    resolved = _resolve_comparison_recurrence(initial_comparison, var2expression, initial_values, var2const, prime)
     if isinstance(resolved, SymbolicSteps):
         return resolved
     return count_iterations(resolved.initial_value, resolved.compare_func, resolved.update_func)
@@ -574,7 +630,8 @@ def _infer_from_comparison(initial_comparison: BoolCmp,
 def _infer_sequence_from_comparison(initial_comparison: BoolCmp,
                                     var2expression: Dict[str, Union[str, Operation]],
                                     initial_values: Dict[str, int],
-                                    var2const: Dict[str, int]) -> Optional[List[int]]:
+                                    var2const: Dict[str, int],
+                                    prime: int = FIELD_PRIMES["goldilocks"]) -> Optional[List[int]]:
     """
     Like _infer_from_comparison, but returns the actual list of values the
     loop-carried variable visits (one per iteration, in order) instead of
@@ -582,7 +639,7 @@ def _infer_sequence_from_comparison(initial_comparison: BoolCmp,
     (a SymbolicSteps-shaped bound) -- there's no way to list values for a
     count that's itself only known as a Core-level formula.
     """
-    resolved = _resolve_comparison_recurrence(initial_comparison, var2expression, initial_values, var2const)
+    resolved = _resolve_comparison_recurrence(initial_comparison, var2expression, initial_values, var2const, prime)
     if isinstance(resolved, SymbolicSteps):
         return None
     return iterate_values(resolved.initial_value, resolved.compare_func, resolved.update_func)
@@ -590,7 +647,8 @@ def _infer_sequence_from_comparison(initial_comparison: BoolCmp,
 
 def construct_function_from_expressions(current_expr: SSAVar,
                                         var2expression: Dict[str, Union[str, Operation]],
-                                        traversed: Set[str]) -> Callable:
+                                        traversed: Set[str],
+                                        prime: int = FIELD_PRIMES["goldilocks"]) -> Callable:
     """
     Construct a Python callable f(x) -> int that computes current_expr
     in terms of ground_var.
@@ -598,6 +656,15 @@ def construct_function_from_expressions(current_expr: SSAVar,
     var2expression values are either:
       - an Operation: call its to_function(), recurse on operands
       - a str: the name of another SSA variable with the same value (alias)
+
+    Every composed operation's result is reduced modulo `prime` (default:
+    goldilocks, matching every existing example) -- this is what makes the
+    simulation correctly emulate real field arithmetic: a value that would
+    wrap in the real field (e.g. a decrementing counter going below 0)
+    becomes prime-1, not a raw, ever-decreasing Python int that would never
+    equal a wrapped bound like circom's "-1" (see felt.py's FeltBinary/
+    FeltUnary/FeltConst, whose own to_function() has no notion of a field
+    at all otherwise).
     """
     # Ignore the case where an element has already been traversed (base case)
     if current_expr.name in traversed:
@@ -608,12 +675,12 @@ def construct_function_from_expressions(current_expr: SSAVar,
 
     if isinstance(expression, str):
         return construct_function_from_expressions(
-            SSAVar(expression), var2expression, traversed
+            SSAVar(expression), var2expression, traversed, prime
         )
 
-    raw_fn = expression.to_function()
+    raw_fn = expression.to_function(prime)
     operand_fns = [
-        construct_function_from_expressions(op, var2expression, traversed)
+        construct_function_from_expressions(op, var2expression, traversed, prime)
         for op in expression.operands
     ]
 
@@ -623,12 +690,24 @@ def construct_function_from_expressions(current_expr: SSAVar,
     return lambda x, _fn=raw_fn, _fns=operand_fns: _fn(*[f(x) for f in _fns])
 
 
+def _too_many_iterations(count: int) -> NoReturn:
+    raise RuntimeError(
+        f"While-loop trip-count simulation exceeded {_MAX_SIMULATED_ITERATIONS} "
+        "iterations without the condition going false -- almost certainly a "
+        "non-terminating recurrence (e.g. a predicate/field-arithmetic shape "
+        "this codebase doesn't model correctly yet), not a real circuit loop; "
+        "failing fast instead of hanging indefinitely."
+    )
+
+
 def count_iterations(initial_value, condition_fn, update_fn):
     value = initial_value
     count = 0
     while condition_fn(value):
         value = update_fn(value)
         count += 1
+        if count > _MAX_SIMULATED_ITERATIONS:
+            _too_many_iterations(count)
     return count
 
 
@@ -644,4 +723,6 @@ def iterate_values(initial_value, condition_fn, update_fn) -> List[int]:
     while condition_fn(value):
         values.append(value)
         value = update_fn(value)
+        if len(values) > _MAX_SIMULATED_ITERATIONS:
+            _too_many_iterations(len(values))
     return values

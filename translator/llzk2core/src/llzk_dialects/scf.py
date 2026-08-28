@@ -22,7 +22,7 @@ from llzk_dialects.definitions import Dialect
 from llzk_dialects.core_utils import (
     translate_assignment_core_with_ctx, infer_n_repetitions_from_expressions,
     infer_iteration_sequence_from_expressions, SymbolicSteps,
-    scoped_branch_registrations,
+    scoped_branch_registrations, FIELD_PRIMES,
 )
 from llzk_dialects.felt import FeltBinary, FeltConst
 from llzk_dialects.bool import BoolCmp
@@ -1056,10 +1056,11 @@ class SCFWhile(BlockOperation):
         """
         var2expression, condition_var = self._build_while_var_expressions()
         return infer_n_repetitions_from_expressions(var2expression, condition_var.name,
-                                                    initial_values, ctx.var2const)
+                                                    initial_values, ctx.var2const, ctx.prime)
 
     def _extract_index_sequence(self, initial_values: Dict[str, int],
-                                var2const: Dict[str, int]) -> Optional[List[int]]:
+                                var2const: Dict[str, int],
+                                prime: int = FIELD_PRIMES["goldilocks"]) -> Optional[List[int]]:
         """
         Like _extract_step, but returns the actual sequence of values the
         loop-carried variable visits (one per iteration, in order) instead
@@ -1077,7 +1078,7 @@ class SCFWhile(BlockOperation):
         """
         var2expression, condition_var = self._build_while_var_expressions()
         return infer_iteration_sequence_from_expressions(var2expression, condition_var.name,
-                                                          initial_values, var2const)
+                                                          initial_values, var2const, prime)
 
     def _process_while_variables(self, operations: List[Operation], while_variables: Set[str],
                                  var2expression: Dict[str, Union[str, Operation]]):

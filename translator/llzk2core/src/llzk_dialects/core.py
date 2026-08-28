@@ -212,6 +212,17 @@ class TranslationContext:
     # specialized -- unaffected, unchanged single-emission behavior.
     pure_function_specializations: Dict[str, List[Tuple[str, Dict[str, int]]]] = field(default_factory=dict)
 
+    # The finite field this translation targets -- every compile-time
+    # constant fold and while-loop trip-count simulation (core_utils.py's
+    # construct_function_from_expressions, felt.py's to_function()) reduces
+    # its result modulo this value, so a value that wraps in the real field
+    # (e.g. circom's "-1", represented as prime-1) is simulated correctly
+    # instead of drifting off as a raw, ever-decreasing Python int. Defaults
+    # to the goldilocks prime -- every existing example and every existing
+    # test's implicit assumption -- via main_execution.py's new --prime flag
+    # (see core_utils.py's FIELD_PRIMES) for any other field.
+    prime: int = 18446744069414584321  # goldilocks: 2**64 - 2**32 + 1
+
 
 def _apply_rename(name: str, rename: Dict[str, str]) -> str:
     """Apply a rename dict to an SSA variable name.

@@ -83,7 +83,10 @@ class BoolBinary(Operation):
         "bool.xor": lambda a, b: 1 if (bool(a) != bool(b)) else 0,
     }
 
-    def to_function(self) -> Callable[[int, int], int]:
+    def to_function(self, prime: Optional[int] = None) -> Callable[[int, int], int]:
+        # Boolean, not felt-typed -- always 0/1, regardless of any field's
+        # prime; accepts the parameter only for interface uniformity with
+        # construct_function_from_expressions' generic to_function(prime) call.
         return self._BINARY_FNS[self._op]
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
@@ -141,7 +144,8 @@ class BoolNot(Operation):
     def operands(self) -> List[SSAVar]:
         return [self.operand]
 
-    def to_function(self) -> Callable[[int], int]:
+    def to_function(self, prime: Optional[int] = None) -> Callable[[int], int]:
+        # Boolean, not felt-typed -- see BoolBinary.to_function.
         return lambda a: 1 if not a else 0
 
     def to_core(self, ctx: TranslationContext) -> str:
@@ -221,7 +225,12 @@ class BoolCmp(Operation):
         "ge": lambda a, b: 1 if a >= b else 0,
     }
 
-    def to_function(self) -> Callable[[int, int], int]:
+    def to_function(self, prime: Optional[int] = None) -> Callable[[int, int], int]:
+        # Compares two already-resolved felt values (via ctx.var2const,
+        # which FeltBinary/FeltUnary now always store correctly reduced
+        # modulo the prime) and returns 0/1 -- no further prime-awareness
+        # needed here; accepts the parameter only for interface uniformity
+        # with construct_function_from_expressions' generic to_function(prime).
         return self._PRED_FNS[self.predicate]
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:

@@ -21,6 +21,7 @@ from llzk_dialects.scf import SCFDialect
 from llzk_dialects.string import StringDialect
 from llzk_dialects.struct import StructDialect
 from llzk_dialects.core import TranslationContext
+from llzk_dialects.core_utils import FIELD_PRIMES
 from llzk_dialects.utils import indent_stream
 
 
@@ -60,7 +61,11 @@ def main(args: argparse.Namespace):
     assert len(res) == 1, "Multiple modules have been recognized inside the program"
 
     module_structure = res[0]
-    translation_context = TranslationContext()
+    # getattr with a default: complete_avazar.py (and any other caller
+    # that builds its own argparse.Namespace directly, bypassing
+    # args_parser.py's parser) may not set `prime` at all.
+    prime_name = getattr(args, "prime", None) or "goldilocks"
+    translation_context = TranslationContext(prime=FIELD_PRIMES[prime_name])
     core_generator = module_structure.to_core(translation_context)
     with open(args.target, 'w') as f:
         # Indent stream generates the statements in a nice format
