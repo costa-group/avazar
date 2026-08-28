@@ -82,7 +82,7 @@ def main(args: argparse.Namespace):
     llzk_cli = os.path.join(_here, '..', '..', '..', 'lean', 'llzk_cli')
     smt2_json_path = os.path.splitext(args.target)[0] + ".json"
     subprocess.run(
-        [llzk_cli, '-zk', 'g64', '-se', '-smt2', 'json', '-o', smt2_json_path, args.target],
+        [llzk_cli, '-zk', 'g64', '-se', '-ru', 'no', '-smt2', 'json', '-o', smt2_json_path, args.target],
         check=True,
     )
 
