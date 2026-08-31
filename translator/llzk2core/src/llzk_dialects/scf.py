@@ -16,7 +16,7 @@ from typing import List, Optional, Tuple, Generator, Dict, Set, Union
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, Type,
-    TranslationContext, ParseFn,
+    TranslationContext, ParseFn, _apply_rename,
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.core_utils import (
@@ -347,11 +347,9 @@ class SCFIf(BlockOperation):
                 ctx.scf_result = []
 
     def update_variables(self, rename: Dict[str, str]) -> None:
-        if self.condition.name in rename:
-            self.condition.name = rename[self.condition.name]
+        self.condition.name = _apply_rename(self.condition.name, rename)
         for r in self.results:
-            if r.name in rename:
-                r.name = rename[r.name]
+            r.name = _apply_rename(r.name, rename)
         for op in self.then_body:
             op.update_variables(rename)
         if self.else_body:
@@ -459,8 +457,7 @@ class SCFExecuteRegion(BlockOperation):
 
     def update_variables(self, rename: Dict[str, str]) -> None:
         for r in self.results:
-            if r.name in rename:
-                r.name = rename[r.name]
+            r.name = _apply_rename(r.name, rename)
         for op in self.body:
             op.update_variables(rename)
 
@@ -588,18 +585,13 @@ class SCFFor(BlockOperation):
 
     def update_variables(self, rename: Dict[str, str]) -> None:
         for r in self.results:
-            if r.name in rename:
-                r.name = rename[r.name]
-        if self.iv.name in rename:
-            self.iv.name = rename[self.iv.name]
+            r.name = _apply_rename(r.name, rename)
+        self.iv.name = _apply_rename(self.iv.name, rename)
         for var in (self.lb, self.ub, self.step):
-            if var.name in rename:
-                var.name = rename[var.name]
+            var.name = _apply_rename(var.name, rename)
         for block_arg, init_val in self.iter_args:
-            if block_arg.name in rename:
-                block_arg.name = rename[block_arg.name]
-            if init_val.name in rename:
-                init_val.name = rename[init_val.name]
+            block_arg.name = _apply_rename(block_arg.name, rename)
+            init_val.name = _apply_rename(init_val.name, rename)
         for op in self.body:
             op.update_variables(rename)
 
@@ -1109,11 +1101,9 @@ class SCFWhile(BlockOperation):
 
     def update_variables(self, rename: Dict[str, str]) -> None:
         for r in self.results:
-            if r.name in rename:
-                r.name = rename[r.name]
+            r.name = _apply_rename(r.name, rename)
         for _block_arg, init_val in self.init_args:
-            if init_val.name in rename:
-                init_val.name = rename[init_val.name]
+            init_val.name = _apply_rename(init_val.name, rename)
         for op in self.before_body:
             op.update_variables(rename)
         for op in self.after_body:

@@ -1173,3 +1173,132 @@ class TestSCF:
         # clobbered a second time by a fresh raw derived name.
         assert ctx.ssa2pod_var[arg9_name]["@idx_7"][0] == "ark#7"
         assert ctx.ssa2pod_var["ark#7"]["@in"][0] == "ark#7.in"
+
+    # ── update_variables: component/semantic-suffixed names ────────────────────
+    #
+    # Regression for the babypbk_test_concrete.mlir crash: a nested scf.while's
+    # init-value (e.g. "%115#1_@in", a reference to component #1 of a
+    # multi-result op, further qualified with a pod field tag) was left
+    # completely unrenamed by an enclosing block's _bef/_aft/_w/_f rename pass,
+    # while every other reference to the same base name ("%115") was correctly
+    # renamed -- because SCFIf/SCFExecuteRegion/SCFFor/SCFWhile.update_variables
+    # each did a raw "name in rename" dict lookup instead of routing through
+    # core._apply_rename, which is the only place that knows how to strip a
+    # trailing "#<idx>[_@field...]" suffix off before matching the bare base
+    # name. These four tests hit update_variables directly (no text parsing)
+    # to pin each class's own operand fields.
+
+    def test_if_update_variables_strips_component_suffix_on_condition_and_results(self):
+        op = SCFIf(
+            results=[SSAVar("%r", 2)],
+            condition=SSAVar("%14#1"),
+            result_types=[Type("!felt.type"), Type("!felt.type")],
+            then_body=[], else_body=None,
+        )
+        op.update_variables({"%14": "%14_aft0", "%r": "%r_aft0"})
+        assert op.condition.name == "%14_aft0#1"
+        assert op.results[0].name == "%r_aft0"
+
+    def test_execute_region_update_variables_strips_component_suffix_on_results(self):
+        op = SCFExecuteRegion(results=[SSAVar("%r", 2)], result_types=[], body=[])
+        op.update_variables({"%r": "%r_aft0"})
+        assert op.results[0].name == "%r_aft0"
+
+    def test_for_update_variables_strips_component_suffix_on_bounds_and_iter_args(self):
+        op = SCFFor(
+            results=[SSAVar("%r")],
+            iv=SSAVar("%iv"), lb=SSAVar("%14#0"), ub=SSAVar("%ub"), step=SSAVar("%step"),
+            iter_args=[(SSAVar("%arg"), SSAVar("%14#1_@in"))],
+            body=[],
+        )
+        op.update_variables({"%14": "%14_aft0"})
+        assert op.lb.name == "%14_aft0#0"
+        assert op.iter_args[0][1].name == "%14_aft0#1_@in"
+        # The block-arg (own binder, not a reference into the enclosing
+        # scope) is untouched since it has no entry in this rename dict.
+        assert op.iter_args[0][0].name == "%arg"
+
+    def test_while_update_variables_strips_component_suffix_on_init_val(self):
+        op = SCFWhile(
+            results=[SSAVar("%r", 2)],
+            init_args=[(SSAVar("%arg8"), SSAVar("%115#1_@in"))],
+            func_type=[[], []], before_body=[], after_args=[], after_body=[],
+        )
+        op.update_variables({"%115": "%115_aft2780", "%r": "%r_aft2780"})
+        assert op.init_args[0][1].name == "%115_aft2780#1_@in"
+        assert op.results[0].name == "%r_aft2780"
+        # The block-arg is untouched, matching SCFWhile.parse's own comment
+        # that init_val (not block_arg) is the enclosing-scope reference.
+        assert op.init_args[0][0].name == "%arg8"
+
+    def _if_while_recursive_parse_fn(self, start, end):
+        ops = []
+        i = start
+        while i < end:
+            line = self.lines[i].strip()
+            if not line or line in ("}", "do {", "} else {"):
+                i += 1
+                continue
+            if SCFWhile.match(line):
+                op, next_i = SCFWhile.parse(self.lines, i, self._if_while_recursive_parse_fn)
+                ops.append(op)
+                i = next_i
+                continue
+            if SCFIf.match(line):
+                op, next_i = SCFIf.parse(self.lines, i, self._if_while_recursive_parse_fn)
+                ops.append(op)
+                i = next_i
+                continue
+            if SCFYield.match(line):
+                ops.append(SCFYield.parse(line))
+            elif SCFCondition.match(line):
+                ops.append(SCFCondition.parse(line))
+            i += 1
+        return ops
+
+    def test_while_parse_nested_while_init_val_sourced_from_outer_if_result_gets_renamed(self):
+        # End-to-end reproduction (in miniature) of the babypbk_test_concrete.mlir
+        # crash: an outer scf.while's body defines a multi-result value via a
+        # nested scf.if ("%115:2"), and an immediately-following inner
+        # scf.while uses component #1 of that value ("%115#1_@in") as its own
+        # init-value. Parsing the outer while triggers its own after-region
+        # _aft-rename pass (since "%115" is body-computed, not one of the
+        # after region's own declared block args), which must reach through
+        # the inner while's update_variables to fix up "%115#1_@in" too.
+        self.lines = [
+            'scf.while (%arg2 = %outer_init) : (index) -> (index) {',   # 0
+            'scf.condition(%cond1) %arg2 : index',                      # 1
+            '}',                                                        # 2
+            'do {',                                                     # 3
+            '^bb0(%arg2: index):',                                      # 4
+            '%115:2 = scf.if %cond2 -> (index, index) {',                # 5
+            'scf.yield %a, %b : index, index',                          # 6
+            '} else {',                                                 # 7
+            'scf.yield %c, %d : index, index',                          # 8
+            '}',                                                        # 9
+            '%116:2 = scf.while (%arg7 = %e, %arg8 = %115#1_@in) : (index, index) -> (index, index) {',  # 10
+            'scf.condition(%cond3) %arg7, %arg8 : index, index',        # 11
+            '}',                                                        # 12
+            'do {',                                                     # 13
+            'scf.yield %arg7, %arg8 : index, index',                    # 14
+            '}',                                                        # 15
+            'scf.yield %arg2, %116#0 : index, index',                   # 16
+            '}',                                                        # 17
+        ]
+        outer, _ = SCFWhile.parse(self.lines, 0, self._if_while_recursive_parse_fn)
+
+        if_op, inner_while, _yield_op = outer.after_body
+        assert isinstance(if_op, SCFIf)
+        assert isinstance(inner_while, SCFWhile)
+
+        # "%115" is body-computed (not one of the after region's own
+        # declared block args), so it must be tagged with the outer
+        # while's own "_aft0" cursor -- and the inner while's init-value,
+        # which references component #1 of it plus a pod field tag, must
+        # carry that exact same rename with the suffix preserved.
+        assert if_op.results[0].name == "%115_aft0"
+        assert inner_while.init_args[1][1].name == "%115_aft0#1_@in"
+        # The other init-value ("%e", from outside this while entirely)
+        # is untouched, and the inner while's own block-args keep their
+        # own "_w<cursor>" tagging, unaffected by the outer's rename.
+        assert inner_while.init_args[0][1].name == "%e"
