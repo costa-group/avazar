@@ -456,12 +456,42 @@ def _walk_array_component_population(ops, array_member_base, const_map, loop_sta
             if not sub:
                 continue
 
+            # A scf.while's before/after regions refer to a registered
+            # counting array (array_member_base, keyed by the SSA name the
+            # POST-loop bulk-copy nest reads it under -- the while's own
+            # result) via that region's own block-arg name instead --
+            # e.g. the real population write for "sigmaF" in a real
+            # PoseidonEx compute body reads/writes "%arg3" inside the
+            # after-region, never the while's own "%421#1" result name.
+            # Alias each region's own block-arg to the same registered
+            # member, mirroring _collect_while_iter_args' identical need
+            # for $inputs pods -- confirmed necessary via
+            # poseidon3_test_concrete.mlir's "sigmaF"/"sigmaP" members,
+            # whose components_index_sequences was otherwise empty for the
+            # whole macro, collapsing signal_renaming.py's per-instance
+            # naming to a single fallback entry.
+            sub_array_member_base = array_member_base
+            if isinstance(op, SCFWhile) and attr == 'before_body':
+                region_block_args = [(name, block_arg) for name, (block_arg, _init_val)
+                                      in _while_iter_arg_pairs(op)]
+            elif isinstance(op, SCFWhile) and attr == 'after_body':
+                region_block_args = _while_after_arg_pairs(op)
+            else:
+                region_block_args = []
+            extra = {
+                block_arg.name: array_member_base[flat_result_name]
+                for flat_result_name, block_arg in region_block_args
+                if flat_result_name in array_member_base
+            }
+            if extra:
+                sub_array_member_base = {**array_member_base, **extra}
+
             candidates = []
-            _collect_population_write_candidates(sub, array_member_base, local_const_map,
+            _collect_population_write_candidates(sub, sub_array_member_base, local_const_map,
                                                   local_def_map, candidates)
             if candidates:
                 write, write_const_map, write_def_map = candidates[-1]
-                member = array_member_base[write.arr_ref.name]
+                member = sub_array_member_base[write.arr_ref.name]
                 nest_sequence = _resolve_population_nest_sequence(
                     write, next_stack, write_def_map, write_const_map)
                 if nest_sequence is not None:
@@ -469,7 +499,7 @@ def _walk_array_component_population(ops, array_member_base, const_map, loop_sta
 
             # Keep looking for a further nested loop (the next dimension)
             # inside this same body.
-            _walk_array_component_population(sub, array_member_base, local_const_map,
+            _walk_array_component_population(sub, sub_array_member_base, local_const_map,
                                              next_stack, local_def_map, member_nests)
 
 
@@ -595,6 +625,22 @@ def _annotate_idx_pod_component_reads(ops, idx_pod_member_types, pod_to_member):
                 _annotate_idx_pod_component_reads(sub, idx_pod_member_types, pod_to_member)
 
 
+def _while_flat_result_names(op):
+    """
+    One scf.while's own results, flattened to their individual Core
+    component names ("%421#0", "%421#1", ... or, for a single-component
+    result, the bare "%421"), in declaration order. Shared by
+    _while_iter_arg_pairs and _while_after_arg_pairs so both derive the
+    exact same flattening from op.results, never two independently
+    maintained copies of this computation.
+    """
+    flat_results = []
+    for res in op.results:
+        for k in range(res.n_components):
+            flat_results.append(res.to_core_component(k))
+    return flat_results
+
+
 def _while_iter_arg_pairs(op):
     """
     (flat_result_component_name, (block_arg, init_val)) pairs for one
@@ -604,11 +650,22 @@ def _while_iter_arg_pairs(op):
     same pairing from op.results/op.init_args, never two independently
     maintained copies of this computation.
     """
-    flat_results = []
-    for res in op.results:
-        for k in range(res.n_components):
-            flat_results.append(res.to_core_component(k))
-    return list(zip(flat_results, op.init_args))
+    return list(zip(_while_flat_result_names(op), op.init_args))
+
+
+def _while_after_arg_pairs(op):
+    """
+    (flat_result_component_name, after_region_block_arg) pairs for one
+    scf.while's own after_args, in declaration order -- the after-region's
+    own block-arg names, as distinct from _while_iter_arg_pairs' init_args
+    block-args (the before-region's own binder). SCFWhile.parse parses
+    these as genuinely separate SSAVar objects (its own block_arg_rename
+    unions both name sets rather than assuming they coincide), so a value
+    referenced *inside* the after-region body (e.g. a population write)
+    must be resolved through this pairing, not init_args'.
+    """
+    return [(name, arg_var) for name, (arg_var, _type)
+            in zip(_while_flat_result_names(op), op.after_args)]
 
 
 def _collect_while_iter_args(ops, while_iter_args):

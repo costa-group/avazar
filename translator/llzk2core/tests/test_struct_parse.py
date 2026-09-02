@@ -1280,6 +1280,82 @@ class TestFindArrayComponentPopulationSequences:
         # from the outside since both are structurally identical.
         assert result == {"comp": [(0,), (1,), (2,)]}
 
+    def test_scf_while_population_via_after_region_block_arg(self):
+        # Regression for the poseidon3_test_concrete.mlir "sigmaF"/"sigmaP"
+        # bug: array_member_base is keyed by the counting array's SSA name
+        # as seen in the POST-loop bulk-copy nest -- the while's own result
+        # component ("%421#1") -- but the real population write lives
+        # INSIDE the while's after-region, referencing the array via that
+        # region's OWN block-arg name ("%arg9"), never "%421#1" directly.
+        # Before the fix, this was structurally invisible to
+        # _collect_population_write_candidates (op.arr_ref.name ==
+        # "%arg9" was never "in array_member_base"), so the whole member
+        # was silently absent from the result. Also uses a DIFFERENT name
+        # for the before-region's own block-arg ("%arg3") for the same
+        # array, and a different name for the index in each region
+        # ("%arg_idx" vs "%arg_idx_after") -- confirming the fix resolves
+        # via after_args specifically, not by init_args/after_args
+        # happening to share the same printed name.
+        read = ArrayRead(SSAVar("%14"), SSAVar("%arg9"), [SSAVar("%arg_idx_after")], [])
+        write = ArrayWrite(SSAVar("%arg9"), [SSAVar("%arg_idx_after")], SSAVar("%14"), [])
+        after_body = [
+            FeltConst(SSAVar("%c1"), 1),
+            read, write,
+            FeltBinary(SSAVar("%next"), "felt.add", SSAVar("%arg_idx_after"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next"), SSAVar("%arg9")], [Type("index"), Type("index")]),
+        ]
+        before_body = [
+            FeltConst(SSAVar("%c2"), 2),
+            BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg_idx"), SSAVar("%c2")),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%arg_idx"), SSAVar("%arg3")],
+                        [Type("index"), Type("index")]),
+        ]
+        loop = SCFWhile(
+            [SSAVar("%421", 2)],
+            [(SSAVar("%arg_idx"), SSAVar("%c0")), (SSAVar("%arg3"), SSAVar("%outer_array"))],
+            [[Type("index"), Type("index")], [Type("index"), Type("index")]],
+            before_body,
+            [(SSAVar("%arg_idx_after"), Type("index")), (SSAVar("%arg9"), Type("index"))],
+            after_body,
+        )
+        body = [FeltConst(SSAVar("%c0"), 0), loop]
+        result = _find_array_component_population_sequences(body, {"%421#1": "comp"})
+        assert result == {"comp": [(0,), (1,)]}
+
+    def test_scf_while_population_via_after_region_block_arg_nested_in_scf_if(self):
+        # Same after-region block-arg aliasing as above, but the population
+        # write itself sits inside an scf.if within the after-region --
+        # mirrors the real "ready to call yet?" checkpoint idiom
+        # (_collect_population_write_candidates' own docstring), confirming
+        # the extended array_member_base is threaded through that nesting
+        # too, not just direct after-region statements.
+        read = ArrayRead(SSAVar("%14"), SSAVar("%arg9"), [SSAVar("%arg_idx_after")], [])
+        write = ArrayWrite(SSAVar("%arg9"), [SSAVar("%arg_idx_after")], SSAVar("%14"), [])
+        checkpoint = SCFIf([], SSAVar("%ready"), [], [read, write], None)
+        after_body = [
+            FeltConst(SSAVar("%c1"), 1),
+            checkpoint,
+            FeltBinary(SSAVar("%next"), "felt.add", SSAVar("%arg_idx_after"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next"), SSAVar("%arg9")], [Type("index"), Type("index")]),
+        ]
+        before_body = [
+            FeltConst(SSAVar("%c2"), 2),
+            BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg_idx"), SSAVar("%c2")),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%arg_idx"), SSAVar("%arg3")],
+                        [Type("index"), Type("index")]),
+        ]
+        loop = SCFWhile(
+            [SSAVar("%421", 2)],
+            [(SSAVar("%arg_idx"), SSAVar("%c0")), (SSAVar("%arg3"), SSAVar("%outer_array"))],
+            [[Type("index"), Type("index")], [Type("index"), Type("index")]],
+            before_body,
+            [(SSAVar("%arg_idx_after"), Type("index")), (SSAVar("%arg9"), Type("index"))],
+            after_body,
+        )
+        body = [FeltConst(SSAVar("%c0"), 0), loop]
+        result = _find_array_component_population_sequences(body, {"%421#1": "comp"})
+        assert result == {"comp": [(0,), (1,)]}
+
     def test_compile_time_constant_index_skipped(self):
         # A write outside any loop (loop_stack empty) is the ALREADY-fully-
         # resolved compile-time-constant case (Part 2b) -- this pre-pass
