@@ -205,6 +205,14 @@ def _annotate_array_component_reads(ops, array_member_base, const_map, pod_to_me
 
     _annotate_function_calls then picks up these entries exactly like the
     scalar-subcomponent ones already in pod_to_member.
+
+    array_member_base is expected to already be fully resolved by the
+    caller (_build_component_naming_maps), including every scf.while
+    region's own block-arg aliases -- see
+    _collect_while_region_array_aliases -- so this function itself stays a
+    plain, single-mechanism SSA-identity lookup, matching
+    _annotate_input_array_reads' identical division of labor for the
+    $inputs-pod case.
     """
     from llzk_dialects.array import ArrayRead
 
@@ -509,42 +517,12 @@ def _walk_array_component_population(ops, array_member_base, const_map, loop_sta
             if not sub:
                 continue
 
-            # A scf.while's before/after regions refer to a registered
-            # counting array (array_member_base, keyed by the SSA name the
-            # POST-loop bulk-copy nest reads it under -- the while's own
-            # result) via that region's own block-arg name instead --
-            # e.g. the real population write for "sigmaF" in a real
-            # PoseidonEx compute body reads/writes "%arg3" inside the
-            # after-region, never the while's own "%421#1" result name.
-            # Alias each region's own block-arg to the same registered
-            # member, mirroring _collect_while_iter_args' identical need
-            # for $inputs pods -- confirmed necessary via
-            # poseidon3_test_concrete.mlir's "sigmaF"/"sigmaP" members,
-            # whose components_index_sequences was otherwise empty for the
-            # whole macro, collapsing signal_renaming.py's per-instance
-            # naming to a single fallback entry.
-            sub_array_member_base = array_member_base
-            if isinstance(op, SCFWhile) and attr == 'before_body':
-                region_block_args = [(name, block_arg) for name, (block_arg, _init_val)
-                                      in _while_iter_arg_pairs(op)]
-            elif isinstance(op, SCFWhile) and attr == 'after_body':
-                region_block_args = _while_after_arg_pairs(op)
-            else:
-                region_block_args = []
-            extra = {
-                block_arg.name: array_member_base[flat_result_name]
-                for flat_result_name, block_arg in region_block_args
-                if flat_result_name in array_member_base
-            }
-            if extra:
-                sub_array_member_base = {**array_member_base, **extra}
-
             candidates = []
-            _collect_population_write_candidates(sub, sub_array_member_base, local_const_map,
+            _collect_population_write_candidates(sub, array_member_base, local_const_map,
                                                   local_def_map, candidates)
             if candidates:
                 write, write_const_map, write_def_map = candidates[-1]
-                member = sub_array_member_base[write.arr_ref.name]
+                member = array_member_base[write.arr_ref.name]
                 nest_sequence = _resolve_population_nest_sequence(
                     write, next_stack, write_def_map, write_const_map)
                 if nest_sequence is not None:
@@ -552,7 +530,7 @@ def _walk_array_component_population(ops, array_member_base, const_map, loop_sta
 
             # Keep looking for a further nested loop (the next dimension)
             # inside this same body.
-            _walk_array_component_population(sub, sub_array_member_base, local_const_map,
+            _walk_array_component_population(sub, array_member_base, local_const_map,
                                              next_stack, local_def_map, member_nests)
 
 
@@ -719,6 +697,58 @@ def _while_after_arg_pairs(op):
     """
     return [(name, arg_var) for name, (arg_var, _type)
             in zip(_while_flat_result_names(op), op.after_args)]
+
+
+def _collect_while_region_array_aliases(ops, aliases):
+    """
+    Recursively collect, for every scf.while at any depth, every pair of
+    SSA names known to denote the SAME logical loop-carried value at
+    different points in its lifetime, as plain (name1, name2) equivalence
+    pairs (order doesn't matter -- the caller's fixpoint resolution checks
+    both directions):
+
+      - (before-region block-arg, own flattened result name)
+      - (before-region block-arg, own init value)
+      - (after-region block-arg, own flattened result name)
+      - (own flattened result name, own init value)
+
+    The last one is the piece a single-direction, outer-to-inner pass
+    (like _collect_while_iter_args' identical $inputs-pod case) can't
+    handle: it connects one while's own result DIRECTLY to its own init
+    value, which is what lets resolution propagate BACKWARD through a
+    chain of SEQUENTIAL, SIBLING while loops -- each one threading the
+    same array through as the NEXT one's own init value, not nested one
+    inside another at all. Confirmed necessary via poseidon3_new.mlir's
+    real "sigmaF" population: its 4 disjoint population sites (mirroring
+    poseidon.circom's 4 separate loops over disjoint row ranges) run
+    sequentially, each site's own while taking the PREVIOUS site's own
+    result as its own init value. Only the LAST site's own result is what
+    the post-loop bulk-copy (and so array_member_base) directly registers
+    -- the first three sites only resolve by walking this same-result-as-
+    next-site's-init-value chain backward, which a single forward pass
+    over encounter order cannot do regardless of order (the registered
+    identity is discovered LAST, not first).
+
+    Because of this, the caller must resolve these to a FIXPOINT --
+    repeatedly propagating a known name to its paired name until nothing
+    changes -- rather than the single forward pass _collect_while_iter_args'
+    entirely-nested-only case gets away with.
+    """
+    from llzk_dialects.scf import SCFWhile
+
+    for op in ops:
+        if isinstance(op, SCFWhile):
+            for flat_name, (before_arg, init_val) in _while_iter_arg_pairs(op):
+                aliases.append((before_arg.name, flat_name))
+                aliases.append((before_arg.name, init_val.name))
+                aliases.append((flat_name, init_val.name))
+            for flat_name, after_arg in _while_after_arg_pairs(op):
+                aliases.append((after_arg.name, flat_name))
+
+        for attr in ('body', 'then_body', 'else_body', 'before_body', 'after_body'):
+            sub = getattr(op, attr, None)
+            if sub:
+                _collect_while_region_array_aliases(sub, aliases)
 
 
 def _collect_while_iter_args(ops, while_iter_args):
@@ -903,6 +933,35 @@ def _build_component_naming_maps(body, ctx, idx_pod_member_types=None):
     # an scf.while's after-body) — see _annotate_array_component_reads.
     array_member_base = _find_array_component_bases(body)
     if array_member_base:
+        # A registered counting array is just as often referenced by an
+        # enclosing scf.while's own before/after-region block-arg name, or
+        # by an EARLIER sibling while's own result (in a sequential chain
+        # of population sites each threading the array through as the
+        # next site's own init value), as by whatever name it was
+        # originally registered under — alias those too. Unlike Part 1's
+        # $inputs-pod resolution (a single forward pass suffices there,
+        # since it's purely nested-parent-to-nested-child), this needs a
+        # genuine fixpoint: _collect_while_region_array_aliases' pairs can
+        # require resolving in EITHER direction depending on whether a
+        # while sits inside its "source" or is a later sibling of it — see
+        # its own docstring. Bounded by the number of distinct names
+        # involved (each iteration adds at least one new key or the loop
+        # stops), so this always terminates.
+        while_array_aliases = []
+        _collect_while_region_array_aliases(body, while_array_aliases)
+        changed = True
+        while changed:
+            changed = False
+            for name1, name2 in while_array_aliases:
+                base1 = array_member_base.get(name1)
+                base2 = array_member_base.get(name2)
+                if base1 is not None and base2 is None:
+                    array_member_base[name2] = base1
+                    changed = True
+                elif base2 is not None and base1 is None:
+                    array_member_base[name1] = base2
+                    changed = True
+
         _annotate_array_component_reads(body, array_member_base, {}, pod_to_member)
 
     # --- Part 2c: heterogeneous (idx-pod) array-of-component members ---

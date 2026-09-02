@@ -7,6 +7,7 @@ from llzk_dialects.struct import (
     _is_population_write, _trace_to_enclosing_loop, _loop_own_sequence,
     _resolve_population_nest_sequence, _collect_population_write_candidates,
     _walk_array_component_population, _find_array_component_population_sequences,
+    _collect_while_region_array_aliases, _while_iter_arg_pairs, _while_after_arg_pairs,
 )
 from llzk_dialects.function import FunctionCall
 from llzk_dialects.pod import PodNew, PodWrite, PodRead
@@ -911,6 +912,171 @@ class TestBuildComponentNamingMapsNestedWhileInputs:
         assert read._semantic_base == "mixLast#0"
 
 
+class TestCollectWhileRegionArrayAliases:
+    """
+    Smallest-level unit test for the helper _annotate_array_component_reads
+    and _walk_array_component_population now both rely on (via
+    _build_component_naming_maps' own fixpoint resolution) to alias a
+    scf.while's own before/after-region block-arg names -- and, through a
+    chain of sequential sibling whiles, an EARLIER while's own result too
+    -- to a registered counting array's member.
+    """
+
+    ARR_TYPE = Type("!array.type<8 x !struct.type<@Sigma_1>>")
+
+    def _resolve(self, aliases, array_member_base):
+        changed = True
+        while changed:
+            changed = False
+            for name1, name2 in aliases:
+                base1 = array_member_base.get(name1)
+                base2 = array_member_base.get(name2)
+                if base1 is not None and base2 is None:
+                    array_member_base[name2] = base1
+                    changed = True
+                elif base2 is not None and base1 is None:
+                    array_member_base[name1] = base2
+                    changed = True
+        return array_member_base
+
+    def test_single_while_emits_expected_equivalence_pairs(self):
+        # One while, own result "%415" (n_components=1, so no "#" suffix):
+        # its own before-arg pairs with both its own result and its own
+        # init value; its own after-arg pairs with its own result; and its
+        # own result pairs directly with its own init value (the piece
+        # that lets resolution walk backward through a chain of sequential
+        # SIBLING whiles, not just nested ones -- see the function's own
+        # docstring).
+        loop = SCFWhile(
+            [SSAVar("%415", 1)],
+            [(SSAVar("%arg7"), SSAVar("%array_1"))],
+            [[self.ARR_TYPE], [self.ARR_TYPE]],
+            [], [(SSAVar("%arg8"), self.ARR_TYPE)], [],
+        )
+        aliases = []
+        _collect_while_region_array_aliases([loop], aliases)
+        assert ("%arg7", "%415") in aliases
+        assert ("%arg7", "%array_1") in aliases
+        assert ("%arg8", "%415") in aliases
+        assert ("%415", "%array_1") in aliases
+
+    def test_nested_while_resolves_via_fixpoint(self):
+        # A while nested inside another's after_body, re-carrying the
+        # array via its own init value ("%arg8", the outer's own
+        # after-arg) -- resolves once the outer's own after-arg is known,
+        # regardless of collection order, since resolution is a fixpoint.
+        inner = SCFWhile(
+            [SSAVar("%567", 1)],
+            [(SSAVar("%arg10"), SSAVar("%arg8"))],
+            [[self.ARR_TYPE], [self.ARR_TYPE]],
+            [], [(SSAVar("%arg10"), self.ARR_TYPE)], [],
+        )
+        outer = SCFWhile(
+            [SSAVar("%415", 1)],
+            [(SSAVar("%arg7"), SSAVar("%array_1"))],
+            [[self.ARR_TYPE], [self.ARR_TYPE]],
+            [], [(SSAVar("%arg8"), self.ARR_TYPE)], [inner],
+        )
+        aliases = []
+        _collect_while_region_array_aliases([outer], aliases)
+        array_member_base = self._resolve(aliases, {"%415": "sigmaF"})
+        assert array_member_base["%arg8"] == "sigmaF"
+        assert array_member_base["%arg10"] == "sigmaF"
+
+    def test_sequential_sibling_chain_resolves_backward(self):
+        # Regression for the real poseidon3_new.mlir "sigmaF" shape: FOUR
+        # disjoint population sites run as sequential SIBLING while loops
+        # (not nested in each other), each one's own init value being the
+        # PREVIOUS site's own result. Only the LAST site's own result is
+        # what array_member_base is originally registered under (matching
+        # what the post-loop bulk-copy nest reads directly) -- the first
+        # three sites only resolve by walking this chain BACKWARD, which a
+        # single forward pass over encounter order can't do (the
+        # registered identity is discovered last, not first).
+        site1 = SCFWhile([SSAVar("%415", 1)], [(SSAVar("%arg7"), SSAVar("%array_1"))],
+                         [[self.ARR_TYPE], [self.ARR_TYPE]],
+                         [], [(SSAVar("%arg8"), self.ARR_TYPE)], [])
+        site2 = SCFWhile([SSAVar("%416", 1)], [(SSAVar("%arg9"), SSAVar("%415"))],
+                         [[self.ARR_TYPE], [self.ARR_TYPE]],
+                         [], [(SSAVar("%arg11"), self.ARR_TYPE)], [])
+        site3 = SCFWhile([SSAVar("%420", 1)], [(SSAVar("%arg13"), SSAVar("%416"))],
+                         [[self.ARR_TYPE], [self.ARR_TYPE]],
+                         [], [(SSAVar("%arg15"), self.ARR_TYPE)], [])
+        site4 = SCFWhile([SSAVar("%421", 1)], [(SSAVar("%arg17"), SSAVar("%420"))],
+                         [[self.ARR_TYPE], [self.ARR_TYPE]],
+                         [], [(SSAVar("%arg19"), self.ARR_TYPE)], [])
+        aliases = []
+        _collect_while_region_array_aliases([site1, site2, site3, site4], aliases)
+        # Only site4's own result is registered -- matching a real
+        # bulk-copy nest reading the FINAL, fully-populated array.
+        array_member_base = self._resolve(aliases, {"%421": "sigmaF"})
+        for name in ("%415", "%416", "%420",
+                     "%arg7", "%arg8", "%arg9", "%arg11",
+                     "%arg13", "%arg15", "%arg17", "%arg19"):
+            assert array_member_base[name] == "sigmaF", name
+
+
+class TestBuildComponentNamingMapsArrayOfComponentsNestedWhile:
+    """
+    Regression for the poseidon3_new.mlir "sigmaF"/"sigmaP" .out-naming
+    bug: a counting-pod array-of-components member populated inside TWO
+    nested scf.while loops (mirrors the real PoseidonEx shape exactly --
+    an outer scf.while carries the counting array as %arg8, whose
+    after_body contains a second, inner scf.while re-carrying it as
+    %arg10) must get the call inside the INNER while's own after-body
+    correctly stamped with its _member_hint -- not just a population site
+    that's a single, non-nested scf.while (already covered by the
+    original, non-nested regression test in
+    TestFindArrayComponentPopulationSequences).
+    """
+
+    ARR_TYPE = Type("!array.type<8 x !struct.type<@Sigma_1>>")
+
+    def test_inner_while_call_gets_member_hint_stamped(self):
+        # Inner while: (%arg10 = %arg8) -- re-carries the counting array
+        # one level deeper. Its after-body reads a counting-pod element at
+        # a NON-constant index (%idx, forcing the bare-name fallback path,
+        # not the compile-time-constant one), calls @Sigma_1, and writes
+        # the result back into that element's @comp field -- the exact
+        # shape _annotate_function_calls expects.
+        counting_read = ArrayRead(SSAVar("%586"), SSAVar("%arg10"), [SSAVar("%idx")], [])
+        call = FunctionCall([SSAVar("%597")], GlobalVariable("@Sigma_1::@Sigma_1::@compute"),
+                            [SSAVar("%596")], None)
+        pod_write = PodWrite(SSAVar("%586"), GlobalVariable("@comp"), SSAVar("%597"), {}, None)
+        inner_while = SCFWhile(
+            [SSAVar("%567", 1)],
+            [(SSAVar("%arg10"), SSAVar("%arg8"))],
+            [[self.ARR_TYPE], [self.ARR_TYPE]],
+            [], [(SSAVar("%arg10"), self.ARR_TYPE)],
+            [counting_read, call, pod_write],
+        )
+
+        # Outer while: (%arg7 = %array_1) -- its own result "%415" is what
+        # the post-loop bulk-copy nest reads from directly.
+        outer_while = SCFWhile(
+            [SSAVar("%415", 1)],
+            [(SSAVar("%arg7"), SSAVar("%array_1"))],
+            [[self.ARR_TYPE], [self.ARR_TYPE]],
+            [], [(SSAVar("%arg8"), self.ARR_TYPE)], [inner_while],
+        )
+
+        # Post-loop bulk-copy nest, reading "%415" (the outer while's own
+        # result) directly -- this is what registers array_member_base.
+        bulk_read = ArrayRead(SSAVar("%elem"), SSAVar("%415"), [SSAVar("%iv")], [])
+        bulk_comp = PodRead(SSAVar("%comp"), SSAVar("%elem"), GlobalVariable("@comp"), {}, None)
+        bulk_write = ArrayWrite(SSAVar("%array_13"), [SSAVar("%iv")], SSAVar("%comp"), [])
+        bulk_loop = SCFFor([], SSAVar("%iv"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%step"),
+                           [], [bulk_read, bulk_comp, bulk_write])
+        writem = StructWritem(SSAVar("%self"), GlobalVariable("@sigmaF"), SSAVar("%array_13"),
+                              [Type("!array.type<8 x !struct.type<@Sigma_1>>")])
+
+        ctx = TranslationContext()
+        body = [outer_while, bulk_loop, writem]
+        _build_component_naming_maps(body, ctx)
+
+        assert call._member_hint == "sigmaF"
+
+
 # ── _is_population_write ────────────────────────────────────────────────────
 
 class TestIsPopulationWrite:
@@ -1318,6 +1484,33 @@ class TestFindArrayComponentPopulationSequences:
         # from the outside since both are structurally identical.
         assert result == {"comp": [(0,), (1,), (2,)]}
 
+    def _resolve_while_aliases(self, body, array_member_base):
+        """
+        Mirrors _build_component_naming_maps' own Part 2b resolution: a
+        fixpoint over every (name1, name2) equivalence pair collected
+        recursively by _collect_while_region_array_aliases, propagating a
+        known member to its paired name in either direction until nothing
+        changes. Callers of _find_array_component_population_sequences
+        (and _annotate_array_component_reads) are expected to have already
+        done this -- neither function extends array_member_base internally
+        anymore.
+        """
+        aliases = []
+        _collect_while_region_array_aliases(body, aliases)
+        changed = True
+        while changed:
+            changed = False
+            for name1, name2 in aliases:
+                base1 = array_member_base.get(name1)
+                base2 = array_member_base.get(name2)
+                if base1 is not None and base2 is None:
+                    array_member_base[name2] = base1
+                    changed = True
+                elif base2 is not None and base1 is None:
+                    array_member_base[name1] = base2
+                    changed = True
+        return array_member_base
+
     def test_scf_while_population_via_after_region_block_arg(self):
         # Regression for the poseidon3_test_concrete.mlir "sigmaF"/"sigmaP"
         # bug: array_member_base is keyed by the counting array's SSA name
@@ -1357,7 +1550,8 @@ class TestFindArrayComponentPopulationSequences:
             after_body,
         )
         body = [FeltConst(SSAVar("%c0"), 0), loop]
-        result = _find_array_component_population_sequences(body, {"%421#1": "comp"})
+        array_member_base = self._resolve_while_aliases(body, {"%421#1": "comp"})
+        result = _find_array_component_population_sequences(body, array_member_base)
         assert result == {"comp": [(0,), (1,)]}
 
     def test_scf_while_population_via_after_region_block_arg_nested_in_scf_if(self):
@@ -1391,7 +1585,8 @@ class TestFindArrayComponentPopulationSequences:
             after_body,
         )
         body = [FeltConst(SSAVar("%c0"), 0), loop]
-        result = _find_array_component_population_sequences(body, {"%421#1": "comp"})
+        array_member_base = self._resolve_while_aliases(body, {"%421#1": "comp"})
+        result = _find_array_component_population_sequences(body, array_member_base)
         assert result == {"comp": [(0,), (1,)]}
 
     def test_compile_time_constant_index_skipped(self):
