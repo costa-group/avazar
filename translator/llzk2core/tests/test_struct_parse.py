@@ -1077,6 +1077,52 @@ class TestBuildComponentNamingMapsArrayOfComponentsNestedWhile:
         assert call._member_hint == "sigmaF"
 
 
+class TestBuildComponentNamingMapsScalarSubcomponentInWhile:
+    """
+    Regression for the poseidon3_new.mlir "pEx.out" bug: a SCALAR (not
+    array-of-components) subcomponent's own counting-pod is iter-arg-
+    threaded through an scf.while, exactly like §42's array-of-components
+    case, but through Part 2's pod_to_member registry instead of Part 2b's
+    array_member_base -- confirming the shared
+    _resolve_while_region_aliases mechanism fixes both.
+    """
+
+    STRUCT_TYPE = Type("!struct.type<@PoseidonEx_69::@PoseidonEx_69<[]>>")
+
+    def test_call_inside_while_gets_member_hint_stamped(self):
+        # Top-level registration: "%pod_0" -> "pEx", via the real shape
+        # Part 2 expects (a pod.read[@comp] immediately consumed by a
+        # top-level struct.writem).
+        pod_read = PodRead(SSAVar("%8"), SSAVar("%pod_0"), GlobalVariable("@comp"), {}, None)
+        writem = StructWritem(SSAVar("%self"), GlobalVariable("@pEx"), SSAVar("%8"),
+                              [self.STRUCT_TYPE])
+
+        # The REAL, live call site: %pod_0 is also re-carried through an
+        # scf.while's own block-arg ("%arg2", its SECOND loop-carried
+        # value -- the first being an ordinary felt counter), and the call
+        # that actually fires is the one inside the loop, referencing the
+        # pod via that block-arg -- never "%pod_0" directly. n_components=2
+        # on the while's own result must match the 2 init_args/after_args
+        # pairs below (position 1 = the pod), matching real multi-arg
+        # scf.while output.
+        call = FunctionCall([SSAVar("%20")], GlobalVariable("@PoseidonEx_69::@PoseidonEx_69::@compute"),
+                            [SSAVar("%18"), SSAVar("%19")], None)
+        pod_write = PodWrite(SSAVar("%arg2"), GlobalVariable("@comp"), SSAVar("%20"), {}, None)
+        loop = SCFWhile(
+            [SSAVar("%3", 2)],
+            [(SSAVar("%arg1"), SSAVar("%felt_const_0")), (SSAVar("%arg2"), SSAVar("%pod_0"))],
+            [[Type("ff"), self.STRUCT_TYPE], [Type("ff"), self.STRUCT_TYPE]],
+            [], [(SSAVar("%arg1"), Type("ff")), (SSAVar("%arg2"), self.STRUCT_TYPE)],
+            [call, pod_write],
+        )
+
+        ctx = TranslationContext()
+        body = [pod_read, writem, loop]
+        _build_component_naming_maps(body, ctx)
+
+        assert call._member_hint == "pEx"
+
+
 # ── _is_population_write ────────────────────────────────────────────────────
 
 class TestIsPopulationWrite:
