@@ -226,13 +226,17 @@ def _annotate_array_component_reads(ops, array_member_base, const_map, pod_to_me
                 _annotate_array_component_reads(sub, array_member_base, local_const_map, pod_to_member)
 
 
-def _trace_to_enclosing_loop(name, loop_stack, def_map):
+def _trace_to_enclosing_loop(name, loop_stack, def_map, const_map=None):
     """
-    Resolve `name` back through cast.toindex/cast.tofelt identity casts
-    (using def_map, the SSA definitions visible at this point) until it
-    matches one of loop_stack's own induction variable (scf.for) or
-    after-region block-arg (scf.while) names. Returns the matching loop
-    object, or None if it can't be resolved to any of them.
+    Resolve `name` back through cast.toindex/cast.tofelt identity casts and
+    constant-offset felt.add hops (using def_map, the SSA definitions
+    visible at this point, and const_map, to recognize a hop's already-known
+    operand) until it matches one of loop_stack's own induction variable
+    (scf.for) or after-region block-arg (scf.while) names. Returns
+    (loop, offset) -- offset is the net constant that must be ADDED to the
+    matched loop's own raw counter value to get `name`'s actual value (0 for
+    the common case of a pure identity chain) -- or (None, 0) if `name`
+    can't be resolved to any loop_stack member at all.
 
     Deliberately does NOT assume positional correspondence between an
     array read's index list and loop_stack's own nesting order -- an
@@ -241,24 +245,45 @@ def _trace_to_enclosing_loop(name, loop_stack, def_map):
     arbitrary_traversal_array_components.circom: "components[i][j]" has i,
     array dimension 0, driven by the INNER loop, and j, dimension 1, by
     the OUTER one).
+
+    The felt.add case (confirmed necessary via poseidon3_test_concrete.mlir:
+    "sigmaF[nRoundsF\\2 + r][j]" lowers to "felt.add %felt_const_4, %arg5"
+    before the cast.toindex, not a bare identity cast) only recognizes a
+    single constant operand per hop -- multiplication, subtraction, or any
+    other transform is deliberately out of scope (no real example needs it
+    yet; see DECISIONS.md).
     """
     from llzk_dialects.scf import SCFFor, SCFWhile
     from llzk_dialects.cast import CastToIndex, CastToFelt
+    from llzk_dialects.felt import FeltBinary
 
+    const_map = const_map or {}
     seen = set()
+    offset = 0
     while name not in seen:
         seen.add(name)
         for loop in loop_stack:
             if isinstance(loop, SCFFor) and loop.iv.name == name:
-                return loop
+                return loop, offset
             if isinstance(loop, SCFWhile) and any(arg.name == name for arg, _ in loop.after_args):
-                return loop
+                return loop, offset
         defining_op = def_map.get(name)
         if isinstance(defining_op, (CastToIndex, CastToFelt)):
             name = defining_op.value.name
+        elif isinstance(defining_op, FeltBinary) and defining_op._op == "felt.add":
+            lhs_val = const_map.get(defining_op.lhs.name)
+            rhs_val = const_map.get(defining_op.rhs.name)
+            if lhs_val is not None and rhs_val is None:
+                offset += lhs_val
+                name = defining_op.rhs.name
+            elif rhs_val is not None and lhs_val is None:
+                offset += rhs_val
+                name = defining_op.lhs.name
+            else:
+                return None, 0
         else:
-            return None
-    return None
+            return None, 0
+    return None, 0
 
 
 def _loop_own_sequence(loop, const_map):
@@ -311,15 +336,32 @@ def _resolve_population_nest_sequence(write, loop_stack, def_map, const_map):
     combination is visited when (true execution order: the outermost
     implicated loop varies slowest).
 
-    Returns None if any index can't be resolved to a loop_stack member, or
-    if any implicated loop's own sequence can't be statically determined.
+    A dimension can also be a plain compile-time constant on its own (e.g.
+    one dimension fixed by an enclosing scf.if branch while another is
+    genuinely loop-driven -- confirmed necessary via
+    poseidon3_test_concrete.mlir's "sigmaF[nRoundsF\\2-1][j]"/
+    "sigmaF[nRoundsF-1][j]" population sites, where the row is a fixed
+    literal and only the column comes from this write's own scf.while):
+    such a dimension is excluded from the loop combination entirely and
+    gets the same fixed value in every generated tuple.
+
+    Returns None if any index can't be resolved to EITHER a loop_stack
+    member OR a plain constant, or if any implicated loop's own sequence
+    can't be statically determined.
     """
     dim_to_loop = {}
+    dim_to_offset = {}
+    dim_to_const = {}
     for dim, idx in enumerate(write.indices):
-        loop = _trace_to_enclosing_loop(idx.name, loop_stack, def_map)
-        if loop is None:
+        loop, offset = _trace_to_enclosing_loop(idx.name, loop_stack, def_map, const_map)
+        if loop is not None:
+            dim_to_loop[dim] = loop
+            dim_to_offset[dim] = offset
+            continue
+        const_val = const_map.get(idx.name)
+        if const_val is None:
             return None
-        dim_to_loop[dim] = loop
+        dim_to_const[dim] = const_val
 
     # Only the loops actually used to index this array matter for THIS
     # write -- an enclosing loop that doesn't drive any of its indices
@@ -336,9 +378,20 @@ def _resolve_population_nest_sequence(write, loop_stack, def_map, const_map):
 
     num_dims = len(write.indices)
     nest_tuples = []
-    for combo in itertools.product(*(per_loop_sequence[id(loop)] for loop in ordered_loops)):
+    # No loop-driven dimension at all is not a real population write (see
+    # this function's own caller: _collect_population_write_candidates only
+    # collects writes with at least one non-compile-time-constant index),
+    # but degrade to a single fixed-value tuple rather than crashing on an
+    # empty itertools.product if it ever happens.
+    combos = itertools.product(*(per_loop_sequence[id(loop)] for loop in ordered_loops)) \
+        if ordered_loops else [()]
+    for combo in combos:
         loop_to_value = dict(zip((id(loop) for loop in ordered_loops), combo))
-        nest_tuples.append(tuple(loop_to_value[id(dim_to_loop[d])] for d in range(num_dims)))
+        nest_tuples.append(tuple(
+            dim_to_const[d] if d in dim_to_const
+            else loop_to_value[id(dim_to_loop[d])] + dim_to_offset[d]
+            for d in range(num_dims)
+        ))
     return nest_tuples
 
 

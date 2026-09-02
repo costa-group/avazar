@@ -948,10 +948,13 @@ class TestIsPopulationWrite:
 
 class TestTraceToEnclosingLoop:
     """
-    Resolves an index name back through cast.toindex/cast.tofelt to
-    whichever loop_stack member it equals -- by SSA identity, never
-    positionally (an array's own dimension order need not match its
-    population loop's own nesting order).
+    Resolves an index name back through cast.toindex/cast.tofelt (and a
+    constant-offset felt.add hop) to whichever loop_stack member it
+    ultimately traces to -- by SSA identity, never positionally (an
+    array's own dimension order need not match its population loop's own
+    nesting order). Returns (loop, offset): offset is the net constant
+    that must be added to the loop's own raw counter value to get the
+    traced name's actual value (0 for a pure identity chain).
     """
 
     def _for_loop(self, iv):
@@ -959,18 +962,18 @@ class TestTraceToEnclosingLoop:
 
     def test_direct_match_scf_for(self):
         loop = self._for_loop("%iv")
-        assert _trace_to_enclosing_loop("%iv", [loop], {}) is loop
+        assert _trace_to_enclosing_loop("%iv", [loop], {}) == (loop, 0)
 
     def test_match_through_cast(self):
         loop = self._for_loop("%iv")
         cast = CastToIndex(SSAVar("%7"), SSAVar("%iv"))
         def_map = {"%7": cast}
-        assert _trace_to_enclosing_loop("%7", [loop], def_map) is loop
+        assert _trace_to_enclosing_loop("%7", [loop], def_map) == (loop, 0)
 
     def test_scf_while_matches_its_own_after_arg(self):
         while_op = SCFWhile([], [(SSAVar("%arg2"), SSAVar("%init"))], [[Type("index")]],
                             [], [(SSAVar("%arg2"), Type("index"))], [])
-        assert _trace_to_enclosing_loop("%arg2", [while_op], {}) is while_op
+        assert _trace_to_enclosing_loop("%arg2", [while_op], {}) == (while_op, 0)
 
     def test_not_positional_inner_loop_drives_outer_dimension(self):
         # Mirrors arbitrary_traversal_array_components.circom exactly:
@@ -980,12 +983,47 @@ class TestTraceToEnclosingLoop:
         # position.
         outer = self._for_loop("%j")   # loop_stack[0], drives array dim 1
         inner = self._for_loop("%i")   # loop_stack[1], drives array dim 0
-        assert _trace_to_enclosing_loop("%i", [outer, inner], {}) is inner
-        assert _trace_to_enclosing_loop("%j", [outer, inner], {}) is outer
+        assert _trace_to_enclosing_loop("%i", [outer, inner], {}) == (inner, 0)
+        assert _trace_to_enclosing_loop("%j", [outer, inner], {}) == (outer, 0)
 
     def test_unresolvable_returns_none(self):
         loop = self._for_loop("%iv")
-        assert _trace_to_enclosing_loop("%unrelated", [loop], {}) is None
+        assert _trace_to_enclosing_loop("%unrelated", [loop], {}) == (None, 0)
+
+    def test_felt_add_const_then_loopvar_resolves_with_offset(self):
+        # Mirrors poseidon3_test_concrete.mlir's "sigmaF[nRoundsF\2 + r][j]":
+        # "%613 = felt.add %felt_const_4, %arg5" then cast.toindex -- not a
+        # bare identity chain like test_match_through_cast.
+        loop = self._for_loop("%iv")
+        add = FeltBinary(SSAVar("%613"), "felt.add", SSAVar("%c4"), SSAVar("%iv"), [])
+        cast = CastToIndex(SSAVar("%614"), SSAVar("%613"))
+        def_map = {"%613": add, "%614": cast}
+        const_map = {"%c4": 4}
+        assert _trace_to_enclosing_loop("%614", [loop], def_map, const_map) == (loop, 4)
+
+    def test_felt_add_loopvar_then_const_resolves_with_offset(self):
+        # Reversed operand order -- real output isn't guaranteed to always
+        # put the constant first.
+        loop = self._for_loop("%iv")
+        add = FeltBinary(SSAVar("%613"), "felt.add", SSAVar("%iv"), SSAVar("%c4"), [])
+        def_map = {"%613": add}
+        const_map = {"%c4": 4}
+        assert _trace_to_enclosing_loop("%613", [loop], def_map, const_map) == (loop, 4)
+
+    def test_felt_add_both_operands_unknown_unresolvable(self):
+        loop = self._for_loop("%iv")
+        add = FeltBinary(SSAVar("%613"), "felt.add", SSAVar("%other1"), SSAVar("%other2"), [])
+        def_map = {"%613": add}
+        assert _trace_to_enclosing_loop("%613", [loop], def_map, {}) == (None, 0)
+
+    def test_unrelated_op_unresolvable(self):
+        # felt.mul (or any op besides felt.add/the identity casts) is
+        # deliberately out of scope -- no real example needs it yet.
+        loop = self._for_loop("%iv")
+        mul = FeltBinary(SSAVar("%613"), "felt.mul", SSAVar("%c4"), SSAVar("%iv"), [])
+        def_map = {"%613": mul}
+        const_map = {"%c4": 4}
+        assert _trace_to_enclosing_loop("%613", [loop], def_map, const_map) == (None, 0)
 
 
 # ── _loop_own_sequence ──────────────────────────────────────────────────────
