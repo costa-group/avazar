@@ -244,6 +244,61 @@ class TestPrimeAwareSimulation:
         # Visits 2, 1, 0 -- then 0 - 1 wraps to 6, matching the bound.
         assert result == 3
 
+    def test_ge_predicate_terminates_after_wrapping_past_zero(self):
+        # Mirrors report_zisk_reduced/recursivef_concrete.mlir's real
+        # "@VerifyPoW_11" bug (pow.circom): a felt counter counting down to
+        # AND INCLUDING 0 via "arg >= 0" (not a pre-wrapped equality bound
+        # like the ne test above). With prime=7, starting at 2 and
+        # decrementing: 2, 1, 0, then wraps to 6 (== -1 mod 7). Under a raw
+        #/unsigned comparison "0 <= x", 6 still satisfies "x >= 0" forever
+        # -- this is exactly what used to run the real simulation past its
+        # 1,000,000-iteration safety cap. The canonical-signed
+        # interpretation (_to_signed) correctly reads 6 as -1, so the
+        # comparison goes false right after 0.
+        var2expression = {
+            "%cond": BoolCmp(SSAVar("%cond"), "ge", SSAVar("%arg1"), SSAVar("%bound")),
+            "%bound": _felt_const("%bound", 0),
+            "%arg1": "%next",
+            "%next": _felt_binary("%next", "felt.sub", "%arg1", "%c1"),
+            "%c1": _felt_const("%c1", 1),
+        }
+        result = infer_n_repetitions_from_expressions(
+            var2expression, "%cond", {"%arg1": 2}, prime=7
+        )
+        # Visits 2, 1, 0 -- then wraps to 6, correctly read as negative.
+        assert result == 3
+
+    def test_le_predicate_bound_on_lhs_terminates_after_wrapping(self):
+        # Same shape as above but with the loop variable on the RHS of the
+        # comparison (bound <= arg, normalized the same way "gt" is).
+        var2expression = {
+            "%cond": BoolCmp(SSAVar("%cond"), "le", SSAVar("%bound"), SSAVar("%arg1")),
+            "%bound": _felt_const("%bound", 0),
+            "%arg1": "%next",
+            "%next": _felt_binary("%next", "felt.sub", "%arg1", "%c1"),
+            "%c1": _felt_const("%c1", 1),
+        }
+        result = infer_n_repetitions_from_expressions(
+            var2expression, "%cond", {"%arg1": 2}, prime=7
+        )
+        assert result == 3
+
+    def test_ge_predicate_non_wrapping_case_unaffected(self):
+        # A counter that never approaches prime/2 must behave identically
+        # to before this fix (the signed reinterpretation is a no-op below
+        # prime/2) -- mirrors the real file's OTHER while (63 -> 42).
+        var2expression = {
+            "%cond": BoolCmp(SSAVar("%cond"), "ge", SSAVar("%arg1"), SSAVar("%bound")),
+            "%bound": _felt_const("%bound", 42),
+            "%arg1": "%next",
+            "%next": _felt_binary("%next", "felt.sub", "%arg1", "%c1"),
+            "%c1": _felt_const("%c1", 1),
+        }
+        result = infer_n_repetitions_from_expressions(
+            var2expression, "%cond", {"%arg1": 63}
+        )
+        assert result == 22
+
     def test_construct_function_from_expressions_reduces_modulo_prime(self):
         var2expression = {
             "%r": _felt_binary("%r", "felt.sub", "%zero", "%one"),
@@ -509,6 +564,22 @@ class TestInferIterationSequence:
         }
         result = infer_iteration_sequence_from_expressions(var2expression, "%cond", {"%arg1": 0})
         assert result is None
+
+    def test_ge_predicate_sequence_terminates_after_wrapping_past_zero(self):
+        # Shares _resolve_comparison_recurrence with TestPrimeAwareSimulation's
+        # test_ge_predicate_terminates_after_wrapping_past_zero -- confirms
+        # the fix applies to the sequence variant too, not just the count.
+        var2expression = {
+            "%cond": BoolCmp(SSAVar("%cond"), "ge", SSAVar("%arg1"), SSAVar("%bound")),
+            "%bound": _felt_const("%bound", 0),
+            "%arg1": "%next",
+            "%next": _felt_binary("%next", "felt.sub", "%arg1", "%c1"),
+            "%c1": _felt_const("%c1", 1),
+        }
+        result = infer_iteration_sequence_from_expressions(
+            var2expression, "%cond", {"%arg1": 2}, prime=7
+        )
+        assert result == [2, 1, 0]
 
     def test_raises_when_operand_not_boolcmp(self):
         var2expression = {

@@ -459,6 +459,32 @@ def infer_iteration_sequence_from_expressions(var2expression: Dict[str, Union[st
     )
 
 
+def _to_signed(value: int, prime: int) -> int:
+    """
+    Canonical signed representative of a raw field element: unchanged when
+    it's below prime/2, or value - prime (negative) when at or above it --
+    the convention a bounded felt counter's lt/le/gt/ge comparison relies
+    on to see "wrapped below 0" as negative rather than as a huge positive
+    number close to prime.
+
+    construct_function_from_expressions already reduces every update step
+    modulo prime (correct and required -- see TestPrimeAwareSimulation), so
+    a decrementing counter that goes below 0 becomes prime-1, not a raw
+    negative Python int. That's fine for an eq/ne bound (comparing two raw
+    representations for equality doesn't depend on sign convention -- see
+    TestPrimeAwareSimulation's own ne-predicate wraparound test, whose
+    bound is itself pre-wrapped to the exact value being matched). But an
+    *inequality* against an un-wrapped bound (e.g. "arg >= 0", the ordinary
+    way a circuit compiler emits "count down to and including 0") needs to
+    know which side of the field's own midpoint a value falls on to tell
+    "this counter went negative" apart from "this counter is a huge
+    positive number" -- without this, prime-1 stays ">= 0" forever under a
+    raw/unsigned comparison, and the simulation never terminates (see
+    _resolve_comparison_recurrence's compare_func construction).
+    """
+    return value - prime if value >= prime // 2 else value
+
+
 @dataclass
 class _ResolvedRecurrence:
     """
@@ -574,9 +600,18 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
             # comparison itself, only how it was identified above.
             compare_func = (lambda x: x == bound_value) if op == "eq" else (lambda x: x != bound_value)
         elif variable_is_lhs:
-            compare_func = (lambda x: x < bound_value) if op == "lt" else (lambda x: x <= bound_value)
+            # Compared via their canonical signed representative (see
+            # _to_signed) -- a wrapped ("negative") value must correctly
+            # read as less than any ordinary small bound.
+            compare_func = (
+                (lambda x: _to_signed(x, prime) < _to_signed(bound_value, prime)) if op == "lt"
+                else (lambda x: _to_signed(x, prime) <= _to_signed(bound_value, prime))
+            )
         else:
-            compare_func = (lambda x: bound_value < x) if op == "lt" else (lambda x: bound_value <= x)
+            compare_func = (
+                (lambda x: _to_signed(bound_value, prime) < _to_signed(x, prime)) if op == "lt"
+                else (lambda x: _to_signed(bound_value, prime) <= _to_signed(x, prime))
+            )
 
         return _ResolvedRecurrence(initial_value, compare_func, update_func)
 
