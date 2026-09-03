@@ -3,6 +3,7 @@ import Llzk.Language.Core.Syntax.Parser
 import Llzk.Basic
 import Llzk.Language.Core.Analysis.Liveness
 import Llzk.Language.Core.Analysis.Useless_commands
+import Llzk.Language.Core.Analysis.Useless_commands_2iter
 import Llzk.FFConstraints.SMT
 import Llzk.SymExec.BigStep
 import Llzk.SymExec.Basic
@@ -14,6 +15,11 @@ open Llzk.Language.Core.Syntax.Parser
 open Llzk.Language.Core.Analysis.Liveness
 open Llzk.Language.Core.Analysis.Useless_commands
 open Llzk.SymExec.Basic
+
+/-- Experimental "2 iterations" variant of `removeUselessProg`, used only by
+    the `-ru2i`/`--removeuseless2iter` flag to compare against the checked
+    fixpoint in `removeUselessProg`. -/
+def removeUselessProg2iter := @Llzk.Language.Core.Analysis.Useless_commands_2iter.removeUselessProg
 open Llzk.SymExec.BigStep
 open Llzk.FFConstraints.SMT
 
@@ -93,7 +99,10 @@ def prettyPrinting
      -- (it never reads pre-existing metadata), so calling addLivenessProg
      -- first would be redundant, wasted work when -ru is set.
      let progToPrint ←
-       if p.hasFlag "removeuseless" then
+       if p.hasFlag "removeuseless2iter" then
+         IO.println s!"Removing useless commands (experimental 2-iterations variant)..."
+         pure (removeUselessProg2iter prog)
+       else if p.hasFlag "removeuseless" then
          IO.println s!"Removing useless commands..."
          pure (removeUselessProg prog)
        else
@@ -147,6 +156,8 @@ def llzkCmd : Cmd := `[Cli|
   FLAGS:
     sl, showliveness;        "Show liveness information for each command."
     ru, removeuseless;       "Remove useless commands from the program."
+    ru2i, removeuseless2iter; "Experimental: remove useless commands using a hard-coded \
+    2-iterations loop boundary instead of the checked fixpoint (pretty-print only)."
     pp, prettyprint;         "Parse and pretty-print the input program."
     se, symbolicexec;        "Perform symbolic execution of the input program."
     zk, zkconfig : String;   "The ZKConfig to use for symbolic execution (f7,f11,g64,goldilocks, secq256r1, pallas, vesta, bn128, grumpkin, bls12377, bls12381). Default is f11."

@@ -3,19 +3,23 @@ import Llzk.Language.Core.Syntax.AST
 import Llzk.Language.Core.Analysis.Liveness
 import Std.Data.TreeSet.Basic
 
-/- This module implements liveness analysis for the core language. The liveness information
-   is stored in the metadata of each command and function.
+/- EXPERIMENTAL VARIANT -- not wired into the CLI's main flags.
 
-   The main function is `addLivenessProg` which takes a program and returns a new program
-   with liveness information added to each function. The liveness information of each function
-   is computed by traversing the commands in reverse order and keeping track of the live
-   variables at each point.
+   This is a copy of `Useless_commands.lean` with exactly one change: the loop
+   cases of `removeUselessCmd` no longer call the checked, general fixpoint
+   `loopFixedPointOut` (which iterates until `out' == out` or a `fuel` bound
+   is exhausted). Instead they compute the loop's live-out boundary the same
+   way `Liveness.addLivenessCmd`'s `.loop_exp`/`.loop` cases do it for pure
+   annotation: exactly "2 iterations" -- one application of the (deletion-
+   free) body liveness function, unioned with `out`, and used directly with
+   no equality check and no fuel/termination argument at all.
 
-   Traversing in reverse order is done for now with recursion, we should consider
-   reversing the list and use tail-recursion.
--/
+   This file exists purely to empirically compare the two approaches on test
+   programs (see the conversation/README for `p7.txt`): does hard-coding "2
+   iterations" here, the way `Liveness.lean` does for annotation, produce the
+   same removeUseless output as the checked fixpoint in `Useless_commands.lean`? -/
 
-namespace Llzk.Language.Core.Analysis.Useless_commands
+namespace Llzk.Language.Core.Analysis.Useless_commands_2iter
 
 open Llzk.Language.Core.Syntax.AST
 
@@ -70,66 +74,18 @@ def listToSet (l : List VarID) : VarIDSet :=
     | [] => emptyVarIDSet
     | v :: rest => (listToSet rest).insert v
 
-/- Computing which commands are useless inside a loop body is a backward
-   dataflow problem with a back-edge (the body's own live_in feeds back into
-   its live_out, since the loop may execute the body again). A single pass
-   (as used for straight-line code and if-statements, which have no back-edge)
-   is not enough: it can under-estimate liveness and cause `removeUselessCmd`
-   to delete commands that are in fact needed by a later iteration of the
-   loop. `loopFixedPointOut` iterates the (deletion-free) liveness
-   computation from `Liveness.addLivenessCmds` until the live-out set of the
-   loop stops growing, so that the final call to `removeUselessCmds` below
-   uses a sound approximation of liveness.
-
-   Why this cannot just reuse the hard-coded "2 iterations" that
-   `Liveness.addLivenessCmd`'s own `.loop_exp`/`.loop` cases use (see the
-   comment there): that round count is only ever used to *annotate* commands
-   with liveness info for display. If it happens to be wrong for some
-   program, the worst outcome is an inaccurate `-sl` report. Here, the very
-   same kind of live-out set is used to *decide what to physically delete*
-   from the program (`out.contains id` in `removeUselessCmd`'s `.assign`
-   case below, and analogously for arrays/loops/calls). Feeding an
-   under-approximated live-out set into that decision does not just look
-   wrong on screen -- it deletes an assignment the program still needs,
-   producing a different, *incorrect* program. That asymmetry is why this
-   fork needs a live-out set that is provably the true fixed point (checked
-   via the `out' == out` equality test below, with `fuel` only bounding how
-   long the search may run), rather than a fixed constant justified by an
-   informal argument for why that constant happens to be enough for every
-   program this AST can currently express -- a claim that is not (and,
-   given this project's long-term formal-verification goal, ultimately
-   should be) machine-checked, and that a future extension to the AST
-   (e.g. more precise per-element array liveness, or a new command shape)
-   could quietly invalidate. A hard-coded round count is never told that it
-   stopped too early; `loopFixedPointOut` instead panics rather than
-   silently return a possibly-unsound result if even its own much more
-   generous fuel bound turns out not to be enough. -/
-
 /-- The live-in set of `body` when its live-out set is `out`, without deleting
-    any commands (pure liveness propagation, reusable across fixed-point
-    iterations). -/
+    any commands (pure liveness propagation). Same helper as in
+    `Useless_commands.lean`. -/
 def liveInOfBody {c : ZKConfig} (body : List (ComWithMD c)) (out : VarIDSet) : VarIDSet :=
     getCmdsLiveIn (Llzk.Language.Core.Analysis.Liveness.addLivenessCmds body out) out
 
-/-- Iterates `liveInOfBody` starting from `out`, growing the live-out set on
-    each round, until it stabilizes or `fuel` runs out. The live-out set is
-    monotonically non-decreasing and bounded by the (finite) set of variables
-    mentioned in `body`, so it is safe (if imprecise) to under-run the fuel:
-    the caller should pick `fuel` at least as large as the number of commands
-    in `body`, since each additional round of propagation can extend the
-    liveness chain through at most one more command. -/
-def loopFixedPointOut {c : ZKConfig}
-    (fuel : Nat) (body : List (ComWithMD c)) (out : VarIDSet) : VarIDSet :=
-    match fuel with
-    | 0 => panic "loopFixedPointOut (within remove useless commands): ran out of fuel"
-    | fuel + 1 =>
-        match (liveInOfBody body out).union out with
-        | out' =>
-            if out' == out then
-                -- dbg_trace "loopFixedPointOut: live-out stabilized after {body.length+1-fuel} iterations"
-                out
-            else
-                loopFixedPointOut fuel body out'
+/-- Hard-coded "2 iterations", mirroring `Liveness.addLivenessCmd`'s
+    `.loop_exp`/`.loop` cases exactly: one application of `liveInOfBody`,
+    unioned with `out`. No equality check, no fuel, no termination argument --
+    this is used as-is, whatever it computes. -/
+def twoIterationsOut {c : ZKConfig} (body : List (ComWithMD c)) (out : VarIDSet) : VarIDSet :=
+    out.union (liveInOfBody body out)
 
 mutual
 
@@ -157,14 +113,6 @@ def removeUselessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet)
           -- the if-the-else is useless if both branches are useless
           match removeUselessCmds tb out, removeUselessCmds eb out with
           | [], [] => none
-          -- `out` must be passed explicitly as the default here: removing
-          -- useless commands can reduce a branch to an empty list (e.g. `eb`
-          -- was only a dead assignment), and an empty branch's live-in must
-          -- equal `out` (it passes every live-out variable straight through
-          -- unchanged), not `getCmdsLiveIn`'s own default of `emptyVarIDSet`.
-          -- Using the wrong default here would make the if-statement forget
-          -- that some variables need to survive the now-empty branch,
-          -- letting whatever produces them upstream be wrongly deleted too.
           | tb', eb' => let liveInThen := getCmdsLiveIn tb' out
                         let liveInElse := getCmdsLiveIn eb' out
                         let liveIn := addUsedVarsCond (liveInThen.union liveInElse) cond
@@ -172,12 +120,9 @@ def removeUselessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet)
                         some (ComWithMD.mk
                           { md with liveness := { live_in := liveIn, live_out := out } } cmd')
         | .loop_exp  rep body =>
-          -- live_in = live_in of (body;body), computed at a genuine fixed
-          -- point since a loop may re-execute its body arbitrarily many
-          -- times (see `loopFixedPointOut`). None of the expressions are
-          -- considered since they are supposed to be constant expressions.
-          let fuel := sizeOfComs body + 1
-          let outFix :=  loopFixedPointOut fuel body out
+          -- live_in = live_in of (body;body), computed with the hard-coded
+          -- "2 iterations" `twoIterationsOut` instead of a checked fixpoint.
+          let outFix := twoIterationsOut body out
           let body' := removeUselessCmds body outFix
           -- the loop is useless if the body is empty after removing
           -- useless commands
@@ -189,10 +134,9 @@ def removeUselessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet)
               some (ComWithMD.mk
                 { md with liveness := { live_in := liveIn, live_out := out } } cmd')
         | .loop rep body =>
-          -- live_in = live_in of (body;body), computed at a genuine fixed
-          -- point (see `loopFixedPointOut`).
-          let fuel := sizeOfComs body + 1
-          let outFix := loopFixedPointOut fuel body out
+          -- live_in = live_in of (body;body), computed with the hard-coded
+          -- "2 iterations" `twoIterationsOut` instead of a checked fixpoint.
+          let outFix := twoIterationsOut body out
           let body' := removeUselessCmds body outFix
           match body' with
           | [] => none
@@ -203,7 +147,6 @@ def removeUselessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet)
                 { md with liveness := { live_in := liveIn, live_out := out } } cmd')
         | .new_array id _size =>
           -- live_in = live_out \ {id}
-          -- We do not consider size since it is supposed to be a constant expression.
           -- the new_array is useless if the array is not used later
           let liveIn := out.erase id
           match out.contains id with
@@ -224,7 +167,6 @@ def removeUselessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet)
           | false => none
         | .write_array arr idx val => -- arr[idx] := val
             -- live_in = live_out ∪ {arr} ∪ usedVars(idx) ∪ usedVars(val)
-            -- Note that 'arr' is considered live-in since it is an array access
             -- the write_array is useless if the array is not used later
             let liveIn := out.insert arr
             let liveIn' := addUsedVarsSimpleExpr liveIn idx
@@ -299,4 +241,4 @@ def removeUselessProg {c : ZKConfig} (p : ProgWithMD c) : ProgWithMD c :=
         let funcs' := removeUselessFuncs funcs
         ProgWithMD.mk md funcs'
 
-end Llzk.Language.Core.Analysis.Useless_commands
+end Llzk.Language.Core.Analysis.Useless_commands_2iter
