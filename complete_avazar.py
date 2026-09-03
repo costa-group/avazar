@@ -144,7 +144,11 @@ def main():
         shutil.rmtree(out_abs_path + "/" + root_name_withoutext + "_llzk/")
 
         # 3. call to llzk2core
-        llzk2core_args = argparse.Namespace(source=out_abs_path + "/" + root_name_withoutext + ".llzk", target=out_abs_path + "/" + root_name_withoutext + ".core")
+        # --prime: llzk2core must simulate while-loop trip counts modulo the
+        # same field circom-llzk generated the .llzk over, or a value that
+        # wraps in the real field (e.g. circom's "-1") won't be simulated
+        # correctly.
+        llzk2core_args = argparse.Namespace(source=out_abs_path + "/" + root_name_withoutext + ".llzk", target=out_abs_path + "/" + root_name_withoutext + ".core", prime=args.prime)
         llzk2core_main(llzk2core_args)
 
         spec_json = out_abs_path + "/" + root_name_withoutext + ".json"
