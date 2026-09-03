@@ -65,6 +65,37 @@ class TestInferNRepetitions:
         )
         assert result == 4
 
+    def test_variable_recurrence_free_variable_resolved_via_var2const(self):
+        # Regression test: mirrors poseidon3_new_optimized.mlir's
+        # MixS_9::compute, whose loop-carried variable's own recurrence step
+        # ("%next = felt.add %arg1, %c1") reuses a felt.const hoisted above
+        # the while (no var2expression entry of its own) instead of
+        # redefining it locally each iteration -- previously a raw KeyError
+        # deep inside construct_function_from_expressions; now resolved via
+        # var2const, same as an unresolved bound already was.
+        var2expression = {
+            "%cond": BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg1"), SSAVar("%c2")),
+            "%c2": _felt_const("%c2", 2),
+            "%arg1": "%next",
+            "%next": _felt_binary("%next", "felt.add", "%arg1", "%c1"),
+        }
+        result = infer_n_repetitions_from_expressions(
+            var2expression, "%cond", {"%arg1": 0}, var2const={"%c1": 1}
+        )
+        assert result == 2
+
+    def test_variable_recurrence_unresolved_free_variable_raises(self):
+        # Same shape, but %c1 isn't known via var2const either -- a clear
+        # NotImplementedError instead of a raw KeyError.
+        var2expression = {
+            "%cond": BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg1"), SSAVar("%c2")),
+            "%c2": _felt_const("%c2", 2),
+            "%arg1": "%next",
+            "%next": _felt_binary("%next", "felt.add", "%arg1", "%c1"),
+        }
+        with pytest.raises(NotImplementedError):
+            infer_n_repetitions_from_expressions(var2expression, "%cond", {"%arg1": 0})
+
     def test_unresolved_bound_returns_symbolic_steps_lt(self):
         var2expression = self._basic_var2expression(bound_name="%bound")
         result = infer_n_repetitions_from_expressions(

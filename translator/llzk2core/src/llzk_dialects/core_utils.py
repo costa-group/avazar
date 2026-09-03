@@ -575,6 +575,29 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
         )
 
     initial_value = initial_values[variable.name]
+
+    # The loop-carried variable's own recurrence must be fully concrete to be
+    # simulated at all (construct_function_from_expressions has no symbolic
+    # fallback, unlike the bound below) -- resolve any free variable it
+    # references but that isn't defined anywhere inside the while itself
+    # (e.g. a felt.const hoisted above the while and reused directly inside
+    # its body instead of being redefined locally each iteration -- see
+    # poseidon3_new_optimized.mlir's MixS_9::compute) via var2const, folding
+    # it in as a constant leaf, same as a literal felt.const.
+    unresolved_variable_free_vars = set()
+    for name in _collect_free_var_names(variable, var2expression, set()):
+        if name in var2const:
+            var2expression[name] = FeltConst(SSAVar(name), var2const[name])
+        else:
+            unresolved_variable_free_vars.add(name)
+
+    if unresolved_variable_free_vars:
+        raise NotImplementedError(
+            f"While loop-carried variable '{variable.name}' recurrence depends on "
+            f"unresolved variable(s) {unresolved_variable_free_vars} -- the loop "
+            "variable's own update must be fully concrete to simulate"
+        )
+
     update_func = construct_function_from_expressions(variable, var2expression, set(), prime)
 
     # Resolve any free variable the bound references but that isn't defined
