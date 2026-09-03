@@ -120,26 +120,6 @@ class Type:
 
 
 @dataclass
-class LoopIndexedName:
-    """
-    A semantic base name for a component read whose index is not a
-    compile-time constant in the source IR (e.g. a real scf.for/scf.while
-    loop variable) — see struct.py's _annotate_input_array_reads /
-    _annotate_array_component_reads, which are the only producers of this.
-
-    Resolved at to_core time (ArrayRead.to_core, FunctionCall.to_core) via
-    TranslationContext.unroll_index: "{base}#{idx}" while translating the
-    current copy of a loop that got unrolled specifically to distinguish
-    this name (see scf.py's _contains_function_call), or the bare base name
-    if the loop wasn't unrolled (unroll_index is None).
-    """
-    base: str
-
-    def resolve(self, unroll_index: Optional[int]) -> str:
-        return f"{self.base}#{unroll_index}" if unroll_index is not None else self.base
-
-
-@dataclass
 class TranslationContext:
     """
     Holds all state needed during the to_core() translation pass.
@@ -189,13 +169,59 @@ class TranslationContext:
     # Not yet consumed by any translation logic.
     param_arg_names: Dict[str, str] = field(default_factory=dict)
 
-    # Set (by SCFFor/SCFWhile.to_core) to the current iteration index while
-    # translating one copy of a loop that was unrolled because its body
-    # contains a function.call (see scf.py's _contains_function_call). None
-    # otherwise, including for a loop translated as a Core "repeat" block.
-    # Consumed by ArrayRead.to_core / FunctionCall.to_core to resolve a
-    # LoopIndexedName.
-    unroll_index: Optional[int] = None
+    # Registered global.def values: sym_name -> a single int (scalar felt) or
+    # a flat, row-major list of ints (felt array, uni- or multi-dimensional).
+    # Populated by a module-level pre-pass over GlobalDef before any function
+    # body is translated (see llzk.py's ModuleOp.to_core) -- circom-llzk may
+    # emit a global.def textually after the struct that reads it.
+    global2value: Dict[str, Union[int, List[int]]] = field(default_factory=dict)
+
+    # For an array-of-components member populated inside a genuinely
+    # symbolic (non-compile-time-constant-index) loop, the real sequence of
+    # concrete array-index tuples the population loop(s) will visit, in true
+    # execution order:
+    #   core_function_name -> {member_name -> [(idx1, idx2, ...), ...]}
+    # e.g. {"PoseidonEx_69": {"sigmaF": [(0, 0), (0, 1), ..., (7, 2)]}}
+    # Populated by struct.py's array-component index-sequence pre-pass (see
+    # StructDef.to_core) and exported into the SMT JSON alongside
+    # member_to_struct's own "components_info", for signal_renaming.py to
+    # consume in place of a flat per-call counter -- which only ever
+    # produced a single "#i" segment (wrong shape for an N-D member) and
+    # silently assumed sequential 0,1,2,... visitation (wrong for a member
+    # populated by more than one loop nest, or any non-row-major traversal).
+    # Absent (or missing a given member) when a population loop's own bound
+    # can't be resolved statically -- signal_renaming.py falls back to its
+    # original counter-based behavior for that member in that case.
+    array_component_index_sequences: Dict[str, Dict[str, List[Tuple[int, ...]]]] = field(default_factory=dict)
+
+    # One-shot seed applied into var2const by FunctionDef.to_core right
+    # after it clears var2const, then reset to {} -- lets a pure function's
+    # own translation be specialized to a known constant value for one or
+    # more of its own parameters (see llzk.py's pure-function loop-bound
+    # specialization pre-pass). Empty (a no-op) for every non-specialized
+    # function, i.e. almost all of them.
+    pending_const_seed: Dict[str, int] = field(default_factory=dict)
+
+    # llzk_name (e.g. "EscalarMulW4Table_0::EscalarMulW4Table_0") -> list of
+    # (clone_core_name, seed) pairs, when a pure function's own loop bound
+    # depends on a parameter that's a compile-time constant at every one of
+    # its call sites. Populated by llzk.py's specialization pre-pass;
+    # consulted by poly.py's PolyTemplate.to_core, which emits one `def` per
+    # clone (each with its own pending_const_seed) instead of a single
+    # generic body. Absent (or no entry) for every pure function that isn't
+    # specialized -- unaffected, unchanged single-emission behavior.
+    pure_function_specializations: Dict[str, List[Tuple[str, Dict[str, int]]]] = field(default_factory=dict)
+
+    # The finite field this translation targets -- every compile-time
+    # constant fold and while-loop trip-count simulation (core_utils.py's
+    # construct_function_from_expressions, felt.py's to_function()) reduces
+    # its result modulo this value, so a value that wraps in the real field
+    # (e.g. circom's "-1", represented as prime-1) is simulated correctly
+    # instead of drifting off as a raw, ever-decreasing Python int. Defaults
+    # to the goldilocks prime -- every existing example and every existing
+    # test's implicit assumption -- via main_execution.py's new --prime flag
+    # (see core_utils.py's FIELD_PRIMES) for any other field.
+    prime: int = 18446744069414584321  # goldilocks: 2**64 - 2**32 + 1
 
 
 def _apply_rename(name: str, rename: Dict[str, str]) -> str:

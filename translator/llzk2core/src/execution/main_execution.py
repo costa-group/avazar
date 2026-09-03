@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 from typing import List
+from execution.signal_renaming import process_components
 from llzk_dialects.parser import LLZKParser
 from llzk_dialects.arith import ArithDialect
 from llzk_dialects.array import ArrayDialect
@@ -20,6 +21,7 @@ from llzk_dialects.scf import SCFDialect
 from llzk_dialects.string import StringDialect
 from llzk_dialects.struct import StructDialect
 from llzk_dialects.core import TranslationContext
+from llzk_dialects.core_utils import FIELD_PRIMES
 from llzk_dialects.utils import indent_stream
 
 
@@ -59,7 +61,11 @@ def main(args: argparse.Namespace):
     assert len(res) == 1, "Multiple modules have been recognized inside the program"
 
     module_structure = res[0]
-    translation_context = TranslationContext()
+    # getattr with a default: complete_avazar.py (and any other caller
+    # that builds its own argparse.Namespace directly, bypassing
+    # args_parser.py's parser) may not set `prime` at all.
+    prime_name = getattr(args, "prime", None) or "goldilocks"
+    translation_context = TranslationContext(prime=FIELD_PRIMES[prime_name])
     core_generator = module_structure.to_core(translation_context)
     with open(args.target, 'w') as f:
         # Indent stream generates the statements in a nice format
@@ -76,7 +82,7 @@ def main(args: argparse.Namespace):
     llzk_cli = os.path.join(_here, '..', '..', '..', 'lean', 'llzk_cli')
     smt2_json_path = os.path.splitext(args.target)[0] + ".json"
     subprocess.run(
-        [llzk_cli, '-zk', 'g64', '-se', '-ru', '-smt2', 'json', '-o', smt2_json_path, args.target],
+        [llzk_cli, '-zk', 'g64', '-se', '-ru', 'no', '-smt2', 'json', '-o', smt2_json_path, args.target],
         check=True,
     )
 
@@ -87,6 +93,11 @@ def main(args: argparse.Namespace):
         # Store the "components_info" information
         for macro in smt_json["macros"]:
             smt_json["macros"][macro]["components_info"] = translation_context.member_to_struct.get(macro, dict())
+            smt_json["macros"][macro]["components_index_sequences"] = \
+                translation_context.array_component_index_sequences.get(macro, dict())
+
+    # We also add the variable information for loops
+    modified_smt_json = process_components(smt_json)
 
     with open(smt2_json_path, 'w') as f:
-        json.dump(smt_json, f, indent=4)
+        json.dump(modified_smt_json, f, indent=4)

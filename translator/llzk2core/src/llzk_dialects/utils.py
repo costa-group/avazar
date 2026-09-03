@@ -70,11 +70,20 @@ def array_dimensions(type_: str) -> Optional[List[int]]:
         <d0 x d1 x ... x !anytype<...>>  (all-x-separated, for compatibility)
 
     Returns None if the type is not array-shaped.
+
+    Anchored to the start of the string (after stripping an optional
+    '!array.type' prefix), like is_array_type — an unanchored search would
+    also match a pod/struct type that merely CONTAINS an array nested inside
+    one of its fields (e.g. '!pod.type<[@in: !array.type<3 x ...>]>'), wrongly
+    reporting dimensions for a type that isn't itself an array.
     """
-    m = re.search(r"<\s*((?:\d+\s*,\s*)*\d+)\s+x\s+!", type_)
+    s = type_.strip()
+    if s.startswith("!array.type"):
+        s = s[len("!array.type"):]
+    m = re.match(r"^\s*<\s*((?:\d+\s*,\s*)*\d+)\s+x\s+!", s)
     if m:
         return [int(d) for d in re.findall(r'\d+', m.group(1))]
-    m = re.search(r"<\s*((?:\d+\s+x\s+)+)!", type_)
+    m = re.match(r"^\s*<\s*((?:\d+\s+x\s+)+)!", s)
     if m:
         return [int(d) for d in re.findall(r'\d+', m.group(1))]
     return None
@@ -104,13 +113,23 @@ def array_felt_dimensions(type_: str) -> Optional[List[int]]:
         <d0 x d1 x ... x !felt.type<...>>
 
     Returns None if the type is not a recognised felt array.
+
+    Anchored to the start of the string (after stripping an optional
+    '!array.type' prefix), like is_array_type — an unanchored search would
+    also match a pod/struct type that merely CONTAINS a felt array nested
+    inside one of its fields (e.g. '!pod.type<[@in: !array.type<3 x
+    !felt.type<...>>]>'), wrongly reporting dimensions for a type that isn't
+    itself an array.
     """
+    s = type_.strip()
+    if s.startswith("!array.type"):
+        s = s[len("!array.type"):]
     # Primary format: comma-separated outer dims, last dim uses 'x' before element type
-    m = re.search(r"<\s*((?:\d+\s*,\s*)*\d+)\s+x\s+!felt\.type<", type_)
+    m = re.match(r"^\s*<\s*((?:\d+\s*,\s*)*\d+)\s+x\s+!felt\.type<", s)
     if m:
         return [int(d) for d in re.findall(r'\d+', m.group(1))]
     # Fallback: all dims x-separated (e.g. test fixtures)
-    m = re.search(r"<\s*((?:\d+\s+x\s+)+)!felt\.type<", type_)
+    m = re.match(r"^\s*<\s*((?:\d+\s+x\s+)+)!felt\.type<", s)
     if m:
         return [int(d) for d in re.findall(r'\d+', m.group(1))]
     return None

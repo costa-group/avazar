@@ -22,16 +22,16 @@ Container element types (pod, struct):
 """
 
 import re
-from typing import List, Optional, Generator, Tuple, Union
+from typing import List, Optional, Generator, Tuple
 
-from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext, LoopIndexedName
+from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.utils import (
     array_felt_first_dimension, array_felt_dimensions,
     array_dimensions, array_total_size, split_top_level_commas,
     struct_type_name,
 )
-from llzk_dialects.pod import _parse_pod_fields
+from llzk_dialects.pod import _parse_pod_fields, _register_nested_pod_vars
 
 
 def _lin_var(base: str, n_dims: int) -> str:
@@ -305,11 +305,12 @@ class ArrayRead(Operation):
         # Set by struct.py's _build_component_naming_maps pre-pass (via
         # _annotate_input_array_reads) when arr_ref is a registered
         # "$inputs" component array: the plain string "member_idx" for a
-        # compile-time constant index, or LoopIndexedName("member") when the
-        # index is a genuine runtime loop variable (resolved in to_core
-        # below into "member#i" if that loop got unrolled, else bare
-        # "member"). None until the pre-pass runs, or when arr_ref isn't a
-        # registered component array.
+        # compile-time constant index, or the bare "member" name when the
+        # index is a genuine runtime loop variable (there's no single
+        # instance to name more specifically at translation time -- any
+        # further per-iteration naming is resolved afterwards by llzk_cli).
+        # None until the pre-pass runs, or when arr_ref isn't a registered
+        # component array.
         #
         # This can't be computed here from ctx.var2const at to_core time:
         # SCFFor/SCFWhile deliberately treat their own loop-carried
@@ -319,7 +320,7 @@ class ArrayRead(Operation):
         # symbolic loop index to one specific instance. The pre-pass instead
         # resolves this with its own scope-safe static fold, once per
         # function, and stamps the result directly on this node.
-        self._semantic_base: Optional[Union[str, LoopIndexedName]] = None
+        self._semantic_base: Optional[str] = None
 
     def dialect(self) -> Dialect:
         return Dialect("array")
@@ -372,15 +373,8 @@ class ArrayRead(Operation):
             # When this array backs a named component-array member, name the
             # extracted element after that member instead of a raw
             # SSA-derived name — see the _semantic_base field comment above
-            # for how/when this is resolved. A LoopIndexedName means the
-            # index wasn't a compile-time constant in the source IR; resolve
-            # it against the current unroll iteration (set by SCFFor/
-            # SCFWhile.to_core when they unroll a loop for this exact
-            # reason — see scf.py's _contains_function_call), or leave it
-            # bare if this loop wasn't unrolled after all.
+            # for how/when this is set.
             semantic_base = self._semantic_base
-            if isinstance(semantic_base, LoopIndexedName):
-                semantic_base = semantic_base.resolve(ctx.unroll_index)
 
             if is_pod:
                 all_fields = _parse_pod_fields(elem_type.name)
@@ -394,21 +388,20 @@ class ArrayRead(Operation):
                         field: (f"{self._result.name}_{field}", field_type)
                         for field, field_type in all_fields.items()
                     }
-                # An empty pod-typed field (e.g. @params: !pod.type<[]>)
-                # contributes no leaves to _flatten_container_fields below, so
-                # its storage name would otherwise never be independently
-                # registered. A pod created via pod.new gets this for free
-                # (PodNew's own initial-value assignment chain registers it
-                # when the source is itself a registered pod), but a pod
-                # extracted from an array has no such chain — register it
-                # explicitly here so a later pod.read of that field finds a
-                # registered (empty) source instead of falling through to the
-                # generic array.copy fallback with an undefined variable.
+                # A pod-typed field (e.g. @idx_0: !pod.type<[@in: ...]>, or an
+                # empty @params: !pod.type<[]>) needs its OWN ctx.ssa2pod_var
+                # entry, not just leaf storage from _flatten_container_fields
+                # below — otherwise a later pod.read chained through this
+                # nested pod (pod-in-pod) finds no registered source. A pod
+                # created via pod.new gets this for free (PodNew's own
+                # initial-value assignment chain registers it when the source
+                # is itself a registered pod), but a pod extracted from an
+                # array has no such chain — register it explicitly here.
                 for field, field_type in all_fields.items():
-                    if "!pod.type" in field_type.name and not _parse_pod_fields(field_type.name):
+                    if "!pod.type" in field_type.name:
                         key = (_semantic_field_var(semantic_base, [field])
                                if semantic_base is not None else f"{self._result.name}_{field}")
-                        ctx.ssa2pod_var[key] = {}
+                        _register_nested_pod_vars(ctx, key, field_type.name)
 
             if len(self.indices) <= 1:
                 idx = self.indices[0].to_core() if self.indices else "0"

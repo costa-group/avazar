@@ -12,7 +12,7 @@ Operations:
 """
 
 import re
-from typing import List, Optional, Generator
+from typing import Callable, List, Optional, Generator
 
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
@@ -77,8 +77,28 @@ class BoolBinary(Operation):
     def operands(self) -> List[SSAVar]:
         return [self.lhs, self.rhs]
 
+    _BINARY_FNS: dict = {
+        "bool.and": lambda a, b: 1 if (a and b) else 0,
+        "bool.or":  lambda a, b: 1 if (a or b) else 0,
+        "bool.xor": lambda a, b: 1 if (bool(a) != bool(b)) else 0,
+    }
+
+    def to_function(self, prime: Optional[int] = None) -> Callable[[int, int], int]:
+        # Boolean, not felt-typed -- always 0/1, regardless of any field's
+        # prime; accepts the parameter only for interface uniformity with
+        # construct_function_from_expressions' generic to_function(prime) call.
+        return self._BINARY_FNS[self._op]
+
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         yield f"{self._result.to_core()} = {self._op} {self.lhs.to_core()} {self.rhs.to_core()}"
+
+        # Fold into ctx.var2const (as 1/0, matching arith.constant true/false's
+        # convention) when both operands are already known -- lets a
+        # compound (bool.and/or/xor) scf.if condition become decidable too.
+        lhs_val = ctx.var2const.get(self.lhs.name)
+        rhs_val = ctx.var2const.get(self.rhs.name)
+        if lhs_val is not None and rhs_val is not None:
+            ctx.var2const[self._result.name] = self.to_function()(lhs_val, rhs_val)
 
     def __repr__(self):
         return f"BoolBinary({self._result} = {self._op}({self.lhs}, {self.rhs}))"
@@ -124,8 +144,16 @@ class BoolNot(Operation):
     def operands(self) -> List[SSAVar]:
         return [self.operand]
 
+    def to_function(self, prime: Optional[int] = None) -> Callable[[int], int]:
+        # Boolean, not felt-typed -- see BoolBinary.to_function.
+        return lambda a: 1 if not a else 0
+
     def to_core(self, ctx: TranslationContext) -> str:
         yield f"{self._result.to_core()} = bool.not {self.operand.to_core()}"
+
+        operand_val = ctx.var2const.get(self.operand.name)
+        if operand_val is not None:
+            ctx.var2const[self._result.name] = self.to_function()(operand_val)
 
     def __repr__(self):
         return f"BoolNot({self._result} = bool.not({self.operand}))"
@@ -188,9 +216,36 @@ class BoolCmp(Operation):
     def operands(self) -> List[SSAVar]:
         return [self.lhs, self.rhs]
 
+    _PRED_FNS: dict = {
+        "eq": lambda a, b: 1 if a == b else 0,
+        "ne": lambda a, b: 1 if a != b else 0,
+        "lt": lambda a, b: 1 if a < b else 0,
+        "le": lambda a, b: 1 if a <= b else 0,
+        "gt": lambda a, b: 1 if a > b else 0,
+        "ge": lambda a, b: 1 if a >= b else 0,
+    }
+
+    def to_function(self, prime: Optional[int] = None) -> Callable[[int, int], int]:
+        # Compares two already-resolved felt values (via ctx.var2const,
+        # which FeltBinary/FeltUnary now always store correctly reduced
+        # modulo the prime) and returns 0/1 -- no further prime-awareness
+        # needed here; accepts the parameter only for interface uniformity
+        # with construct_function_from_expressions' generic to_function(prime).
+        return self._PRED_FNS[self.predicate]
+
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # TODO: implement core translation
         yield f"{self._result.to_core()} = {self._PRED2CORE[self.predicate]} {self.rhs.to_core()} {self.lhs.to_core()}"
+
+        # Fold into ctx.var2const (1/0) when both operands are already known
+        # -- this is what lets an scf.if's condition become decidable at
+        # translation time, which in turn lets its result be folded too
+        # (see SCFIf.to_core), and transitively lets a nested loop's bound
+        # resolve once an enclosing loop's induction variable is concrete.
+        lhs_val = ctx.var2const.get(self.lhs.name)
+        rhs_val = ctx.var2const.get(self.rhs.name)
+        if lhs_val is not None and rhs_val is not None:
+            ctx.var2const[self._result.name] = self.to_function()(lhs_val, rhs_val)
 
     def __repr__(self):
         type_str = '' if not self.types else ' : ' + ', '.join(repr(t) for t in self.types)
