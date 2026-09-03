@@ -97,8 +97,15 @@ def liveInOfBody {c : ZKConfig} (body : List (ComWithMD c)) (out : VarIDSet) : V
 def loopFixedPointOut {c : ZKConfig}
     (fuel : Nat) (body : List (ComWithMD c)) (out : VarIDSet) : VarIDSet :=
     match fuel with
-    | 0 => out
-    | fuel + 1 => loopFixedPointOut fuel body ((liveInOfBody body out).union out)
+    | 0 => panic "loopFixedPointOut (within remove useless commands): ran out of fuel"
+    | fuel + 1 =>
+        match (liveInOfBody body out).union out with
+        | out' =>
+            if out' == out then
+                -- dbg_trace "loopFixedPointOut: live-out stabilized after {body.length+1-fuel} iterations"
+                out
+            else
+                loopFixedPointOut fuel body out'
 
 mutual
 
@@ -146,7 +153,7 @@ def removeUselessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet)
           -- times (see `loopFixedPointOut`). None of the expressions are
           -- considered since they are supposed to be constant expressions.
           let fuel := sizeOfComs body + 1
-          let outFix := loopFixedPointOut fuel body out
+          let outFix :=  loopFixedPointOut fuel body out
           let body' := removeUselessCmds body outFix
           -- the loop is useless if the body is empty after removing
           -- useless commands
