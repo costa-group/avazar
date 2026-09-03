@@ -1314,6 +1314,10 @@ class StructDef(BlockOperation):
             idx_fields = _is_idx_pod_component_member(type_str)
             if idx_fields is not None:
                 idx_pod_member_types[member_name] = idx_fields
+                from llzk_dialects.pod import _idx_pod_child_name
+                for record, field_type in idx_fields.items():
+                    child_name = _idx_pod_child_name(member_name, record)
+                    subcomponent_members[child_name] = struct_type_name(field_type.name).split("::")[-1]
                 continue
             if "!struct.type" not in type_str:
                 continue

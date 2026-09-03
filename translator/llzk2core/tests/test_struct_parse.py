@@ -1647,3 +1647,48 @@ class TestFindArrayComponentPopulationSequences:
         body = [const0, cast0, read, write]
         result = _find_array_component_population_sequences(body, {"%array": "comp"})
         assert result == {}
+
+
+# ── StructDef.to_core — components_info covers idx-pod members too ────────────
+
+class TestStructDefToCoreComponentsInfoIdxPod:
+    """
+    StructDef.to_core's member-scan loop builds ctx.member_to_struct (the
+    "components_info" JSON field) -- confirms it now also covers
+    heterogeneous idx-pod members (e.g. "ark"), not just homogeneous
+    array-of-components / scalar ones, mapping each "{member}#{idx}" key to
+    its own struct's short name via the same _idx_pod_child_name /
+    struct_type_name primitives _annotate_idx_pod_component_reads already
+    uses to stamp the matching .core-level call names -- so these keys are
+    guaranteed to line up with what's actually emitted for "ark"'s calls.
+    """
+
+    def test_idx_pod_member_registered_alongside_scalar_member(self):
+        from llzk_dialects.parser import LLZKParser
+        from llzk_dialects.struct import StructDialect
+        from llzk_dialects.function import FunctionDialect
+        from llzk_dialects.scf import SCFDialect
+
+        lines = [
+            "struct.def @Test {",
+            "  struct.member @ark : !pod.type<[@idx_0: !struct.type<@Ark_0::@Ark_0<[]>>, "
+            "@idx_1: !struct.type<@Ark_2::@Ark_2<[]>>]>",
+            "  struct.member @pEx : !struct.type<@PoseidonEx_69::@PoseidonEx_69<[]>>",
+            "  function.def @compute(%self: !struct.type<@Test>) {",
+            "  }",
+            "}",
+        ]
+        parser = LLZKParser(lines)
+        parser.add_dialects([StructDialect(), FunctionDialect(), SCFDialect()])
+        struct_def = parser.parse()[0]
+
+        ctx = TranslationContext()
+        list(struct_def.to_core(ctx))
+
+        info = ctx.member_to_struct["@Test"]
+        assert info["ark#0"] == "@Ark_0"
+        assert info["ark#1"] == "@Ark_2"
+        assert info["pEx"] == "@PoseidonEx_69"
+        # The idx-pod's own field types must never leak in as extra,
+        # separately-suffixed entries (e.g. a stray "ark" bare key).
+        assert "ark" not in info
