@@ -1,0 +1,36 @@
+def @Num2Bits_0(%arg0: ff) -> out: arr<2> {
+  array.new 2 %nondet
+  %felt_const_2 = 2
+  %felt_const_0 = 0
+  %felt_const_1 = 1
+  %felt_const_0_0 = 0
+  %arg1_w11 = %felt_const_0_0
+  %arg2_w11 = %felt_const_1
+  %arg3_w11 = %felt_const_0
+  repeat 5 {
+    %1_aft11 = bit.shr %arg0 %arg1_w11
+    %felt_const_1_1_aft11 = 1
+    %2_aft11 = bit.and %1_aft11 %felt_const_1_1_aft11
+    %3_aft11 = %arg1_w11
+    array.write %2_aft11 %nondet[%3_aft11]
+    %4_aft11 = %arg1_w11
+    array.read %nondet[%4_aft11] %5_aft11
+    %6_aft11 = felt.mul %5_aft11 %arg2_w11
+    %7_aft11 = felt.add %arg3_w11 %6_aft11
+    %8_aft11 = felt.add %arg2_w11 %arg2_w11
+    %felt_const_1_2_aft11 = 1
+    %9_aft11 = felt.add %arg1_w11 %felt_const_1_2_aft11
+    %arg1_w11 = %9_aft11
+    %arg2_w11 = %8_aft11
+    %arg3_w11 = %7_aft11
+    %felt_const_2_1_bef11 = 2
+    %1_bef11 = bool.lt %felt_const_2_1_bef11 %arg1_w11
+    %0#0 = %arg1_w11
+    %0#1 = %arg2_w11
+    %0#2 = %arg3_w11
+  }
+  array.copy %nondet out
+}
+def main(%arg0: ff) -> out: arr<2> {
+  call @Num2Bits_0(%arg0) to out
+}

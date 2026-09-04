@@ -1,0 +1,18 @@
+
+
+func foo(x:ff) -> a:arr<3> {
+  f = felt.add x 1
+  array.new 3 w
+  i = 0
+  repeat 3 {
+    tmp = bit.shl x i
+    b = bit.and tmp 1
+    array.write b w[i]
+    i = felt.add i 1
+  }
+  array.copy w a
+}
+
+
+func main() {
+}

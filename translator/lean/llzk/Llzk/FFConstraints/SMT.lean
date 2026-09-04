@@ -257,7 +257,7 @@ def printMacro {c : ZKConfig}
   )
   stream.putStr (String.intercalate " " paramStrs)
   stream.putStrLn ") Bool"
-  printFormula stream m.body 1 true false
+  printFormula stream m.body 1 false false
   stream.putStrLn ")"
 
 def printMacros {c : ZKConfig}
@@ -306,7 +306,7 @@ def printConstraintSystem {c : ZKConfig}
   printMacros stream sys.macros.reverse -- we assume main is first
   -- Main formula
   stream.putStrLn "(assert "
-  printFormula stream f 1 true false
+  printFormula stream f 1 false false
   stream.putStrLn ")"
   stream.flush
 
