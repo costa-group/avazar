@@ -130,7 +130,7 @@ def printTerm {c : ZKConfig}
 def printFormula {c : ZKConfig}
   (stream : IO.FS.Stream)
   (f : FFFormula c)
-  (level : Nat) (indent: Bool) (escape: Bool): IO Unit := do
+  (level : Nat) (indent : Bool) (escape : Bool): IO Unit := do
   let sp := if indent then getIndent level else " "
   let nl := if indent then "\n" else ""
   match f with
@@ -248,7 +248,7 @@ def printFormula {c : ZKConfig}
 end
 
 def printMacro {c : ZKConfig}
-  (stream : IO.FS.Stream) (m : FFMacro c) : IO Unit := do
+  (stream : IO.FS.Stream) (m : FFMacro c) (indent : Bool) : IO Unit := do
   stream.putStr s!"(define-fun {m.name} ("
   let paramStrs := m.params.map (fun var =>
     match var with
@@ -257,21 +257,21 @@ def printMacro {c : ZKConfig}
   )
   stream.putStr (String.intercalate " " paramStrs)
   stream.putStrLn ") Bool"
-  printFormula stream m.body 1 false false
+  printFormula stream m.body 1 indent false
   stream.putStrLn ")"
 
 def printMacros {c : ZKConfig}
-  (stream : IO.FS.Stream) (ms : List (FFMacro c)) : IO Unit := do
+  (stream : IO.FS.Stream) (ms : List (FFMacro c)) (indent : Bool) : IO Unit := do
   match ms with
   | [] => return ()
   | m :: rest =>
-      printMacro stream m
+      printMacro stream m indent
       stream.putStrLn ""
       stream.putStrLn ""
-      printMacros stream rest
+      printMacros stream rest indent
 
 def printConstraintSystem {c : ZKConfig}
-  (stream : IO.FS.Stream) (sys : FFConstraintSystem c) : IO Unit := do
+  (stream : IO.FS.Stream) (sys : FFConstraintSystem c) (indent : Bool) : IO Unit := do
   match mainFormula sys with
   | Except.error e => stream.putStrLn s!"Error: {e}"
   | Except.ok (f, vars) =>
@@ -303,10 +303,10 @@ def printConstraintSystem {c : ZKConfig}
         stream.putStrLn " Bool)"
   stream.putStrLn ""
   -- Macros
-  printMacros stream sys.macros.reverse -- we assume main is first
+  printMacros stream sys.macros.reverse indent -- we assume main is first
   -- Main formula
   stream.putStrLn "(assert "
-  printFormula stream f 1 false false
+  printFormula stream f 1 indent false
   stream.putStrLn ")"
   stream.flush
 
@@ -358,7 +358,7 @@ def printVarsInfo_asJSON {c : ZKConfig}
 
 
 def printMacro_asJSON {c : ZKConfig}
-  (stream : IO.FS.Stream) (m : FFMacro c) : IO Unit := do
+  (stream : IO.FS.Stream) (m : FFMacro c) (indent : Bool) : IO Unit := do
   stream.putStrLn s!"    \"{m.name}\": \{"
   stream.putStr "        \"params\": ["
   printParams_asJSON stream m.params
@@ -367,22 +367,22 @@ def printMacro_asJSON {c : ZKConfig}
   printVarsInfo_asJSON stream m.vars_info
   stream.putStrLn "},"
   stream.putStr "        \"formula\": \""
-  printFormula stream m.body 0 false true
+  printFormula stream m.body 0 indent true
   stream.putStrLn " \""
   stream.putStr "     }"
 
 
 def printMacros_asJSON {c : ZKConfig}
-  (stream : IO.FS.Stream) (ms : List (FFMacro c)) : IO Unit := do
+  (stream : IO.FS.Stream) (ms : List (FFMacro c)) (indent : Bool) : IO Unit := do
   match ms with
   | [] => return ()
   | m :: rest =>
-      printMacro_asJSON stream m
+      printMacro_asJSON stream m indent
       if rest != [] then stream.putStrLn ","
-      printMacros_asJSON stream rest
+      printMacros_asJSON stream rest indent
 
 def printConstraintSystem_asJSON {c : ZKConfig}
-  (stream : IO.FS.Stream) (sys : FFConstraintSystem c) : IO Unit := do
+  (stream : IO.FS.Stream) (sys : FFConstraintSystem c) (indent : Bool) : IO Unit := do
   match mainFormula sys with
   | Except.error e => stream.putStrLn s!"Error: {e}"
   | Except.ok (f, vars) =>
@@ -390,7 +390,7 @@ def printConstraintSystem_asJSON {c : ZKConfig}
   stream.putStrLn s!"  \"prime\": {c.p},"
   -- Macros
   stream.putStrLn s!"  \"macros\": \{"
-  printMacros_asJSON stream sys.macros.reverse -- we assume main is first
+  printMacros_asJSON stream sys.macros.reverse indent-- we assume main is first
   stream.putStrLn ""
   stream.putStrLn s!"  },"
   -- Main formula
@@ -399,7 +399,7 @@ def printConstraintSystem_asJSON {c : ZKConfig}
   printParams_asJSON stream vars
   stream.putStrLn s!"],"
   stream.putStr s!"    \"formula\": \""
-  printFormula stream f 0 false true
+  printFormula stream f 0 indent true
   stream.putStr s!" \""
   stream.putStrLn " }"
   stream.putStrLn "}"

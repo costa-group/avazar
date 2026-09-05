@@ -74,12 +74,12 @@ def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Str
          | "smtlib" =>
             IO.println s!"Generating encoding using SMT-LIB format..."
             IO.println s!""
-            @printConstraintSystem c outStream constraints
+            @printConstraintSystem c outStream constraints (p.hasFlag "indent_formula")
             outStream.flush
          | "json" =>
             IO.println s!"Generating encoding using JSON format..."
             IO.println s!""
-            @printConstraintSystem_asJSON c outStream constraints
+            @printConstraintSystem_asJSON c outStream constraints (p.hasFlag "indent_formula")
             outStream.flush
          | fmt =>
             IO.println s!"Unsupported SMT output format: {fmt}."
@@ -164,6 +164,7 @@ def llzkCmd : Cmd := `[Cli|
     m, main : String;        "The main function for symbolic execution (default: main)"
     o, output : String;      "The output file. If not provided, stdout is used."
     smt2, smt2_format : String;  "The format of the SMT output (smtlib,json). Default is smtlib."
+    indent, indent_formula;  "Enable indentation when printing formulas."
     cmpscm, comparison_scheme : String; "Encoding of signed comparison (range_of_diff, normal). \
     Default is range_of_diff."
     boolscm, boolean_scheme : String; "Encoding of boolean variables for bits (range, mul). \
