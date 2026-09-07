@@ -123,9 +123,12 @@ def main():
         shutil.rmtree(out_abs_path+"/"+root_name_withoutext+"_llzk/")
 
         #3. call to llzk2core
-        llzk2core_args = argparse.Namespace(source=out_abs_path+"/"+root_name_withoutext+".llzk",target=out_abs_path+"/"+root_name_withoutext+".core")
-        llzk2core_main(llzk2core_args)
 
+        llzk2core_args = argparse.Namespace(source=out_abs_path+"/"+root_name_withoutext+".llzk",target=out_abs_path+"/"+root_name_withoutext+".core")
+        logging.info(f"Executing llzk2core with args: {llzk2core_args}")
+        llzk2core_main(llzk2core_args)
+        logging.info("Finished llzk2core")
+        
         #4. call to the solver
         avazar_tool_command = [AVAZAR_TOOL, out_abs_path+"/"+root_name_withoutext+".r1cs", "--input_structure", out_abs_path+"/"+root_name_withoutext+"_structure.json", "--check_correctness", out_abs_path+"/"+root_name_withoutext+".json", "--correspondence", out_abs_path+"/"+root_name_withoutext+"_signals.json", "--solver", args.solver, "--verbose", "--prime", str(PRIMES[args.prime])]
 
