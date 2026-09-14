@@ -1,0 +1,269 @@
+def @Num2Bits_0(%arg0: ff) -> out: arr<2> {
+  array.new 2 %nondet
+  %felt_const_2 = 2
+  %felt_const_0 = 0
+  %felt_const_1 = 1
+  %felt_const_0_0 = 0
+  %arg1_w11 = %felt_const_0_0
+  %arg2_w11 = %felt_const_0
+  %arg3_w11 = %felt_const_1
+  repeat 2 {
+    %1_aft11 = bit.shr %arg0 %arg1_w11
+    %felt_const_1_1_aft11 = 1
+    %2_aft11 = bit.and %1_aft11 %felt_const_1_1_aft11
+    %3_aft11 = %arg1_w11
+    array.write %2_aft11 %nondet[%3_aft11]
+    %4_aft11 = %arg1_w11
+    array.read %nondet[%4_aft11] %5_aft11
+    %6_aft11 = felt.mul %5_aft11 %arg3_w11
+    %7_aft11 = felt.add %arg2_w11 %6_aft11
+    %8_aft11 = felt.add %arg3_w11 %arg3_w11
+    %felt_const_1_2_aft11 = 1
+    %9_aft11 = felt.add %arg1_w11 %felt_const_1_2_aft11
+    %arg1_w11 = %9_aft11
+    %arg2_w11 = %7_aft11
+    %arg3_w11 = %8_aft11
+    %felt_const_2_1_bef11 = 2
+    %1_bef11 = bool.lt %felt_const_2_1_bef11 %arg1_w11
+    %0#0 = %arg1_w11
+    %0#1 = %arg2_w11
+    %0#2 = %arg3_w11
+  }
+  array.copy %nondet out
+}
+def @BinSub_1(%arg0: arr<4>) -> out: arr<2> {
+  array.new 2 %nondet
+  %felt_const_2 = 2
+  %felt_const_4 = 4
+  %felt_const_0 = 0
+  %felt_const_0_0 = 0
+  %felt_const_0_1 = 0
+  %arg1_w81 = %felt_const_0_1
+  %arg2_w81 = %felt_const_4
+  repeat 2 {
+    %felt_const_0_5_aft81 = 0
+    %6_aft81 = %felt_const_0_5_aft81
+    %7_aft81 = %arg1_w81
+    %8_aft81_s0 = 2
+    %8_aft81_t0 = felt.mul %6_aft81 %8_aft81_s0
+    %8_aft81_t1 = %7_aft81
+    %8_aft81_lin = felt.add %8_aft81_t0 %8_aft81_t1
+    array.read %arg0[%8_aft81_lin] %8_aft81
+    %felt_const_2_6_aft81 = 2
+    %9_aft81 = felt.pow %felt_const_2_6_aft81 %arg1_w81
+    %10_aft81 = felt.mul %8_aft81 %9_aft81
+    %11_aft81 = felt.add %arg2_w81 %10_aft81
+    %felt_const_1_7_aft81 = 1
+    %12_aft81 = %felt_const_1_7_aft81
+    %13_aft81 = %arg1_w81
+    %14_aft81_s0 = 2
+    %14_aft81_t0 = felt.mul %12_aft81 %14_aft81_s0
+    %14_aft81_t1 = %13_aft81
+    %14_aft81_lin = felt.add %14_aft81_t0 %14_aft81_t1
+    array.read %arg0[%14_aft81_lin] %14_aft81
+    %felt_const_2_8_aft81 = 2
+    %15_aft81 = felt.pow %felt_const_2_8_aft81 %arg1_w81
+    %16_aft81 = felt.mul %14_aft81 %15_aft81
+    %17_aft81 = felt.sub %11_aft81 %16_aft81
+    %felt_const_1_9_aft81 = 1
+    %18_aft81 = felt.add %arg1_w81 %felt_const_1_9_aft81
+    %arg1_w81 = %18_aft81
+    %arg2_w81 = %17_aft81
+    %felt_const_2_5_bef81 = 2
+    %6_bef81 = bool.lt %felt_const_2_5_bef81 %arg1_w81
+    %0#0 = %arg1_w81
+    %0#1 = %arg2_w81
+  }
+  %felt_const_0_2 = 0
+  %arg1_w108 = %felt_const_0
+  %arg2_w108 = %felt_const_0_2
+  repeat 2 {
+    %6_aft108 = bit.shr %0#1 %arg2_w108
+    %felt_const_1_5_aft108 = 1
+    %7_aft108 = bit.and %6_aft108 %felt_const_1_5_aft108
+    %8_aft108 = %arg2_w108
+    array.write %7_aft108 %nondet[%8_aft108]
+    %9_aft108 = %arg2_w108
+    array.read %nondet[%9_aft108] %10_aft108
+    %felt_const_2_6_aft108 = 2
+    %11_aft108 = felt.pow %felt_const_2_6_aft108 %arg2_w108
+    %12_aft108 = felt.mul %10_aft108 %11_aft108
+    %13_aft108 = felt.add %arg1_w108 %12_aft108
+    %felt_const_1_7_aft108 = 1
+    %14_aft108 = felt.add %arg2_w108 %felt_const_1_7_aft108
+    %arg1_w108 = %13_aft108
+    %arg2_w108 = %14_aft108
+    %felt_const_2_5_bef108 = 2
+    %6_bef108 = bool.lt %felt_const_2_5_bef108 %arg2_w108
+    %1#0 = %arg1_w108
+    %1#1 = %arg2_w108
+  }
+  %felt_const_2_3 = 2
+  %2 = bit.shr %0#1 %felt_const_2_3
+  %felt_const_1 = 1
+  %3 = bit.and %2 %felt_const_1
+  aux = %3
+  %felt_const_4_4 = 4
+  %4 = felt.mul %3 %felt_const_4_4
+  %5 = felt.add %1#0 %4
+  array.copy %nondet out
+}
+def @Bits2Num_2(%arg0: arr<2>) -> out: ff {
+  %felt_const_2 = 2
+  %felt_const_0 = 0
+  %felt_const_1 = 1
+  %felt_const_0_0 = 0
+  %arg1_w222 = %felt_const_0_0
+  %arg2_w222 = %felt_const_0
+  %arg3_w222 = %felt_const_1
+  repeat 2 {
+    %1_aft222 = %arg1_w222
+    array.read %arg0[%1_aft222] %2_aft222
+    %3_aft222 = felt.mul %2_aft222 %arg3_w222
+    %4_aft222 = felt.add %arg2_w222 %3_aft222
+    %5_aft222 = felt.add %arg3_w222 %arg3_w222
+    %felt_const_1_1_aft222 = 1
+    %6_aft222 = felt.add %arg1_w222 %felt_const_1_1_aft222
+    %arg1_w222 = %6_aft222
+    %arg2_w222 = %4_aft222
+    %arg3_w222 = %5_aft222
+    %felt_const_2_1_bef222 = 2
+    %1_bef222 = bool.lt %felt_const_2_1_bef222 %arg1_w222
+    %0#0 = %arg1_w222
+    %0#1 = %arg2_w222
+    %0#2 = %arg3_w222
+  }
+  out = %0#1
+}
+def @binsub_test_3(%arg0: ff, %arg1: ff) -> out: ff {
+  %c1 = 1
+  %pod_0_@count = %c1
+  array.new 2 %pod_0_@comp_@out
+  %c1_3 = 1
+  %pod_4_@count = %c1_3
+  array.new 2 %pod_4_@comp_@out
+  %c2 = 2
+  %pod_7_@count = %c2
+  %pod_7_@comp_@out = 0
+  array.new 2 b2n.in
+  %c4 = 4
+  %pod_10_@count = %c4
+  array.new 2 %pod_10_@comp_@out
+  array.new 4 sub.in
+  %felt_const_2 = 2
+  %felt_const_0 = 0
+  n2ba.in = %arg0
+  %0 = %pod_4_@count
+  %c1_12 = 1
+  %1 = felt.sub %0 %c1_12
+  %pod_4_@count = %1
+  %c0 = 0
+  %2 = bool.eq %1 %c0
+  if (%2 == 1) {
+    %15 = n2ba.in
+    call @Num2Bits_0(n2ba.in) to n2ba.out
+    array.copy n2ba.out %pod_4_@comp_@out
+  }
+  n2bb.in = %arg1
+  %3 = %pod_0_@count
+  %c1_13 = 1
+  %4 = felt.sub %3 %c1_13
+  %pod_0_@count = %4
+  %c0_14 = 0
+  %5 = bool.eq %4 %c0_14
+  if (%5 == 1) {
+    %15 = n2bb.in
+    call @Num2Bits_0(n2bb.in) to n2bb.out
+    array.copy n2bb.out %pod_0_@comp_@out
+  }
+  %felt_const_0_15 = 0
+  %arg3_w324 = %felt_const_0_15
+  repeat 2 {
+    array.copy %pod_4_@comp_@out %14_aft324_@out
+    array.copy %14_aft324_@out %15_aft324
+    %16_aft324 = %arg3_w324
+    array.read %15_aft324[%16_aft324] %17_aft324
+    %felt_const_0_17_aft324 = 0
+    %19_aft324 = %felt_const_0_17_aft324
+    %20_aft324 = %arg3_w324
+    %17_aft324_s0 = 2
+    %17_aft324_t0 = felt.mul %19_aft324 %17_aft324_s0
+    %17_aft324_t1 = %20_aft324
+    %17_aft324_lin = felt.add %17_aft324_t0 %17_aft324_t1
+    array.write %17_aft324 sub.in[%17_aft324_lin]
+    %21_aft324 = %pod_10_@count
+    %c1_18_aft324 = 1
+    %22_aft324 = felt.sub %21_aft324 %c1_18_aft324
+    %pod_10_@count = %22_aft324
+    %c0_19_aft324 = 0
+    %23_aft324 = bool.eq %22_aft324 %c0_19_aft324
+    if (%23_aft324 == 1) {
+      call @BinSub_1(sub.in) to sub.out
+      array.copy sub.out %pod_10_@comp_@out
+    }
+    array.copy %pod_0_@comp_@out %24_aft324_@out
+    array.copy %24_aft324_@out %25_aft324
+    %26_aft324 = %arg3_w324
+    array.read %25_aft324[%26_aft324] %27_aft324
+    %felt_const_1_aft324 = 1
+    %29_aft324 = %felt_const_1_aft324
+    %30_aft324 = %arg3_w324
+    %27_aft324_s0 = 2
+    %27_aft324_t0 = felt.mul %29_aft324 %27_aft324_s0
+    %27_aft324_t1 = %30_aft324
+    %27_aft324_lin = felt.add %27_aft324_t0 %27_aft324_t1
+    array.write %27_aft324 sub.in[%27_aft324_lin]
+    %31_aft324 = %pod_10_@count
+    %c1_20_aft324 = 1
+    %32_aft324 = felt.sub %31_aft324 %c1_20_aft324
+    %pod_10_@count = %32_aft324
+    %c0_21_aft324 = 0
+    %33_aft324 = bool.eq %32_aft324 %c0_21_aft324
+    if (%33_aft324 == 1) {
+      call @BinSub_1(sub.in) to sub.out
+      array.copy sub.out %pod_10_@comp_@out
+    }
+    %felt_const_1_22_aft324 = 1
+    %34_aft324 = felt.add %arg3_w324 %felt_const_1_22_aft324
+    %arg3_w324 = %34_aft324
+    %felt_const_2_17_bef324 = 2
+    %14_bef324 = bool.lt %felt_const_2_17_bef324 %arg3_w324
+    %6#1 = %arg3_w324
+  }
+  %felt_const_0_16 = 0
+  %arg3_w379 = %felt_const_0_16
+  repeat 2 {
+    array.copy %pod_10_@comp_@out %14_aft379_@out
+    array.copy %14_aft379_@out %15_aft379
+    %16_aft379 = %arg3_w379
+    array.read %15_aft379[%16_aft379] %17_aft379
+    %19_aft379 = %arg3_w379
+    array.write %17_aft379 b2n.in[%19_aft379]
+    %20_aft379 = %pod_7_@count
+    %c1_17_aft379 = 1
+    %21_aft379 = felt.sub %20_aft379 %c1_17_aft379
+    %pod_7_@count = %21_aft379
+    %c0_18_aft379 = 0
+    %22_aft379 = bool.eq %21_aft379 %c0_18_aft379
+    if (%22_aft379 == 1) {
+      call @Bits2Num_2(b2n.in) to b2n.out
+      %pod_7_@comp_@out = b2n.out
+    }
+    %felt_const_1_aft379 = 1
+    %23_aft379 = felt.add %arg3_w379 %felt_const_1_aft379
+    %arg3_w379 = %23_aft379
+    %felt_const_2_17_bef379 = 2
+    %14_bef379 = bool.lt %felt_const_2_17_bef379 %arg3_w379
+    %7#1 = %arg3_w379
+  }
+  %8_@out = %pod_7_@comp_@out
+  %9 = %8_@out
+  out = %9
+  array.copy %pod_0_@comp_@out %10_@out
+  %11_@out = %pod_7_@comp_@out
+  array.copy %pod_4_@comp_@out %12_@out
+  array.copy %pod_10_@comp_@out %13_@out
+}
+def main(%arg0: ff, %arg1: ff) -> out: ff {
+  call @binsub_test_3(%arg0, %arg1) to out
+}

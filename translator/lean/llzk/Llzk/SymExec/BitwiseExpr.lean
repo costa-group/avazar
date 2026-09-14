@@ -323,13 +323,124 @@ def sEvalBitWiseSHLConstShift {c : ZKConfig}
   let v2 ← simpleExprToFF senv s2 -- the number of bits
   sEvalBitWiseSHLAux cfg md senv s1 v2.val id
 
+
+
+/-
+
+* bit.shl s1 s2  (right shift s1 by s2 bits)
+* k is the number of bit of the prime
+* Let [b_0,...,b_{log2(k)+1}] be the log2(k)+1 lsb bits of s2, and [bit_1,...,bit_k] be
+  the bits of s1
+
+
+f  := the formulas produced when bitifying s1 and s2
+Bs := [bit_1,...,bit_k]
+for i in [0,...,log2(k)+1] {
+  Bs' := a list of new fresh bits of length k
+  Bs'' := shl Bs by (2^i), add (2^i) zero bits at the end to get length k
+  F1 := A formula stating that the variables of Bs' and Bs are equal
+  F2 := A formula stating that the variables of Bs' and Bs'' are equal
+  FB := a formula stating that all new variables in Bs' are boolean
+  f := f ∧ FB ∧ ite(b_{i}=1, F2,  F1)
+  Bs := Bs'
+}
+
+f'  := A formula stating that all Bs are 0 (here Bs are the last bits used for the result)
+f'' := A formula stating that all Bs are boolean (maybe not needed because they are forced to be 0)
+f''' := ite( (range s2 0 k), f, (f' ∧ f'') ) /\ res = sum_i 2^i * Bi
+
+return (f''' , <res, Bs>)
+
+-/
+
+
+def sEvalBitWiseSHLNonConstShift_Loop {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD) (id : VarID)
+  (shiftAmountBits : List (FFTerm c))
+  (bitNum : Nat)
+  (currValueBits : List (FFTerm c))
+  (accmF : FFFormula c)
+  (ffVarsAccm : FFVarSet)
+  (boolVarsAccm : BoolVarSet)
+  -- result bits, formula, nextId, newFFVars, newBoolVars
+  : Except String (List (FFTerm c) × (FFFormula c) × Nat × FFVarSet × BoolVarSet) := do
+  match shiftAmountBits with
+  | [] => return (currValueBits, accmF, bitNum, ffVarsAccm, boolVarsAccm)
+  | b::bs =>
+      let n := 2^bitNum -- the number of bits to shift
+      let startId := cfg.nextId -- the starting ID for the new FFVars
+      -- generate a list of new FFVars for the new bits (and a corresponding list of terms)
+      let idxs := List.range c.k
+      let ffVars := idxs.map (fun i => FFVar.mk (startId + i)
+                                            { src_info := md.src_info,
+                                              orig_name := s!"bit{i}"
+                                            })
+      let ffVarsBits := ffVars.map (fun v => FFTerm.var v)
+      -- state that all new variables are boolean. We add these constraints to the accumulated formula
+      let accmF' := ffVarsBits.foldl (fun acc bit => add_bool_ffterm cfg bit acc) accmF
+      -- shift currValueBits : List (FFTerm c) by n
+      -- we remove the last n bits of currValueBits and then add n zero at the beginning
+      let shiftedBits := List.replicate n (FFTerm.val 0) ++ (currValueBits.reverse.drop n).reverse
+      -- a formula stating that the bits of ffVarsBits and currValueBits are equal
+      let F1 := (List.zip ffVarsBits currValueBits |>.foldl (fun acc (a, b) => FFFormula.and acc (FFFormula.eq a b)) .true)
+      -- a formula stating that the bits of ffVarsBits and shiftedBits are equal
+      let F2 := (List.zip ffVarsBits shiftedBits |>.foldl (fun acc (a, b) => FFFormula.and acc (FFFormula.eq a b)) .true)
+      -- combine the two formulas using an if-then-else based on the value of the current bit of the shift amount
+      let accmF'' := FFFormula.and accmF' (.ite (.eq b (FFTerm.val 1)) F2 F1)
+      -- instead the new variables are added to the accumulated sets
+      let ffVarsAccm := ffVarsAccm.insertMany ffVars
+      let cfg'' := { cfg with nextId := startId + c.k }
+      sEvalBitWiseSHLNonConstShift_Loop cfg'' md id bs (bitNum+1) ffVarsBits accmF'' ffVarsAccm boolVarsAccm
+
+def sEvalBitWiseSHLNonConstShift {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
+  : Except String (ExprSpec c) := do
+  let v2 ← simpleExprToTerm senv s2
+  let numOfBits := c.k.log2 + 1 -- number of bits needed to represent the shift amount
+  let binExpanSpec_for_s2 ← binexpn cfg md senv s2 -- convert the shift amount to bits
+  -- it must fit in numOfBits, so we drop the bits beyond numOfBits
+  let shiftBits := (binExpanSpec_for_s2.bits.reverse.drop (c.k-numOfBits)).reverse
+  let cfg' := { cfg with nextId := binExpanSpec_for_s2.nextId }
+  let binExpanSpec_for_s1 ← binexpn cfg' md binExpanSpec_for_s2.outSymEnv s1 -- convert the value to bits
+  let cfg'' := { cfg with nextId := binExpanSpec_for_s1.nextId }
+  -- generate the actual shifted bits and the corresponding formula, as described above
+  let (lastBits, f, nextId, newFFVars, newBoolVars) ←
+      sEvalBitWiseSHLNonConstShift_Loop
+         cfg'' md id
+         shiftBits 0 binExpanSpec_for_s1.bits (.and binExpanSpec_for_s2.f binExpanSpec_for_s1.f)
+         emptyFFVarSet
+         emptyBoolVarSet
+  let outFFVar : FFVar := { id := nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let outFFVarTerm := FFTerm.var outFFVar
+  let cfg''' := { cfg with nextId := nextId+1 }
+  -- generate the sum formula for the shifted bits
+  let sum_f := to_sum cfg''' lastBits outFFVarTerm
+  let lastBits_are_0 := lastBits.foldl (fun acc b => .and acc (.eq b (FFTerm.val 0))) FFFormula.true
+  -- to ensure that s2 is less than k, otherwise the result will be  0
+  let s2_lt_k := FFFormula.range v2 0 c.k
+  let f' := lastBits.foldl (fun acc bit => add_bool_ffterm cfg bit acc) (.and lastBits_are_0 (.eq outFFVarTerm (FFTerm.val 0)))
+  let f'' := (.and (.ite s2_lt_k f f') sum_f)
+  return {
+    inSymEnv := senv,
+    outSymEnv := binExpanSpec_for_s1.outSymEnv,
+    f := f'',
+    resTerm := outFFVarTerm
+    res := SymFFVar.var ⟨outFFVar, lastBits⟩,
+    nextId := cfg'''.nextId,
+    newFFVars := binExpanSpec_for_s2.newFFVars ∪ binExpanSpec_for_s1.newFFVars ∪ newFFVars ∪ { outFFVar },
+    newBoolVars := binExpanSpec_for_s2.newBoolVars ∪ binExpanSpec_for_s1.newBoolVars ∪ newBoolVars
+  }
+
 def sEvalBitwiseSHL {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   match sEvalBitWiseSHLConstShift cfg md senv s1 s2 id with
   | Except.ok spec => return spec
-  | Except.error _ =>  Except.error "Non-constant shl is not supported yet"
+  | Except.error _ => sEvalBitWiseSHLNonConstShift cfg md senv s1 s2 id
 
 
 def sEvalBitWiseSHRAux {c : ZKConfig}
@@ -380,12 +491,122 @@ def sEvalBitWiseSHRConstShift {c : ZKConfig}
   sEvalBitWiseSHRAux cfg md senv s1 v2.val id
 
 
+
+/-
+
+* bit.shr s1 s2  (right shift s1 by s2 bits)
+* k is the number of bit of the prime
+* Let [b_0,...,b_{log2(k)+1}] be the log2(k)+1 lsb bits of s2, and [bit_1,...,bit_k] be
+  the bits of s1
+
+
+f  := the formulas produced when bitifying s1 and s2
+Bs := [bit_1,...,bit_k]
+for i in [0,...,log2(k)+1] {
+  Bs' := a list of new fresh bits of length k
+  Bs'' := shr Bs by (2^i), add (2^i) zero bits at the beginning to get length k
+  F1 := A formula stating that the variables of Bs' and Bs are equal
+  F2 := A formula stating that the variables of Bs' and Bs'' are equal
+  FB := a formula stating that all new variables in Bs' are boolean
+  f := f ∧ FB ∧ ite(b_{i}=1, F2,  F1)
+  Bs := Bs'
+}
+
+f'  := A formula stating that all Bs are 0 (here Bs are the last bits used for the result)
+f'' := A formula stating that all Bs are boolean (maybe not needed because they are forced to be 0)
+f''' := ite( (range s2 0 k), f, (f' ∧ f'') ) /\ res = sum_i 2^i * Bi
+
+return (f''' , <res, Bs>)
+
+-/
+
+
+def sEvalBitWiseSHRNonConstShift_Loop {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD) (id : VarID)
+  (shiftAmountBits : List (FFTerm c))
+  (bitNum : Nat)
+  (currValueBits : List (FFTerm c))
+  (accmF : FFFormula c)
+  (ffVarsAccm : FFVarSet)
+  (boolVarsAccm : BoolVarSet)
+  -- result bits, formula, nextId, newFFVars, newBoolVars
+  : Except String (List (FFTerm c) × (FFFormula c) × Nat × FFVarSet × BoolVarSet) := do
+  match shiftAmountBits with
+  | [] => return (currValueBits, accmF, bitNum, ffVarsAccm, boolVarsAccm)
+  | b::bs =>
+      let n := 2^bitNum -- the number of bits to shift
+      let startId := cfg.nextId -- the starting ID for the new FFVars
+      -- generate a list of new FFVars for the new bits (and a corresponding list of terms)
+      let idxs := List.range c.k
+      let ffVars := idxs.map (fun i => FFVar.mk (startId + i)
+                                            { src_info := md.src_info,
+                                              orig_name := s!"bit{i}"
+                                            })
+      let ffVarsBits := ffVars.map (fun v => FFTerm.var v)
+      -- state that all new variables are boolean. We add these constraints to the accumulated formula
+      let accmF' := ffVarsBits.foldl (fun acc bit => add_bool_ffterm cfg bit acc) accmF
+      -- shift currValueBits : List (FFTerm c) by n
+      -- we remove the first n bits of currValueBits and then add n zero at the end
+      let shiftedBits := currValueBits.drop n ++ List.replicate n (FFTerm.val 0)
+      -- a formula stating that the bits of ffVarsBits and currValueBits are equal
+      let F1 := (List.zip ffVarsBits currValueBits |>.foldl (fun acc (a, b) => FFFormula.and acc (FFFormula.eq a b)) .true)
+      -- a formula stating that the bits of ffVarsBits and shiftedBits are equal
+      let F2 := (List.zip ffVarsBits shiftedBits |>.foldl (fun acc (a, b) => FFFormula.and acc (FFFormula.eq a b)) .true)
+      -- combine the two formulas using an if-then-else based on the value of the current bit of the shift amount
+      let accmF'' := FFFormula.and accmF' (.ite (.eq b (FFTerm.val 1)) F2 F1)
+      -- instead the new variables are added to the accumulated sets
+      let ffVarsAccm := ffVarsAccm.insertMany ffVars
+      let cfg'' := { cfg with nextId := startId + c.k }
+      sEvalBitWiseSHRNonConstShift_Loop cfg'' md id bs (bitNum+1) ffVarsBits accmF'' ffVarsAccm boolVarsAccm
+
+def sEvalBitWiseSHRNonConstShift {c : ZKConfig}
+  (cfg : SymExecConfig c) (md : CmdMD)
+  (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
+  : Except String (ExprSpec c) := do
+  let v2 ← simpleExprToTerm senv s2
+  let numOfBits := c.k.log2 + 1 -- number of bits needed to represent the shift amount
+  let binExpanSpec_for_s2 ← binexpn cfg md senv s2 -- convert the shift amount to bits
+  -- it must fit in numOfBits, so we drop the bits beyond numOfBits
+  let shiftBits := (binExpanSpec_for_s2.bits.reverse.drop (c.k-numOfBits)).reverse
+  let cfg' := { cfg with nextId := binExpanSpec_for_s2.nextId }
+  let binExpanSpec_for_s1 ← binexpn cfg' md binExpanSpec_for_s2.outSymEnv s1 -- convert the value to bits
+  let cfg'' := { cfg with nextId := binExpanSpec_for_s1.nextId }
+  -- generate the actual shifted bits and the corresponding formula, as described above
+  let (lastBits, f, nextId, newFFVars, newBoolVars) ←
+      sEvalBitWiseSHRNonConstShift_Loop
+         cfg'' md id
+         shiftBits 0 binExpanSpec_for_s1.bits (.and binExpanSpec_for_s2.f binExpanSpec_for_s1.f)
+         emptyFFVarSet
+         emptyBoolVarSet
+  let outFFVar : FFVar := { id := nextId,
+                            meta_data := { src_info := md.src_info, orig_name := id}
+                          }
+  let outFFVarTerm := FFTerm.var outFFVar
+  let cfg''' := { cfg with nextId := nextId+1 }
+  -- generate the sum formula for the shifted bits
+  let sum_f := to_sum cfg''' lastBits outFFVarTerm
+  let lastBits_are_0 := lastBits.foldl (fun acc b => .and acc (.eq b (FFTerm.val 0))) FFFormula.true
+  -- to ensure that s2 is less than k, otherwise the result will be  0
+  let s2_lt_k := FFFormula.range v2 0 c.k
+  let f' := lastBits.foldl (fun acc bit => add_bool_ffterm cfg bit acc) (.and lastBits_are_0 (.eq outFFVarTerm (FFTerm.val 0)))
+  let f'' := (.and (.ite s2_lt_k f f') sum_f)
+  return {
+    inSymEnv := senv,
+    outSymEnv := binExpanSpec_for_s1.outSymEnv,
+    f := f'',
+    resTerm := outFFVarTerm
+    res := SymFFVar.var ⟨outFFVar, lastBits⟩,
+    nextId := cfg'''.nextId,
+    newFFVars := binExpanSpec_for_s2.newFFVars ∪ binExpanSpec_for_s1.newFFVars ∪ newFFVars ∪ { outFFVar },
+    newBoolVars := binExpanSpec_for_s2.newBoolVars ∪ binExpanSpec_for_s1.newBoolVars ∪ newBoolVars
+  }
+
 def sEvalBitwiseSHR {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
   match sEvalBitWiseSHRConstShift cfg md senv s1 s2 id with
   | Except.ok spec => return spec
-  | Except.error _ =>  Except.error "Non-constant shr is not supported yet"
+  | Except.error _ => sEvalBitWiseSHRNonConstShift cfg md senv s1 s2 id
 
 end Llzk.SymExec.SymInstr
