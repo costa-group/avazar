@@ -10,7 +10,7 @@ Hierarchy:
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List, Callable, Tuple, TYPE_CHECKING, Union, Generator, Optional
+from typing import Dict, List, Callable, Tuple, TYPE_CHECKING, Union, Generator, Optional, Set
 from llzk_dialects.utils import array_felt_first_dimension
 
 
@@ -152,6 +152,22 @@ class TranslationContext:
     # Pod variables that have been traversed so far, with the name of their fields
     # and how they are translated
     ssa2pod_var: Dict[str, Dict[str, Tuple[str, Type]]] = field(default_factory=dict)
+
+    # Resolved Core variable names for pod fields that were registered (given
+    # a name) but never actually assigned a value -- see
+    # _allocate_pod_field_storage's "no placeholder" case for a bare scalar
+    # (felt/index) pod field with no initial value. Consulted by
+    # translate_assignment_core_with_ctx to skip copying such a field instead
+    # of referencing an undefined Core variable, propagating onto the
+    # destination so the skip cascades through further copies; cleared
+    # automatically the moment the field is genuinely assigned (see that
+    # function). Needs no scope-boundary clearing (unlike ssa2pod_var/
+    # ssa_to_name/var2const below): a field's flag is only ever consulted by
+    # code that runs strictly after that same field's own defining operation
+    # (pod.new's init/allocate loop, or pod.write) has already run for the
+    # current SSA name in the current scope -- LLZK is SSA, so a value is
+    # always defined before use -- making the flag self-correcting.
+    unallocated_pod_fields: Set[str] = field(default_factory=set)
 
     # Pre-pass maps built once per compute function, cleared after:
     #   pod_ssa_name -> struct member base name (from @X$inputs writes)

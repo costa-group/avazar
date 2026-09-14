@@ -573,3 +573,111 @@ class TestIdxPodInputNaming:
         assert ctx.ssa2pod_var["%p"]["@idx_1_1"][0] == "components#1#1"
         assert ctx.ssa2pod_var["components#0#0"]["@in"][0] == "components#0#0.in"
         assert ctx.ssa2pod_var["components#1#1"]["@in"][0] == "components#1#1.in"
+
+
+class TestPodUnallocatedFields:
+    """
+    Tests for the "never-initialized scalar pod field" fix: a bare
+    scalar (felt/index) pod field with no initial value gets no
+    placeholder storage (_allocate_pod_field_storage), so copying it must
+    be skipped instead of referencing an undefined Core variable.
+
+    Mirrors the real sha256_2_test_concrete.mlir bug: a "counting pod"
+    (`!pod.type<[@count: index, @comp: ..., @params: !pod.type<[]>]>`)
+    only ever initializes @comp; wrapping 64 of these into an idx-pod
+    (`pod.new {@idx_0 = %pod_17, ...}`) previously produced
+    "%outer_@idx_0_@count = %pod_17_@count", a reference to a Core
+    variable never assigned anywhere.
+    """
+
+    def _ctx(self):
+        return TranslationContext()
+
+    def test_uninitialized_scalar_field_copy_is_skipped_but_comp_still_copies(self):
+        ctx = self._ctx()
+        inner = PodNew.parse(
+            "%inner = pod.new {@comp = %v} : "
+            "!pod.type<[@count: index, @comp: !felt.type]>"
+        )
+        list(inner.to_core(ctx))
+        assert "%inner_@count" in ctx.unallocated_pod_fields
+
+        outer = PodNew.parse(
+            "%outer = pod.new {@idx_0 = %inner} : "
+            "!pod.type<[@idx_0: !pod.type<[@count: index, @comp: !felt.type]>]>"
+        )
+        lines = list(outer.to_core(ctx))
+
+        # No line at all references @count's copy -- it's genuinely skipped,
+        # not merely hidden behind some other assignment.
+        assert not any("@count" in line for line in lines)
+        # @comp, which WAS initialized, is still copied normally.
+        assert lines == ["%outer_@idx_0_@comp = %inner_@comp"]
+        # The skip cascades: the destination is itself now marked
+        # unallocated too, so a FURTHER copy of %outer's @count also skips.
+        assert "%outer_@idx_0_@count" in ctx.unallocated_pod_fields
+
+    def test_write_to_unallocated_field_self_heals_and_later_copy_works(self):
+        ctx = self._ctx()
+        inner = PodNew.parse("%inner = pod.new : !pod.type<[@count: index]>")
+        list(inner.to_core(ctx))
+        assert "%inner_@count" in ctx.unallocated_pod_fields
+
+        write = PodWrite.parse(
+            "pod.write %inner [@count] = %newval : "
+            "!pod.type<[@count: index]>, index"
+        )
+        lines = list(write.to_core(ctx))
+        assert lines == ["%inner_@count = %newval"]
+        # Writing a real value re-enables the field -- no explicit clear()
+        # anywhere; the discard happens as a side effect of the assignment
+        # itself (see translate_assignment_core_with_ctx's final fallback).
+        assert "%inner_@count" not in ctx.unallocated_pod_fields
+
+        outer = PodNew.parse(
+            "%outer = pod.new {@idx_0 = %inner} : "
+            "!pod.type<[@idx_0: !pod.type<[@count: index]>]>"
+        )
+        lines = list(outer.to_core(ctx))
+        assert lines == ["%outer_@idx_0_@count = %inner_@count"]
+
+    def test_read_of_unallocated_field_yields_nothing_and_propagates(self):
+        ctx = self._ctx()
+        op = PodNew.parse("%p = pod.new : !pod.type<[@count: index]>")
+        list(op.to_core(ctx))
+        assert "%p_@count" in ctx.unallocated_pod_fields
+
+        read = PodRead.parse(
+            "%v = pod.read %p [@count] : !pod.type<[@count: index]>, index"
+        )
+        lines = list(read.to_core(ctx))
+        assert lines == []
+        # The read's own result is unallocated too, so re-wrapping it into
+        # another pod (e.g. `pod.new {@y = %v}`) would also correctly skip.
+        assert "%v" in ctx.unallocated_pod_fields
+
+    def test_reused_raw_name_self_heals_across_unrelated_registrations(self):
+        # Raw SSA names (e.g. "%p") are only meaningful within one function
+        # and are legitimately reused elsewhere (see function.py's own
+        # per-function ctx.ssa2pod_var.clear()). unallocated_pod_fields is
+        # deliberately NOT cleared at any scope boundary -- this proves it
+        # doesn't need to be: a later, unrelated registration that DOES
+        # give the same raw field name a real value self-heals via the
+        # write's own discard, with no stale contamination.
+        ctx = self._ctx()
+        first = PodNew.parse("%p = pod.new : !pod.type<[@count: index]>")
+        list(first.to_core(ctx))
+        assert "%p_@count" in ctx.unallocated_pod_fields
+
+        second = PodNew.parse(
+            "%p = pod.new {@count = %c768} : !pod.type<[@count: index]>"
+        )
+        list(second.to_core(ctx))
+        assert "%p_@count" not in ctx.unallocated_pod_fields
+
+        outer = PodNew.parse(
+            "%outer = pod.new {@idx_0 = %p} : "
+            "!pod.type<[@idx_0: !pod.type<[@count: index]>]>"
+        )
+        lines = list(outer.to_core(ctx))
+        assert lines == ["%outer_@idx_0_@count = %p_@count"]
