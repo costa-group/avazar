@@ -75,6 +75,16 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
     if alias is not None:
         rhs = SSAVar(alias)
 
+    # rhs is a pod field that was registered a name but never actually given
+    # a value (see _allocate_pod_field_storage's "no placeholder" case for a
+    # bare scalar pod field with no initial value) -- copying it would
+    # reference an undefined Core variable, so emit nothing instead, and
+    # propagate the same "no value" status onto lhs so a further copy of IT
+    # is skipped too, cascading through any chain of copies.
+    if rhs.name in ctx.unallocated_pod_fields:
+        ctx.unallocated_pod_fields.add(lhs.name)
+        return ""
+
     # Anchored to the outermost type, not a plain substring check: a pod that
     # merely CONTAINS a struct-typed field somewhere inside (e.g.
     # "!pod.type<[@comp: !struct.type<...>, ...]>") is not itself a struct
@@ -180,7 +190,15 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
             if dest is None:
                 new_pod_vars[record] = (initial_value, type_)
             else:
-                if dest != initial_value:
+                # A field reused from lhs's OWN pre-existing destination
+                # (has_own_dest) whose source has no value of its own is
+                # skipped without touching dest's (possibly already-good)
+                # allocation status -- the generic unallocated-propagation
+                # above only applies safely to a dest freshly minted for
+                # this copy (the `else: dest = f"{lhs.name}_{record}"`
+                # branch), never to a name that predates this assignment.
+                skip = has_own_dest and initial_value in ctx.unallocated_pod_fields
+                if not skip and dest != initial_value:
                     assignments.append(translate_assignment_core_with_ctx(
                         SSAVar(dest),
                         SSAVar(initial_value),
@@ -193,6 +211,11 @@ def translate_assignment_core_with_ctx(lhs: SSAVar, rhs: SSAVar, type_: Type, ct
 
         return '\n'.join(a for a in assignments if a)
 
+    # lhs now genuinely holds a value -- clear any stale "unallocated" flag
+    # so a later copy of this same field correctly resumes copying it (see
+    # PodWrite, which relies entirely on this to "re-enable" a field it
+    # just wrote a real value into).
+    ctx.unallocated_pod_fields.discard(lhs.name)
     return translate_assignment_core(lhs.to_core(), rhs.to_core(), is_ff)
 
 

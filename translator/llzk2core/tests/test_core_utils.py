@@ -676,3 +676,48 @@ class TestAssignPodVarsTypeDriven:
         )
 
         assert result == "%lhs_@count = %rhs_@count"
+
+
+class TestUnallocatedPodFieldHasOwnDest:
+    """
+    translate_assignment_core_with_ctx's pod-copy loop must not clobber
+    lhs's own PRE-EXISTING (real, already-assigned) semantic destination
+    just because THIS particular copy's source field happens to be
+    unallocated -- only a destination freshly minted for this copy may be
+    marked unallocated. Otherwise a later, legitimate copy OUT of lhs's own
+    destination would be wrongly skipped even though it still holds
+    whatever real value it had before this assignment.
+    """
+
+    def test_pre_existing_semantic_dest_untouched_when_source_is_unallocated(self):
+        ctx = TranslationContext()
+        # lhs already has its own real, previously-assigned semantic
+        # destination for this record (e.g. a member-backed pod field).
+        ctx.ssa2pod_var["%lhs"] = {"@count": ("ark.count", Type("index"))}
+        # rhs's own @count field has no value of its own.
+        ctx.ssa2pod_var["%rhs"] = {"@count": ("%rhs_@count", Type("index"))}
+        ctx.unallocated_pod_fields.add("%rhs_@count")
+
+        type_ = Type("!pod.type<[@count: index]>")
+        result = translate_assignment_core_with_ctx(
+            SSAVar("%lhs"), SSAVar("%rhs"), type_, ctx
+        )
+
+        # Nothing to copy from an unallocated source...
+        assert result == ""
+        # ...but lhs's own pre-existing destination is left exactly as it
+        # was -- NOT marked unallocated, since it may already hold a good
+        # value this copy correctly chose not to overwrite.
+        assert "ark.count" not in ctx.unallocated_pod_fields
+        assert ctx.ssa2pod_var["%lhs"]["@count"][0] == "ark.count"
+
+        # A further, unrelated copy sourced from "%lhs" (i.e. from
+        # "ark.count") still proceeds normally instead of being wrongly
+        # skipped -- using a destination that itself already has its own
+        # semantic dest, so this actually emits a real copy rather than
+        # the semantic direct-propagation (dest=None) shortcut.
+        ctx.ssa2pod_var["%dst2"] = {"@count": ("dst2.count", Type("index"))}
+        further = translate_assignment_core_with_ctx(
+            SSAVar("%dst2"), SSAVar("%lhs"), type_, ctx
+        )
+        assert further == "dst2.count = ark.count"
