@@ -3,6 +3,7 @@ import Llzk.Language.Core.Syntax.Parser
 import Llzk.Basic
 import Llzk.Language.Core.Analysis.Liveness
 import Llzk.Language.Core.Analysis.Useless_commands
+import Llzk.Language.Core.Analysis.Useless_commands_2iter
 import Llzk.FFConstraints.SMT
 import Llzk.SymExec.BigStep
 import Llzk.SymExec.Basic
@@ -14,6 +15,11 @@ open Llzk.Language.Core.Syntax.Parser
 open Llzk.Language.Core.Analysis.Liveness
 open Llzk.Language.Core.Analysis.Useless_commands
 open Llzk.SymExec.Basic
+
+/-- Experimental "2 iterations" variant of `removeUselessProg`, used only by
+    the `-ru2i`/`--removeuseless2iter` flag to compare against the checked
+    fixpoint in `removeUselessProg`. -/
+def removeUselessProg2iter := @Llzk.Language.Core.Analysis.Useless_commands_2iter.removeUselessProg
 open Llzk.SymExec.BigStep
 open Llzk.FFConstraints.SMT
 
@@ -68,12 +74,12 @@ def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Str
          | "smtlib" =>
             IO.println s!"Generating encoding using SMT-LIB format..."
             IO.println s!""
-            @printConstraintSystem c outStream constraints
+            @printConstraintSystem c outStream constraints (p.hasFlag "indent_formula")
             outStream.flush
          | "json" =>
             IO.println s!"Generating encoding using JSON format..."
             IO.println s!""
-            @printConstraintSystem_asJSON c outStream constraints
+            @printConstraintSystem_asJSON c outStream constraints (p.hasFlag "indent_formula")
             outStream.flush
          | fmt =>
             IO.println s!"Unsupported SMT output format: {fmt}."
@@ -93,7 +99,10 @@ def prettyPrinting
      -- (it never reads pre-existing metadata), so calling addLivenessProg
      -- first would be redundant, wasted work when -ru is set.
      let progToPrint ←
-       if p.hasFlag "removeuseless" then
+       if p.hasFlag "removeuseless2iter" then
+         IO.println s!"Removing useless commands (experimental 2-iterations variant)..."
+         pure (removeUselessProg2iter prog)
+       else if p.hasFlag "removeuseless" then
          IO.println s!"Removing useless commands..."
          pure (removeUselessProg prog)
        else
@@ -108,9 +117,17 @@ def prettyPrinting
 def getZKConfig (p : Parsed) : IO ZKConfig := do
   let zkConfigStr := p.flag! "zkconfig" |>.as! String
   match zkConfigStr with
+  | "f7" => return F7
   | "f11" => return F11
-  | "f5" => return F5
-  | "g64" => return goldilocks64
+  | "g64" => return goldilocks
+  | "goldilocks" => return goldilocks
+  | "secp256r1" => return secp256r1
+  | "pallas" => return pallas
+  | "vesta" => return vesta
+  | "bn128" => return bn128
+  | "grumpkin" => return grumpkin
+  | "bls12377" => return bls12377
+  | "bls12381" => return bls12381
   | _ => panic! s!"Unsupported ZKConfig: {zkConfigStr}"
 
 /- Main entry point for the command line interface -/
@@ -139,12 +156,15 @@ def llzkCmd : Cmd := `[Cli|
   FLAGS:
     sl, showliveness;        "Show liveness information for each command."
     ru, removeuseless;       "Remove useless commands from the program."
+    ru2i, removeuseless2iter; "Experimental: remove useless commands using a hard-coded \
+    2-iterations loop boundary instead of the checked fixpoint (pretty-print only)."
     pp, prettyprint;         "Parse and pretty-print the input program."
     se, symbolicexec;        "Perform symbolic execution of the input program."
-    zk, zkconfig : String;   "The ZKConfig to use for symbolic execution (f11,g64). Default is f11."
+    zk, zkconfig : String;   "The ZKConfig to use for symbolic execution (f7,f11,g64,goldilocks, secq256r1, pallas, vesta, bn128, grumpkin, bls12377, bls12381). Default is f11."
     m, main : String;        "The main function for symbolic execution (default: main)"
     o, output : String;      "The output file. If not provided, stdout is used."
     smt2, smt2_format : String;  "The format of the SMT output (smtlib,json). Default is smtlib."
+    indent, indent_formula;  "Enable indentation when printing formulas."
     cmpscm, comparison_scheme : String; "Encoding of signed comparison (range_of_diff, normal). \
     Default is range_of_diff."
     boolscm, boolean_scheme : String; "Encoding of boolean variables for bits (range, mul). \

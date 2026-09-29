@@ -99,7 +99,31 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
           -- None of the expressions are considered since they are supposed to be constant
           -- expressions. Also the loop variable 'idx' is not considered since it is a
           -- constant variable. We need to iterate the loop twice to get the fixed point of the
-          -- live variables. 2 iteration are enough.
+          -- live variables. 2 iterations are enough:
+          --
+          -- `addLivenessCmds body S` is a single backward pass over `body`, and within one
+          -- such pass every variable's fate is decided by its *last* definition in `body`
+          -- (the first one the backward scan reaches) -- what's needed to compute that
+          -- definition's own right-hand side is chased and found within that same pass, no
+          -- matter how long the dependency chain is. So re-running the pass with a bigger
+          -- seed `liveIn ∪ out` (the first pass's own result, unioned with `out`) can never
+          -- uncover anything the first pass didn't already find: a variable newly present in
+          -- that seed either isn't touched by `body` at all (it passes straight through,
+          -- already accounted for) or hits that exact same last-definition point and stops
+          -- there identically -- a bigger seed can never "unlock" an earlier, shadowed
+          -- definition of the same variable, since that earlier definition is always
+          -- intercepted by the later one before the backward scan can reach it. Hence the
+          -- second pass already computes the true fixed point of "what does `body` itself
+          -- require", for any body shape, including a body that itself contains further
+          -- (nested) loops, since a nested loop's own live_in is likewise an exact function
+          -- of whatever boundary it is queried with.
+          --
+          -- Caveat: this only accounts for `body` executing at least once. Nothing in the AST
+          -- guarantees `rep` is nonzero, and a 0-iteration loop must let every variable in
+          -- `out` flow through unchanged -- but `liveIn'` below is never re-unioned with
+          -- `out`, so a variable in `out` that `body`'s first statement unconditionally
+          -- overwrites is dropped from `live_in`. That is a separate, known soundness gap,
+          -- unrelated to the round-count argument above.
           let body' := addLivenessCmds body out
           let liveIn := getCmdsLiveIn body'
           let body'' := addLivenessCmds body (liveIn.union out)
@@ -110,7 +134,8 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
         | .loop _rep body =>
           -- live_in = live_in of (body;body)
           -- The loop variable 'idx' is not considered since it is a constant variable.
-          -- We need to iterate the loop twice to get the fixed point of the live variables.
+          -- We need to iterate the loop twice to get the fixed point of the live variables
+          -- (same reasoning, and the same 0-iteration caveat, as the `.loop_exp` case above).
           let body' := addLivenessCmds body out
           let liveIn := getCmdsLiveIn body'
           let body'' := addLivenessCmds body (liveIn.union out)

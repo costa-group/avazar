@@ -1,7 +1,7 @@
 import pytest
 from llzk_dialects.array import ArrayNew, ArrayRead, ArrayWrite, ArrayExtract, ArrayInsert, ArrayLen
-from llzk_dialects.core import SSAVar, Type, TranslationContext, LoopIndexedName
-from llzk_dialects.utils import array_felt_dimensions, array_felt_first_dimension
+from llzk_dialects.core import SSAVar, Type, TranslationContext
+from llzk_dialects.utils import array_felt_dimensions, array_felt_first_dimension, array_dimensions
 
 
 class TestArray:
@@ -159,6 +159,45 @@ class TestArrayFeltDimensions:
 
     def test_first_dimension_non_felt(self):
         assert array_felt_first_dimension("!array.type<index>") is None
+
+    # ── Anchoring regression: a pod merely CONTAINING a nested felt array ────
+    # must not itself be misread as an array (an unanchored search would
+    # match the "<3 x !felt.type<...>>" pattern buried inside the pod
+    # field's own type string).
+
+    def test_pod_with_nested_felt_array_field_is_not_an_array(self):
+        assert array_felt_dimensions(
+            '!pod.type<[@in: !array.type<3 x !felt.type<"bn128">>]>'
+        ) is None
+
+    def test_pod_with_nested_felt_array_field_first_dimension_is_none(self):
+        assert array_felt_first_dimension(
+            '!pod.type<[@in: !array.type<3 x !felt.type<"bn128">>]>'
+        ) is None
+
+
+# ── array_dimensions (element-type-agnostic) ──────────────────────────────────
+
+class TestArrayDimensions:
+
+    def test_1d_pod_element(self):
+        assert array_dimensions("!array.type<4 x !pod.type<[]>>") == [4]
+
+    def test_2d_struct_element_comma(self):
+        assert array_dimensions("!array.type<2,3 x !struct.type<@S<[]>>>") == [2, 3]
+
+    def test_short_form(self):
+        assert array_dimensions('<16 x !felt.type<"bn128">>') == [16]
+
+    def test_non_array_scalar(self):
+        assert array_dimensions('!felt.type<"bn128">') is None
+
+    # ── Anchoring regression (same class of bug as array_felt_dimensions) ────
+
+    def test_pod_with_nested_array_field_is_not_an_array(self):
+        assert array_dimensions(
+            '!pod.type<[@comp: !array.type<3 x !struct.type<@S<[]>>>]>'
+        ) is None
 
 
 # ── to_core ───────────────────────────────────────────────────────────────────
@@ -347,39 +386,51 @@ class TestArrayToCore:
         # SSA-derived name must alias to the semantic one too.
         assert ctx.ssa_to_name["%v_@in1_last"] == "last_0.in1_last"
 
-    def test_read_to_core_pod_semantic_naming_loop_indexed_not_unrolled(self):
+    def test_read_to_core_pod_semantic_naming_non_constant_index(self):
         # A registered component array whose index isn't a compile-time
-        # constant (a real runtime loop variable) gets a LoopIndexedName
-        # from the pre-pass. If the enclosing loop wasn't unrolled
-        # (ctx.unroll_index is None — no function.call inside it, so it
-        # stayed a plain "repeat"), it resolves to the bare member name.
+        # constant (a real runtime loop variable) gets the bare member name
+        # from the pre-pass — there's no single instance to name more
+        # specifically at translation time (any further per-iteration
+        # disambiguation is resolved afterwards by llzk_cli).
         op = ArrayRead.parse(
             "%v = array.read %arr [%i]"
             " : !array.type<2 x !pod.type<[@in1_last: !felt.type<\"bn128\">]>>,"
             " !pod.type<[@in1_last: !felt.type<\"bn128\">]>"
         )
-        op._semantic_base = LoopIndexedName("last")
+        op._semantic_base = "last"
         ctx = self._ctx()
         lines = list(op.to_core(ctx))
         assert lines == ["array.read %arr_@in1_last[%i] last.in1_last"]
         assert ctx.ssa2pod_var["%v"]["@in1_last"][0] == "last.in1_last"
 
-    def test_read_to_core_pod_semantic_naming_loop_indexed_unrolled(self):
-        # Same LoopIndexedName, but the enclosing loop *was* unrolled
-        # (SCFFor/SCFWhile.to_core set ctx.unroll_index for this copy of the
-        # loop's body because it contains a function.call) — resolves to
-        # "last#3", matching the naming a scalar subcomponent would get.
+    # ── ArrayRead — pod nested inside pod (pod-in-pod) ────────────────────────
+    # Regression: a nested (non-empty) pod field extracted from an array of
+    # pods must get its OWN ctx.ssa2pod_var entry, not just leaf storage from
+    # _flatten_container_fields -- otherwise a later pod.read chained through
+    # it (pod.read (pod.read %arr[%i])[@in]) has nowhere to resolve to.
+
+    def test_read_to_core_pod_default_naming_nested_pod_registers_recursively(self):
         op = ArrayRead.parse(
             "%v = array.read %arr [%i]"
-            " : !array.type<2 x !pod.type<[@in1_last: !felt.type<\"bn128\">]>>,"
-            " !pod.type<[@in1_last: !felt.type<\"bn128\">]>"
+            " : !array.type<2 x !pod.type<[@idx_0: !pod.type<[@in: !felt.type<\"bn128\">]>]>>,"
+            " !pod.type<[@idx_0: !pod.type<[@in: !felt.type<\"bn128\">]>]>"
         )
-        op._semantic_base = LoopIndexedName("last")
         ctx = self._ctx()
-        ctx.unroll_index = 3
-        lines = list(op.to_core(ctx))
-        assert lines == ["array.read %arr_@in1_last[%i] last#3.in1_last"]
-        assert ctx.ssa2pod_var["%v"]["@in1_last"][0] == "last#3.in1_last"
+        list(op.to_core(ctx))
+        assert ctx.ssa2pod_var["%v"]["@idx_0"][0] == "%v_@idx_0"
+        assert ctx.ssa2pod_var["%v_@idx_0"]["@in"][0] == "%v_@idx_0_@in"
+
+    def test_read_to_core_pod_semantic_naming_nested_pod_registers_recursively(self):
+        op = ArrayRead.parse(
+            "%v = array.read %arr [%i]"
+            " : !array.type<2 x !pod.type<[@idx_0: !pod.type<[@in: !felt.type<\"bn128\">]>]>>,"
+            " !pod.type<[@idx_0: !pod.type<[@in: !felt.type<\"bn128\">]>]>"
+        )
+        op._semantic_base = "last_0"
+        ctx = self._ctx()
+        list(op.to_core(ctx))
+        assert ctx.ssa2pod_var["%v"]["@idx_0"][0] == "last_0.idx_0"
+        assert ctx.ssa2pod_var["last_0.idx_0"]["@in"][0] == "last_0.idx_0_in"
 
     # ── ArrayWrite.to_core ────────────────────────────────────────────────────
 

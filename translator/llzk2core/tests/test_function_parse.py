@@ -1,7 +1,8 @@
 import pytest
 from llzk_dialects.function import FunctionReturn, FunctionCall, FunctionDef
-from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext, LoopIndexedName
+from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.felt import FeltConst, FeltBinary
+from llzk_dialects.pod import PodNew, PodRead
 
 
 class TestFunction:
@@ -23,6 +24,23 @@ class TestFunction:
     def test_return_single(self):
         op = FunctionReturn.parse("  function.return %r : !felt.type  ")
         assert op.operands == [SSAVar("%r")]
+
+    def test_return_nd_array_type_not_split_on_dimension_comma(self):
+        # Regression: a single returned N-D array type's own dimension list
+        # (e.g. "17,17") contains a comma that is NOT a top-level type
+        # separator -- a naive split(",") on the types string broke it into
+        # two malformed fragments ("!array.type<17" and
+        # "17 x !felt.type<...>>"), silently producing a Type whose
+        # to_core() is None (a bare "!array.type<17" matches neither the
+        # array nor the felt-scalar case) -- which then leaked the literal
+        # string "None" into the emitted Core function signature. Mirrors
+        # the real @POSEIDON_M_2 shape from poseidon3_test_concrete.mlir.
+        op = FunctionReturn.parse(
+            'function.return %1 : !array.type<17,17 x !felt.type<"bn128">>'
+        )
+        assert op.operands == [SSAVar("%1")]
+        assert op.types == [Type('!array.type<17,17 x !felt.type<"bn128">>')]
+        assert op.types[0].to_core() == "arr<289>"
 
     def test_return_match(self):
         assert FunctionReturn.match("function.return") is True
@@ -63,7 +81,7 @@ class TestFunction:
         assert FunctionCall.match("function.call @f(%x)") is True
         assert FunctionCall.match("function.return") is False
 
-    # ── FunctionCall.to_core — LoopIndexedName resolution ────────────────────
+    # ── FunctionCall.to_core — bare member-hint naming ───────────────────────
 
     def _call_ctx(self):
         ctx = TranslationContext()
@@ -71,29 +89,51 @@ class TestFunction:
         ctx.core_func2args["Sub"] = ([], [("@out", Type("!felt.type"))])
         return ctx
 
-    def test_call_to_core_loop_indexed_hint_not_unrolled(self):
-        # _member_hint is a LoopIndexedName when the component array this
-        # call feeds was read at a non-constant index (struct.py's
-        # _annotate_array_component_reads). If the enclosing loop wasn't
-        # unrolled (ctx.unroll_index is None), it resolves to the bare name.
+    def test_call_to_core_member_hint_non_constant_index(self):
+        # _member_hint is the bare member name when the component array
+        # this call feeds was read at a non-constant index (struct.py's
+        # _annotate_array_component_reads) — there's no single instance to
+        # name more specifically at translation time.
         op = FunctionCall.parse("%r = function.call @Sub(%x)")
-        op._member_hint = LoopIndexedName("last")
+        op._member_hint = "last"
         ctx = self._call_ctx()
         lines = list(op.to_core(ctx))
         assert lines == ["call Sub(%x) to last.out"]
         assert ctx.ssa_to_name["%r_@out"] == "last.out"
 
-    def test_call_to_core_loop_indexed_hint_unrolled(self):
-        # SCFFor/SCFWhile.to_core sets ctx.unroll_index while translating
-        # the current copy of a loop it unrolled (because the loop body
-        # contains this very call) — the hint resolves to "last#2".
-        op = FunctionCall.parse("%r = function.call @Sub(%x)")
-        op._member_hint = LoopIndexedName("last")
-        ctx = self._call_ctx()
-        ctx.unroll_index = 2
+    # ── FunctionCall.to_core — pure function callee (no struct.def) ──────────
+
+    def test_call_to_core_pure_function_single_result(self):
+        # A pure function's out-args are its own function.return operand
+        # names, never '@'-prefixed (see poly.py's _register_pure_function).
+        # The call's result should just be used directly — no member/signal
+        # lookup, no ctx.ssa_to_name registration.
+        op = FunctionCall.parse(
+            "%40 = function.call @pointAdd_1::@pointAdd_1(%29, %31) "
+            ': (!felt.type, !felt.type) -> !array.type<2 x !felt.type<"bn128">>'
+        )
+        ctx = TranslationContext()
+        ctx.llzk_func2core["@pointAdd_1::@pointAdd_1"] = "@pointAdd_1"
+        ctx.core_func2args["@pointAdd_1"] = (
+            [("%arg0", Type("!felt.type")), ("%arg1", Type("!felt.type"))],
+            [("%nondet", Type('!array.type<2 x !felt.type<"bn128">>'))],
+        )
         lines = list(op.to_core(ctx))
-        assert lines == ["call Sub(%x) to last#2.out"]
-        assert ctx.ssa_to_name["%r_@out"] == "last#2.out"
+        assert lines == ["call @pointAdd_1(%29,%31) to %40"]
+        assert ctx.ssa_to_name == {}
+
+    def test_call_to_core_pure_function_multi_result(self):
+        op = FunctionCall.parse(
+            "%50:2 = function.call @foo::@foo(%1) : (!felt.type) -> (!felt.type, !felt.type)"
+        )
+        ctx = TranslationContext()
+        ctx.llzk_func2core["@foo::@foo"] = "@foo"
+        ctx.core_func2args["@foo"] = (
+            [("%arg0", Type("!felt.type"))],
+            [("%r0", Type("!felt.type")), ("%r1", Type("!felt.type"))],
+        )
+        lines = list(op.to_core(ctx))
+        assert lines == ["call @foo(%1) to %50#0,%50#1"]
 
     # ── FunctionDef (BlockOperation) ─────────────────────────────────────────
 
@@ -136,3 +176,68 @@ class TestFunction:
     def test_function_def_match(self):
         assert FunctionDef.match("function.def @f(%x: !felt.type) {") is True
         assert FunctionDef.match("function.call @f(%x)") is False
+
+    # ── FunctionDef.to_core — signature-out naming ───────────────────────────
+
+    def test_function_def_to_core_pure_function_keeps_percent_out_name(self):
+        # A struct out-arg ('@out') gets its '@' stripped in the signature.
+        # A pure function's out-arg is just its own SSA name ('%nondet') —
+        # not '@'-prefixed — and should be kept as-is, consistent with how
+        # its input args already keep their '%' prefix in the signature.
+        self.lines = [
+            'function.def @pointAdd_1(%arg0: !felt.type) -> !array.type<2 x !felt.type<"bn128">> {',
+            'function.return %nondet : !array.type<2 x !felt.type<"bn128">>',
+            "}",
+        ]
+        op, _ = FunctionDef.parse(self.lines, 0, self._felt_parse_fn)
+        ctx = TranslationContext()
+        ctx.current_core_function = "@pointAdd_1"
+        ctx.core_func2args["@pointAdd_1"] = (
+            [("%arg0", Type("!felt.type"))],
+            [("%nondet", Type('!array.type<2 x !felt.type<"bn128">>'))],
+        )
+        out = ''.join(op.to_core(ctx))
+        assert "def @pointAdd_1(%arg0: ff) -> %nondet: arr<2> {" in out
+
+    # ── FunctionDef.to_core — cross-function scope leak ──────────────────────
+
+    def test_to_core_clears_stale_ssa2pod_var_and_var2const_from_a_prior_function(self):
+        # Regression: pedersen_test_concrete.mlir crashed with
+        # KeyError: '@in' inside PodRead.to_core. Root cause: LLZK/MLIR SSA
+        # numbers restart from %0/%1/... in every function, but
+        # ctx.ssa2pod_var/ctx.var2const are flat, whole-translation dicts
+        # that were never cleared between functions (unlike
+        # ctx.ssa_to_name/ctx.input_pod_to_member, which struct.py's
+        # StructDef.to_core already clears around each struct's own
+        # compute). Two unrelated structs' own @compute bodies each used
+        # "%5" for a differently-shaped pod; the second one's pod.read
+        # crashed on the first one's stale, still-live registration.
+        pod_new = PodNew.parse(
+            '%5 = pod.new {@in = %x} : !pod.type<[@in: !felt.type]>'
+        )
+        pod_read = PodRead.parse(
+            '%6 = pod.read %5 [@in] : !pod.type<[@in: !felt.type]>, !felt.type'
+        )
+        func_return = FunctionReturn.parse('function.return %6 : !felt.type')
+        op = FunctionDef(
+            GlobalVariable.parse("@f"), "%x: !felt.type -> !felt.type",
+            [pod_new, pod_read, func_return],
+        )
+
+        ctx = TranslationContext()
+        ctx.current_core_function = "@f"
+        ctx.core_func2args["@f"] = (
+            [("%x", Type("!felt.type"))], [("%6", Type("!felt.type"))]
+        )
+        # Simulate a PRIOR, unrelated function's leftover state under the
+        # exact same bare SSA name this function also happens to reuse.
+        ctx.ssa2pod_var["%5"] = {"@count": ("%5_@count", Type("index"))}
+        ctx.var2const["%5"] = 999
+
+        out = ''.join(op.to_core(ctx))
+
+        # previously: KeyError on "@in" (the stale "%5" entry only had
+        # "@count", not "@in") -- now the pod.new's own fresh registration
+        # is used instead.
+        assert "%6 = %5_@in" in out
+        assert "%5" not in ctx.var2const

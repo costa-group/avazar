@@ -16,38 +16,18 @@ from typing import List, Optional, Tuple, Generator, Dict, Set, Union
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, Type,
-    TranslationContext, ParseFn,
+    TranslationContext, ParseFn, _apply_rename,
 )
 from llzk_dialects.definitions import Dialect
-from llzk_dialects.core_utils import translate_assignment_core_with_ctx, infer_n_repetitions_from_expressions
+from llzk_dialects.core_utils import (
+    translate_assignment_core_with_ctx, infer_n_repetitions_from_expressions,
+    infer_iteration_sequence_from_expressions, SymbolicSteps,
+    scoped_branch_registrations, FIELD_PRIMES,
+)
 from llzk_dialects.felt import FeltBinary, FeltConst
 from llzk_dialects.bool import BoolCmp
 from llzk_dialects.utils import split_top_level_commas
 from llzk_dialects.loc_parser import strip_trailing_loc
-
-
-def _contains_function_call(ops: List[Operation]) -> bool:
-    """
-    Recursively check whether a body contains a function.call anywhere,
-    at any nesting depth (through scf.if/scf.for/scf.while sub-bodies).
-
-    Drives SCFFor/SCFWhile's choice between translating a loop as a single
-    Core "repeat N" block (no call — today's behavior) or unrolling it into
-    N literal copies (a call present — see their to_core methods): a
-    subcomponent instantiated inside a loop needs a distinct name per
-    iteration (LoopIndexedName, resolved via ctx.unroll_index), which a
-    single generic "repeat" body has no way to provide.
-    """
-    from llzk_dialects.function import FunctionCall
-
-    for op in ops:
-        if isinstance(op, FunctionCall):
-            return True
-        for attr in ('body', 'then_body', 'else_body', 'before_body', 'after_body'):
-            sub = getattr(op, attr, None)
-            if sub and _contains_function_call(sub):
-                return True
-    return False
 
 
 class SCFYield(Operation):
@@ -178,19 +158,11 @@ class SCFCondition(Operation):
         cond_res_index = 0
         for result in ctx.scf_result:
             for component in range(result.n_components):
-                # Retrieve the component and the yield operand at current
-                # index "yield_res_index"
+                # Retrieve the component and the condition operand at the
+                # current index "cond_res_index"
                 lhs = SSAVar(result.to_core_component(component))
                 rhs = self.args[cond_res_index]
                 type_ = self.types[cond_res_index]
-
-                to_core_type = type_.to_core()
-                assert to_core_type is not None, f"Error recognizing type inside a cond expression: {self}"
-
-                # Depending on whether the type corresponds to an array
-                # or to a ff, we generate a copy or a direct assignment
-                # Here, we don't consider translate_assignment_core_with_ctx because
-                # the variables are not constants (they are unfolded depending on the branch)
 
                 yield translate_assignment_core_with_ctx(lhs, rhs, type_, ctx)
                 cond_res_index += 1
@@ -314,37 +286,70 @@ class SCFIf(BlockOperation):
         # * Then we translate the body of the if and of the else. The transformation here just
         #   needs to consider that "scf.yield" assigns the variables yielded to the results
         #   (which can be multiple)
+        #
+        # Core has no compile-time branching, so both branches are always
+        # translated as real runtime code below, unconditionally -- that
+        # part is unchanged. But ctx.var2const is a *compile-time* side
+        # channel for constant folding (see felt.py/bool.py), and without
+        # the bookkeeping below it would simply be left holding whichever
+        # branch was translated last (the else branch, or the then branch if
+        # there's no else) for each declared result, regardless of the
+        # condition's actual value -- silently wrong the moment anything
+        # downstream (e.g. a nested loop's bound) relies on it. When the
+        # condition itself is a known compile-time constant (folded by
+        # bool.py's BoolCmp/BoolBinary/BoolNot), propagate the *taken*
+        # branch's own folded value instead; when it isn't, make sure no
+        # stale value survives.
+        cond_const = ctx.var2const.get(self.condition.name)
+        result_keys = [r.to_core_component(i) for r in self.results for i in range(r.n_components)]
+
         yield f"if ({self.condition.to_core()} == 1) {{"
         yield from self._translate_branch(self.then_body, ctx)
+        then_vals = {key: ctx.var2const.get(key) for key in result_keys}
         yield "}\n"
         # New modification: if can appear with no else, even it empty
+        else_vals = {key: None for key in result_keys}
         if self.else_body is not None:
             yield "else {"
             yield from self._translate_branch(self.else_body, ctx)
+            else_vals = {key: ctx.var2const.get(key) for key in result_keys}
             yield "}"
 
+        for key in result_keys:
+            taken_val = None
+            if cond_const is not None:
+                taken_val = then_vals[key] if cond_const else else_vals[key]
+            if taken_val is not None:
+                ctx.var2const[key] = taken_val
+            else:
+                ctx.var2const.pop(key, None)
+
     def _translate_branch(self, branch_ops: List[Operation], ctx: TranslationContext) -> Generator[str, None, None]:
+        # Scoped so a branch-local temporary (e.g. a PodRead/PodNew that
+        # happens to reuse a raw SSA name also used by the sibling branch --
+        # valid under SSA, since only one branch executes at runtime) is
+        # never visible to the sibling branch's own translation, nor to any
+        # code after this if closes -- except this if's own declared
+        # results, which are what a trailing scf.yield legitimately writes.
+        with scoped_branch_registrations(ctx, self.results):
+            for statement in branch_ops[:-1]:
+                # Process all the operands as usual, except for the scf.yield
+                yield from statement.to_core(ctx)
 
-        for statement in branch_ops[:-1]:
-            # Process all the operands as usual, except for the scf.yield
-            yield from statement.to_core(ctx)
+            # Last instruction is either a yield that must be translated or no results are returned
+            assert len(self.results) == 0 or isinstance(branch_ops[-1], SCFYield), f"Last instruction of SCFIf must be a yield and it is {branch_ops[-1]}"
 
-        # Last instruction is either a yield that must be translated or no results are returned
-        assert len(self.results) == 0 or isinstance(branch_ops[-1], SCFYield), f"Last instruction of SCFIf must be a yield and it is {branch_ops[-1]}"
-
-        if len(branch_ops) > 0:
-            # For the yield operation, we must retrieve the results variables
-            # If it is not a yield, ctx.scf_result does not affect the translation
-            ctx.scf_result = self.results
-            yield from branch_ops[-1].to_core(ctx)
-            ctx.scf_result = []
+            if len(branch_ops) > 0:
+                # For the yield operation, we must retrieve the results variables
+                # If it is not a yield, ctx.scf_result does not affect the translation
+                ctx.scf_result = self.results
+                yield from branch_ops[-1].to_core(ctx)
+                ctx.scf_result = []
 
     def update_variables(self, rename: Dict[str, str]) -> None:
-        if self.condition.name in rename:
-            self.condition.name = rename[self.condition.name]
+        self.condition.name = _apply_rename(self.condition.name, rename)
         for r in self.results:
-            if r.name in rename:
-                r.name = rename[r.name]
+            r.name = _apply_rename(r.name, rename)
         for op in self.then_body:
             op.update_variables(rename)
         if self.else_body:
@@ -433,22 +438,26 @@ class SCFExecuteRegion(BlockOperation):
         # Unconditional, executed exactly once: no wrapper syntax needed at
         # all in Core — just inline the body, then let the terminating
         # scf.yield assign into this op's own result(s), the same way
-        # SCFIf._translate_branch handles one branch's final yield.
-        for statement in self.body[:-1]:
-            yield from statement.to_core(ctx)
+        # SCFIf._translate_branch handles one branch's final yield. Scoped
+        # for the same reason as SCFIf's branches (same shape: a declared,
+        # escaping result vs. block-local temporaries) -- not strictly
+        # required here since execute_region has no sibling-branch
+        # alternative, but consistent/future-proof.
+        with scoped_branch_registrations(ctx, self.results):
+            for statement in self.body[:-1]:
+                yield from statement.to_core(ctx)
 
-        assert len(self.results) == 0 or isinstance(self.body[-1], SCFYield), \
-            f"Last instruction of scf.execute_region must be a yield and it is {self.body[-1]}"
+            assert len(self.results) == 0 or isinstance(self.body[-1], SCFYield), \
+                f"Last instruction of scf.execute_region must be a yield and it is {self.body[-1]}"
 
-        if len(self.body) > 0:
-            ctx.scf_result = self.results
-            yield from self.body[-1].to_core(ctx)
-            ctx.scf_result = []
+            if len(self.body) > 0:
+                ctx.scf_result = self.results
+                yield from self.body[-1].to_core(ctx)
+                ctx.scf_result = []
 
     def update_variables(self, rename: Dict[str, str]) -> None:
         for r in self.results:
-            if r.name in rename:
-                r.name = rename[r.name]
+            r.name = _apply_rename(r.name, rename)
         for op in self.body:
             op.update_variables(rename)
 
@@ -530,8 +539,45 @@ class SCFFor(BlockOperation):
             depth += lines[end].count('{') - lines[end].count('}')
 
         body = parse_fn(cursor + 1, end)
+
+        # Disambiguate this for's own body-computed result names across
+        # sibling/nested scf.for occurrences, mirroring SCFWhile.parse's
+        # before_rename/after_rename (see its comment for the rationale --
+        # sibling/nested loops can independently reuse the same LLZK-level
+        # SSA numbers). SCFFor previously had no such tagging at all; a
+        # nested scf.for only got disambiguated incidentally, if it happened
+        # to sit inside an enclosing scf.while whose own rename recursed
+        # into it.
+        body_rename: Dict[str, str] = {
+            name: name + f"_f{cursor}"
+            for name in _collect_result_names(body)
+        }
+        for op in body:
+            op.update_variables(body_rename)
+
+        # Same collision risk as SCFWhile's init_args/after_args (see there):
+        # this for's own induction variable and iter_args' block-arg names
+        # are used as literal keys into ctx.ssa2pod_var/ctx.var2const, flat
+        # dicts spanning the whole function. Tag them with this for's own
+        # cursor too. Independent dict from body_rename above -- a name is
+        # either a block-arg binding or an op result, never both, so the two
+        # dicts' keys can't collide.
+        iv = SSAVar.parse(m["iv"])
+        own_arg_names: Set[str] = {iv.name} | {a.name for a, _ in iter_args}
+        block_arg_rename: Dict[str, str] = {
+            name: name + f"_f{cursor}"
+            for name in own_arg_names
+        }
+        for op in body:
+            op.update_variables(block_arg_rename)
+        if iv.name in block_arg_rename:
+            iv.name = block_arg_rename[iv.name]
+        for block_arg, _init_val in iter_args:
+            if block_arg.name in block_arg_rename:
+                block_arg.name = block_arg_rename[block_arg.name]
+
         return (
-            SCFFor(results, SSAVar.parse(m["iv"]),
+            SCFFor(results, iv,
                    SSAVar.parse(m["lb"]), SSAVar.parse(m["ub"]),
                    SSAVar.parse(m["step"]), iter_args, body),
             end + 1,
@@ -539,18 +585,13 @@ class SCFFor(BlockOperation):
 
     def update_variables(self, rename: Dict[str, str]) -> None:
         for r in self.results:
-            if r.name in rename:
-                r.name = rename[r.name]
-        if self.iv.name in rename:
-            self.iv.name = rename[self.iv.name]
+            r.name = _apply_rename(r.name, rename)
+        self.iv.name = _apply_rename(self.iv.name, rename)
         for var in (self.lb, self.ub, self.step):
-            if var.name in rename:
-                var.name = rename[var.name]
+            var.name = _apply_rename(var.name, rename)
         for block_arg, init_val in self.iter_args:
-            if block_arg.name in rename:
-                block_arg.name = rename[block_arg.name]
-            if init_val.name in rename:
-                init_val.name = rename[init_val.name]
+            block_arg.name = _apply_rename(block_arg.name, rename)
+            init_val.name = _apply_rename(init_val.name, rename)
         for op in self.body:
             op.update_variables(rename)
 
@@ -564,35 +605,20 @@ class SCFFor(BlockOperation):
         assert ub_val is not None, \
             f"SCFFor: upper bound {self.ub.name} must be a known constant at translation time"
 
-        # A body with no function.call is translated once, mirroring how
-        # scf.while's loop-carried variables are translated rather than
-        # unrolling into per-iteration Python-duplicated text: the induction
-        # variable is initialised once before the loop and advanced by
-        # 'step' at the end of a single (repeated) body.
-        #
-        # A body containing a call is instead unrolled into one literal copy
-        # per iteration, since a subcomponent instantiated inside the loop
-        # needs a distinct name per iteration (LoopIndexedName, resolved via
-        # ctx.unroll_index) that a single generic body has no way to give it.
-        if _contains_function_call(self.body):
-            prev_unroll_index = ctx.unroll_index
-            for i, iv_val in enumerate(range(lb_val, ub_val, step_val)):
-                ctx.var2const[self.iv.name] = iv_val
-                yield f"{self.iv.to_core()} = {iv_val}"
-                ctx.unroll_index = i
-                for op in self.body:
-                    yield from op.to_core(ctx)
-            ctx.unroll_index = prev_unroll_index
-        else:
-            steps = len(range(lb_val, ub_val, step_val))
-            ctx.var2const[self.iv.name] = lb_val
-            yield f"{self.iv.to_core()} = {lb_val}"
+        # The body is translated once, wrapped in a Core "repeat" block: the
+        # induction variable is initialised once before the loop and
+        # advanced by 'step' at the end of the (repeated) body. Per-iteration
+        # subcomponent naming is no longer this translator's concern (it's
+        # resolved afterwards by llzk_cli), so there is no unrolling path.
+        steps = len(range(lb_val, ub_val, step_val))
+        ctx.var2const[self.iv.name] = lb_val
+        yield f"{self.iv.to_core()} = {lb_val}"
 
-            yield f"repeat {steps} {{"
-            for op in self.body:
-                yield from op.to_core(ctx)
-            yield f"{self.iv.to_core()} = felt.add {self.iv.to_core()} {step_val}"
-            yield "}"
+        yield f"repeat {steps} {{"
+        for op in self.body:
+            yield from op.to_core(ctx)
+        yield f"{self.iv.to_core()} = felt.add {self.iv.to_core()} {step_val}"
+        yield "}"
 
         ctx.var2const.pop(self.iv.name, None)
 
@@ -629,7 +655,8 @@ class SCFWhile(BlockOperation):
                  func_type: List[List[Type]],
                  before_body: List[Operation],
                  after_args: List[Tuple[SSAVar, Type]],
-                 after_body: List[Operation]):
+                 after_body: List[Operation],
+                 cursor: Optional[int] = None):
         self.results = results
         # init_args: list of (block_arg, initial_value) pairs
         self.init_args: List[Tuple[SSAVar, SSAVar]] = init_args
@@ -638,6 +665,12 @@ class SCFWhile(BlockOperation):
         # after_args: SSA names introduced at the start of the after region
         self.after_args = after_args
         self.after_body = after_body
+        # This while's own header line index at parse time -- used to mint a
+        # collision-free fresh Core variable name for a symbolic step count
+        # (see infer_n_repetitions_from_expressions' SymbolicSteps), the same
+        # way before_rename/after_rename already use it to disambiguate
+        # sibling whiles reusing the same LLZK-level SSA numbers.
+        self.cursor = cursor
 
     def dialect(self) -> Dialect:
         return Dialect("scf")
@@ -791,9 +824,45 @@ class SCFWhile(BlockOperation):
         for op in after_body:
             op.update_variables(after_rename)
 
+        # The above only disambiguates body-COMPUTED names. This while's own
+        # block-argument names (init_args'/after_args' own SSAVars, e.g.
+        # "%arg8") are untouched by before_rename/after_rename (that's the
+        # point of after_arg_names, above) -- but they are still used as
+        # literal keys into ctx.ssa2pod_var/ctx.var2const/ctx.ssa_to_name,
+        # which are flat dicts spanning the whole function. Two sibling or
+        # nested scf.while occurrences that happen to reuse the same raw
+        # block-arg name (very common -- LLZK's block-arg numbering isn't
+        # globally unique) but bind it to completely different values would
+        # silently clobber each other's registration. Tag with this while's
+        # own cursor, exactly like before_rename/after_rename do for result
+        # names, so every occurrence's block-arg names become unique too.
+        own_arg_names: Set[str] = (
+            {v.name for v, _ in init_args} | {v.name for v, _ in after_args}
+        )
+        block_arg_rename: Dict[str, str] = {
+            name: name + f"_w{cursor}"
+            for name in own_arg_names
+        }
+        for op in before_body:
+            op.update_variables(block_arg_rename)
+        for op in after_body:
+            op.update_variables(block_arg_rename)
+
+        # init_args/after_args are plain tuples, not Operations --
+        # update_variables never reaches these SSAVar objects directly, so
+        # mutate them here. init_val (the incoming value from the enclosing
+        # scope) is deliberately left untouched -- it isn't this while's own
+        # binder.
+        for block_arg, _init_val in init_args:
+            if block_arg.name in block_arg_rename:
+                block_arg.name = block_arg_rename[block_arg.name]
+        for arg_var, _type in after_args:
+            if arg_var.name in block_arg_rename:
+                arg_var.name = block_arg_rename[arg_var.name]
+
         return (
             SCFWhile(results, init_args, types,
-                     before_body, after_args, after_body),
+                     before_body, after_args, after_body, cursor),
             after_end + 1,
         )
 
@@ -814,9 +883,32 @@ class SCFWhile(BlockOperation):
             if constant is not None:
                 initial_values[lhs.name] = constant
 
+        # Also bind the while's own external result name(s) to the same
+        # initial values, mirroring SCFCondition.to_core's own
+        # component-wise pairing (self.results against the loop-carried
+        # args, in the same order). A 0-repetition loop is entirely
+        # legitimate (e.g. a specialized pure function's loop bound
+        # resolving to 0 -- see llzk.py's loop-bound-parametric pure
+        # function specialization) and never reaches
+        # SCFCondition.to_core at all, since that only runs once per
+        # actual iteration inside the repeat block below; without this,
+        # code after the loop would reference an always-undefined
+        # variable in that case. Redundant (but harmless -- Core allows
+        # reassignment, same as the loop body's own per-iteration
+        # rebinding of the block args) whenever the loop does run, since
+        # the last iteration's own binding simply overwrites this one.
+        cond_res_index = 0
+        for result in self.results:
+            for component in range(result.n_components):
+                lhs = SSAVar(result.to_core_component(component))
+                _block_arg, initial_rhs = first_region_args[cond_res_index]
+                yield translate_assignment_core_with_ctx(
+                    lhs, initial_rhs, in_types[cond_res_index], ctx)
+                cond_res_index += 1
+
         # Then, we determine the number of steps in the while loop and
         # assign it to repeat
-        steps = self._extract_step(initial_values)
+        steps = self._extract_step(initial_values, ctx)
 
         def emit_iteration() -> Generator[str, None, None]:
             # The order of the regions to synthesize is reversed, as the before body
@@ -849,27 +941,50 @@ class SCFWhile(BlockOperation):
             yield from scf_condition.to_core(ctx)
             ctx.scf_result = []
 
-        # A body with no function.call is translated once, wrapped in a
-        # Core "repeat" block (today's behavior). A body containing a call
-        # is instead unrolled into one literal copy per iteration, since a
-        # subcomponent instantiated inside the loop needs a distinct name
-        # per iteration (LoopIndexedName, resolved via ctx.unroll_index)
-        # that a single generic body has no way to give it — see
-        # _contains_function_call and SCFFor.to_core's identical branching.
-        if _contains_function_call(self.before_body) or _contains_function_call(self.after_body):
-            prev_unroll_index = ctx.unroll_index
-            for i in range(steps):
-                ctx.unroll_index = i
-                yield from emit_iteration()
-            ctx.unroll_index = prev_unroll_index
+        # The body is translated once, wrapped in a Core "repeat" block --
+        # either a fixed count (steps is a concrete int) or a count computed
+        # once, up front, from a Core expression (steps is a SymbolicSteps,
+        # when the bound isn't statically known but is still computable).
+        # Per-iteration subcomponent naming is no longer this translator's
+        # concern (it's resolved afterwards by llzk_cli), so there is no
+        # unrolling path -- a symbolic bound no longer needs to reject a
+        # body containing a function.call.
+        if isinstance(steps, SymbolicSteps):
+            for op in steps.setup_ops:
+                yield from op.to_core(ctx)
+
+            fresh_var = f"%steps_{self.cursor}"
+            bound_core = steps.bound_var.to_core()
+
+            if steps.variable_is_lhs:
+                first_op, first_args = ("felt.sub", (bound_core, steps.initial_value))
+            else:
+                first_op, first_args = ("felt.sub", (steps.initial_value, bound_core))
+
+            if steps.op == "le":
+                pre_var = f"{fresh_var}_pre"
+                yield f"{pre_var} = {first_op} {first_args[0]} {first_args[1]}"
+                yield f"{fresh_var} = felt.add {pre_var} 1"
+            else:
+                yield f"{fresh_var} = {first_op} {first_args[0]} {first_args[1]}"
+
+            yield f"repeat {fresh_var} {{"
+            yield from emit_iteration()
+            yield f"}}"
         else:
             yield f"repeat {steps} {{"
             yield from emit_iteration()
             yield f"}}"
 
-    def _extract_step(self, initial_values: Dict[str, int]) -> int:
+    def _build_while_var_expressions(self) -> Tuple[Dict[str, "Union[str, Operation]"], SSAVar]:
         """
-        Extracts how many iterations are performed in the loop
+        Structural analysis shared by _extract_step (how many iterations)
+        and _extract_index_sequence (what values are actually visited):
+        builds var2expression (the condition's own free variables, resolved
+        back through the before/after regions and the yield linking them)
+        and identifies the condition variable itself. Extracted verbatim
+        from _extract_step's own original body so both callers can never
+        drift apart.
         """
         # We assume the following structure:
         # * Second Region / First region for the first iteration, as the first region
@@ -924,9 +1039,38 @@ class SCFWhile(BlockOperation):
                 var2expression[arg_var.name] = cond_arg.name
                 while_variables.remove(arg_var.name)
 
-        # Finally, using the information from var2expression, we can process the repeat information
-        return infer_n_repetitions_from_expressions(while_variables, var2expression,
-                                                    condition_var.name, initial_values)
+        return var2expression, condition_var
+
+    def _extract_step(self, initial_values: Dict[str, int],
+                      ctx: TranslationContext) -> Union[int, SymbolicSteps]:
+        """
+        Extracts how many iterations are performed in the loop
+        """
+        var2expression, condition_var = self._build_while_var_expressions()
+        return infer_n_repetitions_from_expressions(var2expression, condition_var.name,
+                                                    initial_values, ctx.var2const, ctx.prime)
+
+    def _extract_index_sequence(self, initial_values: Dict[str, int],
+                                var2const: Dict[str, int],
+                                prime: int = FIELD_PRIMES["goldilocks"]) -> Optional[List[int]]:
+        """
+        Like _extract_step, but returns the actual sequence of values the
+        loop-carried variable visits (one per iteration, in order) instead
+        of just the count -- used by struct.py's array-component
+        index-sequence pre-pass to attribute each concrete call inside an
+        array-of-components population loop to the real array index it was
+        called with. Unlike _extract_step, takes a plain var2const dict
+        directly (not a TranslationContext) since this pre-pass runs before
+        real to_core translation, when ctx.var2const is still empty --
+        callers supply their own statically-folded map instead.
+
+        Returns None when the sequence isn't fully concrete (a
+        SymbolicSteps-shaped bound) -- see
+        infer_iteration_sequence_from_expressions.
+        """
+        var2expression, condition_var = self._build_while_var_expressions()
+        return infer_iteration_sequence_from_expressions(var2expression, condition_var.name,
+                                                          initial_values, var2const, prime)
 
     def _process_while_variables(self, operations: List[Operation], while_variables: Set[str],
                                  var2expression: Dict[str, Union[str, Operation]]):
@@ -957,11 +1101,9 @@ class SCFWhile(BlockOperation):
 
     def update_variables(self, rename: Dict[str, str]) -> None:
         for r in self.results:
-            if r.name in rename:
-                r.name = rename[r.name]
+            r.name = _apply_rename(r.name, rename)
         for _block_arg, init_val in self.init_args:
-            if init_val.name in rename:
-                init_val.name = rename[init_val.name]
+            init_val.name = _apply_rename(init_val.name, rename)
         for op in self.before_body:
             op.update_variables(rename)
         for op in self.after_body:

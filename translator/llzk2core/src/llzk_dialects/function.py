@@ -9,15 +9,16 @@ Operations:
 """
 
 import re
-from typing import List, Optional, Tuple, Dict, Generator, Union
+from typing import List, Optional, Tuple, Dict, Generator
 
 from llzk_dialects.core import (
     Operation, BlockOperation, SSAVar, GlobalVariable, Type,
-    TranslationContext, ParseFn, LoopIndexedName,
+    TranslationContext, ParseFn,
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.core_utils import signature_args
 from llzk_dialects.utils import split_top_level_commas
+from llzk_dialects.loc_parser import strip_trailing_loc
 
 
 def _parse_in_arg(arg: str) -> Tuple[str, str, str]:
@@ -30,9 +31,23 @@ def _parse_in_arg(arg: str) -> Tuple[str, str, str]:
     a multi-attribute dict — whose own comma would otherwise be mistaken for
     an argument separator by a naive split — is correctly recognised and
     stripped from the type instead of leaking into it.
+
+    Real --llzk_plaintext output attaches its own ' loc(...)' suffix to
+    almost every argument individually (e.g. '... {function.arg_name =
+    "k"} loc("f.circom":31:28)'), not just once at the end of the whole
+    function.def line -- LLZKParser's own line-level loc-stripping
+    (loc_parser.py) only ever removes the outermost/last such suffix on a
+    line, leaving every other argument's embedded loc(...) in place. Without
+    stripping it here too, `rest` never ends with '}' and the whole
+    attribute dict (function.arg_name included) silently leaks into the
+    type string instead of being recognised -- in practice, in_arg_names
+    returns {} for every real multi-arg example, never just the synthetic
+    loc-free fixtures unit tests use.
     """
     arg = arg.strip()
     name, _, rest = arg.partition(":")
+    rest = rest.strip()
+    rest, _loc = strip_trailing_loc(rest)
     rest = rest.strip()
     attrs = ""
     if rest.endswith("}"):
@@ -87,7 +102,11 @@ class FunctionReturn(Operation):
             if m["ops"] else []
         )
         types = (
-            [Type.parse(t.strip()) for t in m["types"].split(",")]
+            # split_top_level_commas, not a naive split(",") -- a single
+            # returned type can itself contain a top-level comma (e.g. an
+            # N-D array's dimension list, "!array.type<17,17 x !felt.type<...>>"),
+            # which a naive split would break into two malformed fragments.
+            [Type.parse(t.strip()) for t in split_top_level_commas(m["types"])]
             if m["types"] else []
         )
         return FunctionReturn(operands, types)
@@ -129,11 +148,10 @@ class FunctionCall(Operation):
         self.args = args
         self.func_type = func_type
         # Set by the pre-pass in _build_component_naming_maps; None until
-        # then. A LoopIndexedName means the component array this call feeds
-        # was read at a non-constant index — resolved in to_core below via
-        # ctx.unroll_index if SCFFor/SCFWhile unrolled the enclosing loop
-        # (see scf.py's _contains_function_call), else left bare.
-        self._member_hint: Optional[Union[str, LoopIndexedName]] = None
+        # then, or the bare member name when the component array this call
+        # feeds was read at a non-constant index (there's no single instance
+        # to name more specifically at translation time).
+        self._member_hint: Optional[str] = None
 
     def dialect(self) -> Dialect:
         return Dialect("function")
@@ -183,18 +201,30 @@ class FunctionCall(Operation):
                                        "But {self.results} is returned instead"
         result = self.results[0]
 
-        member = self._member_hint
-        if isinstance(member, LoopIndexedName):
-            member = member.resolve(ctx.unroll_index)
+        # A pure function (no struct.def wrapping it — see poly.py's
+        # _register_pure_function) has no named struct signals to look up:
+        # its out-args are the function's own return-operand names, never
+        # '@'-prefixed (struct/pure registrations are never mixed for one
+        # callee, so checking the first out-arg is sufficient). Its result(s)
+        # are used directly downstream (e.g. array.read %40[...]), so they
+        # just take the call's own result name(s) via the standard
+        # multi-component convention — no semantic-name lookup, no
+        # ctx.ssa_to_name registration needed.
+        is_struct_style = bool(out_args) and out_args[0][0].startswith("@")
 
-        if member:
-            out_var_names = []
-            for out_arg, _ in out_args:
-                out_name = f"{member}.{out_arg[1:]}"  # strip @ from out_arg
-                ctx.ssa_to_name[f"{result.name}_{out_arg}"] = out_name
-                out_var_names.append(out_name)
+        if is_struct_style:
+            member = self._member_hint
+
+            if member:
+                out_var_names = []
+                for out_arg, _ in out_args:
+                    out_name = f"{member}.{out_arg[1:]}"  # strip @ from out_arg
+                    ctx.ssa_to_name[f"{result.name}_{out_arg}"] = out_name
+                    out_var_names.append(out_name)
+            else:
+                out_var_names = [f"{result.name}_{out_arg}" for out_arg, _ in out_args]
         else:
-            out_var_names = [f"{result.name}_{out_arg}" for out_arg, _ in out_args]
+            out_var_names = [result.to_core_component(i) for i in range(len(out_args))]
 
         yield f"call {core_func}({args}) to {','.join(out_var_names)}"
 
@@ -288,14 +318,47 @@ class FunctionDef(BlockOperation):
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Translating a function assumes that the output (and input) information
         # is already stored in the context. This is because CORE does not exactly
-        # share the same signature (in particular, out_args are public struct members).
+        # share the same signature (in particular, out_args are usually public
+        # struct members — but for a "pure" function with no struct.def
+        # wrapping it, they're just its own function.return operand names).
+
+        # A function body is LLZK's own IsolatedFromAbove scope boundary --
+        # SSA numbers (e.g. "%5") are only meaningful within one function and
+        # restart from low integers in every function. ctx.ssa2pod_var and
+        # ctx.var2const are flat, whole-translation dicts keyed by these bare
+        # strings; without clearing them here, a leftover entry from an
+        # earlier, unrelated function's own "%5" silently corrupts this
+        # function's translation the moment it reuses the same name for a
+        # different value (confirmed via pedersen_test_concrete.mlir: two
+        # unrelated structs' @compute both used "%5"/"%2#1" for differently-
+        # shaped pods, and the second one's read crashed on the first one's
+        # stale registration). ctx.ssa_to_name/ctx.input_pod_to_member don't
+        # need the same treatment here -- struct.py's StructDef.to_core
+        # already clears those around each struct's own compute.
+        ctx.ssa2pod_var.clear()
+        ctx.var2const.clear()
+
+        # Specialization seed (see core.py's pending_const_seed): a pure
+        # function whose own loop bound depends on a parameter that's a
+        # compile-time constant at every call site gets that parameter
+        # folded in here, once per clone -- empty (a no-op) for every
+        # non-specialized function.
+        ctx.var2const.update(ctx.pending_const_seed)
+        ctx.pending_const_seed = {}
+
         core_name = ctx.current_core_function
         in_args, out_args = ctx.core_func2args[core_name]
 
         ctx.param_arg_names.update(self.in_arg_names)
 
         signature_in = signature_args(in_args)
-        signature_out = ', '.join(f"{arg[1:]}: {type_.to_core()}" for arg, type_ in out_args)
+        # Strip a leading '@' (struct-member convention) when present; a
+        # pure function's out-arg is just its own '%'-prefixed SSA name,
+        # kept as-is — matching how its input args already keep theirs.
+        signature_out = ', '.join(
+            f"{(arg[1:] if arg.startswith('@') else arg)}: {type_.to_core()}"
+            for arg, type_ in out_args
+        )
 
         # We start with the declaration of the function and the args
         yield f"def {core_name}({signature_in}) -> {signature_out} {{\n"

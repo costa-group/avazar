@@ -1,6 +1,6 @@
 import pytest
 from llzk_dialects.bool import BoolBinary, BoolNot, BoolCmp, BoolAssert
-from llzk_dialects.core import SSAVar
+from llzk_dialects.core import SSAVar, TranslationContext
 
 
 class TestBool:
@@ -45,6 +45,47 @@ class TestBool:
         assert BoolNot.match("%r = bool.not %x") is True
         assert BoolNot.match("%r = bool.and %x, %y") is False
 
+    # ── BoolBinary.to_core / BoolNot.to_core constant folding ────────────────
+    #
+    # Not required by the motivating example (a bare BoolCmp condition), but
+    # closes the same gap for a bool.and/or/xor/not-gated scf.if elsewhere.
+
+    def test_and_to_core_folds_when_both_operands_known(self):
+        op = BoolBinary(SSAVar("%r"), "bool.and", SSAVar("%a"), SSAVar("%b"))
+        ctx = TranslationContext()
+        ctx.var2const["%a"] = 1
+        ctx.var2const["%b"] = 0
+        list(op.to_core(ctx))
+        assert ctx.var2const["%r"] == 0
+
+    def test_or_to_core_folds(self):
+        op = BoolBinary(SSAVar("%r"), "bool.or", SSAVar("%a"), SSAVar("%b"))
+        ctx = TranslationContext()
+        ctx.var2const["%a"] = 1
+        ctx.var2const["%b"] = 0
+        list(op.to_core(ctx))
+        assert ctx.var2const["%r"] == 1
+
+    def test_binary_to_core_does_not_fold_when_operand_unknown(self):
+        op = BoolBinary(SSAVar("%r"), "bool.and", SSAVar("%a"), SSAVar("%b"))
+        ctx = TranslationContext()
+        ctx.var2const["%a"] = 1
+        list(op.to_core(ctx))
+        assert "%r" not in ctx.var2const
+
+    def test_not_to_core_folds_when_operand_known(self):
+        op = BoolNot(SSAVar("%r"), SSAVar("%a"))
+        ctx = TranslationContext()
+        ctx.var2const["%a"] = 0
+        list(op.to_core(ctx))
+        assert ctx.var2const["%r"] == 1
+
+    def test_not_to_core_does_not_fold_when_operand_unknown(self):
+        op = BoolNot(SSAVar("%r"), SSAVar("%a"))
+        ctx = TranslationContext()
+        list(op.to_core(ctx))
+        assert "%r" not in ctx.var2const
+
     # ── BoolCmp ───────────────────────────────────────────────────────────────
 
     def test_cmp_eq(self):
@@ -70,6 +111,35 @@ class TestBool:
         for pred in ("eq", "ne", "lt", "le", "gt", "ge"):
             op = BoolCmp.parse(f"%r = bool.cmp {pred}(%a, %b)")
             assert op.predicate == pred
+
+    # ── BoolCmp.to_core constant folding ──────────────────────────────────────
+    #
+    # This is what lets an scf.if's condition become a known compile-time
+    # constant (see SCFIf.to_core), which transitively lets a nested loop's
+    # bound resolve once an enclosing loop's induction variable is concrete.
+
+    @pytest.mark.parametrize("pred,a,b,expected", [
+        ("eq", 3, 3, 1), ("eq", 3, 4, 0),
+        ("ne", 3, 4, 1), ("ne", 3, 3, 0),
+        ("lt", 3, 4, 1), ("lt", 4, 3, 0),
+        ("le", 3, 3, 1), ("le", 4, 3, 0),
+        ("gt", 4, 3, 1), ("gt", 3, 4, 0),
+        ("ge", 3, 3, 1), ("ge", 3, 4, 0),
+    ])
+    def test_cmp_to_core_folds_each_predicate(self, pred, a, b, expected):
+        op = BoolCmp(SSAVar("%r"), pred, SSAVar("%a"), SSAVar("%b"), [])
+        ctx = TranslationContext()
+        ctx.var2const["%a"] = a
+        ctx.var2const["%b"] = b
+        list(op.to_core(ctx))
+        assert ctx.var2const["%r"] == expected
+
+    def test_cmp_to_core_does_not_fold_when_operand_unknown(self):
+        op = BoolCmp(SSAVar("%r"), "lt", SSAVar("%a"), SSAVar("%b"), [])
+        ctx = TranslationContext()
+        ctx.var2const["%a"] = 3
+        list(op.to_core(ctx))
+        assert "%r" not in ctx.var2const
 
     # ── BoolAssert ────────────────────────────────────────────────────────────
 

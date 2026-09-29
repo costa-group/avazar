@@ -1,5 +1,6 @@
 import Mathlib.Data.ZMod.Basic
 import Mathlib.Data.Nat.Prime.Basic
+import Llzk.Primes
 
 /- Configuration for ZK environment: the prime, number of bits, and
    some corresponding requirements
@@ -61,28 +62,106 @@ def mkZKConfig (k_input : Nat) (p_input : Nat) : Except String ZKConfig :=
     throw s!"Error: {p_input} is not a prime number."
 
 
-/- A prime number used in the Goldilocks field -/
-def goldilocks_p : ℕ := 18446744069414584321 -- 2^64 - 2^32 + 1
+/- The Goldilocks field configuration.
 
-
-/- Use an axiom to provide the proof that goldilocks_p is a prime
-   without the kernel "thinking"
+   We need to add a fact that goldilocks.p is a prime so Lean can
+   find it automatically.
 -/
-axiom goldilocks_is_prime : Nat.Prime goldilocks_p
-
-/- The Goldilocks field configuration -/
-def goldilocks64 : ZKConfig := {
+def goldilocks : ZKConfig := {
   k := 64
   p := goldilocks_p
   p_prime := goldilocks_is_prime
   p_fits := by rfl
 }
 
+instance : Fact goldilocks.p.Prime := ⟨goldilocks.p_prime⟩
 
-/- We need to add a fact that myConfig.p is a prime so Lean can
+
+/- The secp256r1 field configuration.
+
+   We need to add a fact that secp256r1.p is a prime so Lean can
    find it automatically.
 -/
-instance : Fact goldilocks64.p.Prime := ⟨goldilocks64.p_prime⟩
+
+def secp256r1 : ZKConfig := {
+  k := 256
+  p := secp256r1_p
+  p_prime := secp256r1_is_prime
+  p_fits := by rfl
+}
+
+instance : Fact secp256r1.p.Prime := ⟨secp256r1.p_prime⟩
+
+
+/- The Pallas field configuration.
+
+   We need to add a fact that pallas.p is a prime so Lean can
+   find it automatically.
+-/
+def pallas : ZKConfig := {
+  k := 255
+  p := pallas_p
+  p_prime := pallas_is_prime
+  p_fits := by rfl
+}
+instance : Fact pallas.p.Prime := ⟨pallas.p_prime⟩
+
+
+/- The Vesta field configuration.
+
+   We need to add a fact that vesta.p is a prime so Lean can
+   find it automatically.
+-/
+
+def vesta : ZKConfig := {
+  k := 255
+  p := vesta_p
+  p_prime := vesta_is_prime
+  p_fits := by rfl
+}
+
+instance : Fact vesta.p.Prime := ⟨vesta.p_prime⟩
+
+
+def bn128 : ZKConfig := {
+  k := 254
+  p := bn128_p
+  p_prime := bn128_is_prime
+  p_fits := by rfl
+}
+
+instance : Fact bn128.p.Prime := ⟨bn128.p_prime⟩
+
+
+def grumpkin : ZKConfig := {
+  k := 254
+  p := grumpkin_p
+  p_prime := grumpkin_is_prime
+  p_fits := by rfl
+}
+
+instance : Fact grumpkin.p.Prime := ⟨grumpkin.p_prime⟩
+
+def bls12377 : ZKConfig := {
+  k := 254
+  p := bls12377_p
+  p_prime := bls12377_is_prime
+  p_fits := by rfl
+}
+instance : Fact bls12377.p.Prime := ⟨bls12377.p_prime⟩
+
+def bls12381 : ZKConfig := {
+  k := 255
+  p := bls12381_p
+  p_prime := bls12381_is_prime
+  p_fits := by rfl
+}
+instance : Fact bls12381.p.Prime := ⟨bls12381.p_prime⟩
+
+
+
+
+/- The following are "toy" fields, just for debugging as their encoding is small. -/
 
 
 def F11 : ZKConfig := {
@@ -92,21 +171,14 @@ def F11 : ZKConfig := {
   p_fits := by rfl
 }
 
-/- We need to add a fact that myConfig.p is a prime so Lean can
-   find it automatically.
--/
 instance : Fact F11.p.Prime := ⟨F11.p_prime⟩
 
 
-
-def F5 : ZKConfig := {
+def F7 : ZKConfig := {
   k := 3
-  p := 5
+  p := 7
   p_prime := by decide
   p_fits := by rfl
 }
 
-/- We need to add a fact that myConfig.p is a prime so Lean can
-   find it automatically.
--/
-instance : Fact F5.p.Prime := ⟨F5.p_prime⟩
+instance : Fact F7.p.Prime := ⟨F7.p_prime⟩

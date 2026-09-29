@@ -11,7 +11,7 @@ Operations are grouped by arity:
 """
 
 import re
-from typing import Callable, List, Generator
+from typing import Callable, List, Generator, Optional
 
 from llzk_dialects.core import Operation, SSAVar, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
@@ -60,13 +60,13 @@ class FeltConst(Operation):
     def operands(self) -> List[SSAVar]:
         return []
 
-    def to_function(self) -> Callable[[], int]:
-        c = self.constant
+    def to_function(self, prime: Optional[int] = None) -> Callable[[], int]:
+        c = self.constant if prime is None else self.constant % prime
         return lambda: c
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # Introducing constants is as easy as an assignment
-        ctx.var2const[self._result.name] = self.constant
+        ctx.var2const[self._result.name] = self.constant % ctx.prime
         yield f"{self._result.to_core()} = {self.constant}"
 
     def __repr__(self):
@@ -130,21 +130,59 @@ class FeltUnary(Operation):
     def operands(self) -> List[SSAVar]:
         return [self.operand]
 
+    # Prime-agnostic (matches this codebase's behavior before field-aware
+    # simulation existed) -- used when to_function() is called with no
+    # prime. felt.inv here is a placeholder, not a real modular inverse: it
+    # was never given the modulus it needs.
     _UNARY_FNS: dict = {
         "felt.neg": lambda x: -x,
         "felt.bit_not": lambda x: ~x,
         "felt.inv": lambda x: 1 // x,
     }
 
-    def to_function(self) -> Callable[[int], int]:
-        fn = self._UNARY_FNS.get(self._op)
-        if fn is None:
+    # Genuine field arithmetic, reduced modulo the prime when one is given
+    # -- felt.bit_not is deliberately excluded, same reasoning as
+    # FeltBinary._FIELD_ARITHMETIC_OPS (a bitwise op on the value's
+    # underlying bit pattern, not field arithmetic).
+    _FIELD_ARITHMETIC_OPS = {"felt.neg", "felt.inv"}
+
+    def to_function(self, prime: Optional[int] = None) -> Callable[[int], int]:
+        if self._op not in self._UNARY_FNS:
             raise NotImplementedError(f"to_function not implemented for {self._op}")
-        return fn
+        if prime is None or self._op not in self._FIELD_ARITHMETIC_OPS:
+            return self._UNARY_FNS[self._op]
+        if self._op == "felt.inv":
+            # Real modular inverse via Fermat's little theorem (every field
+            # in core_utils.FIELD_PRIMES is prime) -- 1 // x was never
+            # correct, just never previously given the modulus to be. x == 0
+            # has no inverse; raise the same ZeroDivisionError a real
+            # division-by-zero would, so callers' existing guards still work.
+            def _inv(x: int, _p=prime) -> int:
+                if x % _p == 0:
+                    raise ZeroDivisionError("felt.inv of 0 has no modular inverse")
+                return pow(x, _p - 2, _p)
+            return _inv
+        fn = self._UNARY_FNS[self._op]
+        return lambda x, _fn=fn, _p=prime: _fn(x) % _p
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Unary operations are translated into an assignment
         yield f"{self._result.to_core()} = {self._OPS2CORE.get(self._op, self._op)} {self.operand.to_core()}"
+
+        # If the operand is already a known compile-time constant, fold this
+        # operation too -- needed so a chain of arithmetic rooted at an outer
+        # loop's induction variable (only known once that loop is unrolled)
+        # keeps resolving to a concrete int all the way through to a nested
+        # loop's bound. Guarded: this may be evaluated inside a branch of an
+        # scf.if that's dead for the current concrete iteration (Core always
+        # translates both branches), so a guarded felt.inv-by-zero etc. must
+        # not crash translation -- just skip the fold.
+        operand_val = ctx.var2const.get(self.operand.name)
+        if operand_val is not None:
+            try:
+                ctx.var2const[self._result.name] = self.to_function(ctx.prime)(operand_val)
+            except (ZeroDivisionError, ArithmeticError):
+                pass
 
     def __repr__(self):
         type_str = ('' if not self.types
@@ -220,6 +258,15 @@ class FeltBinary(Operation):
     def operands(self) -> List[SSAVar]:
         return [self.lhs, self.rhs]
 
+    # Genuine field arithmetic (reduced modulo the field's prime when one is
+    # given -- see to_function). felt.uintdiv/sintdiv/shl/shr/umod/smod/
+    # bit_and/bit_or/bit_xor are deliberately excluded: those are integer/
+    # bitwise operations on a felt-typed value's underlying bit pattern
+    # (e.g. bit-extraction loops via felt.shr/felt.bit_and), not field
+    # arithmetic -- reducing them modulo the field's prime would be wrong,
+    # not just unnecessary.
+    _FIELD_ARITHMETIC_OPS = {"felt.add", "felt.sub", "felt.mul", "felt.div", "felt.pow"}
+
     _BINARY_FNS: dict = {
         "felt.add":     lambda x, y: x + y,
         "felt.sub":     lambda x, y: x - y,
@@ -237,15 +284,35 @@ class FeltBinary(Operation):
         "felt.bit_xor": lambda x, y: x ^ y,
     }
 
-    def to_function(self) -> Callable[[int, int], int]:
+    def to_function(self, prime: Optional[int] = None) -> Callable[[int, int], int]:
         fn = self._BINARY_FNS.get(self._op)
         if fn is None:
             raise NotImplementedError(f"to_function not implemented for {self._op}")
-        return fn
+        if prime is None or self._op not in self._FIELD_ARITHMETIC_OPS:
+            return fn
+        if self._op == "felt.pow":
+            # Python's 3-arg pow is modular exponentiation -- computes
+            # x**y % prime without ever materializing x**y itself, which for
+            # a large y (routine in field arithmetic, e.g. sqrt_0's
+            # Tonelli-Shanks residue checks) would otherwise be an
+            # astronomically large intermediate bigint.
+            return lambda x, y, _p=prime: pow(x, y, _p)
+        return lambda x, y, _fn=fn, _p=prime: _fn(x, y) % _p
 
     def to_core(self, ctx: TranslationContext) -> str:
         # Just return the name of the function applied to the arguments
         yield f"{self._result.to_core()} = {self._OPS2CORE.get(self._op, self._op)} {self.lhs.to_core()} {self.rhs.to_core()}"
+
+        # Fold into a compile-time constant when both operands already are
+        # one -- see FeltUnary.to_core's comment for why this matters (tied
+        # nested loops) and why the guard is needed (dead-branch division).
+        lhs_val = ctx.var2const.get(self.lhs.name)
+        rhs_val = ctx.var2const.get(self.rhs.name)
+        if lhs_val is not None and rhs_val is not None:
+            try:
+                ctx.var2const[self._result.name] = self.to_function(ctx.prime)(lhs_val, rhs_val)
+            except (ZeroDivisionError, ArithmeticError):
+                pass
 
     def __repr__(self):
         type_str = ('' if not self.types
