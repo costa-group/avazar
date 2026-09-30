@@ -30,7 +30,7 @@ def seNewArray {c : ZKConfig}
 
 
 def seArrayReadConstIdx {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD) (symEnv : SymEnv c)
+  (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
   (out : VarID) (a : VarID) (idx : SimpleExpr c)
   : Except String (CmdsSpec c) := do
   let idxVal ← simpleExprToFF symEnv idx
@@ -60,7 +60,7 @@ def seArrayReadConstIdx {c : ZKConfig}
         }
     else
       Except.error
-         s!"seArrayReadConstIdx: index {idxVal.val} out of bounds for array of size {arr.size}"
+         s!"seArrayReadConstIdx (row {md.src_info.row}): index {idxVal.val} out of bounds for array of size {arr.size}"
   | Except.ok _ => Except.error s!"seArrayReadConstIdx: variable '{a}' is not an array"
 
 
@@ -102,14 +102,19 @@ def seArrayRead {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
   (out : VarID) (a : VarID) (idx : SimpleExpr c)
   : Except String (CmdsSpec c) := do
-  match seArrayReadConstIdx cfg md symEnv out a idx with
-  | Except.ok spec => return spec
+  -- Only fall back to the symbolic-index path when `idx` does not resolve to
+  -- a compile-time constant. A genuine error from the constant path (e.g. a
+  -- constant index that is out of bounds) must propagate as-is instead of
+  -- being silently retried, since retrying can succeed for the wrong reason
+  -- (the symbolic encoding doesn't hard-fail on an out-of-range index).
+  match simpleExprToFF symEnv idx with
   | Except.error _ => seArrayReadNonConstIdx cfg md symEnv out a idx
+  | Except.ok _ => seArrayReadConstIdx cfg md symEnv out a idx
 
 
 
 def seArrayWriteConstIdx {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD) (symEnv : SymEnv c)
+  (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
   (a : VarID) (idx : SimpleExpr c) (value : SimpleExpr c)
   : Except String (CmdsSpec c) := do
   let idxVal ← simpleExprToFF symEnv idx
@@ -129,7 +134,7 @@ def seArrayWriteConstIdx {c : ZKConfig}
       }
     else
       Except.error
-         s!"seArrayWriteConstIdx: index {idxVal.val} out of bounds for array of size {arr.size}"
+         s!"seArrayWriteConstIdx (row {md.src_info.row}): index {idxVal.val} out of bounds for array of size {arr.size}"
   | Except.ok _ => Except.error s!"seArrayWriteConstIdx: variable '{a}' is not an array"
 
 def seArrayWriteNonConstIdx {c : ZKConfig}
@@ -196,9 +201,14 @@ def seArrayWrite {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
   (a : VarID) (idx : SimpleExpr c) (value : SimpleExpr c)
   : Except String (CmdsSpec c) := do
-  match seArrayWriteConstIdx cfg md symEnv a idx value with
-  | Except.ok spec => return spec
+  -- Only fall back to the symbolic-index path when `idx` does not resolve to
+  -- a compile-time constant. A genuine error from the constant path (e.g. a
+  -- constant index that is out of bounds) must propagate as-is instead of
+  -- being silently retried, since retrying can succeed for the wrong reason
+  -- (the symbolic encoding doesn't hard-fail on an out-of-range index).
+  match simpleExprToFF symEnv idx with
   | Except.error _ => seArrayWriteNonConstIdx cfg md symEnv a idx value
+  | Except.ok _ => seArrayWriteConstIdx cfg md symEnv a idx value
 
 /- Symbolic execution of array copy -/
 def seArrayCopy {c : ZKConfig}

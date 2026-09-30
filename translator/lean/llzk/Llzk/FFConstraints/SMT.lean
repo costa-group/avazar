@@ -387,7 +387,7 @@ def printConstraintSystem_asJSON {c : ZKConfig}
   | Except.error e => stream.putStrLn s!"Error: {e}"
   | Except.ok (f, vars) =>
   stream.putStrLn "{"
-  stream.putStrLn s!"  \"prime\": {c.p},"
+  stream.putStrLn s!"  \"prime\": \"{c.p}\","
   -- Macros
   stream.putStrLn s!"  \"macros\": \{"
   printMacros_asJSON stream sys.macros.reverse indent-- we assume main is first

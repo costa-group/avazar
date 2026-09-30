@@ -438,9 +438,13 @@ def sEvalBitwiseSHL {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  match sEvalBitWiseSHLConstShift cfg md senv s1 s2 id with
-  | Except.ok spec => return spec
+  -- Only fall back to the symbolic-shift path when `s2` does not resolve to
+  -- a compile-time constant. A genuine error from the constant path (e.g. an
+  -- error while bit-expanding `s1`) must propagate as-is instead of being
+  -- silently retried.
+  match simpleExprToFF senv s2 with
   | Except.error _ => sEvalBitWiseSHLNonConstShift cfg md senv s1 s2 id
+  | Except.ok _ => sEvalBitWiseSHLConstShift cfg md senv s1 s2 id
 
 
 def sEvalBitWiseSHRAux {c : ZKConfig}
@@ -605,8 +609,12 @@ def sEvalBitwiseSHR {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD)
   (senv : SymEnv c) (s1 s2 : SimpleExpr c) (id : VarID)
   : Except String (ExprSpec c) := do
-  match sEvalBitWiseSHRConstShift cfg md senv s1 s2 id with
-  | Except.ok spec => return spec
+  -- Only fall back to the symbolic-shift path when `s2` does not resolve to
+  -- a compile-time constant. A genuine error from the constant path (e.g. an
+  -- error while bit-expanding `s1`) must propagate as-is instead of being
+  -- silently retried.
+  match simpleExprToFF senv s2 with
   | Except.error _ => sEvalBitWiseSHRNonConstShift cfg md senv s1 s2 id
+  | Except.ok _ => sEvalBitWiseSHRConstShift cfg md senv s1 s2 id
 
 end Llzk.SymExec.SymInstr
