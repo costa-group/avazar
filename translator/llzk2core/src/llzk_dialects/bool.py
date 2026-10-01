@@ -235,7 +235,7 @@ class BoolCmp(Operation):
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # TODO: implement core translation
-        yield f"{self._result.to_core()} = {self._PRED2CORE[self.predicate]} {self.rhs.to_core()} {self.lhs.to_core()}"
+        yield f"{self._result.to_core()} = {self._PRED2CORE[self.predicate]} {self.lhs.to_core()} {self.rhs.to_core()}"
 
         # Fold into ctx.var2const (1/0) when both operands are already known
         # -- this is what lets an scf.if's condition become decidable at
