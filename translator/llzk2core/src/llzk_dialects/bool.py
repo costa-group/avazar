@@ -171,7 +171,7 @@ class BoolCmp(Operation):
 
     _OPS = {"bool.cmp"}
     _PRED2CORE = {"eq": "bool.eq", "ne": "bool.neq", "lt": "bool.lt",
-                  "le": "bool.ge", "gt": "bool.gt", "ge": "bool.ge"}
+                  "le": "bool.le", "gt": "bool.gt", "ge": "bool.ge"}
 
     def __init__(self, result: SSAVar, predicate: str,
                  lhs: SSAVar, rhs: SSAVar, types: List[Type] = None):
