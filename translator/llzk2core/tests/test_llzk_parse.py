@@ -79,6 +79,13 @@ class TestLLZK:
         ctx = TranslationContext()
         list(op.to_core(ctx))
         assert ctx.ssa2pod_var["%v"]["@x"][0] == "%v_@x"
+        # A bare scalar field with no initial value (nondet never has one for
+        # ANY field) gets no placeholder -- register_and_allocate_pod shares
+        # _allocate_pod_field_storage with PodNew, so it must also record
+        # this field as unallocated, exactly like PodNew's own equivalent
+        # case, so a later copy of it is skipped rather than referencing an
+        # undefined Core variable.
+        assert "%v_@x" in ctx.unallocated_pod_fields
 
     def test_nondet_to_core_pod_felt_array_field(self):
         op = LLZKNondet.parse(

@@ -16,3 +16,6 @@
 [submodule "llzk-lib"]
 	path = llzk-lib
 	url = https://github.com/project-llzk/llzk-lib.git
+[submodule "examples/circomlib_spec"]
+	path = examples/circomlib_spec
+	url = https://github.com/costa-group/circomlib_spec

@@ -19,7 +19,7 @@ from linearize_signal_names import main as linearize_signals
 
 VERSION = "1.0.0"
 CIRCOM = "circom/target/release/circom"
-CIRCOM_LLZK = "circom-llzk/target/release/circom"
+CIRCOM_LLZK = "circom-llzk/result/bin/circom"
 AVAZAR_TOOL = "avazar_tool/target/release/avazar"
 
 PRIMES = {
@@ -118,7 +118,7 @@ def main():
         root_name_withoutext = root_name_ext.split(".circom")[0]
 
         # 1. run circom to generate r1cs
-        circom_command = [CIRCOM, args.source, "--r1cs", "--O0", "--prime", args.prime, "--name_to_signal", "--output", out_abs_path]
+        circom_command = [CIRCOM, args.source, "--r1cs", "--O0", "--prime", args.prime, "--name_to_signal", "--output", out_abs_path, "--print_tree_info"]
         run_command(circom_command)
 
         # 1.b run the linearization
@@ -165,7 +165,7 @@ def main():
         os.makedirs(report_dir, exist_ok=True)
         report_path = os.path.join(report_dir, "report.json")
 
-        sem_eq_command = [AVAZAR_TOOL, out_abs_path + "/" + root_name_withoutext + ".r1cs", "--check_semantic_equivalence", spec_json, "--correspondence", out_abs_path + "/" + root_name_withoutext + "_signals.json", "--solver", args.solver, "--report", report_path, "--verbose", "--prime", str(PRIMES[args.prime])]
+        sem_eq_command = [AVAZAR_TOOL, out_abs_path + "/" + root_name_withoutext + ".r1cs", "--check_semantic_equivalence", spec_json, "--correspondence", out_abs_path + "/" + root_name_withoutext + "_signals.json", "--solver", args.solver, "--report", report_path, "--verbose", "--prime", str(PRIMES[args.prime]), "--input_structure", out_abs_path + "/" + root_name_withoutext + "_structure.json"]
 
         if args.timeout is not None:
             sem_eq_command += ["--timeout", str(args.timeout)]

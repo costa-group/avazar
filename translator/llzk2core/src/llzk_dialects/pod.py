@@ -244,8 +244,13 @@ def _allocate_pod_field_storage(ctx: TranslationContext, var_name: str,
                 yield f"{field_var} = 0"
             else:
                 yield f"array.new {leaf_size} {field_var}"
-    # A plain scalar (felt/index) field with no initial value gets no
-    # placeholder here -- matches PodNew's existing behavior for this case.
+    else:
+        # A plain scalar (felt/index) field with no initial value gets no
+        # placeholder here -- matches PodNew's existing behavior for this
+        # case. Recorded as "unallocated" so a later copy that would
+        # otherwise reference this undefined variable is skipped instead
+        # (see translate_assignment_core_with_ctx).
+        ctx.unallocated_pod_fields.add(var_name)
 
 
 def register_and_allocate_pod(ctx: TranslationContext, var_name: str,

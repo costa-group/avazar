@@ -171,7 +171,7 @@ class BoolCmp(Operation):
 
     _OPS = {"bool.cmp"}
     _PRED2CORE = {"eq": "bool.eq", "ne": "bool.neq", "lt": "bool.lt",
-                  "le": "bool.ge", "gt": "bool.gt", "ge": "bool.ge"}
+                  "le": "bool.le", "gt": "bool.gt", "ge": "bool.ge"}
 
     def __init__(self, result: SSAVar, predicate: str,
                  lhs: SSAVar, rhs: SSAVar, types: List[Type] = None):
@@ -235,7 +235,7 @@ class BoolCmp(Operation):
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
         # TODO: implement core translation
-        yield f"{self._result.to_core()} = {self._PRED2CORE[self.predicate]} {self.rhs.to_core()} {self.lhs.to_core()}"
+        yield f"{self._result.to_core()} = {self._PRED2CORE[self.predicate]} {self.lhs.to_core()} {self.rhs.to_core()}"
 
         # Fold into ctx.var2const (1/0) when both operands are already known
         # -- this is what lets an scf.if's condition become decidable at
