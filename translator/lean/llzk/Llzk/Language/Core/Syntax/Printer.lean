@@ -108,6 +108,7 @@ def formatCom {c : ZKConfig} (i : ComWithMD c) (level : Nat := 0) (sp : String :
   | .mk _ info =>
       match info with
       | .skip => s!"skip"
+      | .assert out => s!"assert {out}"
       | .assign out e => s!"{out} := {e}"
       | .if_stmt cond tb eb =>
           let tbStr := formatBody tb (level + 1)
@@ -191,6 +192,7 @@ def printCom {c : ZKConfig}
   | .mk _md info =>
       match info with
       | .skip => h.putStr s!"skip"
+      | .assert out => h.putStr s!"assert {out}"
       | .assign out e => h.putStr s!"{out} = {e}"
       | .if_stmt cond tb eb =>
           h.putStr s!"if ({cond})"

@@ -24,6 +24,7 @@ mutual
 def definedVarsCom {c : ZKConfig} (vars : VarIDSet) (cmd : Com c) : VarIDSet :=
   match cmd with
   | .skip                => vars
+  | .assert _            => vars
   | .assign id _         => vars.insert id
   | .if_stmt _ tb eb     => definedVarsCmds (definedVarsCmds vars tb) eb
   | .loop_exp _ body     => definedVarsCmds vars body

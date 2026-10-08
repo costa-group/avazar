@@ -112,6 +112,8 @@ inductive Com (c : ZKConfig) where
   -- debugging information if needed in the future, like a list of variables
   -- to print, etc.
   | skip
+  -- assert statement, succeeds if e=1, otherwise fails
+  | assert (e: SimpleExpr c)
   -- x := e
   | assign (out: VarID) (e : Expr c)
   -- if (cond) {tb} else {eb}

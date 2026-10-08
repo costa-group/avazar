@@ -74,6 +74,10 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
         match cmd with
         | .skip =>
           ComWithMD.mk { md with liveness := { live_in := out, live_out := out } } cmd
+        | .assert e =>
+          -- live_in = live_out ∪ usedVars(e)
+          let liveIn := addUsedVarsSimpleExpr out e
+          ComWithMD.mk { md with liveness := { live_in := liveIn, live_out := out } } cmd
         | .assign id e =>
           -- live_in = live_out \ {id} ∪ usedVars(e)
           let out' := out.erase id

@@ -95,5 +95,14 @@ def seAssignment {c : ZKConfig}
   | Except.error _ =>
     seAssignmentNonConst cfg md symEnv id e
 
-
+def seAssert {c : ZKConfig}
+  (cfg : SymExecConfig c) (_md : CmdMD) (symEnv : SymEnv c) (e : SimpleExpr c)
+  : Except String (CmdsSpec c) := do
+  let val ← simpleExprToTerm symEnv e
+  return { inSymEnv := symEnv,
+           outSymEnv := symEnv,
+           f := FFFormula.eq val (FFTerm.val 1),
+           nextId := cfg.nextId,
+           newFFVars := emptyFFVarSet,
+           newBoolVars := emptyBoolVarSet }
 end Llzk.SymExec.SymInstr

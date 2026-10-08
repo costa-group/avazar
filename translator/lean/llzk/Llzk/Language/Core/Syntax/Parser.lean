@@ -403,10 +403,18 @@ mutual
     return (Com.skip) -- TODO: implement this
 
   /-- Parse a command -/
+  partial def parseAssert {c : ZKConfig}: ParserM (Com c) := do
+    let _ ← advance -- consume 'assert' keyword
+    let expr ← parseSimpleExpr
+    return (Com.assert expr)
+
   partial def parseCommand {c : ZKConfig}: ParserM (Com c) := do
     let t0 ← peekToken 0
     let t1 ← peekToken 1
     match t0.token, t1.token with
+    | Token.ident "assert", _ =>
+        let ast ← parseAssert
+        return ast
     | Token.ident "if", _ =>
         let ast ← parseIf
         return ast

@@ -1,5 +1,6 @@
 import Llzk.Basic
 import Llzk.Language.Core.Syntax.AST
+import Llzk.Language.Core.Syntax.Printer
 import Std.Data.TreeMap.Basic
 
 import Mathlib.Tactic.NormNum.LegendreSymbol -- needed for div in FF to compile
@@ -324,6 +325,14 @@ def evalCond {c : ZKConfig} (st : State c) (cond : Cond c) : Except String Bool 
 def evalSkip {c : ZKConfig}
     (st : State c) : Except String (State c) :=
   Except.ok st
+
+def evalAssert {c : ZKConfig}
+    (st : State c) (e : SimpleExpr c) : Except String (State c) := do
+  let val ← evalSimpleExprToFF st e
+  if val = 1 then
+    Except.ok st
+  else
+    Except.error s!"Assertion failed: {e} != 1"
 
 /- id := e -/
 def evalAssign {c : ZKConfig}

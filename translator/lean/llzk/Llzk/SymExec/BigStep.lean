@@ -367,6 +367,7 @@ def genCmdAnnotation' {c : ZKConfig} (cmd : ComWithMD c) (inSymEnv outSymEnv: Sy
   | .mk _ info =>
       match info with
       | .skip => s!"skip"
+      | .assert out => s!"assert {out}"
       | .assign out e => s!"{out} := {genExprAnnotation e}"
       | .if_stmt cond _tb _eb =>
           s!"if ({genCondAnnotation cond})"
@@ -440,6 +441,7 @@ def seCmd {c : ZKConfig}
    | .mk md cmd =>
       match cmd with
       | Com.skip => seSkip cfg md symEnv
+      | Com.assert out => seAssert cfg md symEnv out
       | Com.assign id e => seAssignment cfg md symEnv id e
       | Com.new_array id size => seNewArray cfg md symEnv id size
       | Com.read_array out a idx => seArrayRead cfg md symEnv out a idx

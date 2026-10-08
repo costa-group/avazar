@@ -15,6 +15,7 @@ def evalCmd {c : ZKConfig} (cfg : SemConfig c)
    | .mk md cmd =>
       match cmd with
       | Com.skip => evalSkip st
+      | Com.assert e => evalAssert st e
       | Com.assign id e => evalAssign st id e
       | Com.new_array id size => evalNewArray st id size
       | Com.read_array out a index => evalReadArray st out a index
