@@ -294,8 +294,7 @@ class BoolAssert(Operation):
         return [self.condition]
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # Ignore llzk asserts
-        yield from ()
+        yield f"assert {self.condition.to_core()}"
 
     def __repr__(self):
         msg_str = f', {self.msg}' if self.msg else ''
