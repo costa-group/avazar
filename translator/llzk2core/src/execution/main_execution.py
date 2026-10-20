@@ -72,6 +72,10 @@ def main(args: argparse.Namespace):
         for line in indent_stream(core_generator):
             f.write(line)
 
+    # getattr for the same reason as `prime`: callers may build their own Namespace
+    if getattr(args, "only_core", False):
+        return
+
     # For now, no need to store it in another file
     # template_json_path = os.path.splitext(args.target)[0] + "_template.json"
     # with open(template_json_path, 'w') as f:
@@ -79,10 +83,10 @@ def main(args: argparse.Namespace):
 
     # We apply the JSON file
     _here = os.path.dirname(os.path.abspath(__file__))
-    llzk_cli = os.path.join(_here, '..', '..', '..', 'lean', 'llzk_cli')
+    llzk_cli = os.path.join(_here, '..', '..', '..', 'lean', 'llzk_cli_assert')
     smt2_json_path = os.path.splitext(args.target)[0] + ".json"
     subprocess.run(
-        [llzk_cli, '-zk', prime_name, '-se', '-ru', 'yes', '-smt2', 'json', '-o', smt2_json_path, args.target],
+        [llzk_cli, '-zk', prime_name, '-se', '-ru', '-smt2', 'json', '-o', smt2_json_path, args.target],
         check=True,
     )
 
