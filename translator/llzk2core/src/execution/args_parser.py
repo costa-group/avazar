@@ -32,6 +32,10 @@ def generate_parser() -> argparse.ArgumentParser:
                              "--prime circom-llzk was run with). Defaults to goldilocks.",
                         dest="prime")
 
+    parser.add_argument("--only-core", action="store_true", dest="only_core",
+                        help="Only generate the .core file, without calling llzk_cli_assert "
+                             "to produce the SMT JSON.")
+
     #TODO: add option to execute llzk directly instead of reading the file
 
     return parser
