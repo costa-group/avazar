@@ -1,9 +1,9 @@
 import pytest
-from llzk_dialects.llzk import LLZKNondet, ModuleOp
+from llzk_dialects.llzk import LLZKNondet, ModuleOp, _topo_sort_struct_templates
 from llzk_dialects.core import SSAVar, Type, GlobalVariable, TranslationContext
 from llzk_dialects.poly import PolyTemplate
 from llzk_dialects.function import FunctionDef, FunctionReturn, FunctionCall
-from llzk_dialects.struct import StructDef
+from llzk_dialects.struct import StructDef, StructMember
 from llzk_dialects.scf import SCFWhile, SCFCondition, SCFYield
 from llzk_dialects.bool import BoolCmp
 from llzk_dialects.felt import FeltConst, FeltBinary
@@ -264,6 +264,177 @@ class TestLLZK:
             list(module.to_core(ctx))
 
 
+# isequal_concrete.mlir (circomlib_examples_short/), verbatim: IsEqual_1 is
+# declared before the IsZero_0 it instantiates -- the real frontend output
+# that broke the old "struct templates are already callee-first" assumption.
+ISEQUAL_FORWARD_REF_MLIR = """\
+module attributes {llzk.lang = "circom", llzk.main = !struct.type<@IsEqual_1::@IsEqual_1<[]>>} {
+  poly.template @IsEqual_1 {
+    struct.def @IsEqual_1 {
+      struct.member @out : !felt.type<"bn128"> {llzk.pub, signal}
+      struct.member @isz : !struct.type<@IsZero_0::@IsZero_0<[]>>
+      struct.member @isz$inputs : !pod.type<[@in: !felt.type<"bn128">]> {signal}
+      function.def @compute(%arg0: !array.type<2 x !felt.type<"bn128">> {function.arg_name = "in"}) -> !struct.type<@IsEqual_1::@IsEqual_1<[]>> attributes {function.allow_non_native_field_ops, function.allow_witness} {
+        %self = struct.new : <@IsEqual_1::@IsEqual_1<[]>>
+        %pod = pod.new : <[]>
+        %c1 = arith.constant 1 : index
+        %pod_0 = pod.new { @count = %c1, @params = %pod }  : <[@count: index, @comp: !struct.type<@IsZero_0::@IsZero_0<[]>>, @params: !pod.type<[]>]>
+        %pod_1 = pod.new : <[@in: !felt.type<"bn128">]>
+        %felt_const_1 = felt.const  1 : <"bn128">
+        %0 = cast.toindex %felt_const_1 : !felt.type<"bn128">
+        %1 = array.read %arg0[%0] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">
+        %felt_const_0 = felt.const  0 : <"bn128">
+        %2 = cast.toindex %felt_const_0 : !felt.type<"bn128">
+        %3 = array.read %arg0[%2] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">
+        %4 = felt.add %1, %3 : !felt.type<"bn128">, !felt.type<"bn128">
+        pod.write %pod_1[@in] = %4 : <[@in: !felt.type<"bn128">]>, !felt.type<"bn128">
+        %5 = pod.read %pod_0[@count] : <[@count: index, @comp: !struct.type<@IsZero_0::@IsZero_0<[]>>, @params: !pod.type<[]>]>, index
+        %c1_2 = arith.constant 1 : index
+        %6 = arith.subi %5, %c1_2 : index
+        pod.write %pod_0[@count] = %6 : <[@count: index, @comp: !struct.type<@IsZero_0::@IsZero_0<[]>>, @params: !pod.type<[]>]>, index
+        %c0 = arith.constant 0 : index
+        %7 = arith.cmpi eq, %6, %c0 : index
+        scf.if %7 {
+          %11 = pod.read %pod_0[@params] : <[@count: index, @comp: !struct.type<@IsZero_0::@IsZero_0<[]>>, @params: !pod.type<[]>]>, !pod.type<[]>
+          %12 = pod.read %pod_1[@in] : <[@in: !felt.type<"bn128">]>, !felt.type<"bn128">
+          %13 = function.call @IsZero_0::@IsZero_0::@compute(%12) : (!felt.type<"bn128">) -> !struct.type<@IsZero_0::@IsZero_0<[]>> 
+          pod.write %pod_0[@comp] = %13 : <[@count: index, @comp: !struct.type<@IsZero_0::@IsZero_0<[]>>, @params: !pod.type<[]>]>, !struct.type<@IsZero_0::@IsZero_0<[]>>
+        }
+        %8 = pod.read %pod_0[@comp] : <[@count: index, @comp: !struct.type<@IsZero_0::@IsZero_0<[]>>, @params: !pod.type<[]>]>, !struct.type<@IsZero_0::@IsZero_0<[]>>
+        %9 = struct.readm %8[@out] : <@IsZero_0::@IsZero_0<[]>>, !felt.type<"bn128">
+        struct.writem %self[@out] = %9 : <@IsEqual_1::@IsEqual_1<[]>>, !felt.type<"bn128">
+        struct.writem %self[@isz$inputs] = %pod_1 : <@IsEqual_1::@IsEqual_1<[]>>, !pod.type<[@in: !felt.type<"bn128">]>
+        %10 = pod.read %pod_0[@comp] : <[@count: index, @comp: !struct.type<@IsZero_0::@IsZero_0<[]>>, @params: !pod.type<[]>]>, !struct.type<@IsZero_0::@IsZero_0<[]>>
+        struct.writem %self[@isz] = %10 : <@IsEqual_1::@IsEqual_1<[]>>, !struct.type<@IsZero_0::@IsZero_0<[]>>
+        function.return %self : !struct.type<@IsEqual_1::@IsEqual_1<[]>>
+      }
+    }
+  }
+  poly.template @IsZero_0 {
+    struct.def @IsZero_0 {
+      struct.member @out : !felt.type<"bn128"> {llzk.pub, signal}
+      struct.member @inv : !felt.type<"bn128"> {signal}
+      function.def @compute(%arg0: !felt.type<"bn128"> {function.arg_name = "in"}) -> !struct.type<@IsZero_0::@IsZero_0<[]>> attributes {function.allow_non_native_field_ops, function.allow_witness} {
+        %self = struct.new : <@IsZero_0::@IsZero_0<[]>>
+        %felt_const_0 = felt.const  0 : <"bn128">
+        %0 = bool.cmp ne(%arg0, %felt_const_0) : !felt.type<"bn128">, !felt.type<"bn128">
+        %1 = scf.if %0 -> (!felt.type<"bn128">) {
+          %felt_const_1_0 = felt.const  1 : <"bn128">
+          %5 = felt.div %felt_const_1_0, %arg0 : !felt.type<"bn128">, !felt.type<"bn128">
+          struct.writem %self[@inv] = %5 : <@IsZero_0::@IsZero_0<[]>>, !felt.type<"bn128">
+          scf.yield %5 : !felt.type<"bn128">
+        } else {
+          %felt_const_0_0 = felt.const  0 : <"bn128">
+          struct.writem %self[@inv] = %felt_const_0_0 : <@IsZero_0::@IsZero_0<[]>>, !felt.type<"bn128">
+          scf.yield %felt_const_0_0 : !felt.type<"bn128">
+        }
+        %2 = felt.neg %arg0 : !felt.type<"bn128">
+        %3 = felt.mul %2, %1 : !felt.type<"bn128">, !felt.type<"bn128">
+        %felt_const_1 = felt.const  1 : <"bn128">
+        %4 = felt.add %3, %felt_const_1 : !felt.type<"bn128">, !felt.type<"bn128">
+        struct.writem %self[@out] = %4 : <@IsZero_0::@IsZero_0<[]>>, !felt.type<"bn128">
+        function.return %self : !struct.type<@IsZero_0::@IsZero_0<[]>>
+      }
+    }
+  }
+}
+"""
+
+
+class TestStructTemplateOrdering:
+    """
+    ModuleOp.to_core's struct-template topological sort (llzk.py's
+    _topo_sort_struct_templates): a struct template may be declared before
+    a subcomponent struct it instantiates, so struct templates are
+    reordered among themselves, callee-first, in the slots they already
+    occupy.
+    """
+
+    @staticmethod
+    def _struct_template(name: str, calls: list = (), member_types: list = ()) -> PolyTemplate:
+        """
+        A struct poly.template @name { struct.def @name { ... } } whose
+        @compute issues one function.call to `@X::@X::@compute` per X in
+        `calls`, and which declares one struct.member per type string in
+        `member_types`. Its own @compute signature names its own struct
+        type, as every real example's does (a self-reference that must be
+        ignored).
+        """
+        self_type = f"!struct.type<{name}::{name}<[]>>"
+        members = [StructMember(GlobalVariable(f"@m{i}"), Type(t)) for i, t in enumerate(member_types)]
+        body = [
+            FunctionCall([SSAVar(f"%r{i}")], GlobalVariable(f"{callee}::{callee}::@compute"),
+                         [SSAVar("%arg0")], None)
+            for i, callee in enumerate(calls)
+        ]
+        body.append(FunctionReturn([SSAVar("%self")], [Type(self_type)]))
+        compute = FunctionDef(GlobalVariable("@compute"), f"(%arg0: !felt.type) -> {self_type}", body)
+        return PolyTemplate(GlobalVariable(name), [StructDef(GlobalVariable(name), members + [compute])])
+
+    @staticmethod
+    def _sorted_names(templates: list) -> list:
+        entries = [(t, t.sym_name.name, t.body[0]) for t in templates]
+        return [t.sym_name.name for t in _topo_sort_struct_templates(entries)]
+
+    def test_call_dependency_declared_later_is_moved_first(self):
+        a = self._struct_template("@A", calls=["@B"])
+        b = self._struct_template("@B")
+        assert self._sorted_names([a, b]) == ["@B", "@A"]
+
+    def test_transitive_chain_in_reverse_order(self):
+        a = self._struct_template("@A", calls=["@B"])
+        b = self._struct_template("@B", calls=["@C"])
+        c = self._struct_template("@C")
+        assert self._sorted_names([a, b, c]) == ["@C", "@B", "@A"]
+
+    def test_member_type_only_dependency(self):
+        # An array-of-components member, with no call in the fixture: the
+        # member declaration alone must be enough to order @B first.
+        a = self._struct_template("@A", member_types=["!array.type<3 x !struct.type<@B::@B<[]>>>"])
+        b = self._struct_template("@B")
+        assert self._sorted_names([a, b]) == ["@B", "@A"]
+
+    def test_idx_pod_member_dependency(self):
+        # Heterogeneous array-of-components (idx-pod) member: each @idx_N
+        # field's own struct type is a dependency.
+        a = self._struct_template(
+            "@A", member_types=["!pod.type<[@idx_0: !struct.type<@B::@B<[]>>, "
+                                "@idx_1: !struct.type<@C::@C<[]>>]>"])
+        b = self._struct_template("@B")
+        c = self._struct_template("@C")
+        assert self._sorted_names([a, b, c]) == ["@B", "@C", "@A"]
+
+    def test_already_ordered_and_independent_keep_source_order(self):
+        b = self._struct_template("@B")
+        a = self._struct_template("@A", calls=["@B"])
+        x = self._struct_template("@X")
+        assert self._sorted_names([b, x, a]) == ["@B", "@X", "@A"]
+
+    def test_self_reference_and_unknown_template_are_ignored(self):
+        # @A names itself (signature/return type) and a pure function
+        # template that isn't a struct template -- neither is a struct
+        # dependency, so no cycle and no KeyError.
+        a = self._struct_template("@A", calls=["@Pure"])
+        assert self._sorted_names([a]) == ["@A"]
+
+    def test_struct_cycle_raises(self):
+        a = self._struct_template("@A", calls=["@B"])
+        b = self._struct_template("@B", calls=["@A"])
+        with pytest.raises(ValueError):
+            self._sorted_names([a, b])
+
+    def test_forward_referenced_subcomponent_real_fixture(self):
+        # Full parse + translation of the real isequal_concrete.mlir: used
+        # to crash with KeyError '@IsZero_0::@IsZero_0::@compute'.
+        from execution.main_execution import init_llzk_parser
+        module = init_llzk_parser(ISEQUAL_FORWARD_REF_MLIR.splitlines(keepends=True)).parse()[0]
+        text = "".join(module.to_core(TranslationContext()))
+
+        assert text.index("def @IsZero_0") < text.index("def @IsEqual_1")
+        assert text.index("def @IsZero_0") < text.index("call @IsZero_0")
+        assert text.index("def @IsEqual_1") < text.index("def main")
+
+
 class TestPureFunctionSpecialization:
     """
     ModuleOp.to_core's loop-bound-parametric pure function specialization
@@ -400,3 +571,182 @@ class TestPureFunctionSpecialization:
         assert "@Table::@Table" not in ctx.pure_function_specializations
         assert text.count("def @Table(") == 1
         assert "call @Table(" in text
+
+
+class TestNestedModuleGlobals:
+    """
+    Nested `module @global { global.def const ... }` (circom-llzk's real
+    shape, e.g. poseidon3_test_concrete.mlir): array globals are emitted
+    once, in a leading `globals { name: [..] }` block, and each
+    `global.read const @mod::@x` either aliases its uses to the global's
+    Core name `@mod_@x` (never written to) or copies it (written to later).
+    """
+
+    @staticmethod
+    def _translate(globals_text: str, body: str) -> str:
+        from execution.main_execution import init_llzk_parser
+        text = f"""\
+module attributes {{llzk.lang = "circom", llzk.main = !struct.type<@Main_0::@Main_0<[]>>}} {{
+{globals_text}
+  poly.template @Main_0 {{
+    struct.def @Main_0 {{
+      struct.member @out : !felt.type<"bn128"> {{llzk.pub, signal}}
+      function.def @compute(%arg0: !felt.type<"bn128"> {{function.arg_name = "in"}}) -> !struct.type<@Main_0::@Main_0<[]>> attributes {{function.allow_witness}} {{
+        %self = struct.new : <@Main_0::@Main_0<[]>>
+{body}
+        struct.writem %self[@out] = %r : <@Main_0::@Main_0<[]>>, !felt.type<"bn128">
+        function.return %self : !struct.type<@Main_0::@Main_0<[]>>
+      }}
+      function.def @constrain(%arg0: !struct.type<@Main_0::@Main_0<[]>>, %arg1: !felt.type<"bn128"> {{function.arg_name = "in"}}) attributes {{function.allow_constraint}} {{
+        function.return
+      }}
+    }}
+  }}
+}}
+"""
+        module = init_llzk_parser(text.splitlines(keepends=True)).parse()[0]
+        return "".join(line + "\n" for line in module.to_core(TranslationContext()))
+
+    GLOBAL_ARR = """\
+  module @global {
+    global.def const @arr : !array.type<2 x !felt.type<"bn128">> = [ 7 : <"bn128">,  8 : <"bn128">]
+  }"""
+
+    def test_globals_block_emitted_first_and_aliased_read(self):
+        text = self._translate(self.GLOBAL_ARR, """\
+        %0 = global.read const @global::@arr : !array.type<2 x !felt.type<"bn128">>
+        %c1 = arith.constant 1 : index
+        %r = array.read %0[%c1] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">""")
+
+        assert text.startswith("globals {\n@global_@arr: [7, 8]\n}\n")
+        assert "array.read @global_@arr[%c1] %r" in text
+        # An aliased read emits nothing of its own.
+        assert "%0" not in text
+
+    def test_written_read_is_copied(self):
+        text = self._translate(self.GLOBAL_ARR, """\
+        %0 = global.read const @global::@arr : !array.type<2 x !felt.type<"bn128">>
+        %c0 = arith.constant 0 : index
+        array.write %0[%c0] = %arg0 : <2 x !felt.type<"bn128">>, !felt.type<"bn128">
+        %r = array.read %0[%c0] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">""")
+
+        assert "array.copy @global_@arr %0" in text
+        assert "array.write %arg0 %0[%c0]" in text
+        assert "array.read %0[%c0] %r" in text
+        # The shared global itself is never written to.
+        assert "array.write %arg0 @global_@arr" not in text
+
+    def test_sibling_region_same_name_is_untouched(self):
+        # %2 reads the global in the then-branch; an unrelated %2 in the
+        # else-branch (SSA names reused across sibling regions) must keep
+        # its own name.
+        text = self._translate(self.GLOBAL_ARR, """\
+        %felt_const_1 = felt.const  1 : <"bn128">
+        %0 = bool.cmp eq(%arg0, %felt_const_1) : !felt.type<"bn128">, !felt.type<"bn128">
+        %r = scf.if %0 -> (!felt.type<"bn128">) {
+          %2 = global.read const @global::@arr : !array.type<2 x !felt.type<"bn128">>
+          %c0 = arith.constant 0 : index
+          %3 = array.read %2[%c0] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">
+          scf.yield %3 : !felt.type<"bn128">
+        } else {
+          %2 = felt.add %arg0, %felt_const_1 : !felt.type<"bn128">, !felt.type<"bn128">
+          scf.yield %2 : !felt.type<"bn128">
+        }""")
+
+        assert "array.read @global_@arr[%c0] %3" in text
+        assert "%2 = felt.add %arg0 %felt_const_1" in text
+
+    def test_two_modules_same_global_name(self):
+        text = self._translate("""\
+  module @mod1 {
+    global.def const @arr : !array.type<1 x !felt.type<"bn128">> = [ 1 : <"bn128">]
+  }
+  module @mod2 {
+    global.def const @arr : !array.type<1 x !felt.type<"bn128">> = [ 2 : <"bn128">]
+  }""", """\
+        %0 = global.read const @mod1::@arr : !array.type<1 x !felt.type<"bn128">>
+        %1 = global.read const @mod2::@arr : !array.type<1 x !felt.type<"bn128">>
+        %c0 = arith.constant 0 : index
+        %2 = array.read %0[%c0] : <1 x !felt.type<"bn128">>, !felt.type<"bn128">
+        %3 = array.read %1[%c0] : <1 x !felt.type<"bn128">>, !felt.type<"bn128">
+        %r = felt.add %2, %3 : !felt.type<"bn128">, !felt.type<"bn128">""")
+
+        assert text.startswith("globals {\n@mod1_@arr: [1]\n@mod2_@arr: [2]\n}\n")
+        assert "array.read @mod1_@arr[%c0] %2" in text
+        assert "array.read @mod2_@arr[%c0] %3" in text
+
+    def test_2d_global_is_flattened(self):
+        text = self._translate("""\
+  module @global {
+    global.def const @m : !array.type<2,2 x !felt.type<"bn128">> = [ 1 : <"bn128">,  2 : <"bn128">,  3 : <"bn128">,  4 : <"bn128">]
+  }""", """\
+        %0 = global.read const @global::@m : !array.type<2,2 x !felt.type<"bn128">>
+        %c1 = arith.constant 1 : index
+        %r = array.read %0[%c1, %c1] : <2,2 x !felt.type<"bn128">>, !felt.type<"bn128">""")
+
+        assert "@global_@m: [1, 2, 3, 4]" in text
+        assert "@global_@m[" in text
+
+    def test_whole_array_alias_passed_to_call(self):
+        from llzk_dialects.global_ import GlobalRead
+        from llzk_dialects.llzk import _alias_global_reads
+        from llzk_dialects.global_ import _register_global_def, GlobalDef
+
+        ctx = TranslationContext()
+        _register_global_def(GlobalDef.parse(
+            'global.def const @arr : !array.type<2 x !felt.type<"bn128">> = [ 7 : <"bn128">,  8 : <"bn128">]'
+        ), ctx, "@global")
+        read = GlobalRead.parse('%0 = global.read const @global::@arr : !array.type<2 x !felt.type<"bn128">>')
+        call = FunctionCall([SSAVar("%1")], GlobalVariable("@F::@F"), [SSAVar("%0")], None)
+        _alias_global_reads([read, call], ctx)
+
+        assert read.aliased
+        assert call.args[0].name == "@global_@arr"
+
+    def test_loop_carried_init_counts_as_written(self):
+        from llzk_dialects.global_ import GlobalRead, GlobalDef, _register_global_def
+        from llzk_dialects.llzk import _alias_global_reads
+        from llzk_dialects.scf import SCFFor
+
+        ctx = TranslationContext()
+        _register_global_def(GlobalDef.parse(
+            'global.def const @arr : !array.type<2 x !felt.type<"bn128">> = [ 7 : <"bn128">,  8 : <"bn128">]'
+        ), ctx, "@global")
+        read = GlobalRead.parse('%0 = global.read const @global::@arr : !array.type<2 x !felt.type<"bn128">>')
+        loop = SCFFor([SSAVar("%res")], SSAVar("%i"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%st"),
+                      [(SSAVar("%acc"), SSAVar("%0"))], [])
+        _alias_global_reads([read, loop], ctx)
+
+        assert not read.aliased
+        assert loop.iter_args[0][1].name == "%0"
+
+    def test_scalar_global_is_inlined_not_listed(self):
+        text = self._translate("""\
+  module @global {
+    global.def const @s : !felt.type<"bn128"> = 5 : <"bn128">
+  }""", """\
+        %0 = global.read const @global::@s : !felt.type<"bn128">
+        %r = felt.add %0, %arg0 : !felt.type<"bn128">, !felt.type<"bn128">""")
+
+        assert "globals {" not in text
+        assert "%0 = 5" in text
+
+    def test_top_level_global_unified_under_bare_name(self):
+        text = self._translate("""\
+  global.def const @arr : !array.type<2 x !felt.type<"bn128">> = [ 7 : <"bn128">,  8 : <"bn128">]""", """\
+        %0 = global.read @arr : !array.type<2 x !felt.type<"bn128">>
+        %c1 = arith.constant 1 : index
+        %r = array.read %0[%c1] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">""")
+
+        assert text.startswith("globals {\n@arr: [7, 8]\n}\n")
+        assert "array.read @arr[%c1] %r" in text
+
+    def test_nested_module_with_non_global_op_is_rejected(self):
+        with pytest.raises(NotImplementedError):
+            self._translate("""\
+  module @IsZero_0 {
+    struct.def @IsZero_0 {
+      struct.member @out : !felt.type<"bn128"> {llzk.pub, signal}
+    }
+  }""", """\
+        %r = felt.const  1 : <"bn128">""")

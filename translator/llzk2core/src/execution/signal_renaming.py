@@ -169,7 +169,9 @@ def process_components(smt_json: Dict) -> Dict:
                     new_signal_name = f"{component_iteration}.{signal_name}"
                     extended_smt_json["macros"][macro_name]["vars_info"][new_signal_name] = smt_var
 
-        extended_smt_json["macros"][macro_name].pop("components_index_sequences")
+        # Optional, like the .get() above: a macro with no array-of-components
+        # population loop has no such field.
+        extended_smt_json["macros"][macro_name].pop("components_index_sequences", None)
 
                     
     return extended_smt_json

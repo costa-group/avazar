@@ -1,14 +1,13 @@
 """
 Module for useful methods applies to the classes in core.py
 """
-import re
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import List, Set, Dict, Union, Optional, Callable, Tuple, NoReturn
 from llzk_dialects.core import SSAVar, TranslationContext, Type, Operation
 from llzk_dialects.utils import translate_assignment_core, struct_type_name, is_array_type
 from llzk_dialects.bool import BoolCmp, BoolBinary
-from llzk_dialects.felt import FeltConst, FeltBinary
+from llzk_dialects.felt import FeltConst
 
 
 # Prime for each finite field llzk2core/circom-llzk/complete_avazar.py can
@@ -397,6 +396,7 @@ def infer_n_repetitions_from_expressions(var2expression: Dict[str, Union[str, Op
     negative Python int) -- defaults to goldilocks, matching every existing
     example.
     """
+    print(var2expression, var2const)
     var2const = var2const or {}
 
     condition = var2expression[condition_var_core]
@@ -598,7 +598,7 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
         )
 
     initial_value = initial_values[variable.name]
-    update_func = construct_function_from_expressions(variable, var2expression, set(), prime)
+    update_func = construct_function_from_expressions(variable, var2expression, var2const, set(), prime)
 
     # Resolve any free variable the bound references but that isn't defined
     # anywhere inside the while itself (e.g. an enclosing function's own
@@ -615,7 +615,7 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
         # Every value the bound depends on is now known (either an original
         # literal or a free variable just resolved via var2const above), so
         # it can be evaluated to a concrete int, same as a bare constant.
-        bound_func = construct_function_from_expressions(bound, var2expression, set(), prime)
+        bound_func = construct_function_from_expressions(bound, var2expression, var2const, set(), prime)
         bound_value = bound_func(0)
 
         if op in ("eq", "ne"):
@@ -705,6 +705,7 @@ def _infer_sequence_from_comparison(initial_comparison: BoolCmp,
 
 def construct_function_from_expressions(current_expr: SSAVar,
                                         var2expression: Dict[str, Union[str, Operation]],
+                                        var2const: Dict[str, int],
                                         traversed: Set[str],
                                         prime: int = FIELD_PRIMES["goldilocks"]) -> Callable:
     """
@@ -729,16 +730,23 @@ def construct_function_from_expressions(current_expr: SSAVar,
         return lambda x: x
 
     traversed.add(current_expr.name)
-    expression = var2expression[current_expr.name]
+    expression = var2expression.get(current_expr.name)
+
+    # Expression is None, so it should be already a constant
+    # defined outside current scope
+    if expression is None:
+        const_value = var2const[current_expr.name]
+        return lambda _: const_value
 
     if isinstance(expression, str):
         return construct_function_from_expressions(
-            SSAVar(expression), var2expression, traversed, prime
+            SSAVar(expression), var2expression, var2const, traversed, prime
         )
 
     raw_fn = expression.to_function(prime)
+
     operand_fns = [
-        construct_function_from_expressions(op, var2expression, traversed, prime)
+        construct_function_from_expressions(op, var2expression, var2const, traversed, prime)
         for op in expression.operands
     ]
 

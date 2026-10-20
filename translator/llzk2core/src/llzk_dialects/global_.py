@@ -15,20 +15,26 @@ from typing import Generator, List, Optional, Union
 
 from llzk_dialects.core import Operation, SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.definitions import Dialect
-from llzk_dialects.utils import array_felt_first_dimension, split_top_level_commas
+from llzk_dialects.utils import array_felt_first_dimension, split_top_level_commas, translate_assignment_core
 
 
 _FELT_CONST_RE = re.compile(r'#felt<const\s*(-?\d+)\s*:')
+_TYPED_INT_RE = re.compile(r'(-?\d+)\s*:\s*\S.*')
 
 
 def _parse_felt_literal(token: str) -> int:
     """
-    Parse a single felt-typed literal from a global.def initial value: either
-    a plain integer ("0", "17") or an attribute-wrapped constant
-    (e.g. '#felt<const 42 : <"bn128">> : !felt.type<"bn128">').
+    Parse a single felt-typed literal from a global.def initial value: a
+    plain integer ("0", "17"), an attribute-wrapped constant
+    (e.g. '#felt<const 42 : <"bn128">> : !felt.type<"bn128">'), or a typed
+    integer as nested-module globals use (e.g. '42 : <"bn128">',
+    poseidon3_test_concrete.mlir's `module @global`).
     """
     token = token.strip()
     m = _FELT_CONST_RE.search(token)
+    if m:
+        return int(m.group(1))
+    m = _TYPED_INT_RE.fullmatch(token)
     if m:
         return int(m.group(1))
     return int(token)
@@ -48,16 +54,61 @@ def _parse_global_value(raw: str) -> Union[int, List[int]]:
     return _parse_felt_literal(raw)
 
 
-def _register_global_def(op: 'GlobalDef', ctx: TranslationContext) -> None:
+def _global_ref_name(op: 'GlobalDef', module_name: Optional[str]) -> str:
     """
-    Register a global.def's value in ctx.global2value so global.read can
-    resolve it. Idempotent (plain dict assignment recomputes the same
+    The name a global.read uses to refer to op: "@mod::@x" for a global
+    declared inside a nested `module @mod { ... }` (e.g.
+    "@global::@array_const_0", poseidon3_test_concrete.mlir), or the bare
+    "@x" for one declared directly in the top-level module.
+    """
+    if module_name is None:
+        return op.sym_name.name
+    return f"{module_name}::{op.sym_name.name}"
+
+
+def _global_core_name(ref_name: str) -> str:
+    """
+    The Core name of a global array, from its global.read reference name:
+    "@global::@array_const_0" -> "@global_@array_const_0". The module
+    prefix keeps same-named globals of different modules apart, and the
+    leading '@' can never collide with an SSA-derived ('%') Core variable.
+    """
+    return ref_name.replace("::", "_")
+
+
+def _global_ref_core(core_name: str) -> str:
+    """
+    How translated code refers to a global array: the single place every
+    global.read (aliased use or explicit copy) gets the spelling from.
+
+    TODO(format): the Core syntax for globals is still provisional -- a read
+    may later need a different spelling to mark the value as known at
+    symbolic execution time. Change it here only.
+    """
+    return core_name
+
+
+def _global_entry_core(core_name: str, values: List[int]) -> str:
+    """One `globals { ... }` entry: `@global_@x: [v0, v1, ...]`, row-major flattened."""
+    return f"{core_name}: [{', '.join(str(v) for v in values)}]"
+
+
+def _register_global_def(op: 'GlobalDef', ctx: TranslationContext,
+                         module_name: Optional[str] = None) -> None:
+    """
+    Register a global.def's value in ctx.global2value (and, for an array,
+    its Core name in ctx.global2core), keyed by the name global.read uses
+    to refer to it. Idempotent (plain dict assignment recomputes the same
     value), so it's safe to call both from a module-level pre-pass
     (registering forward-referenced globals before any body is translated —
     see llzk.py's ModuleOp.to_core) and again, redundantly, from
     GlobalDef.to_core itself.
     """
-    ctx.global2value[op.sym_name.name] = _parse_global_value(op.initial_value)
+    ref_name = _global_ref_name(op, module_name)
+    value = _parse_global_value(op.initial_value)
+    ctx.global2value[ref_name] = value
+    if isinstance(value, list):
+        ctx.global2core[ref_name] = _global_core_name(ref_name)
 
 
 class GlobalDef(Operation):
@@ -115,9 +166,11 @@ class GlobalDef(Operation):
         return []
 
     def to_core(self, ctx: TranslationContext) -> Generator[str, None, None]:
-        # Nothing is emitted for the def itself: the value is only consumed
-        # by global.read, which resolves it through ctx.global2value.
-        _register_global_def(self, ctx)
+        # Nothing is emitted for the def itself: an array global is emitted
+        # once, in the module's leading `globals { ... }` block (llzk.py's
+        # ModuleOp.to_core), and a scalar is inlined at each global.read.
+        # Registration already happened in ModuleOp.to_core's pre-pass (with
+        # the enclosing nested module's name, which this op doesn't know).
         yield from ()
 
     def __repr__(self):
@@ -138,10 +191,15 @@ class GlobalRead(Operation):
 
     _OPS = {"global.read"}
 
-    def __init__(self, result: SSAVar, name_ref: GlobalVariable, result_type: Type):
+    def __init__(self, result: SSAVar, name_ref: GlobalVariable, result_type: Type,
+                 is_const: bool = False):
         self._result = result
         self.name_ref = name_ref
         self.result_type = result_type
+        self.is_const = is_const
+        # Set by llzk.py's _alias_global_reads when every use of the result
+        # was renamed to the global's own Core name (no statement needed).
+        self.aliased = False
 
     def dialect(self) -> Dialect:
         return Dialect("global")
@@ -153,7 +211,7 @@ class GlobalRead(Operation):
     @classmethod
     def parse(cls, line: str) -> 'GlobalRead':
         pattern = re.compile(
-            r"\s*(?P<res>\S+)\s*=\s*global\.read\s+(?P<ref>@\S+)"
+            r"\s*(?P<res>\S+)\s*=\s*global\.read\s+(?P<const>const\s+)?(?P<ref>@\S+)"
             r"\s*:\s*(?P<type>.+)\s*"
         )
         m = re.fullmatch(pattern, line)
@@ -161,7 +219,8 @@ class GlobalRead(Operation):
             raise ValueError(f"Failed to parse GlobalRead: {line}")
         return GlobalRead(SSAVar.parse(m["res"]),
                           GlobalVariable.parse(m["ref"]),
-                          Type.parse(m["type"].strip()))
+                          Type.parse(m["type"].strip()),
+                          is_const=m["const"] is not None)
 
     @property
     def result(self):
@@ -180,11 +239,19 @@ class GlobalRead(Operation):
                 f"{len(value) if isinstance(value, list) else value} value(s), "
                 f"expected {dim} for type {self.result_type}"
             )
-            yield f"array.new {dim} {self._result.to_core()}"
-            for i, elem in enumerate(value):
-                yield f"array.write {elem} {self._result.to_core()}[{i}]"
+            if self.aliased:
+                # Every use already refers to the global's Core name.
+                return
+            # The result is written to later in its scope (e.g. a zero
+            # const global used as a local array's initial value), so it
+            # needs its own copy -- writing through an alias would change
+            # the shared global for every other reader.
+            src = _global_ref_core(ctx.global2core[self.name_ref.name])
+            yield translate_assignment_core(self._result.to_core(), src, False)
             return
 
+        # A scalar global is never listed in `globals { ... }`: its value is
+        # inlined at each read instead.
         ctx.var2const[self._result.name] = value
         yield f"{self._result.to_core()} = {value}"
 
@@ -235,8 +302,13 @@ class GlobalWrite(Operation):
         return [self.value]
 
     def to_core(self, ctx: TranslationContext) -> str:
-        # TODO: implement core translation
-        raise NotImplementedError
+        # No real example writes a global yet. Once one does, a written
+        # (mutable) global can't stay in the shared `globals { ... }` block
+        # as-is: it needs a local copy, introduced once per translated
+        # function (DECISIONS.md §52).
+        raise NotImplementedError(
+            f"global.write to {self.name_ref} is not supported yet (mutable globals)"
+        )
 
     def __repr__(self):
         return (f"GlobalWrite(global.write {self.name_ref} = "
