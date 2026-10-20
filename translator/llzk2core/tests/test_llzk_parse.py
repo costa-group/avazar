@@ -1,9 +1,9 @@
 import pytest
-from llzk_dialects.llzk import LLZKNondet, ModuleOp
+from llzk_dialects.llzk import LLZKNondet, ModuleOp, _topo_sort_struct_templates
 from llzk_dialects.core import SSAVar, Type, GlobalVariable, TranslationContext
 from llzk_dialects.poly import PolyTemplate
 from llzk_dialects.function import FunctionDef, FunctionReturn, FunctionCall
-from llzk_dialects.struct import StructDef
+from llzk_dialects.struct import StructDef, StructMember
 from llzk_dialects.scf import SCFWhile, SCFCondition, SCFYield
 from llzk_dialects.bool import BoolCmp
 from llzk_dialects.felt import FeltConst, FeltBinary
@@ -262,6 +262,177 @@ class TestLLZK:
         ctx = TranslationContext()
         with pytest.raises(ValueError):
             list(module.to_core(ctx))
+
+
+# isequal_concrete.mlir (circomlib_examples_short/), verbatim: IsEqual_1 is
+# declared before the IsZero_0 it instantiates -- the real frontend output
+# that broke the old "struct templates are already callee-first" assumption.
+ISEQUAL_FORWARD_REF_MLIR = """\
+module attributes {llzk.lang = "circom", llzk.main = !struct.type<@IsEqual_1::@IsEqual_1<[]>>} {
+  poly.template @IsEqual_1 {
+    struct.def @IsEqual_1 {
+      struct.member @out : !felt.type<"bn128"> {llzk.pub, signal}
+      struct.member @isz : !struct.type<@IsZero_0::@IsZero_0<[]>>
+      struct.member @isz$inputs : !pod.type<[@in: !felt.type<"bn128">]> {signal}
+      function.def @compute(%arg0: !array.type<2 x !felt.type<"bn128">> {function.arg_name = "in"}) -> !struct.type<@IsEqual_1::@IsEqual_1<[]>> attributes {function.allow_non_native_field_ops, function.allow_witness} {
+        %self = struct.new : <@IsEqual_1::@IsEqual_1<[]>>
+        %pod = pod.new : <[]>
+        %c1 = arith.constant 1 : index
+        %pod_0 = pod.new { @count = %c1, @params = %pod }  : <[@count: index, @comp: !struct.type<@IsZero_0::@IsZero_0<[]>>, @params: !pod.type<[]>]>
+        %pod_1 = pod.new : <[@in: !felt.type<"bn128">]>
+        %felt_const_1 = felt.const  1 : <"bn128">
+        %0 = cast.toindex %felt_const_1 : !felt.type<"bn128">
+        %1 = array.read %arg0[%0] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">
+        %felt_const_0 = felt.const  0 : <"bn128">
+        %2 = cast.toindex %felt_const_0 : !felt.type<"bn128">
+        %3 = array.read %arg0[%2] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">
+        %4 = felt.add %1, %3 : !felt.type<"bn128">, !felt.type<"bn128">
+        pod.write %pod_1[@in] = %4 : <[@in: !felt.type<"bn128">]>, !felt.type<"bn128">
+        %5 = pod.read %pod_0[@count] : <[@count: index, @comp: !struct.type<@IsZero_0::@IsZero_0<[]>>, @params: !pod.type<[]>]>, index
+        %c1_2 = arith.constant 1 : index
+        %6 = arith.subi %5, %c1_2 : index
+        pod.write %pod_0[@count] = %6 : <[@count: index, @comp: !struct.type<@IsZero_0::@IsZero_0<[]>>, @params: !pod.type<[]>]>, index
+        %c0 = arith.constant 0 : index
+        %7 = arith.cmpi eq, %6, %c0 : index
+        scf.if %7 {
+          %11 = pod.read %pod_0[@params] : <[@count: index, @comp: !struct.type<@IsZero_0::@IsZero_0<[]>>, @params: !pod.type<[]>]>, !pod.type<[]>
+          %12 = pod.read %pod_1[@in] : <[@in: !felt.type<"bn128">]>, !felt.type<"bn128">
+          %13 = function.call @IsZero_0::@IsZero_0::@compute(%12) : (!felt.type<"bn128">) -> !struct.type<@IsZero_0::@IsZero_0<[]>> 
+          pod.write %pod_0[@comp] = %13 : <[@count: index, @comp: !struct.type<@IsZero_0::@IsZero_0<[]>>, @params: !pod.type<[]>]>, !struct.type<@IsZero_0::@IsZero_0<[]>>
+        }
+        %8 = pod.read %pod_0[@comp] : <[@count: index, @comp: !struct.type<@IsZero_0::@IsZero_0<[]>>, @params: !pod.type<[]>]>, !struct.type<@IsZero_0::@IsZero_0<[]>>
+        %9 = struct.readm %8[@out] : <@IsZero_0::@IsZero_0<[]>>, !felt.type<"bn128">
+        struct.writem %self[@out] = %9 : <@IsEqual_1::@IsEqual_1<[]>>, !felt.type<"bn128">
+        struct.writem %self[@isz$inputs] = %pod_1 : <@IsEqual_1::@IsEqual_1<[]>>, !pod.type<[@in: !felt.type<"bn128">]>
+        %10 = pod.read %pod_0[@comp] : <[@count: index, @comp: !struct.type<@IsZero_0::@IsZero_0<[]>>, @params: !pod.type<[]>]>, !struct.type<@IsZero_0::@IsZero_0<[]>>
+        struct.writem %self[@isz] = %10 : <@IsEqual_1::@IsEqual_1<[]>>, !struct.type<@IsZero_0::@IsZero_0<[]>>
+        function.return %self : !struct.type<@IsEqual_1::@IsEqual_1<[]>>
+      }
+    }
+  }
+  poly.template @IsZero_0 {
+    struct.def @IsZero_0 {
+      struct.member @out : !felt.type<"bn128"> {llzk.pub, signal}
+      struct.member @inv : !felt.type<"bn128"> {signal}
+      function.def @compute(%arg0: !felt.type<"bn128"> {function.arg_name = "in"}) -> !struct.type<@IsZero_0::@IsZero_0<[]>> attributes {function.allow_non_native_field_ops, function.allow_witness} {
+        %self = struct.new : <@IsZero_0::@IsZero_0<[]>>
+        %felt_const_0 = felt.const  0 : <"bn128">
+        %0 = bool.cmp ne(%arg0, %felt_const_0) : !felt.type<"bn128">, !felt.type<"bn128">
+        %1 = scf.if %0 -> (!felt.type<"bn128">) {
+          %felt_const_1_0 = felt.const  1 : <"bn128">
+          %5 = felt.div %felt_const_1_0, %arg0 : !felt.type<"bn128">, !felt.type<"bn128">
+          struct.writem %self[@inv] = %5 : <@IsZero_0::@IsZero_0<[]>>, !felt.type<"bn128">
+          scf.yield %5 : !felt.type<"bn128">
+        } else {
+          %felt_const_0_0 = felt.const  0 : <"bn128">
+          struct.writem %self[@inv] = %felt_const_0_0 : <@IsZero_0::@IsZero_0<[]>>, !felt.type<"bn128">
+          scf.yield %felt_const_0_0 : !felt.type<"bn128">
+        }
+        %2 = felt.neg %arg0 : !felt.type<"bn128">
+        %3 = felt.mul %2, %1 : !felt.type<"bn128">, !felt.type<"bn128">
+        %felt_const_1 = felt.const  1 : <"bn128">
+        %4 = felt.add %3, %felt_const_1 : !felt.type<"bn128">, !felt.type<"bn128">
+        struct.writem %self[@out] = %4 : <@IsZero_0::@IsZero_0<[]>>, !felt.type<"bn128">
+        function.return %self : !struct.type<@IsZero_0::@IsZero_0<[]>>
+      }
+    }
+  }
+}
+"""
+
+
+class TestStructTemplateOrdering:
+    """
+    ModuleOp.to_core's struct-template topological sort (llzk.py's
+    _topo_sort_struct_templates): a struct template may be declared before
+    a subcomponent struct it instantiates, so struct templates are
+    reordered among themselves, callee-first, in the slots they already
+    occupy.
+    """
+
+    @staticmethod
+    def _struct_template(name: str, calls: list = (), member_types: list = ()) -> PolyTemplate:
+        """
+        A struct poly.template @name { struct.def @name { ... } } whose
+        @compute issues one function.call to `@X::@X::@compute` per X in
+        `calls`, and which declares one struct.member per type string in
+        `member_types`. Its own @compute signature names its own struct
+        type, as every real example's does (a self-reference that must be
+        ignored).
+        """
+        self_type = f"!struct.type<{name}::{name}<[]>>"
+        members = [StructMember(GlobalVariable(f"@m{i}"), Type(t)) for i, t in enumerate(member_types)]
+        body = [
+            FunctionCall([SSAVar(f"%r{i}")], GlobalVariable(f"{callee}::{callee}::@compute"),
+                         [SSAVar("%arg0")], None)
+            for i, callee in enumerate(calls)
+        ]
+        body.append(FunctionReturn([SSAVar("%self")], [Type(self_type)]))
+        compute = FunctionDef(GlobalVariable("@compute"), f"(%arg0: !felt.type) -> {self_type}", body)
+        return PolyTemplate(GlobalVariable(name), [StructDef(GlobalVariable(name), members + [compute])])
+
+    @staticmethod
+    def _sorted_names(templates: list) -> list:
+        entries = [(t, t.sym_name.name, t.body[0]) for t in templates]
+        return [t.sym_name.name for t in _topo_sort_struct_templates(entries)]
+
+    def test_call_dependency_declared_later_is_moved_first(self):
+        a = self._struct_template("@A", calls=["@B"])
+        b = self._struct_template("@B")
+        assert self._sorted_names([a, b]) == ["@B", "@A"]
+
+    def test_transitive_chain_in_reverse_order(self):
+        a = self._struct_template("@A", calls=["@B"])
+        b = self._struct_template("@B", calls=["@C"])
+        c = self._struct_template("@C")
+        assert self._sorted_names([a, b, c]) == ["@C", "@B", "@A"]
+
+    def test_member_type_only_dependency(self):
+        # An array-of-components member, with no call in the fixture: the
+        # member declaration alone must be enough to order @B first.
+        a = self._struct_template("@A", member_types=["!array.type<3 x !struct.type<@B::@B<[]>>>"])
+        b = self._struct_template("@B")
+        assert self._sorted_names([a, b]) == ["@B", "@A"]
+
+    def test_idx_pod_member_dependency(self):
+        # Heterogeneous array-of-components (idx-pod) member: each @idx_N
+        # field's own struct type is a dependency.
+        a = self._struct_template(
+            "@A", member_types=["!pod.type<[@idx_0: !struct.type<@B::@B<[]>>, "
+                                "@idx_1: !struct.type<@C::@C<[]>>]>"])
+        b = self._struct_template("@B")
+        c = self._struct_template("@C")
+        assert self._sorted_names([a, b, c]) == ["@B", "@C", "@A"]
+
+    def test_already_ordered_and_independent_keep_source_order(self):
+        b = self._struct_template("@B")
+        a = self._struct_template("@A", calls=["@B"])
+        x = self._struct_template("@X")
+        assert self._sorted_names([b, x, a]) == ["@B", "@X", "@A"]
+
+    def test_self_reference_and_unknown_template_are_ignored(self):
+        # @A names itself (signature/return type) and a pure function
+        # template that isn't a struct template -- neither is a struct
+        # dependency, so no cycle and no KeyError.
+        a = self._struct_template("@A", calls=["@Pure"])
+        assert self._sorted_names([a]) == ["@A"]
+
+    def test_struct_cycle_raises(self):
+        a = self._struct_template("@A", calls=["@B"])
+        b = self._struct_template("@B", calls=["@A"])
+        with pytest.raises(ValueError):
+            self._sorted_names([a, b])
+
+    def test_forward_referenced_subcomponent_real_fixture(self):
+        # Full parse + translation of the real isequal_concrete.mlir: used
+        # to crash with KeyError '@IsZero_0::@IsZero_0::@compute'.
+        from execution.main_execution import init_llzk_parser
+        module = init_llzk_parser(ISEQUAL_FORWARD_REF_MLIR.splitlines(keepends=True)).parse()[0]
+        text = "".join(module.to_core(TranslationContext()))
+
+        assert text.index("def @IsZero_0") < text.index("def @IsEqual_1")
+        assert text.index("def @IsZero_0") < text.index("call @IsZero_0")
+        assert text.index("def @IsEqual_1") < text.index("def main")
 
 
 class TestPureFunctionSpecialization:

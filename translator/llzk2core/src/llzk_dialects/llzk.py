@@ -81,6 +81,80 @@ def _topo_sort_pure_functions(entries: 'List[Tuple["PolyTemplate", str, "Functio
             if call.callee.name in known
         }
 
+    return _topo_sort_templates(
+        [name for _template, name, _func_def in entries], name2template, name2deps,
+        "pure function templates", "mutual recursion is not supported")
+
+
+_STRUCT_TYPE_TEMPLATE_RE = re.compile(r'!struct\.type<(@[^:<>\s]+)::')
+
+
+def _struct_template_deps(template_name: str, struct_def: 'StructDef',
+                          known_template_names: Set[str]) -> Set[str]:
+    """
+    The other struct templates a struct template depends on: every
+    template it names as a subcomponent's own struct type in a member
+    declaration (a direct member, an array of components, or an idx-pod's
+    own @idx_N fields), plus every template whose @compute/@constrain it
+    calls. Either one alone is not enough to be safe -- translating the
+    caller's @compute already needs the callee's registered signature at
+    the very first pod.new whose type mentions it (array.py's
+    _struct_out_args), well before the function.call itself
+    (isequal_concrete.mlir's IsEqual_1 -> IsZero_0).
+
+    Self-references (a struct's own type in its own @compute signature,
+    struct.new, etc.) and names outside known_template_names are dropped.
+    """
+    from llzk_dialects.function import FunctionDef
+    from llzk_dialects.struct import StructMember
+
+    deps: Set[str] = set()
+    for op in struct_def.body:
+        if isinstance(op, StructMember):
+            deps.update(_STRUCT_TYPE_TEMPLATE_RE.findall(op.member_type.name))
+        elif isinstance(op, FunctionDef):
+            deps.update(call.callee.name.split("::")[0]
+                        for call in _collect_function_calls(op.body))
+    deps.discard(template_name)
+    return deps & known_template_names
+
+
+def _topo_sort_struct_templates(entries: 'List[Tuple["PolyTemplate", str, "StructDef"]]') -> 'List["PolyTemplate"]':
+    """
+    Topologically sort struct poly.template's so that every subcomponent's
+    struct is translated (and its def text emitted) before any struct
+    using it -- the frontend no longer guarantees callee-first source
+    order (e.g. isequal_concrete.mlir declares IsEqual_1 before the IsZero_0
+    it instantiates). Same stable DFS as _topo_sort_pure_functions: an
+    already-ordered file keeps its exact original order.
+
+    entries: (template_op, template_name, struct_def) triples, in original
+    file order.
+    """
+    name2template = {name: template for template, name, _ in entries}
+    known = set(name2template)
+    name2deps = {name: _struct_template_deps(name, struct_def, known)
+                 for _template, name, struct_def in entries}
+    return _topo_sort_templates(
+        [name for _template, name, _struct_def in entries], name2template, name2deps,
+        "struct templates", "recursive component instantiation is not supported")
+
+
+def _topo_sort_templates(names_in_order: List[str], name2template: 'Dict[str, "PolyTemplate"]',
+                         name2deps: Dict[str, Set[str]], kind: str,
+                         cycle_reason: str) -> 'List["PolyTemplate"]':
+    """
+    Shared DFS behind _topo_sort_pure_functions and
+    _topo_sort_struct_templates. Visits names in names_in_order and
+    recurses into dependencies first, so a pair with no dependency between
+    them keeps its original relative order. Raises ValueError on a cycle.
+
+    A name's own dependencies are visited in source order too, not in
+    name2deps' set-iteration order -- str hashing is randomized per
+    process, so iterating the set directly would make the emitted order of
+    two sibling dependencies differ from one run to the next.
+    """
+    source_index = {name: i for i, name in enumerate(names_in_order)}
     sorted_names: List[str] = []
     visited: Set[str] = set()
     visiting: Set[str] = set()
@@ -90,17 +164,16 @@ def _topo_sort_pure_functions(entries: 'List[Tuple["PolyTemplate", str, "Functio
             return
         if name in visiting:
             raise ValueError(
-                f"Cycle detected among pure function templates involving {name!r}: "
-                "mutual recursion is not supported"
+                f"Cycle detected among {kind} involving {name!r}: {cycle_reason}"
             )
         visiting.add(name)
-        for dep in name2deps[name]:
+        for dep in sorted(name2deps[name], key=source_index.__getitem__):
             visit(dep)
         visiting.discard(name)
         visited.add(name)
         sorted_names.append(name)
 
-    for _template, name, _func_def in entries:
+    for name in names_in_order:
         visit(name)
 
     return [name2template[name] for name in sorted_names]
@@ -378,9 +451,7 @@ class ModuleOp:
         """
         # Pre-pass: register every "pure function" template's signature (see
         # poly.py's _register_pure_function) before any body is translated.
-        # Unlike struct-to-struct calls (which this codebase already requires
-        # to be declared before their callers, matching every prior example),
-        # a pure function may be called by a template declared earlier in the
+        # A pure function may be called by a template declared earlier in the
         # file (e.g. escalarmulw4table_concrete.mlir's EscalarMulW4Table_0,
         # translated first, calls pointAdd_1, declared afterwards).
         # Registration only reads the already-fully-parsed FunctionDef itself
@@ -396,16 +467,34 @@ class ModuleOp:
         # potentially multi-level dependency chain. So every pure-function
         # template is hoisted to the front of the emitted output, in
         # topologically-sorted order (_topo_sort_pure_functions), ahead of
-        # every other top-level item (structs etc., which keep their
-        # existing relative order -- nothing depends on a pure function's
+        # every other top-level item (nothing depends on a pure function's
         # textual position relative to a struct, only on it existing before
         # any call to it).
+        #
+        # Struct templates may be forward-referenced too (e.g.
+        # isequal_concrete.mlir's IsEqual_1 instantiates IsZero_0, declared
+        # afterwards). Unlike a pure function, a struct can't be handled by
+        # a signature-only pre-registration: its own translation fills ctx
+        # state the caller's translation reads (llzk_func2core,
+        # core_func2args, member_to_struct, ...), and its def text must
+        # precede any call to it. So struct templates are topologically
+        # sorted among themselves (_topo_sort_struct_templates) and put back
+        # into the slots struct templates already occupied, leaving every
+        # other top-level item where it was -- an already-ordered file is
+        # emitted exactly as before. Pure functions never depend on a
+        # struct (a circom function can't instantiate a component), so
+        # keeping them hoisted ahead of all structs stays correct.
         from llzk_dialects.poly import PolyTemplate, _register_pure_function
         from llzk_dialects.function import FunctionDef
+        from llzk_dialects.struct import StructDef
         from llzk_dialects.global_ import GlobalDef, _register_global_def
 
         pure_function_entries = []
+        struct_entries = []
         for operation in self.body:
+            if (isinstance(operation, PolyTemplate) and len(operation.body) == 1
+                    and isinstance(operation.body[0], StructDef)):
+                struct_entries.append((operation, operation.sym_name.name, operation.body[0]))
             if (isinstance(operation, PolyTemplate) and len(operation.body) == 1
                     and isinstance(operation.body[0], FunctionDef)):
                 func_def = operation.body[0]
@@ -420,6 +509,7 @@ class ModuleOp:
                 _register_global_def(operation, ctx)
 
         sorted_pure_templates = _topo_sort_pure_functions(pure_function_entries)
+        sorted_struct_templates = iter(_topo_sort_struct_templates(struct_entries))
 
         # Specialize any pure function whose own while-loop bound depends
         # on one of its own parameters, when that parameter is a
@@ -433,8 +523,10 @@ class ModuleOp:
         _specialize_loop_bound_parametric_pure_functions(pure_function_entries, self.body, ctx)
 
         pure_templates = {template for template, _name, _func_def in pure_function_entries}
+        struct_templates = {template for template, _name, _struct_def in struct_entries}
         emission_order = sorted_pure_templates + [
-            operation for operation in self.body if operation not in pure_templates
+            next(sorted_struct_templates) if operation in struct_templates else operation
+            for operation in self.body if operation not in pure_templates
         ]
 
         # Yield operation by operation
