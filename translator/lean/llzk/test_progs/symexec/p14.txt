@@ -1,8 +1,8 @@
-func shr_const_test(x:ff) -> z:ff {
+def shr_const_test(x:ff) -> z:ff {
   w = 3
   z = bit.and x w
 }
 
 
-func main() {
+def main() {
 }

@@ -9,7 +9,7 @@
 # so for the empty else-branch it falls back to `emptyVarIDSet` instead of
 # `out`, silently dropping `y` from the if-statement's live_in.
 
-func main(cond:ff, y:ff) -> z:ff {
+def main(cond:ff, y:ff) -> z:ff {
   if (cond == 1) {
     y = 1
   }

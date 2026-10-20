@@ -1,4 +1,4 @@
-func main(w:ff) -> x:ff {
+def main(w:ff) -> x:ff {
   x = 0
   y = 0
   z = 0

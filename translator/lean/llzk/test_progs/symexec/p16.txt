@@ -1,4 +1,4 @@
-func and_gen(x:ff,y:ff) -> r:ff {
+def and_gen(x:ff,y:ff) -> r:ff {
   r1 = bit.and x y
   x1 = x
   y1 = y
@@ -6,9 +6,9 @@ func and_gen(x:ff,y:ff) -> r:ff {
   r = felt.add r1 r2
 }
 
-func and_const_r(x:ff) -> r:ff {
+def and_const_r(x:ff) -> r:ff {
   r = bit.and x 3
 }
 
-func main() {
+def main() {
 }

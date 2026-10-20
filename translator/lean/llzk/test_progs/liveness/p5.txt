@@ -1,9 +1,9 @@
-func helper(x:ff, y:ff) -> s:ff, p:ff {
+def helper(x:ff, y:ff) -> s:ff, p:ff {
   s = felt.add x y
   p = felt.mul x y
 }
 
-func main(x:ff, w:ff) -> result:ff {
+def main(x:ff, w:ff) -> result:ff {
   dead1 = felt.mul x 99
 
   call helper(x, w) to s2, p2

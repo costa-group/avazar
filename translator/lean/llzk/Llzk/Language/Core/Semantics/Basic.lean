@@ -19,6 +19,10 @@ structure SemConfig (c : ZKConfig) where
   oracle : VarID → (FF c)
   deriving Inhabited
 
+abbrev defSemConfig {c : ZKConfig} : SemConfig c := {
+  oracle := fun _ => 0
+}
+
 -- Manually define how to print SemConfig
 instance {c : ZKConfig} : Repr (SemConfig c) where
   reprPrec _ _ := s!"SemConfig \{ oracle := <function> }"

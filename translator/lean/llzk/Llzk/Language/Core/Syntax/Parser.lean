@@ -485,10 +485,13 @@ partial def parseProg {c : ZKConfig}
   let t0 ← peekToken 0
   if t0.token == Token.eof then
     return ProgWithMD.mk {} acc
-  else
+  else if ( t0.token == Token.ident "func" || t0.token == Token.ident "def" ) then
+    let isFunction := t0.token == Token.ident "func"
     let (row, col) := (t0.row, t0.col)
     let ast ← parseFunction
-    parseProg ( (FuncWithMD.mk { src_info := ⟨row, col⟩ } ast) :: acc)
+    parseProg ( (FuncWithMD.mk { src_info := ⟨row, col⟩, no_sym_exec := isFunction } ast) :: acc)
+  else
+    throw (IO.userError s!"Unexpected token {t0} when parsing program")
 
 
 

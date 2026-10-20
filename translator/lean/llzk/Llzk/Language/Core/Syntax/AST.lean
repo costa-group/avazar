@@ -49,6 +49,10 @@ structure CmdMD where
 
 structure FuncMD where
   src_info : SrcInfo
+  -- used for functions that we do not want to symbolically execute, if they
+  -- are called during symbolic execution we use the concrete execution instead,
+  -- thus, they have to have concrete arguments
+  no_sym_exec : Bool := false
   liveness : LivenessInfo := default
   deriving Repr, BEq, Inhabited
 

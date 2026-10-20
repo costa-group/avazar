@@ -1,4 +1,6 @@
 import Llzk.Basic
+import Llzk.Language.Core.Semantics.Basic
+import Llzk.Language.Core.Semantics.BigStep
 import Llzk.SymExec.Basic
 import Llzk.SymExec.SymInstr
 import Llzk.SymExec.Assignment
@@ -10,7 +12,8 @@ import Llzk.FFConstraints.Basic
 
 namespace Llzk.SymExec.BigStep
 
-
+open Llzk.Language.Core.Semantics.Basic
+open Llzk.Language.Core.Semantics.BigStep
 open Llzk.Language.Core.Syntax.AST
 open Llzk.SymExec.Basic
 open Llzk.SymExec.SymInstr
@@ -287,12 +290,67 @@ def varsToMacroParams {c : ZKConfig}
   | _, _ => Except.error "Mismatch in the number of formal and actual parameters"
 
 
+def extract_concrete_arg {c : ZKConfig}
+    (_cfg : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (arg : SimpleExpr c)
+    : Except String (Value c) := do
+  match arg with
+  | SimpleExpr.var v => do
+      let val ← Llzk.SymExec.Basic.getVar symEnv v
+      match val with
+      | SymValue.ffVar fv =>
+        match fv with
+        | SymFFVar.var _ => Except.error "Expected a concrete value"
+        | SymFFVar.const value => return (Value.scalar value)
+      | SymValue.ffArray arr =>
+        let concrete_vals ← arr.toList.mapM (fun v => do
+          match v with
+          | SymFFVar.var _ => Except.error "Expected a concrete value"
+          | SymFFVar.const value => return value
+        )
+        return (Value.array concrete_vals.toArray)
+  | SimpleExpr.val v => return (Value.scalar v)
 
-def seFuncCall {c : ZKConfig}
+def extract_concrete_args {c : ZKConfig}
+    (cfg : SymExecConfig c)
+    (symEnv : SymEnv c)
+    (args : List (SimpleExpr c))
+    : Except String (List (Value c)) := do
+    args.mapM (fun arg => extract_concrete_arg cfg symEnv arg)
+
+def seFuncCallConcrete {c : ZKConfig}
     (cfg : SymExecConfig c)
     (md : CmdMD)
     (symEnv : SymEnv c)
     (specs : List (FuncSpec c))
+    (p : List (FuncWithMD c))
+    (fname : FName)
+    (args : List (SimpleExpr c))
+    (outs : List VarID)
+    : Except String (CmdsSpec c) := do
+    let concrete_args ← extract_concrete_args cfg symEnv args
+    let output ← evalFun defSemConfig p fname concrete_args
+    let sym_out := output.map (fun v => match v with
+                                        | Value.scalar s => SymValue.ffVar (SymFFVar.const s)
+                                        | Value.array arr => SymValue.ffArray (arr.map (fun s => SymFFVar.const s)))
+    let symEnv' ← Llzk.SymExec.Basic.setVars symEnv outs sym_out
+
+    return {
+      inSymEnv := symEnv,
+      outSymEnv := symEnv',
+      f := FFFormula.true,
+      nextId := 0,
+      newFFVars := emptyFFVarSet,
+      newBoolVars := emptyBoolVarSet
+    }
+
+def seFuncCallSym {c : ZKConfig}
+    (cfg : SymExecConfig c)
+    (md : CmdMD)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (p : List (FuncWithMD c))
     (fname : FName)
     (args : List (SimpleExpr c))
     (outs : List VarID)
@@ -329,6 +387,26 @@ def seFuncCall {c : ZKConfig}
                       | .var (.inr boolVar) => s.insert boolVar
                       | _ => s) emptyBoolVarSet
   }
+
+
+def seFuncCall {c : ZKConfig}
+    (cfg : SymExecConfig c)
+    (md : CmdMD)
+    (symEnv : SymEnv c)
+    (specs : List (FuncSpec c))
+    (p : List (FuncWithMD c))
+    (fname : FName)
+    (args : List (SimpleExpr c))
+    (outs : List VarID)
+    : Except String (CmdsSpec c) := do
+    let (func, _) ← Llzk.Language.Core.Syntax.AST.fetchFunc p fname
+    match func with
+    | .mk fmd _ =>
+      dbg_trace s!"Executing function {fname} {fmd.no_sym_exec}"
+      if fmd.no_sym_exec then
+        seFuncCallConcrete cfg md symEnv specs p fname args outs
+      else
+        seFuncCallSym cfg md symEnv specs p fname args outs
 
 
 def symEnvToMacroVarsInfo {c : ZKConfig} (symEnv : SymEnv c) : MacroVarsInfo c :=
@@ -435,7 +513,7 @@ mutual
 def seCmd {c : ZKConfig}
     (cfg : SymExecConfig c)
     (symEnv : SymEnv c)
-    (specs : List (FuncSpec c)) (i : ComWithMD c)
+    (specs : List (FuncSpec c)) (p : List (FuncWithMD c)) (i : ComWithMD c)
     : Except String (CmdsSpec c) := do
   match i with
    | .mk md cmd =>
@@ -450,8 +528,8 @@ def seCmd {c : ZKConfig}
       | Com.if_stmt cond tb eb =>
           match evalCond cfg md symEnv cond with
           | Except.error _e =>
-              let tbSpec ← seCmds cfg symEnv specs tb
-              let ebSpec ← seCmds cfg symEnv specs eb
+              let tbSpec ← seCmds cfg symEnv specs p tb
+              let ebSpec ← seCmds cfg symEnv specs p eb
               let cfg' := { cfg with nextId := max tbSpec.nextId ebSpec.nextId }
               let ifSpec ← mergeIfBranches
                             cfg' md
@@ -466,7 +544,7 @@ def seCmd {c : ZKConfig}
               }
           | Except.ok condVal =>
               if condVal then
-                let tb ← seCmds cfg symEnv specs tb
+                let tb ← seCmds cfg symEnv specs p tb
                 return {
                   inSymEnv := tb.inSymEnv,
                   outSymEnv := tb.outSymEnv,
@@ -476,7 +554,7 @@ def seCmd {c : ZKConfig}
                   newBoolVars := tb.newBoolVars
                   }
               else
-                let eb ← seCmds cfg symEnv specs eb
+                let eb ← seCmds cfg symEnv specs p eb
                 return {
                   inSymEnv := eb.inSymEnv,
                   outSymEnv := eb.outSymEnv,
@@ -488,12 +566,12 @@ def seCmd {c : ZKConfig}
       | Com.loop_exp repExp body =>
           let rep ← simpleExprToFF symEnv repExp
           let loop := (ComWithMD.mk md (Com.loop rep.val body))
-          seCmd cfg symEnv specs loop
+          seCmd cfg symEnv specs p loop
       | Com.loop (rep+1) body =>
-          let specFirstIter ← seCmds cfg symEnv specs body -- first iteration
+          let specFirstIter ← seCmds cfg symEnv specs p body -- first iteration
           let cfg' := { cfg with nextId := specFirstIter.nextId }
           let specRestIter ←
-                seCmd cfg' specFirstIter.outSymEnv specs (ComWithMD.mk md (Com.loop rep body))
+                seCmd cfg' specFirstIter.outSymEnv specs p (ComWithMD.mk md (Com.loop rep body))
           return {
             inSymEnv := symEnv,
             outSymEnv := specRestIter.outSymEnv,
@@ -513,7 +591,7 @@ def seCmd {c : ZKConfig}
           }
 
       | Com.func_call outs fname args =>
-          seFuncCall cfg md symEnv specs fname args outs
+          seFuncCall cfg md symEnv specs p fname args outs
 termination_by (numOfLoopExpCom i, sizeOfCom i)
 decreasing_by
     -- recursive call with then-branch
@@ -556,7 +634,7 @@ decreasing_by
 
 def seCmds {c : ZKConfig}
   (cfg : SymExecConfig c)
-  (symEnv : SymEnv c) (specs : List (FuncSpec c))  (cmds : List (ComWithMD c))
+  (symEnv : SymEnv c) (specs : List (FuncSpec c)) (p : List (FuncWithMD c)) (cmds : List (ComWithMD c))
   : Except String (CmdsSpec c) := do
   match cmds with
   | [] => return {
@@ -568,9 +646,9 @@ def seCmds {c : ZKConfig}
       newBoolVars := emptyBoolVarSet
   }
   | cmd :: rest => do
-    let cmdSpec ← seCmd cfg symEnv specs cmd
+    let cmdSpec ← seCmd cfg symEnv specs p cmd
     let cfg' := { cfg with nextId := cmdSpec.nextId }
-    let cmdsSpec ← seCmds cfg' cmdSpec.outSymEnv specs rest
+    let cmdsSpec ← seCmds cfg' cmdSpec.outSymEnv specs p rest
     return {
       inSymEnv := symEnv,
       outSymEnv := cmdsSpec.outSymEnv,
@@ -715,16 +793,15 @@ def genRetsBinding {c : ZKConfig}
   loop rets cfg.nextId [] bodySpecF
 
 
-
 def seExecFunc {c : ZKConfig}
     (cfg : SymExecConfig c) (md : FuncMD)
-    (f : Func c) (specs : List (FuncSpec c))
+    (f : Func c) (specs : List (FuncSpec c)) (p : List (FuncWithMD c))
     : Except String (FuncSpec c) := do
   match f with
   | .mk name params rets body =>
     let (nextId, inVars, symEnv) ← genInitialSymEnv md params
     let cfg' := { cfg with nextId := nextId }
-    let bodySpec ← seCmds cfg' symEnv specs body
+    let bodySpec ← seCmds cfg' symEnv specs p body
     let cfg'' := { cfg' with nextId := bodySpec.nextId }
 --    let (nextId, retVars, bodySpecF) ← genRetsBinding cfg'' md rets bodySpec.outSymEnv bodySpec.f
     let (nextId, retVars, senv', bodySpecF) ←
@@ -752,16 +829,19 @@ def seExecFunc {c : ZKConfig}
 
 def seExecFuncs {c : ZKConfig}
     (cfg : SymExecConfig c) (p : List (FuncWithMD c)) :=
-  let rec loop (funcs : List (FuncWithMD c)) (specs : List (FuncSpec c))
+  let rec loop (funcs : List (FuncWithMD c)) (specs : List (FuncSpec c)) (p' : List (FuncWithMD c))
     : Except String (List (FuncSpec c)) := do
     match funcs with
     | [] => Except.ok specs
-    | func :: funcs' =>
-        match func with
+    | funcWmd :: funcs' =>
+        match funcWmd with
         | .mk md func =>
-          let spec ← seExecFunc cfg md func specs
-          loop funcs' (spec :: specs)
-  loop p.reverse []
+          if md.no_sym_exec then
+            loop funcs' specs (funcWmd::p')
+          else
+            let spec ← seExecFunc cfg md func specs p'
+            loop funcs' (spec :: specs) (funcWmd::p')
+  loop p.reverse [] []
 
 def seExecProg {c : ZKConfig}
     (cfg : SymExecConfig c)

@@ -92,6 +92,16 @@ def getVar {c : ZKConfig} (env : SymEnv c) (id : VarID) : Except String (SymValu
 def setVar {c : ZKConfig} (env : SymEnv c) (id : VarID) (v : SymValue c) : SymEnv c :=
   env.insert id v
 
+def setVars {c : ZKConfig} (env : SymEnv c) (ids : List VarID) (vals : List (SymValue c)) : Except String (SymEnv c) := do
+  if ids.length != vals.length then
+    Except.error "Mismatched lengths in setVars"
+  else
+    let mut env' := env
+    for (id, val) in List.zip ids vals do
+      env' := setVar env' id val
+    Except.ok env'
+
+
 def isDefinedVar {c : ZKConfig} (env : SymEnv c) (id : VarID) : Bool :=
   env.contains id
 

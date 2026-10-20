@@ -1,4 +1,4 @@
-func main(x:ff) -> acc:ff {
+def main(x:ff) -> acc:ff {
   acc = 0
 
   repeat 5 {

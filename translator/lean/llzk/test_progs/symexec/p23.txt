@@ -1,6 +1,6 @@
 
 
-func foo(x:ff) -> a:arr<3> {
+def foo(x:ff) -> a:arr<3> {
   f = felt.add x 1
   array.new 3 w
   i = 0
@@ -14,5 +14,5 @@ func foo(x:ff) -> a:arr<3> {
 }
 
 
-func main() {
+def main() {
 }
