@@ -269,7 +269,7 @@ def _resolve_constant(var: SSAVar, var2expression: 'Dict[str, object]') -> Optio
     from llzk_dialects.core_utils import construct_function_from_expressions
 
     try:
-        return construct_function_from_expressions(var, var2expression, set())(0)
+        return construct_function_from_expressions(var, var2expression, {}, set())(0)
     except (KeyError, NotImplementedError, AttributeError):
         return None
 
