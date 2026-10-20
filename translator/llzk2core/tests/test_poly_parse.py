@@ -200,7 +200,7 @@ class TestPoly:
         op, _ = PolyTemplate.parse(self.lines, 0, self._pure_function_template_parse_fn)
         ctx = TranslationContext()
         out = ''.join(op.to_core(ctx))
-        assert "def @pointAdd_1(%arg0: ff) -> %c: ff {" in out
+        assert "func @pointAdd_1(%arg0: ff) -> %c: ff {" in out
         assert ctx.llzk_func2core["@pointAdd_1::@pointAdd_1"] == "@pointAdd_1"
         assert ctx.core_func2args["@pointAdd_1"][1] == [("%c", Type("!felt.type"))]
         # Cleared after emitting its body, mirroring StructDef.to_core.
@@ -223,7 +223,23 @@ class TestPoly:
         ctx = TranslationContext()
         out = ''.join(op.to_core(ctx))
         assert "None" not in out
-        assert "def @POSEIDON_M_2(%arg0: ff) -> %1: arr<289> {" in out
+        assert "func @POSEIDON_M_2(%arg0: ff) -> %1: arr<289> {" in out
+
+    def test_poly_template_to_core_pure_function_without_outputs(self):
+        # Emitted as `func` even with no returned values: the keyword comes
+        # from PolyTemplate's own pure-function branch, not from the shape
+        # of the function's out-args.
+        self.lines = [
+            "poly.template @noop_0 {",
+            "function.def @noop_0(%arg0: !felt.type) {",
+            "function.return",
+            "}",
+            "}",
+        ]
+        op, _ = PolyTemplate.parse(self.lines, 0, self._pure_function_template_parse_fn)
+        out = ''.join(op.to_core(TranslationContext()))
+        assert out.startswith("func @noop_0(%arg0: ff) -> ")
+        assert "def " not in out
 
     def test_register_pure_function_idempotent(self):
         func = FunctionDef(
