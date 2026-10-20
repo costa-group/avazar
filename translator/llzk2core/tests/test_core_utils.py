@@ -305,7 +305,7 @@ class TestPrimeAwareSimulation:
             "%zero": _felt_const("%zero", 0),
             "%one": _felt_const("%one", 1),
         }
-        fn = construct_function_from_expressions(SSAVar("%r"), var2expression, set(), prime=7)
+        fn = construct_function_from_expressions(SSAVar("%r"), var2expression, {}, set(), prime=7)
         assert fn(0) == 6  # -1 mod 7
 
     def test_construct_function_from_expressions_defaults_to_goldilocks(self):
@@ -314,7 +314,7 @@ class TestPrimeAwareSimulation:
             "%zero": _felt_const("%zero", 0),
             "%one": _felt_const("%one", 1),
         }
-        fn = construct_function_from_expressions(SSAVar("%r"), var2expression, set())
+        fn = construct_function_from_expressions(SSAVar("%r"), var2expression, {}, set())
         assert fn(0) == 18446744069414584321 - 1
 
 
@@ -368,7 +368,7 @@ class TestCollectHelpers:
             "%next": _felt_binary("%next", "felt.add", "%arg1", "%c1"),
             "%c1": _felt_const("%c1", 1),
         }
-        update_func = construct_function_from_expressions(SSAVar("%arg1"), var2expression, set())
+        update_func = construct_function_from_expressions(SSAVar("%arg1"), var2expression, {}, set())
         assert _detect_affine_step(update_func) == 1
 
     def test_detect_affine_step_none_for_non_affine(self):
@@ -377,7 +377,7 @@ class TestCollectHelpers:
             "%next": _felt_binary("%next", "felt.mul", "%arg1", "%two"),
             "%two": _felt_const("%two", 2),
         }
-        update_func = construct_function_from_expressions(SSAVar("%arg1"), var2expression, set())
+        update_func = construct_function_from_expressions(SSAVar("%arg1"), var2expression, {}, set())
         assert _detect_affine_step(update_func) is None
 
 

@@ -260,6 +260,12 @@ class FunctionDef(BlockOperation):
         self.signature = signature
         self.body = body
 
+        # Core keyword for the emitted definition: "def" for a struct's
+        # @compute/@constrain, set to "func" by PolyTemplate.to_core for a
+        # pure function (evaluated concretely by llzk_cli, never part of
+        # the SMT formula).
+        self.core_keyword = "def"
+
         # In arguments to from function definitions
         self._in_args = None
         self._in_arg_names = None
@@ -338,14 +344,6 @@ class FunctionDef(BlockOperation):
         ctx.ssa2pod_var.clear()
         ctx.var2const.clear()
 
-        # Specialization seed (see core.py's pending_const_seed): a pure
-        # function whose own loop bound depends on a parameter that's a
-        # compile-time constant at every call site gets that parameter
-        # folded in here, once per clone -- empty (a no-op) for every
-        # non-specialized function.
-        ctx.var2const.update(ctx.pending_const_seed)
-        ctx.pending_const_seed = {}
-
         core_name = ctx.current_core_function
         in_args, out_args = ctx.core_func2args[core_name]
 
@@ -361,7 +359,7 @@ class FunctionDef(BlockOperation):
         )
 
         # We start with the declaration of the function and the args
-        yield f"def {core_name}({signature_in}) -> {signature_out} {{\n"
+        yield f"{self.core_keyword} {core_name}({signature_in}) -> {signature_out} {{\n"
 
         for operation in self.body:
             yield from operation.to_core(ctx)

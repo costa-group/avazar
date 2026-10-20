@@ -208,9 +208,9 @@ class TestLLZK:
         )
         text = "".join(module.to_core(ctx))
 
-        assert text.index("def @C") < text.index("def @B") < text.index("def @A")
-        assert text.index("def @C") < text.index("call @C")
-        assert text.index("def @B") < text.index("call @B")
+        assert text.index("func @C") < text.index("func @B") < text.index("func @A")
+        assert text.index("func @C") < text.index("call @C")
+        assert text.index("func @B") < text.index("call @B")
 
     def test_module_pure_function_ordering_is_stable_when_independent(self):
         # Two pure functions with no call between them: no reordering should
@@ -222,7 +222,7 @@ class TestLLZK:
         module = ModuleOp(lang=True, main_type=self._dummy_main_type(ctx), body=[first, second])
         text = "".join(module.to_core(ctx))
 
-        assert text.index("def @First") < text.index("def @Second")
+        assert text.index("func @First") < text.index("func @Second")
 
     def test_module_hoists_pure_function_ahead_of_struct_that_calls_it(self):
         # A struct.def (@compute) declared before the pure function it
@@ -249,7 +249,7 @@ class TestLLZK:
         ctx = TranslationContext()
         text = "".join(module.to_core(ctx))
 
-        assert text.index("def @Pure") < text.index("call @Pure")
+        assert text.index("func @Pure") < text.index("call @Pure")
 
     def test_topo_sort_raises_on_pure_function_cycle(self):
         # Two pure functions calling each other -- mutual recursion among
@@ -435,15 +435,15 @@ class TestStructTemplateOrdering:
         assert text.index("def @IsEqual_1") < text.index("def main")
 
 
-class TestPureFunctionSpecialization:
+class TestPureFunctionFuncEmission:
     """
-    ModuleOp.to_core's loop-bound-parametric pure function specialization
-    pre-pass (llzk.py's _specialize_loop_bound_parametric_pure_functions):
-    a pure function whose own while-loop bound depends on one of its own
-    parameters gets cloned once per distinct compile-time-constant value
-    that parameter takes across all its call sites -- mirrors
-    EscalarMulW4Table_0's real shape (escalarmulw4table_concrete.mlir),
-    whose bound `arg3 < arg1*4` depends on its own "k" parameter.
+    A pure function whose own while-loop bound depends on one of its own
+    parameters -- mirrors EscalarMulW4Table_0's real shape
+    (escalarmulw4table_concrete.mlir), whose bound `arg3 < arg1*4` depends
+    on its own "k" parameter -- is emitted exactly once, as a `func` that
+    llzk_cli evaluates concretely at each call, with its loop count
+    computed at runtime (`repeat %steps_N`). Call sites keep the original
+    callee, whatever (constant or not) they pass.
     """
 
     @staticmethod
@@ -511,47 +511,34 @@ class TestPureFunctionSpecialization:
         text = "".join(module.to_core(ctx))
         return text, ctx
 
-    def test_single_constant_value_keeps_original_name(self):
-        # Every call site (just one, here) passes the same constant (3):
-        # no need to rename -- the generic def is specialized in place.
-        text, ctx = self._translate([("%r0", 3)])
+    def _assert_single_generic_func(self, text: str) -> None:
+        assert text.count("func @Table(") == 1
+        assert "def @Table" not in text
+        assert "@Table__" not in text
+        # The loop count is the parameter itself, evaluated at runtime.
+        assert "repeat %steps_" in text
 
-        assert "def @Table(" in text
-        assert "repeat 3 {" in text
-        assert "call @Table(" in text
-        assert "@Table::@Table" in ctx.pure_function_specializations
-        assert ctx.pure_function_specializations["@Table::@Table"] == [("@Table", {"%arg0": 3})]
+    def test_single_constant_call_site(self):
+        text, _ctx = self._translate([("%r0", 3)])
 
-    def test_multiple_distinct_values_get_suffixed_clones(self):
+        self._assert_single_generic_func(text)
+        assert "repeat 3 {" not in text
+        assert "call @Table(%c_r0) to %r0" in text
+
+    def test_multiple_distinct_constants_share_one_func(self):
         # Two call sites with different constants (1 and 2) -- mirrors
-        # escalarmul_test_concrete.mlir's 64 distinct-k call sites (one per
-        # scalar-multiplication window). Each gets its own clone, named
-        # using the "k" function.arg_name (not the raw "%arg0" SSA name).
-        text, ctx = self._translate([("%r1", 1), ("%r2", 2)])
+        # escalarmul_test_concrete.mlir's 64 distinct-k call sites. No
+        # per-value clones: both call the same func.
+        text, _ctx = self._translate([("%r1", 1), ("%r2", 2)])
 
-        assert "def @Table__k1(" in text
-        assert "def @Table__k2(" in text
-        assert "repeat 1 {" in text
-        assert "repeat 2 {" in text
-        assert "call @Table__k1(" in text
-        assert "call @Table__k2(" in text
-        # The generic, unspecialized def must not survive alongside the
-        # clones -- every call site was resolved and redirected.
-        assert "def @Table(" not in text
+        self._assert_single_generic_func(text)
+        assert "call @Table(%c_r1) to %r1" in text
+        assert "call @Table(%c_r2) to %r2" in text
 
-        specs = ctx.pure_function_specializations["@Table::@Table"]
-        assert sorted(specs) == [
-            ("@Table__k1", {"%arg0": 1}),
-            ("@Table__k2", {"%arg0": 2}),
-        ]
-
-    def test_unresolvable_call_argument_leaves_function_unspecialized(self):
-        # The call's own argument (%witness) has no defining operation
-        # anywhere in the calling function's body -- mirrors
-        # pointbits_loopback_concrete.mlir's sqrt_0, whose parameter traces
-        # back to a genuine runtime witness signal, never a constant. The
-        # whole function must be left exactly as today: one generic def,
-        # no specialization entry, no renamed call site.
+    def test_non_constant_call_argument(self):
+        # The call's own argument (%witness) has no defining operation in
+        # the caller -- mirrors pointbits_loopback_concrete.mlir's sqrt_0,
+        # whose parameter traces back to a runtime witness signal.
         felt = Type('!felt.type<"bn128">')
         call = FunctionCall([SSAVar("%r")], GlobalVariable("@Table::@Table"), [SSAVar("%witness")], None)
         compute = FunctionDef(
@@ -559,18 +546,23 @@ class TestPureFunctionSpecialization:
             [call, FunctionReturn([SSAVar("%r")], [felt])],
         )
         struct_template = PolyTemplate(GlobalVariable("@Main"), [StructDef(GlobalVariable("@Main"), [compute])])
-        table_template = self._table_template()
 
         module = ModuleOp(
             lang=True, main_type=Type('!struct.type<@Main::@Main<[]>>'),
-            body=[struct_template, table_template],
+            body=[struct_template, self._table_template()],
         )
-        ctx = TranslationContext()
-        text = "".join(module.to_core(ctx))
+        text = "".join(module.to_core(TranslationContext()))
 
-        assert "@Table::@Table" not in ctx.pure_function_specializations
-        assert text.count("def @Table(") == 1
-        assert "call @Table(" in text
+        self._assert_single_generic_func(text)
+        assert "call @Table(%witness) to %r" in text
+
+    def test_struct_compute_and_main_stay_def(self):
+        text, _ctx = self._translate([("%r0", 3)])
+
+        assert "def @Main(" in text
+        assert "def main(" in text
+        func_headers = [line for line in text.splitlines() if line.startswith("func ")]
+        assert len(func_headers) == 1 and func_headers[0].startswith("func @Table(")
 
 
 class TestNestedModuleGlobals:

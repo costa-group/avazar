@@ -887,9 +887,8 @@ class SCFWhile(BlockOperation):
         # initial values, mirroring SCFCondition.to_core's own
         # component-wise pairing (self.results against the loop-carried
         # args, in the same order). A 0-repetition loop is entirely
-        # legitimate (e.g. a specialized pure function's loop bound
-        # resolving to 0 -- see llzk.py's loop-bound-parametric pure
-        # function specialization) and never reaches
+        # legitimate (e.g. a pure function's loop bound depending on a
+        # parameter that is 0 at some call) and never reaches
         # SCFCondition.to_core at all, since that only runs once per
         # actual iteration inside the repeat block below; without this,
         # code after the loop would reference an always-undefined
