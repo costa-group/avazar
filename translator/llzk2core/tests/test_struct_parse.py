@@ -18,6 +18,7 @@ from llzk_dialects.cast import CastToIndex
 from llzk_dialects.core import SSAVar, GlobalVariable, Type, TranslationContext
 from llzk_dialects.felt import FeltConst, FeltBinary
 from llzk_dialects.bool import BoolCmp
+from llzk_dialects.core_utils import FIELD_PRIMES
 
 
 class TestStruct:
@@ -1463,6 +1464,33 @@ class TestFindArrayComponentPopulationSequences:
         body = [FeltConst(SSAVar("%c0"), 0), loop]
         result = _find_array_component_population_sequences(body, {"%array": "comp"})
         assert result == {"comp": [(0,), (1,)]}
+
+    def test_countdown_to_minus_one_uses_the_circuit_prime(self):
+        # circom's `for (i = n-1; i != -1; i--)` -- the bound is the field's
+        # own p-1 (smtverifier10_test_concrete.mlir's SMTVerifier_157
+        # `levels`, bn128). Only terminates when 0 - 1 wraps to the *same*
+        # field's p-1: simulated with the goldilocks default it never
+        # matched and ran into the iteration cap.
+        bn128 = FIELD_PRIMES["bn128"]
+        after_body = [
+            FeltConst(SSAVar("%c1"), 1),
+            ArrayRead(SSAVar("%14"), SSAVar("%array"), [SSAVar("%arg1")], []),
+            ArrayWrite(SSAVar("%array"), [SSAVar("%arg1")], SSAVar("%14"), []),
+            FeltBinary(SSAVar("%next"), "felt.sub", SSAVar("%arg1"), SSAVar("%c1"), []),
+            SCFYield([SSAVar("%next")], [Type("index")]),
+        ]
+        before_body = [
+            FeltConst(SSAVar("%minus1"), bn128 - 1),
+            BoolCmp(SSAVar("%cond"), "ne", SSAVar("%arg1"), SSAVar("%minus1")),
+            SCFCondition(SSAVar("%cond"), [SSAVar("%arg1")], [Type("index")]),
+        ]
+        loop = SCFWhile(
+            [], [(SSAVar("%arg1"), SSAVar("%c2"))], [[Type("index")], [Type("index")]],
+            before_body, [(SSAVar("%arg1"), Type("index"))], after_body,
+        )
+        body = [FeltConst(SSAVar("%c2"), 2), loop]
+        result = _find_array_component_population_sequences(body, {"%array": "comp"}, bn128)
+        assert result == {"comp": [(2,), (1,), (0,)]}
 
     def test_2d_dimension_order_differs_from_nesting_order(self):
         # Mirrors arbitrary_traversal_array_components.circom's actual

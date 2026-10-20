@@ -28,7 +28,7 @@ from llzk_dialects.core import (
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
 from llzk_dialects.utils import array_dimensions, split_top_level_commas, struct_type_name
-from llzk_dialects.core_utils import translate_assignment_core_with_ctx
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx, FIELD_PRIMES
 
 
 def _annotate_function_calls(ops, pod_to_member):
@@ -294,7 +294,7 @@ def _trace_to_enclosing_loop(name, loop_stack, def_map, const_map=None):
     return None, 0
 
 
-def _loop_own_sequence(loop, const_map):
+def _loop_own_sequence(loop, const_map, prime=FIELD_PRIMES["goldilocks"]):
     """
     The real sequence of values `loop`'s own induction variable /
     after-region block-arg takes across its iterations, in order -- or
@@ -321,7 +321,7 @@ def _loop_own_sequence(loop, const_map):
             if value is not None:
                 initial_values[block_arg.name] = value
         try:
-            return loop._extract_index_sequence(initial_values, const_map)
+            return loop._extract_index_sequence(initial_values, const_map, prime)
         except (NotImplementedError, KeyError, AssertionError):
             # Best-effort static analysis: any shape _extract_index_sequence
             # doesn't (yet) handle degrades to "can't resolve" rather than
@@ -331,7 +331,7 @@ def _loop_own_sequence(loop, const_map):
     return None
 
 
-def _resolve_population_nest_sequence(write, loop_stack, def_map, const_map):
+def _resolve_population_nest_sequence(write, loop_stack, def_map, const_map, prime=FIELD_PRIMES["goldilocks"]):
     """
     For one array-of-components population write (an ArrayWrite into a
     registered counting-pod array, with at least one non-compile-time-
@@ -379,7 +379,7 @@ def _resolve_population_nest_sequence(write, loop_stack, def_map, const_map):
 
     per_loop_sequence = {}
     for loop in ordered_loops:
-        sequence = _loop_own_sequence(loop, const_map)
+        sequence = _loop_own_sequence(loop, const_map, prime)
         if sequence is None:
             return None
         per_loop_sequence[id(loop)] = sequence
@@ -474,7 +474,8 @@ def _collect_population_write_candidates(ops, array_member_base, const_map, def_
                                                       local_def_map, out)
 
 
-def _walk_array_component_population(ops, array_member_base, const_map, loop_stack, def_map, member_nests):
+def _walk_array_component_population(ops, array_member_base, const_map, loop_stack, def_map, member_nests,
+                                     prime=FIELD_PRIMES["goldilocks"]):
     """
     Recursively find every scf.for/scf.while in `ops` (crossing through
     scf.if/scf.execute_region nesting freely, since neither starts a new
@@ -508,7 +509,7 @@ def _walk_array_component_population(ops, array_member_base, const_map, loop_sta
                 sub = getattr(op, attr, None)
                 if sub:
                     _walk_array_component_population(sub, array_member_base, local_const_map,
-                                                     loop_stack, local_def_map, member_nests)
+                                                     loop_stack, local_def_map, member_nests, prime)
             continue
 
         next_stack = loop_stack + [op]
@@ -524,17 +525,17 @@ def _walk_array_component_population(ops, array_member_base, const_map, loop_sta
                 write, write_const_map, write_def_map = candidates[-1]
                 member = array_member_base[write.arr_ref.name]
                 nest_sequence = _resolve_population_nest_sequence(
-                    write, next_stack, write_def_map, write_const_map)
+                    write, next_stack, write_def_map, write_const_map, prime)
                 if nest_sequence is not None:
                     member_nests.setdefault(member, []).append(nest_sequence)
 
             # Keep looking for a further nested loop (the next dimension)
             # inside this same body.
             _walk_array_component_population(sub, array_member_base, local_const_map,
-                                             next_stack, local_def_map, member_nests)
+                                             next_stack, local_def_map, member_nests, prime)
 
 
-def _find_array_component_population_sequences(body, array_member_base):
+def _find_array_component_population_sequences(body, array_member_base, prime=FIELD_PRIMES["goldilocks"]):
     """
     For each array-of-components member (array_member_base) populated
     inside at least one genuinely symbolic loop, computes the real sequence
@@ -553,7 +554,7 @@ def _find_array_component_population_sequences(body, array_member_base):
     original counter-based behavior for it in that case.
     """
     member_nests = {}
-    _walk_array_component_population(body, array_member_base, {}, [], {}, member_nests)
+    _walk_array_component_population(body, array_member_base, {}, [], {}, member_nests, prime)
     return {
         member: [idx_tuple for nest in nests for idx_tuple in nest]
         for member, nests in member_nests.items()
@@ -942,8 +943,11 @@ def _build_component_naming_maps(body, ctx, idx_pod_member_types=None):
     # _find_array_component_population_sequences.
     array_component_index_sequences = {}
     if array_member_base:
+        # ctx.prime, not the goldilocks default: a loop counting down to
+        # circom's "-1" (the field's own p-1) only terminates under the
+        # circuit's real field arithmetic.
         array_component_index_sequences = _find_array_component_population_sequences(
-            body, array_member_base)
+            body, array_member_base, ctx.prime)
 
     return array_component_index_sequences
 
