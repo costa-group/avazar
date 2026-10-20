@@ -15,7 +15,7 @@ from typing import Dict, List, Optional
 
 from llzk_dialects.core import Operation, BlockOperation
 from llzk_dialects.definitions import Dialect
-from llzk_dialects.llzk import ModuleOp
+from llzk_dialects.llzk import ModuleOp, NestedModuleOp
 from llzk_dialects.loc_parser import LocTable, preprocess
 
 
@@ -125,7 +125,9 @@ class LLZKParser:
                 cursor += 1
                 continue
 
-            op_cls = self._find_op_class(line)
+            # A module nested in the top-level one (e.g. `module @global {`)
+            # has no dialect-prefixed op token to dispatch on.
+            op_cls = NestedModuleOp if NestedModuleOp.match(line) else self._find_op_class(line)
             if op_cls is None:
                 raise ValueError(f"{line}: no operation matches the statement")
 

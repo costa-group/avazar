@@ -571,3 +571,182 @@ class TestPureFunctionSpecialization:
         assert "@Table::@Table" not in ctx.pure_function_specializations
         assert text.count("def @Table(") == 1
         assert "call @Table(" in text
+
+
+class TestNestedModuleGlobals:
+    """
+    Nested `module @global { global.def const ... }` (circom-llzk's real
+    shape, e.g. poseidon3_test_concrete.mlir): array globals are emitted
+    once, in a leading `globals { name: [..] }` block, and each
+    `global.read const @mod::@x` either aliases its uses to the global's
+    Core name `@mod_@x` (never written to) or copies it (written to later).
+    """
+
+    @staticmethod
+    def _translate(globals_text: str, body: str) -> str:
+        from execution.main_execution import init_llzk_parser
+        text = f"""\
+module attributes {{llzk.lang = "circom", llzk.main = !struct.type<@Main_0::@Main_0<[]>>}} {{
+{globals_text}
+  poly.template @Main_0 {{
+    struct.def @Main_0 {{
+      struct.member @out : !felt.type<"bn128"> {{llzk.pub, signal}}
+      function.def @compute(%arg0: !felt.type<"bn128"> {{function.arg_name = "in"}}) -> !struct.type<@Main_0::@Main_0<[]>> attributes {{function.allow_witness}} {{
+        %self = struct.new : <@Main_0::@Main_0<[]>>
+{body}
+        struct.writem %self[@out] = %r : <@Main_0::@Main_0<[]>>, !felt.type<"bn128">
+        function.return %self : !struct.type<@Main_0::@Main_0<[]>>
+      }}
+      function.def @constrain(%arg0: !struct.type<@Main_0::@Main_0<[]>>, %arg1: !felt.type<"bn128"> {{function.arg_name = "in"}}) attributes {{function.allow_constraint}} {{
+        function.return
+      }}
+    }}
+  }}
+}}
+"""
+        module = init_llzk_parser(text.splitlines(keepends=True)).parse()[0]
+        return "".join(line + "\n" for line in module.to_core(TranslationContext()))
+
+    GLOBAL_ARR = """\
+  module @global {
+    global.def const @arr : !array.type<2 x !felt.type<"bn128">> = [ 7 : <"bn128">,  8 : <"bn128">]
+  }"""
+
+    def test_globals_block_emitted_first_and_aliased_read(self):
+        text = self._translate(self.GLOBAL_ARR, """\
+        %0 = global.read const @global::@arr : !array.type<2 x !felt.type<"bn128">>
+        %c1 = arith.constant 1 : index
+        %r = array.read %0[%c1] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">""")
+
+        assert text.startswith("globals {\n@global_@arr: [7, 8]\n}\n")
+        assert "array.read @global_@arr[%c1] %r" in text
+        # An aliased read emits nothing of its own.
+        assert "%0" not in text
+
+    def test_written_read_is_copied(self):
+        text = self._translate(self.GLOBAL_ARR, """\
+        %0 = global.read const @global::@arr : !array.type<2 x !felt.type<"bn128">>
+        %c0 = arith.constant 0 : index
+        array.write %0[%c0] = %arg0 : <2 x !felt.type<"bn128">>, !felt.type<"bn128">
+        %r = array.read %0[%c0] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">""")
+
+        assert "array.copy @global_@arr %0" in text
+        assert "array.write %arg0 %0[%c0]" in text
+        assert "array.read %0[%c0] %r" in text
+        # The shared global itself is never written to.
+        assert "array.write %arg0 @global_@arr" not in text
+
+    def test_sibling_region_same_name_is_untouched(self):
+        # %2 reads the global in the then-branch; an unrelated %2 in the
+        # else-branch (SSA names reused across sibling regions) must keep
+        # its own name.
+        text = self._translate(self.GLOBAL_ARR, """\
+        %felt_const_1 = felt.const  1 : <"bn128">
+        %0 = bool.cmp eq(%arg0, %felt_const_1) : !felt.type<"bn128">, !felt.type<"bn128">
+        %r = scf.if %0 -> (!felt.type<"bn128">) {
+          %2 = global.read const @global::@arr : !array.type<2 x !felt.type<"bn128">>
+          %c0 = arith.constant 0 : index
+          %3 = array.read %2[%c0] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">
+          scf.yield %3 : !felt.type<"bn128">
+        } else {
+          %2 = felt.add %arg0, %felt_const_1 : !felt.type<"bn128">, !felt.type<"bn128">
+          scf.yield %2 : !felt.type<"bn128">
+        }""")
+
+        assert "array.read @global_@arr[%c0] %3" in text
+        assert "%2 = felt.add %arg0 %felt_const_1" in text
+
+    def test_two_modules_same_global_name(self):
+        text = self._translate("""\
+  module @mod1 {
+    global.def const @arr : !array.type<1 x !felt.type<"bn128">> = [ 1 : <"bn128">]
+  }
+  module @mod2 {
+    global.def const @arr : !array.type<1 x !felt.type<"bn128">> = [ 2 : <"bn128">]
+  }""", """\
+        %0 = global.read const @mod1::@arr : !array.type<1 x !felt.type<"bn128">>
+        %1 = global.read const @mod2::@arr : !array.type<1 x !felt.type<"bn128">>
+        %c0 = arith.constant 0 : index
+        %2 = array.read %0[%c0] : <1 x !felt.type<"bn128">>, !felt.type<"bn128">
+        %3 = array.read %1[%c0] : <1 x !felt.type<"bn128">>, !felt.type<"bn128">
+        %r = felt.add %2, %3 : !felt.type<"bn128">, !felt.type<"bn128">""")
+
+        assert text.startswith("globals {\n@mod1_@arr: [1]\n@mod2_@arr: [2]\n}\n")
+        assert "array.read @mod1_@arr[%c0] %2" in text
+        assert "array.read @mod2_@arr[%c0] %3" in text
+
+    def test_2d_global_is_flattened(self):
+        text = self._translate("""\
+  module @global {
+    global.def const @m : !array.type<2,2 x !felt.type<"bn128">> = [ 1 : <"bn128">,  2 : <"bn128">,  3 : <"bn128">,  4 : <"bn128">]
+  }""", """\
+        %0 = global.read const @global::@m : !array.type<2,2 x !felt.type<"bn128">>
+        %c1 = arith.constant 1 : index
+        %r = array.read %0[%c1, %c1] : <2,2 x !felt.type<"bn128">>, !felt.type<"bn128">""")
+
+        assert "@global_@m: [1, 2, 3, 4]" in text
+        assert "@global_@m[" in text
+
+    def test_whole_array_alias_passed_to_call(self):
+        from llzk_dialects.global_ import GlobalRead
+        from llzk_dialects.llzk import _alias_global_reads
+        from llzk_dialects.global_ import _register_global_def, GlobalDef
+
+        ctx = TranslationContext()
+        _register_global_def(GlobalDef.parse(
+            'global.def const @arr : !array.type<2 x !felt.type<"bn128">> = [ 7 : <"bn128">,  8 : <"bn128">]'
+        ), ctx, "@global")
+        read = GlobalRead.parse('%0 = global.read const @global::@arr : !array.type<2 x !felt.type<"bn128">>')
+        call = FunctionCall([SSAVar("%1")], GlobalVariable("@F::@F"), [SSAVar("%0")], None)
+        _alias_global_reads([read, call], ctx)
+
+        assert read.aliased
+        assert call.args[0].name == "@global_@arr"
+
+    def test_loop_carried_init_counts_as_written(self):
+        from llzk_dialects.global_ import GlobalRead, GlobalDef, _register_global_def
+        from llzk_dialects.llzk import _alias_global_reads
+        from llzk_dialects.scf import SCFFor
+
+        ctx = TranslationContext()
+        _register_global_def(GlobalDef.parse(
+            'global.def const @arr : !array.type<2 x !felt.type<"bn128">> = [ 7 : <"bn128">,  8 : <"bn128">]'
+        ), ctx, "@global")
+        read = GlobalRead.parse('%0 = global.read const @global::@arr : !array.type<2 x !felt.type<"bn128">>')
+        loop = SCFFor([SSAVar("%res")], SSAVar("%i"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%st"),
+                      [(SSAVar("%acc"), SSAVar("%0"))], [])
+        _alias_global_reads([read, loop], ctx)
+
+        assert not read.aliased
+        assert loop.iter_args[0][1].name == "%0"
+
+    def test_scalar_global_is_inlined_not_listed(self):
+        text = self._translate("""\
+  module @global {
+    global.def const @s : !felt.type<"bn128"> = 5 : <"bn128">
+  }""", """\
+        %0 = global.read const @global::@s : !felt.type<"bn128">
+        %r = felt.add %0, %arg0 : !felt.type<"bn128">, !felt.type<"bn128">""")
+
+        assert "globals {" not in text
+        assert "%0 = 5" in text
+
+    def test_top_level_global_unified_under_bare_name(self):
+        text = self._translate("""\
+  global.def const @arr : !array.type<2 x !felt.type<"bn128">> = [ 7 : <"bn128">,  8 : <"bn128">]""", """\
+        %0 = global.read @arr : !array.type<2 x !felt.type<"bn128">>
+        %c1 = arith.constant 1 : index
+        %r = array.read %0[%c1] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">""")
+
+        assert text.startswith("globals {\n@arr: [7, 8]\n}\n")
+        assert "array.read @arr[%c1] %r" in text
+
+    def test_nested_module_with_non_global_op_is_rejected(self):
+        with pytest.raises(NotImplementedError):
+            self._translate("""\
+  module @IsZero_0 {
+    struct.def @IsZero_0 {
+      struct.member @out : !felt.type<"bn128"> {llzk.pub, signal}
+    }
+  }""", """\
+        %r = felt.const  1 : <"bn128">""")

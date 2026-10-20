@@ -191,6 +191,10 @@ class TranslationContext:
     # body is translated (see llzk.py's ModuleOp.to_core) -- circom-llzk may
     # emit a global.def textually after the struct that reads it.
     global2value: Dict[str, Union[int, List[int]]] = field(default_factory=dict)
+    # Array globals only: global.read reference name -> Core name in the
+    # leading `globals { ... }` block (e.g. "@global::@array_const_0" ->
+    # "@global_@array_const_0", see global_.py's _global_core_name).
+    global2core: Dict[str, str] = field(default_factory=dict)
 
     # For an array-of-components member populated inside a genuinely
     # symbolic (non-compile-time-constant-index) loop, the real sequence of
