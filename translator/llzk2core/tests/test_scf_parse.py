@@ -618,7 +618,7 @@ class TestSCF:
             "%next = felt.add %arg1 %c1",
             "%arg1 = %next",
             "%c2 = 2",
-            "%cond = bool.lt %c2 %arg1",
+            "%cond = bool.lt %arg1 %c2",
             "}",
         ]
 
@@ -713,7 +713,7 @@ class TestSCF:
             "%next = felt.add %arg1 %c1",
             "%arg1 = %next",
             "%c2 = 2",
-            "%cond = bool.lt %c2 %arg1",
+            "%cond = bool.lt %arg1 %c2",
             "}",
         ]
 
@@ -798,7 +798,7 @@ class TestSCF:
             "%c1 = 1",
             "%next = felt.add %arg1 %c1",
             "%arg1 = %next",
-            "%cond = bool.lt %extern %arg1",
+            "%cond = bool.lt %arg1 %extern",
             "}",
         ]
 
@@ -816,7 +816,7 @@ class TestSCF:
             "%c1 = 1",
             "%next = felt.add %arg1 %c1",
             "%arg1 = %next",
-            "%cond = bool.ge %extern %arg1",  # "le" -> "bool.ge" with swapped operands
+            "%cond = bool.le %arg1 %extern",
             "}",
         ]
 
@@ -845,7 +845,7 @@ class TestSCF:
             "%arg1 = %next",
             "%four = 4",
             "%bound = felt.mul %extern %four",
-            "%cond = bool.lt %bound %arg1",
+            "%cond = bool.lt %arg1 %bound",
             "}",
         ]
 
