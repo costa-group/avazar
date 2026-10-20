@@ -77,6 +77,37 @@ def setVars {c : ZKConfig}
   | _, _ => Except.error "Mismatched lengths of ids and values"
 
 
+/- A type for the global environment -/
+abbrev GlobalEnv (c : ZKConfig) := Std.TreeMap VarID (FFArray c)
+
+/- Empty global environment -/
+def emptyGlobalEnv (c : ZKConfig) : GlobalEnv c := Std.TreeMap.empty
+
+/- Retrieve a value from the global environment. It fails if the variable
+   is not in the environment -/
+def getGlobalVar {c : ZKConfig} (env : GlobalEnv c) (id : VarID) : Except String (FFArray c) :=
+  match env.get? id with
+  | some v => Except.ok v
+  | none   => Except.error s!"Global variable '{id}' not found"
+
+/- Set the value of a global variable in the global environment. It updates
+   the value if it exists already. It never fails -/
+def setGlobalVar {c : ZKConfig} (env : GlobalEnv c) (id : VarID) (v : FFArray c) : GlobalEnv c :=
+  env.insert id v
+
+def setGlobalVars {c : ZKConfig}
+    (env : GlobalEnv c) (ids : List VarID) (vs : List (FFArray c)) : Except String (GlobalEnv c) :=
+  match ids, vs with
+  | [], [] => Except.ok env
+  | id :: ids, v :: vs => do
+      let env' ← setGlobalVars (setGlobalVar env id v) ids vs
+      Except.ok env'
+  | _, _ => Except.error "Mismatched lengths of ids and values"
+
+
+def globalsTpGlobalsEnv {c : ZKConfig} (globals : Globals c) : GlobalEnv c :=
+  globals.foldl (init := emptyGlobalEnv c) (fun env (id, arr) => setGlobalVar env id arr.toArray)
+
 /- Evaluate a simple expressions (a variable or a field value) to a field value,
    by looking it up in the state. It fails if the variable is not found or if
    the variable is an array.
@@ -354,6 +385,7 @@ def evalNewArray {c : ZKConfig}
   Except.ok { st with vars := newAEnv }
 
 def evalReadArray {c : ZKConfig}
+    (globals : GlobalEnv c)
     (st : State c) (out a : VarID) (index : SimpleExpr c) : Except String (State c) := do
   let indexVal ← evalSimpleExprToFF st index
   match getVar st.vars a with
@@ -363,8 +395,20 @@ def evalReadArray {c : ZKConfig}
         let newEnv := setVar st.vars out (Value.scalar val)
         Except.ok { st with vars := newEnv }
       else
-        Except.error s!"Index out of bounds: {indexVal.val} >= {arr.size}"
-  | _ => Except.error s!"Variable '{a}' is not an array"
+        Except.error s!"Index out of bounds (local array '{a}'): {indexVal.val} >= {arr.size}"
+  | Except.ok (Value.scalar _) =>
+        Except.error s!"Variable '{a}' is not an array"
+  | _ =>
+    -- try in the global environment
+    match getGlobalVar globals a with
+    | Except.ok arr => do
+        if h : indexVal.val < arr.size then
+          let val := arr[indexVal.val]'h
+          let newEnv := setVar st.vars out (Value.scalar val)
+          Except.ok { st with vars := newEnv }
+        else
+          Except.error s!"Index out of bounds (global array '{a}'): {indexVal.val} >= {arr.size}"
+    | _ => Except.error s!"Array '{a}' not found locally nor globally"
 
 def evalWriteArray {c : ZKConfig}
     (st : State c) (a : VarID) (index value : SimpleExpr c) : Except String (State c) := do
@@ -381,13 +425,21 @@ def evalWriteArray {c : ZKConfig}
   | _ => Except.error s!"Variable '{a}' is not an array"
 
 def evalCopyArray {c : ZKConfig}
+    (globals : GlobalEnv c)
     (st : State c) (out a : VarID) : Except String (State c) := do
-   match getVar st.vars a with
-   | Except.ok (Value.array arr) => do
+  match getVar st.vars a with
+  | Except.ok (Value.array arr) => do
        let new_arr := arr
        let newAEnv := setVar st.vars out (Value.array new_arr)
        Except.ok { st with vars := newAEnv }
-   | _ => Except.error s!"Variable '{a}' is not an array"
-
+  | Except.ok (Value.scalar _) =>
+        Except.error s!"Variable '{a}' is not an array"
+  | _ =>
+    -- try in the global environment
+    match getGlobalVar globals a with
+    | Except.ok arr => do
+        let newAEnv := setVar st.vars out (Value.array arr)
+        Except.ok { st with vars := newAEnv }
+    | _ => Except.error s!"Array '{a}' not found locally nor globally"
 
 end Llzk.Language.Core.Semantics.Basic

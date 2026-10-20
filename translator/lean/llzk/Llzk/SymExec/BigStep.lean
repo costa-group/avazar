@@ -330,7 +330,7 @@ def seFuncCallConcrete {c : ZKConfig}
     (outs : List VarID)
     : Except String (CmdsSpec c) := do
     let concrete_args ← extract_concrete_args cfg symEnv args
-    let output ← evalFun defSemConfig p fname concrete_args
+    let output ← evalFun defSemConfig (emptyGlobalEnv c) p fname concrete_args
     let sym_out := output.map (fun v => match v with
                                         | Value.scalar s => SymValue.ffVar (SymFFVar.const s)
                                         | Value.array arr => SymValue.ffArray (arr.map (fun s => SymFFVar.const s)))
@@ -440,7 +440,7 @@ def genExprAnnotation {c : ZKConfig} (e : Expr c) : String :=
   | .id s =>
       s!"{s}"
 
-def genCmdAnnotation' {c : ZKConfig} (cmd : ComWithMD c) (inSymEnv outSymEnv: SymEnv c) : String :=
+def genCmdAnnotation' {c : ZKConfig} (cmd : ComWithMD c) (inSymEnv outSymEnv : SymEnv c) : String :=
   match cmd with
   | .mk _ info =>
       match info with
@@ -512,6 +512,7 @@ mutual
 
 def seCmd {c : ZKConfig}
     (cfg : SymExecConfig c)
+    (globals : GlobalEnv c)
     (symEnv : SymEnv c)
     (specs : List (FuncSpec c)) (p : List (FuncWithMD c)) (i : ComWithMD c)
     : Except String (CmdsSpec c) := do
@@ -522,14 +523,14 @@ def seCmd {c : ZKConfig}
       | Com.assert out => seAssert cfg md symEnv out
       | Com.assign id e => seAssignment cfg md symEnv id e
       | Com.new_array id size => seNewArray cfg md symEnv id size
-      | Com.read_array out a idx => seArrayRead cfg md symEnv out a idx
+      | Com.read_array out a idx => seArrayRead cfg globals md symEnv out a idx
       | Com.write_array a idx value => seArrayWrite cfg md symEnv a idx value
-      | Com.copy_array out a => seArrayCopy cfg md symEnv out a
+      | Com.copy_array out a => seArrayCopy cfg globals md symEnv out a
       | Com.if_stmt cond tb eb =>
           match evalCond cfg md symEnv cond with
           | Except.error _e =>
-              let tbSpec ← seCmds cfg symEnv specs p tb
-              let ebSpec ← seCmds cfg symEnv specs p eb
+              let tbSpec ← seCmds cfg globals symEnv specs p tb
+              let ebSpec ← seCmds cfg globals symEnv specs p eb
               let cfg' := { cfg with nextId := max tbSpec.nextId ebSpec.nextId }
               let ifSpec ← mergeIfBranches
                             cfg' md
@@ -544,7 +545,7 @@ def seCmd {c : ZKConfig}
               }
           | Except.ok condVal =>
               if condVal then
-                let tb ← seCmds cfg symEnv specs p tb
+                let tb ← seCmds cfg globals symEnv specs p tb
                 return {
                   inSymEnv := tb.inSymEnv,
                   outSymEnv := tb.outSymEnv,
@@ -554,7 +555,7 @@ def seCmd {c : ZKConfig}
                   newBoolVars := tb.newBoolVars
                   }
               else
-                let eb ← seCmds cfg symEnv specs p eb
+                let eb ← seCmds cfg globals symEnv specs p eb
                 return {
                   inSymEnv := eb.inSymEnv,
                   outSymEnv := eb.outSymEnv,
@@ -566,12 +567,12 @@ def seCmd {c : ZKConfig}
       | Com.loop_exp repExp body =>
           let rep ← simpleExprToFF symEnv repExp
           let loop := (ComWithMD.mk md (Com.loop rep.val body))
-          seCmd cfg symEnv specs p loop
+          seCmd cfg globals symEnv specs p loop
       | Com.loop (rep+1) body =>
-          let specFirstIter ← seCmds cfg symEnv specs p body -- first iteration
+          let specFirstIter ← seCmds cfg globals symEnv specs p body -- first iteration
           let cfg' := { cfg with nextId := specFirstIter.nextId }
           let specRestIter ←
-                seCmd cfg' specFirstIter.outSymEnv specs p (ComWithMD.mk md (Com.loop rep body))
+                seCmd cfg' globals specFirstIter.outSymEnv specs p (ComWithMD.mk md (Com.loop rep body))
           return {
             inSymEnv := symEnv,
             outSymEnv := specRestIter.outSymEnv,
@@ -633,7 +634,7 @@ decreasing_by
 
 
 def seCmds {c : ZKConfig}
-  (cfg : SymExecConfig c)
+  (cfg : SymExecConfig c) (globals : GlobalEnv c)
   (symEnv : SymEnv c) (specs : List (FuncSpec c)) (p : List (FuncWithMD c)) (cmds : List (ComWithMD c))
   : Except String (CmdsSpec c) := do
   match cmds with
@@ -646,9 +647,9 @@ def seCmds {c : ZKConfig}
       newBoolVars := emptyBoolVarSet
   }
   | cmd :: rest => do
-    let cmdSpec ← seCmd cfg symEnv specs p cmd
+    let cmdSpec ← seCmd cfg globals symEnv specs p cmd
     let cfg' := { cfg with nextId := cmdSpec.nextId }
-    let cmdsSpec ← seCmds cfg' cmdSpec.outSymEnv specs p rest
+    let cmdsSpec ← seCmds cfg' globals cmdSpec.outSymEnv specs p rest
     return {
       inSymEnv := symEnv,
       outSymEnv := cmdsSpec.outSymEnv,
@@ -794,14 +795,14 @@ def genRetsBinding {c : ZKConfig}
 
 
 def seExecFunc {c : ZKConfig}
-    (cfg : SymExecConfig c) (md : FuncMD)
+    (cfg : SymExecConfig c) (globals : GlobalEnv c) (md : FuncMD)
     (f : Func c) (specs : List (FuncSpec c)) (p : List (FuncWithMD c))
     : Except String (FuncSpec c) := do
   match f with
   | .mk name params rets body =>
     let (nextId, inVars, symEnv) ← genInitialSymEnv md params
     let cfg' := { cfg with nextId := nextId }
-    let bodySpec ← seCmds cfg' symEnv specs p body
+    let bodySpec ← seCmds cfg' globals symEnv specs p body
     let cfg'' := { cfg' with nextId := bodySpec.nextId }
 --    let (nextId, retVars, bodySpecF) ← genRetsBinding cfg'' md rets bodySpec.outSymEnv bodySpec.f
     let (nextId, retVars, senv', bodySpecF) ←
@@ -828,7 +829,7 @@ def seExecFunc {c : ZKConfig}
 
 
 def seExecFuncs {c : ZKConfig}
-    (cfg : SymExecConfig c) (p : List (FuncWithMD c)) :=
+    (cfg : SymExecConfig c) (globals : GlobalEnv c) (p : List (FuncWithMD c)) :=
   let rec loop (funcs : List (FuncWithMD c)) (specs : List (FuncSpec c)) (p' : List (FuncWithMD c))
     : Except String (List (FuncSpec c)) := do
     match funcs with
@@ -839,7 +840,7 @@ def seExecFuncs {c : ZKConfig}
           if md.no_sym_exec then
             loop funcs' specs (funcWmd::p')
           else
-            let spec ← seExecFunc cfg md func specs p'
+            let spec ← seExecFunc cfg globals md func specs p'
             loop funcs' (spec :: specs) (funcWmd::p')
   loop p.reverse [] []
 
@@ -850,7 +851,8 @@ def seExecProg {c : ZKConfig}
     : Except String (FFConstraintSystem c) := do
     match p with
     | .mk _ funcs =>
-    let funcSpecs ← seExecFuncs cfg funcs
+    let globals := globalsTpGlobalsEnv funcs.globals
+    let funcSpecs ← seExecFuncs cfg globals funcs.functions
     let macros := funcSpecs.map (fun spec => spec.f)
     return {
       macros := macros,

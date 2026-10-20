@@ -211,7 +211,7 @@ def addLivenessFuncs {c : ZKConfig} (funcs : List (FuncWithMD c)) : List (FuncWi
 def addLivenessProg {c : ZKConfig} (p : ProgWithMD c) : ProgWithMD c :=
     match p with
     | .mk md funcs =>
-        let funcs' := addLivenessFuncs funcs
-        ProgWithMD.mk md funcs'
+        let funcs' := addLivenessFuncs funcs.functions
+        ProgWithMD.mk md { functions := funcs', globals := funcs.globals }
 
 end Llzk.Language.Core.Analysis.Liveness
