@@ -47,12 +47,12 @@ Follow the steps described in the [LLZK Circom GitHub Repository](https://github
 
 ## Usage
 
-### avazar.py — Main Entry Point
+### complete_avazar.py — Main Entry Point
 
-`avazar.py` is the top-level script that automates the full AVAZAR verification pipeline. Given a Circom circuit, it runs all internal steps in sequence: R1CS generation, LLZK IR generation, IR translation to core format, and SMT-based verification.
+`complete_avazar.py` is the top-level script that automates the full AVAZAR verification pipeline. Given a Circom circuit, it runs all internal steps in sequence: R1CS generation, LLZK IR generation, IR translation to core format, and SMT-based verification.
 
 ```bash
-python3 avazar.py -s <circuit.circom> [-out <output_dir>] [-solver <solver>]
+python3 complete_avazar.py -s <circuit.circom> [-out <output_dir>] [-solver <solver>]
 ```
 
 #### Arguments
@@ -82,9 +82,9 @@ python3 avazar.py -s <circuit.circom> [-out <output_dir>] [-solver <solver>]
 
 ```bash
 # Basic usage with default solver
-python3 avazar.py -s examples/semantic_equivalence/circomlib/iszero/iszero.circom
+python3 complete_avazar.py -s examples/semantic_equivalence/circomlib/iszero/iszero.circom
 
 # Specify output directory and solver
-python3 avazar.py -s examples/semantic_equivalence/circomlib/iszero/iszero.circom -out results/ -solver ffsol
+python3 complete_avazar.py -s examples/semantic_equivalence/circomlib/iszero/iszero.circom -out results/ -solver ffsol
 
 ```
