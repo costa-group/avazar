@@ -242,7 +242,7 @@ def removeUselessFuncs {c : ZKConfig} (funcs : List (FuncWithMD c)) : List (Func
 def removeUselessProg {c : ZKConfig} (p : ProgWithMD c) : ProgWithMD c :=
     match p with
     | .mk md funcs =>
-        let funcs' := removeUselessFuncs funcs
-        ProgWithMD.mk md funcs'
+        let funcs' := removeUselessFuncs funcs.functions
+        ProgWithMD.mk md { functions := funcs', globals := funcs.globals }
 
 end Llzk.Language.Core.Analysis.Useless_commands_2iter

@@ -48,7 +48,7 @@ def buildCfg (c : ZKConfig) (p : Parsed) : Except String (SymExecConfig c):= do
 def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Stream) : IO Unit := do
      IO.println s!"Parsing {inFile}..."
      let initialState ← ParserM.fromFile inFile
-     let (prog,_) ← StateT.run (@parseProg c []) initialState
+     let (prog,_) ← StateT.run (@parseProgram c) initialState
      -- removeUselessProg computes its own liveness information from scratch
      -- (it never reads pre-existing metadata), so calling addLivenessProg
      -- first would be redundant, wasted work when -ru is set.
@@ -94,7 +94,7 @@ def prettyPrinting
      }
      IO.println s!"Parsing {inFile}..."
      let initialState ← ParserM.fromFile inFile
-     let (prog,_) ← StateT.run (@parseProg c []) initialState
+     let (prog,_) ← StateT.run (@parseProgram c) initialState
      -- removeUselessProg computes its own liveness information from scratch
      -- (it never reads pre-existing metadata), so calling addLivenessProg
      -- first would be redundant, wasted work when -ru is set.

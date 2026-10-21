@@ -150,14 +150,15 @@ end -- mutual
 
 def formatFunction {c : ZKConfig} (f : FuncWithMD c) : String :=
   match f with
-  | .mk _ func =>
+  | .mk md func =>
+    let keyw := if md.no_sym_exec then "func" else "def"
     match func with
     | .mk name params rets body =>
       let bodyStr := formatBody body 1
       if (rets == []) then
-        s!"func {name}({params}) " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
+        s!"{keyw} {name}({params}) " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
       else
-        s!"func {name}({params}) -> {rets} " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
+        s!"{keyw} {name}({params}) -> {rets} " ++ "{\n" ++ s!"{bodyStr}" ++ "}\n"
 
 -- register ToString instance for Function
 instance {c : ZKConfig} : ToString (FuncWithMD c) where
@@ -166,7 +167,7 @@ instance {c : ZKConfig} : ToString (FuncWithMD c) where
 def formatProg {c : ZKConfig} (p : ProgWithMD c) : String :=
   match p with
   | .mk _ fs =>
-      let funcStrs := fs.reverse.map toString
+      let funcStrs := fs.functions.reverse.map toString
       String.intercalate "\n\n" funcStrs
 
 -- register ToString instance for Program
@@ -253,23 +254,35 @@ def printFunction {c : ZKConfig}
     (h : IO.FS.Stream) (f : FuncWithMD c) : IO Unit := do
   match f with
   | .mk md func =>
+    let keyw := if md.no_sym_exec then "func" else "def"
     match func with
     | .mk name params rets body =>
       if fc.showLiveness then
         h.putStrLn s!"# live_in={md.liveness.live_in}, live_out={md.liveness.live_out}"
       if (rets == []) then
-        h.putStr s!"func {name}({params})"
+        h.putStr s!"{keyw} {name}({params})"
       else
-        h.putStr s!"func {name}({params}) -> {rets}"
+        h.putStr s!"{keyw} {name}({params}) -> {rets}"
       h.putStrLn " {"
       printBody fc h body 1
       h.putStrLn "}"
+
+def printGlobals {c : ZKConfig}
+    (h : IO.FS.Stream) (globals : Globals c) : IO Unit := do
+  h.putStrLn "globals {"
+  for g in globals.reverse do
+    let (name, vals) := g
+    let valsStr := String.intercalate ", " (vals.map toString)
+    h.putStrLn s!"  {name} : [{valsStr}]"
+  h.putStrLn "}"
 
 def printProg {c : ZKConfig} (p : ProgWithMD c)
     (h : IO.FS.Stream) : IO Unit := do
     match p with
     | .mk _ fs =>
-      for f in fs.reverse do
+      printGlobals h fs.globals
+      h.putStrLn ""
+      for f in fs.functions.reverse do
         printFunction fc h f
         h.putStrLn ""
 

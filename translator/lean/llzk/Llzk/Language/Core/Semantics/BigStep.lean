@@ -10,7 +10,8 @@ open Llzk.Language.Core.Semantics.Basic
 mutual
 
 def evalCmd {c : ZKConfig} (cfg : SemConfig c)
-    (p : Prog c) (st : State c) (i : ComWithMD c) : Except String (State c) := do
+    (globals : GlobalEnv c)
+    (p : List (FuncWithMD c)) (st : State c) (i : ComWithMD c) : Except String (State c) := do
   match i with
    | .mk md cmd =>
       match cmd with
@@ -18,25 +19,25 @@ def evalCmd {c : ZKConfig} (cfg : SemConfig c)
       | Com.assert e => evalAssert st e
       | Com.assign id e => evalAssign st id e
       | Com.new_array id size => evalNewArray st id size
-      | Com.read_array out a index => evalReadArray st out a index
+      | Com.read_array out a index => evalReadArray globals st out a index
       | Com.write_array a index value => evalWriteArray st a index value
-      | Com.copy_array out a => evalCopyArray st out a
+      | Com.copy_array out a => evalCopyArray globals st out a
       | Com.if_stmt cond tb eb =>
           let condVal ← evalCond st cond
-          if condVal then evalCmds cfg p st tb else evalCmds cfg p st eb
+          if condVal then evalCmds cfg globals p st tb else evalCmds cfg globals p st eb
       | Com.loop_exp rep body =>
           let repVal ← evalSimpleExprToFF st rep
           let loop := (ComWithMD.mk md (Com.loop repVal.val body))
-          evalCmd cfg p st loop
+          evalCmd cfg globals p st loop
       | Com.loop (rep+1) body =>
-          let st' ← evalCmds cfg p st body -- evaluate loop body (1 iteration)
+          let st' ← evalCmds cfg globals p st body -- evaluate loop body (1 iteration)
           -- evaluate the rest iterations of loop
-          evalCmd cfg p st' (ComWithMD.mk md (Com.loop rep body))
+          evalCmd cfg globals p st' (ComWithMD.mk md (Com.loop rep body))
       | Com.loop 0 _body =>
           return st
       | Com.func_call outs fname args =>
         let argVals ← evalSimpleExprsToValue st args
-        let outVals ← evalFun cfg p fname argVals
+        let outVals ← evalFun cfg globals p fname argVals
         let vars_env ← setVars st.vars outs outVals
         let st' := { st with vars := vars_env }
         return st'
@@ -88,12 +89,13 @@ decreasing_by
 
 
 def evalCmds {c : ZKConfig} (cfg : SemConfig c)
-    (p : Prog c) (st : State c) (cmds : List (ComWithMD c)) : Except String (State c) := do
+    (globals : GlobalEnv c)
+    (p : List (FuncWithMD c)) (st : State c) (cmds : List (ComWithMD c)) : Except String (State c) := do
   match cmds with
   | [] => Except.ok st
   | cmd :: rest => do
-    let st' ← evalCmd cfg p st cmd
-    evalCmds cfg p st' rest
+    let st' ← evalCmd cfg globals p st cmd
+    evalCmds cfg globals p st' rest
 termination_by (p.length, numOfLoopExpComs cmds, sizeOfComs cmds)
 decreasing_by
   -- recursive call on cmd
@@ -124,24 +126,25 @@ decreasing_by
       grind
 
 def evalFun {c : ZKConfig} (cfg : SemConfig c)
-    (p : Prog c) (fname : FName) (args : List (Value c))
+    (globals : GlobalEnv c)
+    (p : List (FuncWithMD c)) (fname : FName) (args : List (Value c))
     : Except String (List (Value c)) := do
     match _h_fetch: fetchFunc p fname with
     | Except.error e => Except.error e
-    | Except.ok (f, p') =>
+    | Except.ok (f, funcs') =>
       match f with
       | .mk _ func =>
       match func with
        | Func.mk _ params rets body =>
            let vars_env ← bindInParams (emptyEnv c) params args
            let st := ⟨vars_env⟩
-           let st' ← evalCmds cfg p' st body
+           let st' ← evalCmds cfg globals funcs' st body
            let rets ← bindOutParams st'.vars rets
            Except.ok rets
 termination_by (p.length, 0 ,0)
 decreasing_by
     apply Prod.Lex.left
-    apply fetchLT p fname f p'
+    apply fetchLT p fname f funcs'
     assumption
 
 end -- mutual

@@ -1,0 +1,50 @@
+
+globals {
+  signals1 : [4,6,33,4]
+  signals2 : [33,44,764,4]
+}
+
+func pow2(x:ff) -> y:ff {
+  y = 1
+  repeat x {
+    y = felt.mul y 2
+  }
+}
+
+def foo(x:ff) -> z:ff {
+  call pow2(10) to w
+  acc = felt.add x w
+  i = 0
+  repeat 4 {
+    array.read signals1[i] y
+    acc = felt.add acc y
+    i = felt.add i 1
+  }
+  z = acc
+}
+
+def moo() -> z:ff {
+  array.copy signals1 tmp
+  i = 0
+  repeat 4 {
+    array.read tmp[i] y
+    y = felt.add y 1
+    array.write y tmp[i]
+    i = felt.add i 1
+  }
+  acc = 0
+  i = 0
+  repeat 4 {
+    array.read tmp[i] y
+    acc = felt.add acc y
+    i = felt.add i 1
+  }
+  z = acc
+}
+
+def bla(x:ff) -> z:ff {
+  array.read signals2[x] z
+}
+
+def main() {
+}
