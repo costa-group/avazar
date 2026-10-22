@@ -480,18 +480,79 @@ mutual
     | _ => throw (IO.userError s!"Expected a function name after 'func', got {nameTk}")
 end
 
-partial def parseProg {c : ZKConfig}
-  (acc : List (FuncWithMD c)) : ParserM (ProgWithMD c) := do
+partial def parseFunctions {c : ZKConfig}
+  (acc : List (FuncWithMD c)) : ParserM (List (FuncWithMD c)) := do
   let t0 ← peekToken 0
   if t0.token == Token.eof then
-    return ProgWithMD.mk {} acc
+    return acc
   else if ( t0.token == Token.ident "func" || t0.token == Token.ident "def" ) then
     let isFunction := t0.token == Token.ident "func"
     let (row, col) := (t0.row, t0.col)
     let ast ← parseFunction
-    parseProg ( (FuncWithMD.mk { src_info := ⟨row, col⟩, no_sym_exec := isFunction } ast) :: acc)
+    parseFunctions ( (FuncWithMD.mk { src_info := ⟨row, col⟩, no_sym_exec := isFunction } ast) :: acc)
   else
     throw (IO.userError s!"Unexpected token {t0} when parsing program")
+
+-- globals list is of the form
+-- {
+--   name1 : [v1,v2,...]
+--   name2 : [v1,v2,...]
+--   ...
+-- }
+
+
+partial def parseValueSequence {c : ZKConfig} : ParserM (List (FF c)) := do
+    let rec loop (acc : List (FF c)) : ParserM (List (FF c)) := do
+      let tk ← peekToken 0
+      match tk.token with
+      | Token.number n =>
+        let _ ← advance -- consume the number token
+        let val ← pure (n.toInt! : FF c)
+        let commaTk ← peekToken 0 -- check if the next token is a comma
+        if commaTk.token == Token.symbol ',' then
+          let _ ← advance -- consume the comma token
+          loop (val :: acc)
+        else
+          return (val :: acc).reverse
+      | _ => return acc.reverse
+    loop []
+
+def parseGlobalDeclaration {c : ZKConfig} : ParserM (Option (String × List (FF c))) := do
+    let nameTk ← peekToken 0
+    match nameTk.token with
+    | Token.ident name =>
+      let _ ← advance -- consume the identifier token
+      let _ ← expectSymbol ':'
+      let _ ← expectSymbol '['
+      let vals ← parseValueSequence
+      let _ ← expectSymbol ']'
+      return some (name, vals)
+    | _ => return none
+
+
+partial def parseGlobalsBlock {c : ZKConfig} : ParserM (Globals c) := do
+    expectSymbol '{' -- We expect the opening '{'
+    let rec loop (acc : Globals c) : ParserM (Globals c) := do
+      let decl ← parseGlobalDeclaration
+      match decl with
+      | some g => loop (g :: acc)
+      | none => return acc.reverse
+    let globals ← loop []
+    expectSymbol '}' -- We expect the closing '}'
+    return globals
+
+def parseGlobals {c : ZKConfig} : ParserM (Globals c) := do
+  let tk ← peekToken 0
+  if tk.token == Token.ident "globals" then
+      let _ ← advance -- consume 'globals' keyword
+      parseGlobalsBlock
+  else
+      return [] -- For now, we return an empty list for globals if not '}'
+
+def parseProgram {c : ZKConfig} : ParserM (ProgWithMD c) := do
+  let globals ← parseGlobals
+  let funcs ← parseFunctions []
+  return ProgWithMD.mk { } { functions := funcs, globals := globals }
 
 
 

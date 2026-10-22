@@ -176,10 +176,16 @@ inductive FuncWithMD (c : ZKConfig) where
   | mk (md : FuncMD) (func : Func c) : FuncWithMD c
   deriving Repr, BEq, Inhabited
 
+
+abbrev Globals (c : ZKConfig) := List (VarID × List (FF c))
+
 /- A program is a list of functions. Since we forbid recursion, a function can only call
 those that precede it in the list (this should be forced in the semantics)
  -/
-abbrev Prog (c : ZKConfig) := List (FuncWithMD c)
+structure Prog (c : ZKConfig) where
+  functions :   List (FuncWithMD c)
+  globals : Globals c
+  deriving Repr, BEq, Inhabited
 
 /- A program with metadata. It is the top-level element of a program, which includes
    the whole program and the metadata for it. -/
@@ -190,7 +196,7 @@ inductive ProgWithMD (c : ZKConfig) where
 /- Search a function by name. It returns the function and the remaining program,
    which includes the functions that can be called by it. -/
 def fetchFunc {c : ZKConfig}
-  (p : Prog c) (fname : FName) : Except String (FuncWithMD c × Prog c) :=
+  (p : List (FuncWithMD c)) (fname : FName) : Except String (FuncWithMD c × List (FuncWithMD c)) :=
   match p with
   | [] => Except.error s!"Function {fname} not found in the program"
   | funcWMD :: fs =>
@@ -205,7 +211,7 @@ def fetchFunc {c : ZKConfig}
 
 /- fetchFunc returns a smaller program -/
 theorem fetchLT {c : ZKConfig}
-  (p : Prog c) (fname : FName) (f : FuncWithMD c) (p' : Prog c) :
+  (p : List (FuncWithMD c)) (fname : FName) (f : FuncWithMD c) (p' : List (FuncWithMD c)) :
   fetchFunc p fname = Except.ok (f, p') → p'.length < p.length := by
   cases p with
   | nil => simp [fetchFunc]

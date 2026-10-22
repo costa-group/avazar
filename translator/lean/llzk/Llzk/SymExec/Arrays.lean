@@ -29,7 +29,7 @@ def seNewArray {c : ZKConfig}
     }
 
 
-def seArrayReadConstIdx {c : ZKConfig}
+def seArrayReadLocalConstIdx {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
   (out : VarID) (a : VarID) (idx : SimpleExpr c)
   : Except String (CmdsSpec c) := do
@@ -64,7 +64,7 @@ def seArrayReadConstIdx {c : ZKConfig}
   | Except.ok _ => Except.error s!"seArrayReadConstIdx: variable '{a}' is not an array"
 
 
-def seArrayReadNonConstIdx {c : ZKConfig}
+def seArrayReadLocalNonConstIdx {c : ZKConfig}
   (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
   (out : VarID) (a : VarID) (idx : SimpleExpr c)
   : Except String (CmdsSpec c) := do
@@ -98,8 +98,9 @@ def seArrayReadNonConstIdx {c : ZKConfig}
 
 
 /- Symbolic execution of array read -/
-def seArrayRead {c : ZKConfig}
-  (cfg : SymExecConfig c) (md : CmdMD) (symEnv : SymEnv c)
+def seArrayReadLocal {c : ZKConfig}
+  (cfg : SymExecConfig c) (globals : GlobalEnv c)
+  (md : CmdMD) (symEnv : SymEnv c)
   (out : VarID) (a : VarID) (idx : SimpleExpr c)
   : Except String (CmdsSpec c) := do
   -- Only fall back to the symbolic-index path when `idx` does not resolve to
@@ -108,8 +109,86 @@ def seArrayRead {c : ZKConfig}
   -- being silently retried, since retrying can succeed for the wrong reason
   -- (the symbolic encoding doesn't hard-fail on an out-of-range index).
   match simpleExprToFF symEnv idx with
-  | Except.error _ => seArrayReadNonConstIdx cfg md symEnv out a idx
-  | Except.ok _ => seArrayReadConstIdx cfg md symEnv out a idx
+  | Except.error _ => seArrayReadLocalNonConstIdx cfg md symEnv out a idx
+  | Except.ok _ => seArrayReadLocalConstIdx cfg md symEnv out a idx
+
+
+def seArrayReadGlobalConstIdx {c : ZKConfig}
+  (cfg : SymExecConfig c) (globals : GlobalEnv c)
+  (md : CmdMD) (symEnv : SymEnv c)
+  (out : VarID) (a : VarID) (idx : SimpleExpr c)
+  : Except String (CmdsSpec c) := do
+  let idxVal ← simpleExprToFF symEnv idx
+  match getGlobalVar globals a with
+  | Except.error err => Except.error ("seArrayReadGlobalConstIdx: failed to get array variable: " ++ err)
+  | Except.ok arr =>
+    if h : idxVal.val < arr.size then
+      let v := arr[idxVal.val]'h
+      let newSymEnv := setVar symEnv out (SymValue.ffVar (SymFFVar.const v))
+      return { inSymEnv := symEnv,
+                 outSymEnv := newSymEnv,
+                 f := FFFormula.true,
+                 nextId := cfg.nextId,
+                 newFFVars := emptyFFVarSet,
+                 newBoolVars := emptyBoolVarSet
+      }
+    else
+      Except.error
+         s!"seArrayReadConstIdx (row {md.src_info.row}): index {idxVal.val} out of bounds for array of size {arr.size}"
+
+def seArrayReadGlobalNonConstIdx {c : ZKConfig}
+  (cfg : SymExecConfig c) (globals : GlobalEnv c)
+  (md : CmdMD) (symEnv : SymEnv c)
+  (out : VarID) (a : VarID) (idx : SimpleExpr c)
+  : Except String (CmdsSpec c) := do
+  match getGlobalVar globals a with
+  | Except.error err =>
+    Except.error ("seArrayReadGlobalNonConstIdx: failed to get array variable: " ++ err)
+  | Except.ok arr =>
+    let arrayElements := arr.toList
+    let idxTerm ← simpleExprToTerm symEnv idx -- it is not a value
+    let outFFVar := FFVar.mk (cfg.nextId) { src_info := md.src_info, orig_name := "a_nc_access" }
+    let rec loop (l : List (FF c)) (i : Nat) : FFFormula c :=
+      match l with
+      | [] => FFFormula.false
+      | elem :: rest =>
+        let elemTerm := FFTerm.val elem
+        let idxEq := FFFormula.eq idxTerm (.val i)
+        let caseFormula := (FFFormula.eq (FFTerm.var outFFVar) elemTerm)
+        let restFormula := loop rest (i + 1)
+        .ite idxEq caseFormula restFormula
+    let f := loop arrayElements 0
+    let newSymEnv := setVar symEnv out (SymValue.ffVar (SymFFVar.var ⟨outFFVar, none⟩))
+    return { inSymEnv := symEnv,
+             outSymEnv := newSymEnv,
+             f := f,
+             nextId := cfg.nextId + 1,
+             newFFVars := { outFFVar },
+             newBoolVars := emptyBoolVarSet
+    }
+
+
+def seArrayReadGlobal {c : ZKConfig}
+  (cfg : SymExecConfig c) (globals : GlobalEnv c)
+  (md : CmdMD) (symEnv : SymEnv c)
+  (out : VarID) (a : VarID) (idx : SimpleExpr c)
+  : Except String (CmdsSpec c) := do
+  -- Only fall back to the symbolic-index path when `idx` does not resolve to
+  -- a compile-time constant. A genuine error from the constant path (e.g. a
+  -- constant index that is out of bounds) must propagate as-is instead of
+  -- being silently retried, since retrying can succeed for the wrong reason
+  -- (the symbolic encoding doesn't hard-fail on an out-of-range index).
+  match simpleExprToFF symEnv idx with
+  | Except.error _ => seArrayReadGlobalNonConstIdx cfg globals md symEnv out a idx
+  | Except.ok _ => seArrayReadGlobalConstIdx cfg globals md symEnv out a idx
+
+def seArrayRead {c : ZKConfig}
+  (cfg : SymExecConfig c) (globals : GlobalEnv c)
+  (md : CmdMD) (symEnv : SymEnv c)
+  (out : VarID) (a : VarID) (idx : SimpleExpr c) :=
+  match seArrayReadLocal cfg globals md symEnv out a idx with
+  | Except.ok spec => Except.ok spec
+  | Except.error _ => seArrayReadGlobal cfg globals md symEnv out a idx
 
 
 
@@ -211,8 +290,10 @@ def seArrayWrite {c : ZKConfig}
   | Except.ok _ => seArrayWriteConstIdx cfg md symEnv a idx value
 
 /- Symbolic execution of array copy -/
-def seArrayCopy {c : ZKConfig}
-  (cfg : SymExecConfig c) (_md : CmdMD) (symEnv : SymEnv c) (out : VarID) (a : VarID)
+def seArrayCopyLocal {c : ZKConfig}
+  (cfg : SymExecConfig c)
+  (globals : GlobalEnv c)
+  (_md : CmdMD) (symEnv : SymEnv c) (out : VarID) (a : VarID)
   : Except String (CmdsSpec c) := do
   match getVar symEnv a with
   | Except.error err => Except.error ("seArrayCopy: failed to get array variable: " ++ err)
@@ -226,5 +307,34 @@ def seArrayCopy {c : ZKConfig}
              newBoolVars := emptyBoolVarSet
     }
   | Except.ok _ => Except.error s!"seArrayCopy: variable '{a}' is not an array"
+
+/- Symbolic execution of array copy -/
+def seArrayCopyGlobal {c : ZKConfig}
+  (cfg : SymExecConfig c)
+  (globals : GlobalEnv c)
+  (_md : CmdMD) (symEnv : SymEnv c) (out : VarID) (a : VarID)
+  : Except String (CmdsSpec c) := do
+  match getGlobalVar globals a with
+  | Except.error err => Except.error ("seArrayCopyGlobal: failed to get array variable: " ++ err)
+  | Except.ok arr =>
+    let symValues := arr.toList.map (fun v => (SymFFVar.const v))
+    let symArr := symValues.toArray
+    let newSymEnv := setVar symEnv out (SymValue.ffArray symArr)
+    return { inSymEnv := symEnv,
+             outSymEnv := newSymEnv,
+             f := FFFormula.true,
+             nextId := cfg.nextId,
+             newFFVars := emptyFFVarSet,
+             newBoolVars := emptyBoolVarSet
+    }
+
+def seArrayCopy {c : ZKConfig}
+  (cfg : SymExecConfig c)
+  (globals : GlobalEnv c)
+  (_md : CmdMD) (symEnv : SymEnv c) (out : VarID) (a : VarID)
+  : Except String (CmdsSpec c) := do
+  match seArrayCopyLocal cfg globals _md symEnv out a with
+  | Except.ok spec => Except.ok spec
+  | Except.error _ => seArrayCopyGlobal cfg globals _md symEnv out a
 
 end Llzk.SymExec.SymInstr
