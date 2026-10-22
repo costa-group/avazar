@@ -177,6 +177,53 @@ class TestFunction:
         assert FunctionDef.match("function.def @f(%x: !felt.type) {") is True
         assert FunctionDef.match("function.call @f(%x)") is False
 
+    # ── FunctionDef.in_args / in_arg_names ───────────────────────────────────
+
+    def _def_with_signature(self, signature):
+        op, _ = FunctionDef.parse([f"function.def @f{signature} {{", "}"], 0, self._felt_parse_fn)
+        return op
+
+    def test_in_args_with_results(self):
+        op = self._def_with_signature(
+            '(%arg0: !array.type<2 x !felt.type<"bn128">> {function.arg_name = "in"}) '
+            '-> !struct.type<@A_0::@A_0<[]>> attributes {function.allow_witness}'
+        )
+        assert op.in_args == [("%arg0", Type('!array.type<2 x !felt.type<"bn128">>'))]
+        assert op.in_arg_names == {"%arg0": "in"}
+
+    def test_in_args_without_results_constrain(self):
+        # A @constrain has no '->': the 'attributes {...}' after the argument
+        # list must not be read as further arguments
+        op = self._def_with_signature(
+            '(%arg0: !struct.type<@A_0::@A_0<[]>>, '
+            '%arg1: !array.type<2 x !felt.type<"bn128">> {function.arg_name = "in"}) '
+            'attributes {function.allow_constraint, function.allow_non_native_field_ops}'
+        )
+        assert op.in_args == [
+            ("%arg0", Type("!struct.type<@A_0::@A_0<[]>>")),
+            ("%arg1", Type('!array.type<2 x !felt.type<"bn128">>')),
+        ]
+        assert op.in_arg_names == {"%arg1": "in"}
+
+    def test_in_args_without_results_or_attributes(self):
+        op = self._def_with_signature('(%arg0: !felt.type<"bn128"> {function.arg_name = "x"})')
+        assert op.in_args == [("%arg0", Type('!felt.type<"bn128">'))]
+        assert op.in_arg_names == {"%arg0": "x"}
+
+    def test_in_args_parenthesis_in_loc(self):
+        # A ')' inside a quoted loc path does not close the argument list
+        op = self._def_with_signature(
+            '(%arg0: !felt.type<"bn128"> {function.arg_name = "a"} loc("dir (1)/f.circom":3:1), '
+            '%arg1: !felt.type<"bn128"> {function.arg_name = "b"}) attributes {function.allow_constraint}'
+        )
+        assert [name for name, _ in op.in_args] == ["%arg0", "%arg1"]
+        assert op.in_arg_names == {"%arg0": "a", "%arg1": "b"}
+
+    def test_in_args_empty(self):
+        op = self._def_with_signature("() attributes {function.allow_constraint}")
+        assert op.in_args == []
+        assert op.in_arg_names == {}
+
     # ── FunctionDef.to_core — signature-out naming ───────────────────────────
 
     def test_function_def_to_core_pure_function_keeps_percent_out_name(self):
