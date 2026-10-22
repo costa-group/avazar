@@ -83,7 +83,7 @@ def main(args: argparse.Namespace):
 
     # We apply the JSON file
     _here = os.path.dirname(os.path.abspath(__file__))
-    llzk_cli = os.path.join(_here, '..', '..', '..', 'lean', 'llzk_cli_assert')
+    llzk_cli = os.path.join(_here, '..', '..', '..', 'lean', 'llzk_cli_func')
     smt2_json_path = os.path.splitext(args.target)[0] + ".json"
     subprocess.run(
         [llzk_cli, '-zk', prime_name, '-se', '-ru', '-smt2', 'json', '-o', smt2_json_path, args.target],
