@@ -196,13 +196,9 @@ class ConstrainInterpreter:
         env[var.name if hasattr(var, "name") else str(var)] = value
 
     def _set_results(self, env, results, values):
-        flat = []
-        for r in results:
-            n = getattr(r, "n_components", 1)
-            if n == 1:
-                flat.append(r.name)
-            else:
-                flat.extend(f"{r.name}#{i}" for i in range(n))
+        flat = _result_names(results)
+        if len(values) != len(flat):
+            raise LLZKStructureError(f"{len(values)} values for the results {flat}")
         for name, value in zip(flat, values):
             env[name] = value
 
@@ -425,8 +421,13 @@ class ConstrainInterpreter:
             results = []
         elif callee.endswith("::compute"):
             raise LLZKStructureError(f"compute call inside a constrain function: {op!r}")
-        else:
+        elif all(_is_concrete(a) for a in args):
             results = self._call(self.functions[callee], args)
+        else:
+            # A circom function emits no constraints: with arguments depending
+            # on signals only what its results depend on matters
+            signals = frozenset().union(*(_signals(a) for a in args))
+            results = [Unknown(signals)] * len(_result_names(op.results))
         self._set_results(env, op.results, results)
 
     def _op_FunctionReturn(self, op, env):
@@ -449,7 +450,7 @@ class ConstrainInterpreter:
             for branch in (op.then_body, op.else_body):
                 if _emits(branch):
                     raise LLZKStructureError(f"constraints under a condition on signals: {op!r}")
-            values = [Unknown(_signals(cond))] * len(op.results)
+            values = [Unknown(_signals(cond))] * len(_result_names(op.results))
         self._set_results(env, op.results, values)
 
     def _op_SCFExecuteRegion(self, op, env):
@@ -487,6 +488,25 @@ def _signature_args(function) -> List[Tuple[str, str]]:
     """[(SSA name, function.arg_name or the SSA name)] of the arguments, in order."""
     names = function.in_arg_names
     return [(arg, names.get(arg, arg)) for arg, _ in function.in_args]
+
+
+def _result_names(results) -> List[str]:
+    """SSA names of the results: `%1:2` is `%1#0` and `%1#1`."""
+    flat = []
+    for r in results:
+        n = getattr(r, "n_components", 1)
+        flat.extend([r.name] if n == 1 else [f"{r.name}#{i}" for i in range(n)])
+    return flat
+
+
+def _is_concrete(value) -> bool:
+    if isinstance(value, int):
+        return True
+    if isinstance(value, Array):
+        return all(_is_concrete(v) for v in value.data.values())
+    if isinstance(value, dict):
+        return all(_is_concrete(v) for v in value.values())
+    return False
 
 
 def _product(dims):
