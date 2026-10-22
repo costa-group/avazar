@@ -21,6 +21,43 @@ from llzk_dialects.utils import split_top_level_commas
 from llzk_dialects.loc_parser import strip_trailing_loc
 
 
+def _in_args_text(signature: str) -> str:
+    """
+    The text between the parentheses of the argument list of a signature.
+
+    The list is closed by the parenthesis matching its opening one, not by
+    a '->' -- a function without results (every @constrain) has none, and
+    splitting on it would leave the trailing 'attributes {...}' inside the
+    argument list. Only parentheses are counted ('->' itself contains a '>'),
+    and double-quoted strings are skipped, so a 'loc("f.circom":3:1)' of an
+    argument cannot unbalance them. A signature built without the
+    parentheses (e.g. "%x: !felt.type -> !felt.type") is its own list.
+    """
+    start = signature.find("(")
+    if start == -1:
+        return signature.split("->")[0].strip()
+    depth = 0
+    in_string = False
+    i = start
+    while i < len(signature):
+        ch = signature[i]
+        if in_string:
+            if ch == "\\":
+                i += 1
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return signature[start + 1:i]
+        i += 1
+    raise ValueError(f"Unbalanced parentheses in the signature: {signature}")
+
+
 def _parse_in_arg(arg: str) -> Tuple[str, str, str]:
     """
     Splits a single argument declaration (e.g.
@@ -379,13 +416,12 @@ class FunctionDef(BlockOperation):
               )
         """
         if self._in_args is None:
-            arg_inside_parentheses = self.signature.split("->")[0].strip()
-            # Skip the (); split_top_level_commas (not a naive ', ' split) so
-            # a comma inside an argument's own attribute dict — e.g.
+            # split_top_level_commas (not a naive ', ' split) so a comma inside
+            # an argument's own attribute dict — e.g.
             # "{function.arg_name = \"in\", llzk.pub}" — isn't mistaken for
             # an argument separator.
             args_with_types = [
-                arg for arg in split_top_level_commas(arg_inside_parentheses[1:-1]) if arg.strip() != ""
+                arg for arg in split_top_level_commas(_in_args_text(self.signature)) if arg.strip() != ""
             ]
             _in_args = []
             for arg in args_with_types:
@@ -403,9 +439,8 @@ class FunctionDef(BlockOperation):
         attribute are omitted.
         """
         if self._in_arg_names is None:
-            arg_inside_parentheses = self.signature.split("->")[0].strip()
             args_with_types = [
-                arg for arg in split_top_level_commas(arg_inside_parentheses[1:-1]) if arg.strip() != ""
+                arg for arg in split_top_level_commas(_in_args_text(self.signature)) if arg.strip() != ""
             ]
             result = {}
             for arg in args_with_types:
