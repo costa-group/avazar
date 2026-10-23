@@ -8,6 +8,7 @@ from llzk_dialects.struct import (
     _resolve_population_nest_sequence, _collect_population_write_candidates,
     _walk_array_component_population, _find_array_component_population_sequences,
     _collect_while_region_array_aliases, _while_iter_arg_pairs, _while_after_arg_pairs,
+    _is_felt_signal_type, _extra_signal_outs,
 )
 from llzk_dialects.function import FunctionCall
 from llzk_dialects.pod import PodNew, PodWrite, PodRead
@@ -1720,3 +1721,60 @@ class TestStructDefToCoreComponentsInfoIdxPod:
         # The idx-pod's own field types must never leak in as extra,
         # separately-suffixed entries (e.g. a stray "ark" bare key).
         assert "ark" not in info
+
+
+class TestAllSignalsAsOutput:
+    """
+    --all-signals-as-output (possibly temporary, branch signals_as_output):
+    which members/arguments a struct returns after its outputs.
+    """
+
+    def test_is_felt_signal_type(self):
+        assert _is_felt_signal_type('!felt.type<"bn128">')
+        assert _is_felt_signal_type('!array.type<2,3 x !felt.type<"bn128">>')
+        # A subcomponent's own "$inputs" pod, a struct, and arrays of them
+        assert not _is_felt_signal_type('!pod.type<[@in: !felt.type<"bn128">]>')
+        assert not _is_felt_signal_type('!struct.type<@A::@A<[]>>')
+        assert not _is_felt_signal_type('!array.type<2 x !pod.type<[@in: !felt.type<"bn128">]>>')
+        assert not _is_felt_signal_type('!array.type<2 x !struct.type<@A::@A<[]>>>')
+
+    def _struct(self):
+        lines = [
+            "struct.def @S {",
+            'struct.member @out : !felt.type<"bn128"> {llzk.pub, signal}',
+            'struct.member @inv : !felt.type<"bn128"> {signal}',
+            'struct.member @bits : !array.type<2 x !felt.type<"bn128">> {signal}',
+            "struct.member @c : !struct.type<@A::@A<[]>>",
+            'struct.member @c$inputs : !pod.type<[@in: !felt.type<"bn128">]> {signal}',
+            'struct.member @tmp : !felt.type<"bn128">',
+            'function.def @compute(%arg0: !felt.type<"bn128"> {function.arg_name = "x"}, '
+            '%arg1: !felt.type<"bn128">) -> !struct.type<@S::@S<[]>> {',
+            "%self = struct.new : <@S::@S<[]>>",
+            "function.return %self : !struct.type<@S::@S<[]>>",
+            "}",
+            "}",
+        ]
+        from execution.main_execution import init_llzk_parser
+        return init_llzk_parser(lines).parse()[0]
+
+    def test_intermediates_are_only_felt_and_array_signal_members(self):
+        _, _, outs, intermediates = self._struct()._compute_core_function_info_from_struct()
+        assert [n for n, _ in outs] == ["@out"]
+        # Not the struct member, its "$inputs" pod, or the non-signal @tmp
+        assert [n for n, _ in intermediates] == ["@inv", "@bits"]
+
+    def test_extra_signal_outs_inputs_then_intermediates(self):
+        compute_op, _, _, intermediates = self._struct()._compute_core_function_info_from_struct()
+        extras = _extra_signal_outs(compute_op, intermediates)
+        # %arg1 has no function.arg_name, so it is not a signal
+        assert [(n, src) for n, src, _ in extras] == [("x", "%arg0"), ("inv", None), ("bits", None)]
+
+    def test_struct_def_registers_extras_only_with_flag(self):
+        ctx = TranslationContext(current_template="@S")
+        "".join(self._struct().to_core(ctx))
+        assert ctx.core_func2extra_outs == {}
+
+        ctx = TranslationContext(current_template="@S", all_signals_as_output=True)
+        out = "".join(self._struct().to_core(ctx))
+        assert [n for n, _, _ in ctx.core_func2extra_outs["@S"]] == ["x", "inv", "bits"]
+        assert "-> out: ff, x: ff, inv: ff, bits: arr<2> {" in out

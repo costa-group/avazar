@@ -159,8 +159,12 @@ def process_components(smt_json: Dict) -> Dict:
             # dict passed as an argument
             if component_iteration in components:
 
-                # In vars and out vars are handled equally
-                for core_var, smt_var in dict(**in_vars_info, **out_vars_info).items():
+                # In vars and out vars are handled equally. A name can be in
+                # both under --all-signals-as-output (possibly temporary,
+                # branch signals_as_output): a returned input signal is bound
+                # back to the same "component.signal" name it was passed as.
+                # The in var wins -- the out var is just an equal copy of it.
+                for core_var, smt_var in {**out_vars_info, **in_vars_info}.items():
                     # Here, core args must be of the form component.signal_name
                     # Hence, we can just remove the prefix "component."
                     if not core_var.startswith(f"{component_name}."):

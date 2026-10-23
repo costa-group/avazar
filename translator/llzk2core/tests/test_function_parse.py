@@ -288,3 +288,90 @@ class TestFunction:
         # is used instead.
         assert "%6 = %5_@in" in out
         assert "%5" not in ctx.var2const
+
+
+class TestFunctionAllSignalsAsOutput:
+    """
+    --all-signals-as-output (possibly temporary, branch signals_as_output):
+    a struct's def returns its outputs, then its inputs, then its
+    intermediates (ctx.core_func2extra_outs), and every call binds them.
+    """
+
+    def _ctx(self):
+        ctx = TranslationContext(all_signals_as_output=True)
+        ctx.llzk_func2core["@Sub"] = "Sub"
+        ctx.core_func2args["Sub"] = (
+            [("%arg0", Type("!felt.type")), ("%arg1", Type('!array.type<2 x !felt.type<"bn128">>'))],
+            [("@out", Type("!felt.type"))],
+        )
+        ctx.core_func2extra_outs["Sub"] = [
+            ("a", "%arg0", Type("!felt.type")),
+            ("b", "%arg1", Type('!array.type<2 x !felt.type<"bn128">>')),
+            ("inv", None, Type("!felt.type")),
+        ]
+        return ctx
+
+    # ── FunctionCall.to_core ─────────────────────────────────────────────────
+
+    def test_call_dummies_named_like_outputs_with_member_hint(self):
+        op = FunctionCall.parse("%r = function.call @Sub(%x, %y)")
+        op._member_hint = "c"
+        ctx = self._ctx()
+        assert list(op.to_core(ctx)) == ["call Sub(%x,%y) to c.out,c.a,c.b,c.inv"]
+        # Only the real output is registered for later reads
+        assert ctx.ssa_to_name == {"%r_@out": "c.out"}
+
+    def test_call_dummies_without_member_hint(self):
+        op = FunctionCall.parse("%r = function.call @Sub(%x, %y)")
+        assert list(op.to_core(self._ctx())) == ["call Sub(%x,%y) to %r_@out,%r_@a,%r_@b,%r_@inv"]
+
+    def test_call_without_extras_entry_unchanged(self):
+        op = FunctionCall.parse("%r = function.call @Sub(%x, %y)")
+        ctx = self._ctx()
+        ctx.core_func2extra_outs.clear()
+        assert list(op.to_core(ctx)) == ["call Sub(%x,%y) to %r_@out"]
+
+    def test_call_pure_function_unaffected(self):
+        op = FunctionCall.parse("%50 = function.call @foo::@foo(%1) : (!felt.type) -> !felt.type")
+        ctx = TranslationContext(all_signals_as_output=True)
+        ctx.llzk_func2core["@foo::@foo"] = "@foo"
+        ctx.core_func2args["@foo"] = ([("%arg0", Type("!felt.type"))], [("%r0", Type("!felt.type"))])
+        assert list(op.to_core(ctx)) == ["call @foo(%1) to %50"]
+
+    # ── FunctionDef.to_core ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _empty_parse_fn(start, end):
+        return []
+
+    def _def(self):
+        lines = [
+            'function.def @compute(%arg0: !felt.type {function.arg_name = "a"}, '
+            '%arg1: !array.type<2 x !felt.type<"bn128">> {function.arg_name = "b"}) -> !struct.type<@Sub::@Sub<[]>> {',
+            "}",
+        ]
+        op, _ = FunctionDef.parse(lines, 0, self._empty_parse_fn)
+        return op
+
+    def test_def_signature_outputs_then_inputs_then_intermediates(self):
+        ctx = self._ctx()
+        ctx.current_core_function = "Sub"
+        out = "".join(self._def().to_core(ctx))
+        assert out.startswith(
+            "def Sub(%arg0: ff, %arg1: arr<2>) -> out: ff, a: ff, b: arr<2>, inv: ff {\n")
+
+    def test_def_copies_input_signals_from_parameters(self):
+        ctx = self._ctx()
+        ctx.current_core_function = "Sub"
+        out = "".join(self._def().to_core(ctx))
+        assert "a = %arg0\n" in out
+        assert "array.copy %arg1 b\n" in out
+        # An intermediate is already assigned by name in the body
+        assert "inv =" not in out
+
+    def test_def_without_extras_entry_unchanged(self):
+        ctx = self._ctx()
+        ctx.core_func2extra_outs.clear()
+        ctx.current_core_function = "Sub"
+        out = "".join(self._def().to_core(ctx))
+        assert out == "def Sub(%arg0: ff, %arg1: arr<2>) -> out: ff {\n}\n\n"

@@ -185,6 +185,20 @@ class TranslationContext:
     # Not yet consumed by any translation logic.
     param_arg_names: Dict[str, str] = field(default_factory=dict)
 
+    # --all-signals-as-output mode (possibly temporary -- branch
+    # signals_as_output, see PROGRESS.md §51 / DECISIONS.md §57). When set,
+    # every struct's Core def also returns its input and intermediate
+    # signals, after its outputs, and every call site binds them.
+    all_signals_as_output: bool = False
+    # Only populated when all_signals_as_output is set:
+    #   core_function_name -> [(core_name, source, type)], in signature order
+    # (inputs first, then intermediates). `source` is the input parameter's
+    # SSA name ("%arg0") the returned copy is taken from, or None for an
+    # intermediate signal (already assigned by name in the body). Kept apart
+    # from core_func2args, whose out args other code treats as "the struct's
+    # outputs" (e.g. the structure-of-arrays layout of a struct array).
+    core_func2extra_outs: Dict[str, List[Tuple[str, Optional[str], Type]]] = field(default_factory=dict)
+
     # Registered global.def values: sym_name -> a single int (scalar felt) or
     # a flat, row-major list of ints (felt array, uni- or multi-dimensional).
     # Populated by a module-level pre-pass over GlobalDef before any function

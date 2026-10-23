@@ -65,7 +65,9 @@ def main(args: argparse.Namespace):
     # that builds its own argparse.Namespace directly, bypassing
     # args_parser.py's parser) may not set `prime` at all.
     prime_name = getattr(args, "prime", None) or "goldilocks"
-    translation_context = TranslationContext(prime=FIELD_PRIMES[prime_name])
+    translation_context = TranslationContext(
+        prime=FIELD_PRIMES[prime_name],
+        all_signals_as_output=getattr(args, "all_signals_as_output", False))
     core_generator = module_structure.to_core(translation_context)
     with open(args.target, 'w') as f:
         # Indent stream generates the statements in a nice format

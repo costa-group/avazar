@@ -434,6 +434,31 @@ class TestStructTemplateOrdering:
         assert text.index("def @IsZero_0") < text.index("call @IsZero_0")
         assert text.index("def @IsEqual_1") < text.index("def main")
 
+    def test_all_signals_as_output_real_fixture(self):
+        # --all-signals-as-output (possibly temporary, branch
+        # signals_as_output): outputs, then inputs, then intermediates, in
+        # every def, call and main.
+        from execution.main_execution import init_llzk_parser
+        module = init_llzk_parser(ISEQUAL_FORWARD_REF_MLIR.splitlines(keepends=True)).parse()[0]
+        text = "".join(module.to_core(TranslationContext(all_signals_as_output=True)))
+
+        assert "def @IsZero_0(%arg0: ff) -> out: ff, in: ff, inv: ff {" in text
+        # The subcomponent's "isz$inputs" pod is not one of IsEqual_1's signals
+        assert "def @IsEqual_1(%arg0: arr<2>) -> out: ff, in: arr<2> {" in text
+        assert "array.copy %arg0 in" in text
+        assert "call @IsZero_0(isz.in) to isz.out,isz.in,isz.inv" in text
+        assert "def main(%arg0: arr<2>) -> out: ff, in: arr<2> {" in text
+        assert "call @IsEqual_1(%arg0) to out, in" in text
+
+    def test_all_signals_as_output_off_by_default(self):
+        from execution.main_execution import init_llzk_parser
+        module = init_llzk_parser(ISEQUAL_FORWARD_REF_MLIR.splitlines(keepends=True)).parse()[0]
+        text = "".join(module.to_core(TranslationContext()))
+
+        assert "def @IsZero_0(%arg0: ff) -> out: ff {" in text
+        assert "call @IsZero_0(isz.in) to isz.out" in text
+        assert "isz.out,isz.in" not in text
+
 
 class TestPureFunctionFuncEmission:
     """

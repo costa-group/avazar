@@ -27,7 +27,7 @@ from llzk_dialects.core import (
 )
 from llzk_dialects.definitions import Dialect
 from llzk_dialects.function import FunctionDef
-from llzk_dialects.utils import array_dimensions, split_top_level_commas, struct_type_name
+from llzk_dialects.utils import array_dimensions, split_top_level_commas, struct_type_name, is_array_type
 from llzk_dialects.core_utils import translate_assignment_core_with_ctx, FIELD_PRIMES
 
 
@@ -952,6 +952,37 @@ def _build_component_naming_maps(body, ctx, idx_pod_member_types=None):
     return array_component_index_sequences
 
 
+def _is_felt_signal_type(type_str: str) -> bool:
+    """
+    True for a felt or array-of-felt type -- the only shapes a template's own
+    signal can have. Anchored to the outermost type, so a pod (e.g. a
+    subcomponent's "$inputs") or an array of pods/structs is excluded.
+    """
+    type_str = type_str.strip()
+    if type_str.startswith("!felt.type"):
+        return True
+    return (is_array_type(type_str) and "!pod.type" not in type_str
+            and "!struct.type" not in type_str)
+
+
+def _extra_signal_outs(compute_op: FunctionDef, intermediate_signals: List[Tuple[str, Type]]
+                       ) -> List[Tuple[str, Optional[str], Type]]:
+    """
+    --all-signals-as-output mode (possibly temporary, branch
+    signals_as_output): the signals a struct returns after its outputs, as
+    (core_name, source, type) -- first its input signals, named by their
+    function.arg_name and copied from their parameter (source), then its
+    intermediate signals (source None, already assigned by name in the body).
+    An input without a function.arg_name, or not felt/array-typed, is not a
+    signal and is skipped.
+    """
+    arg_names = compute_op.in_arg_names
+    extras = [(arg_names[arg], arg, type_) for arg, type_ in compute_op.in_args
+              if arg in arg_names and _is_felt_signal_type(type_.name)]
+    extras.extend((name[1:], None, type_) for name, type_ in intermediate_signals)
+    return extras
+
+
 class StructMember(Operation):
     """
     Declare a named member field within a struct.def body.
@@ -1278,7 +1309,8 @@ class StructDef(BlockOperation):
         #  * Functions: we just process function @compute.
         # We use isinstance because we need to store the function information in TranslationContext
 
-        compute_op, in_args_with_type, out_args_with_type, _ = self._compute_core_function_info_from_struct()
+        compute_op, in_args_with_type, out_args_with_type, intermediate_signals = \
+            self._compute_core_function_info_from_struct()
 
         # There must be at least one compute
         assert compute_op is not None, "There is no @compute element in the struct"
@@ -1294,6 +1326,10 @@ class StructDef(BlockOperation):
         ctx.llzk_func2core[llzk_name] = core_name
         ctx.core_func2args[core_name] = in_args_with_type, out_args_with_type
         ctx.current_core_function = core_name
+
+        if ctx.all_signals_as_output:
+            ctx.core_func2extra_outs[core_name] = _extra_signal_outs(
+                compute_op, intermediate_signals)
 
         # Record subcomponent members (struct-typed) for this function.
         # A direct struct member adds one entry; an array-of-structs member
@@ -1380,7 +1416,11 @@ class StructDef(BlockOperation):
 
                 if is_out:
                     out_args_with_type.append((core_repr, core_type))
-                else:
+                # A subcomponent's own "@X$inputs" pod is also marked
+                # {signal}, but it holds that subcomponent's inputs, not a
+                # signal of this struct -- only felt/array-of-felt members
+                # are this struct's own intermediate signals.
+                elif operation.is_signal and _is_felt_signal_type(core_type.name):
                     intermediate_signals.append((core_repr, core_type))
 
             # Only consider the @compute function, others are ignored

@@ -36,6 +36,11 @@ def generate_parser() -> argparse.ArgumentParser:
                         help="Only generate the .core file, without calling llzk_cli_assert "
                              "to produce the SMT JSON.")
 
+    parser.add_argument("--all-signals-as-output", action="store_true", dest="all_signals_as_output",
+                        help="Return every signal (outputs, then inputs, then intermediates) from each "
+                             "template's Core function, binding the extra results to dummies at each call. "
+                             "Possibly temporary (branch signals_as_output).")
+
     #TODO: add option to execute llzk directly instead of reading the file
 
     return parser

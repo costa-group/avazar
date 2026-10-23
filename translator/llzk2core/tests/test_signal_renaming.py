@@ -342,3 +342,40 @@ class TestSignalRenaming:
         result = process_components(smt_json)
         vars_info = result["macros"]["@Num2Ternary_1"]["vars_info"]
         assert vars_info["Num2Bits_17_364#0.in"] == "v_32"
+
+
+class TestSignalRenamingAllSignalsAsOutput:
+    """
+    --all-signals-as-output (possibly temporary, branch signals_as_output):
+    a returned input signal is bound back to the same "component.signal"
+    name it was passed as, so it appears in BOTH :in-vars-info and
+    :out-vars-info of the same call.
+    """
+
+    # Captured from the real ternary_two_calls_concrete.json generated with
+    # --all-signals-as-output.
+    CALL = (
+        ':meta-data "call @Num2Bits_0 (Num2Bits_17_364.in) to Num2Bits_17_364.out, Num2Bits_17_364.in" '
+        ':in-vars-info "{\\"Num2Bits_17_364.in\\": \\"v_26\\"}" '
+        ':out-vars-info "{\\"Num2Bits_17_364.in\\": \\"v_44\\", '
+        '\\"Num2Bits_17_364.out\\": [\\"v_42\\", \\"v_43\\"]}"'
+    )
+
+    def _smt_json(self):
+        return {
+            "macros": {
+                "@Num2Ternary_1": {
+                    "formula": f"(! (@Num2Bits_0 v_1) {self.CALL})",
+                    "components_info": {"Num2Bits_17_364#0": "@Num2Bits_0"},
+                    "vars_info": {},
+                },
+            },
+        }
+
+    def test_name_in_both_in_and_out_vars_info_does_not_crash(self):
+        process_components(self._smt_json())
+
+    def test_in_var_wins_over_returned_copy(self):
+        vars_info = process_components(self._smt_json())["macros"]["@Num2Ternary_1"]["vars_info"]
+        assert vars_info["Num2Bits_17_364#0.in"] == "v_26"
+        assert vars_info["Num2Bits_17_364#0.out"] == ["v_42", "v_43"]

@@ -16,7 +16,7 @@ from llzk_dialects.core import (
     TranslationContext, ParseFn,
 )
 from llzk_dialects.definitions import Dialect
-from llzk_dialects.core_utils import signature_args
+from llzk_dialects.core_utils import signature_args, translate_assignment_core_with_ctx
 from llzk_dialects.utils import split_top_level_commas
 from llzk_dialects.loc_parser import strip_trailing_loc
 
@@ -260,6 +260,11 @@ class FunctionCall(Operation):
                     out_var_names.append(out_name)
             else:
                 out_var_names = [f"{result.name}_{out_arg}" for out_arg, _ in out_args]
+            # --all-signals-as-output mode (possibly temporary, branch
+            # signals_as_output): the callee also returns its input and
+            # intermediate signals, bound to dummies named like its outputs.
+            for name, _, _ in ctx.core_func2extra_outs.get(core_func, []):
+                out_var_names.append(f"{member}.{name}" if member else f"{result.name}_@{name}")
         else:
             out_var_names = [result.to_core_component(i) for i in range(len(out_args))]
 
@@ -395,8 +400,22 @@ class FunctionDef(BlockOperation):
             for arg, type_ in out_args
         )
 
+        # --all-signals-as-output mode (possibly temporary, branch
+        # signals_as_output): input and intermediate signals are returned
+        # too, after the outputs. Only structs have an entry.
+        extra_outs = ctx.core_func2extra_outs.get(core_name, [])
+        if extra_outs:
+            signature_out = ', '.join([signature_out] + [
+                f"{name}: {type_.to_core()}" for name, _, type_ in extra_outs])
+
         # We start with the declaration of the function and the args
         yield f"{self.core_keyword} {core_name}({signature_in}) -> {signature_out} {{\n"
+
+        # A returned input signal is a copy of its own parameter
+        for name, source, type_ in extra_outs:
+            if source is not None:
+                yield translate_assignment_core_with_ctx(SSAVar(name), SSAVar(source), type_, ctx)
+                yield '\n'
 
         for operation in self.body:
             yield from operation.to_core(ctx)

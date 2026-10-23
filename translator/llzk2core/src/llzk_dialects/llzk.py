@@ -524,6 +524,10 @@ class ModuleOp:
         # Strip @ prefix from output arg names (consistent with function body naming)
         plain_out_args = [(n[1:] if n.startswith('@') else n, t) for n, t in out_args]
 
+        # --all-signals-as-output mode (possibly temporary, branch
+        # signals_as_output): main exposes the extra returned signals too
+        plain_out_args += [(name, t) for name, _, t in ctx.core_func2extra_outs.get(core_function, [])]
+
         # For declaring the main function
         joined_in_args_with_type = signature_args(in_args)
         joined_out_args_with_type = signature_args(plain_out_args)
