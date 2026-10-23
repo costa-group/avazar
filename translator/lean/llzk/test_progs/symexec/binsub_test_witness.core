@@ -1,0 +1,20 @@
+def @A_0(a: ff, b: ff) -> out: ff {
+  %3 = 0
+  %felt_const_8 = 0
+  %0 = bool.ge a b
+  if (%0 == 1) {
+    %2 = felt.sub a b
+    out = %2
+    %1 = %2
+  }
+  else {
+    %2 = felt.sub a b
+    %felt_const_8 = 8
+    %3 = felt.add %2 %felt_const_8
+    out = %3
+    %1 = %3
+  }
+}
+def main(a: ff, b: ff) -> out: ff {
+  call @A_0(a, b) to out
+}
