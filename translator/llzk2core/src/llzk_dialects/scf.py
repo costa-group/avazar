@@ -273,6 +273,19 @@ class SCFIf(BlockOperation):
             else_body = parse_fn(else_start + 1, else_end)
             next_cursor = else_end + 1
 
+        # Rename every value defined inside each branch with a _then/_else
+        # suffix tagged with this if's own header line (`cursor`, unique per
+        # occurrence), exactly like SCFWhile's _bef/_aft: LLZK reuses the same
+        # SSA numbers across both branches and across sibling ifs, and
+        # llzk_cli unifies a Core variable's type across the branches it
+        # appears in, so two different values (possibly of different types)
+        # must never share a Core name. The if's own results, its condition
+        # and any outer value used inside are not defined in the branch, so
+        # they keep their names.
+        _rename_region(then_body, f"_then{cursor}")
+        if else_body is not None:
+            _rename_region(else_body, f"_else{cursor}")
+
         return (
             SCFIf(results, SSAVar.parse(m["cond"]), result_types,
                   then_body, else_body),
@@ -325,12 +338,13 @@ class SCFIf(BlockOperation):
                 ctx.var2const.pop(key, None)
 
     def _translate_branch(self, branch_ops: List[Operation], ctx: TranslationContext) -> Generator[str, None, None]:
-        # Scoped so a branch-local temporary (e.g. a PodRead/PodNew that
-        # happens to reuse a raw SSA name also used by the sibling branch --
-        # valid under SSA, since only one branch executes at runtime) is
-        # never visible to the sibling branch's own translation, nor to any
-        # code after this if closes -- except this if's own declared
-        # results, which are what a trailing scf.yield legitimately writes.
+        # Scoped so a branch-local registration is never visible to the
+        # sibling branch's own translation, nor to any code after this if
+        # closes -- except this if's own declared results, which are what a
+        # trailing scf.yield legitimately writes. (Branch-local names can no
+        # longer clash with the sibling's -- parse gives each branch its own
+        # _then/_else suffix -- but the scoping still keeps the if's
+        # escaping var2const value correct.)
         with scoped_branch_registrations(ctx, self.results):
             for statement in branch_ops[:-1]:
                 # Process all the operands as usual, except for the scf.yield
@@ -429,6 +443,10 @@ class SCFExecuteRegion(BlockOperation):
             depth += lines[end].count('{') - lines[end].count('}')
 
         body = parse_fn(cursor + 1, end)
+        # Same as SCFIf's branches: values defined in the region get their
+        # own _exe suffix, so a sibling region reusing the same SSA numbers
+        # never shares a Core name with them.
+        _rename_region(body, f"_exe{cursor}")
         return (
             SCFExecuteRegion(results, result_types, body),
             end + 1,
@@ -795,6 +813,13 @@ class SCFWhile(BlockOperation):
 
         after_body = parse_fn(after_body_start, after_end)
 
+        # The before region's args and the after region's args keep one shared
+        # Core name (block_arg_rename below): to_core never assigns the after
+        # args, it relies on scf.condition forwarding exactly the before args
+        # unchanged. That makes them one value of one type -- check it holds,
+        # rather than silently mistranslating any other forwarding shape.
+        _check_while_identity_forwarding(init_args, before_body, after_args, header)
+
         # Rename results in each region with _bef/_aft suffixes to eliminate
         # collisions between the two regions.  after_args names are the declared
         # entry-point variables of the after region — exclude them so they keep
@@ -1117,6 +1142,40 @@ class SCFWhile(BlockOperation):
         after_str = '\n  '.join(repr(op) for op in self.after_body)
         return (f"SCFWhile({res_str}scf.while ({iargs_str}) {{\n  {before_str}\n}}"
                 f" do {{\n  {after_bb_str}{after_str}\n}})")
+
+
+def _rename_region(ops: List[Operation], suffix: str) -> None:
+    """Append suffix to every SSA value defined within ops (nested regions included), at every use."""
+    rename: Dict[str, str] = {name: name + suffix for name in _collect_result_names(ops)}
+    for op in ops:
+        op.update_variables(rename)
+
+
+def _check_while_identity_forwarding(init_args: List[Tuple[SSAVar, SSAVar]],
+                                     before_body: List[Operation],
+                                     after_args: List[Tuple[SSAVar, Type]],
+                                     header: str) -> None:
+    """
+    Raises ValueError unless the while's scf.condition forwards exactly its
+    before-region args, in order, and the after region's declared args (when
+    it declares a ^bb0(...) at all) have those same names and types -- the
+    only shape SCFWhile.to_core translates correctly.
+    """
+    condition = before_body[-1] if before_body else None
+    if not isinstance(condition, SCFCondition):
+        return
+    before_names = [arg.name for arg, _ in init_args]
+    forwarded = [arg.name for arg in condition.args]
+    after_names = [arg.name for arg, _ in after_args]
+    after_types = [type_.name for _, type_ in after_args]
+    forwarded_types = [type_.name for type_ in condition.types]
+    after_ok = not after_args or (after_names == forwarded and
+                                  (not forwarded_types or after_types == forwarded_types))
+    if not (forwarded == before_names and after_ok):
+        raise ValueError(
+            "scf.while must forward exactly its before-region args to identically named and "
+            f"typed after-region args (before {before_names}, forwarded {forwarded}: "
+            f"{forwarded_types}, after {after_names}: {after_types}): {header.strip()}")
 
 
 def _collect_result_names(ops: List[Operation]) -> Set[str]:

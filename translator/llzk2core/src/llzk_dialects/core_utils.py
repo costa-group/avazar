@@ -239,7 +239,10 @@ def scoped_branch_registrations(ctx: TranslationContext, results: List[SSAVar]):
     SSA: only one branch executes at runtime) would otherwise silently
     clobber whichever branch's own registration was translated first, by
     the time either that branch is revisited or any code after the
-    if/execute_region reads the name back.
+    if/execute_region reads the name back. Since SCFIf/SCFExecuteRegion.parse
+    give every value defined in a branch/region its own _then/_else/_exe
+    suffix, such a reused name no longer reaches translation; the scoping
+    is kept as a second line of defence, and for the escaping results.
 
     On exit, every key is reverted to whatever it was before this block
     ran, EXCEPT one of `results`' own component names

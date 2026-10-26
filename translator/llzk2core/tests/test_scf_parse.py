@@ -369,8 +369,9 @@ class TestSCF:
         ]
         op, _ = SCFExecuteRegion.parse(self.lines, 0, self._simple_parse_fn)
         ctx = TranslationContext()
-        # No wrapper syntax at all: just the inlined body statement(s).
-        assert list(op.to_core(ctx)) == ["%c = 1"]
+        # No wrapper syntax at all: just the inlined body statement(s), whose
+        # own values carry the region's _exe suffix.
+        assert list(op.to_core(ctx)) == ["%c_exe0 = 1"]
 
     def test_execute_region_to_core_scalar_result(self):
         self.lines = [
@@ -548,18 +549,18 @@ class TestSCF:
             '^bb0(%arg0: !felt.type<"bn128">, %arg1: !felt.type<"bn128">):',
             'scf.condition(%cond) %arg0, %arg1',
             '} do {',
-            '^bb0(%arg2: !felt.type<"bn128">, %arg3: !felt.type<"bn128">):',
-            'scf.yield %arg2, %arg3 : !felt.type<"bn128">, !felt.type<"bn128">',
+            '^bb0(%arg0: !felt.type<"bn128">, %arg1: !felt.type<"bn128">):',
+            'scf.yield %arg0, %arg1 : !felt.type<"bn128">, !felt.type<"bn128">',
             '}',
         ]
         op, next_cur = SCFWhile.parse(self.lines, 0, self._while_parse_fn)
-        # after_args' own block-arg names ("%arg2"/"%arg3" here, distinct
-        # from init_args' "%arg0"/"%arg1" in this synthetic example) are also
-        # cursor-tagged -- independently of init_args', since they're a
-        # different raw name in this test.
+        # after_args are the very values scf.condition forwards (the only
+        # shape circom-llzk emits, and the only one to_core translates), so
+        # they share init_args' own cursor-tagged names.
         assert len(op.after_args) == 2
-        assert op.after_args[0] == (SSAVar('%arg2_w0'), Type('!felt.type<"bn128">'))
-        assert op.after_args[1] == (SSAVar('%arg3_w0'), Type('!felt.type<"bn128">'))
+        assert op.after_args[0] == (SSAVar('%arg0_w0'), Type('!felt.type<"bn128">'))
+        assert op.after_args[1] == (SSAVar('%arg1_w0'), Type('!felt.type<"bn128">'))
+        assert op.init_args[0][0].name == '%arg0_w0'
         assert len(op.before_body) == 1
         assert len(op.after_body) == 1
         assert next_cur == 7
@@ -1302,3 +1303,158 @@ class TestSCF:
         # is untouched, and the inner while's own block-args keep their
         # own "_w<cursor>" tagging, unaffected by the outer's rename.
         assert inner_while.init_args[0][1].name == "%e"
+
+
+class TestSCFRegionNaming:
+    """
+    Every value defined inside an scf.if branch or an scf.execute_region
+    gets a suffix of its own (_then<cursor>/_else<cursor>/_exe<cursor>, like
+    scf.while's _bef/_aft), so no two SSA values -- reused LLZK numbers in
+    sibling branches or sibling regions, possibly of different types -- ever
+    share a Core name. Values defined outside the region (the if's own
+    results, its condition, anything used from an enclosing scope) keep
+    theirs.
+    """
+
+    @staticmethod
+    def _parse(text: str):
+        from execution.main_execution import init_llzk_parser
+        return init_llzk_parser(text.splitlines(keepends=True)).parse()
+
+    @staticmethod
+    def _defs(ops):
+        """Every name defined within ops, nested regions included."""
+        from llzk_dialects.scf import _collect_result_names
+        return _collect_result_names(ops)
+
+    IF_ELSE = """\
+%r = scf.if %c -> (!felt.type<"bn128">) {
+  %2 = felt.add %x, %x : !felt.type<"bn128">, !felt.type<"bn128">
+  scf.yield %2 : !felt.type<"bn128">
+} else {
+  %2 = felt.mul %x, %x : !felt.type<"bn128">, !felt.type<"bn128">
+  scf.yield %2 : !felt.type<"bn128">
+}
+"""
+
+    def test_then_and_else_get_distinct_names(self):
+        [op] = self._parse(self.IF_ELSE)
+        assert op.then_body[0].result.name == "%2_then0"
+        assert op.else_body[0].result.name == "%2_else0"
+        # The yields follow their own branch's definition
+        assert op.then_body[-1].operands[0].name == "%2_then0"
+        assert op.else_body[-1].operands[0].name == "%2_else0"
+
+    def test_results_condition_and_outer_values_keep_their_names(self):
+        [op] = self._parse(self.IF_ELSE)
+        assert [r.name for r in op.results] == ["%r"]
+        assert op.condition.name == "%c"
+        assert [o.name for o in op.then_body[0].operands] == ["%x", "%x"]
+        assert [o.name for o in op.else_body[0].operands] == ["%x", "%x"]
+
+    def test_sibling_ifs_reusing_a_name_get_distinct_names(self):
+        ops = self._parse("""\
+scf.if %c {
+  %2 = felt.add %x, %x : !felt.type<"bn128">, !felt.type<"bn128">
+}
+scf.if %d {
+  %2 = array.new  : <2 x !felt.type<"bn128">>
+}
+""")
+        assert ops[0].then_body[0].result.name == "%2_then0"
+        assert ops[1].then_body[0].result.name == "%2_then3"
+
+    def test_nested_if_stacks_suffixes(self):
+        [op] = self._parse("""\
+scf.if %c {
+  scf.if %d {
+    %2 = felt.add %x, %x : !felt.type<"bn128">, !felt.type<"bn128">
+  }
+  %3 = felt.add %x, %x : !felt.type<"bn128">, !felt.type<"bn128">
+}
+""")
+        inner = op.then_body[0]
+        # Inner regions are parsed (and suffixed) first, then the outer
+        # branch suffixes everything defined within it, nested included.
+        assert inner.then_body[0].result.name == "%2_then1_then0"
+        assert op.then_body[1].result.name == "%3_then0"
+
+    def test_while_inside_if_stacks_suffixes(self):
+        [op] = self._parse("""\
+scf.if %c {
+  %r = scf.while (%arg1 = %x) : (!felt.type<"bn128">) -> (!felt.type<"bn128">) {
+    %5 = bool.cmp lt(%arg1, %x) : !felt.type<"bn128">, !felt.type<"bn128">
+    scf.condition(%5) %arg1 : !felt.type<"bn128">
+  } do {
+  ^bb0(%arg1: !felt.type<"bn128">):
+    %6 = felt.add %arg1, %x : !felt.type<"bn128">, !felt.type<"bn128">
+    scf.yield %6 : !felt.type<"bn128">
+  }
+}
+""")
+        loop = op.then_body[0]
+        assert loop.results[0].name == "%r_then0"
+        assert loop.before_body[0].result.name == "%5_bef1_then0"
+        assert loop.after_body[0].result.name == "%6_aft1_then0"
+        # The while's own block args are already unique per while (_w<cursor>)
+        assert loop.init_args[0][0].name == "%arg1_w1"
+        assert loop.init_args[0][1].name == "%x"
+
+    def test_execute_region_body_gets_its_own_suffix(self):
+        ops = self._parse("""\
+%a = scf.execute_region -> !felt.type<"bn128"> {
+  %c = felt.const 1 : <"bn128">
+  scf.yield %c : !felt.type<"bn128">
+}
+%b = scf.execute_region -> !felt.type<"bn128"> {
+  %c = felt.const 2 : <"bn128">
+  scf.yield %c : !felt.type<"bn128">
+}
+""")
+        assert ops[0].body[0].result.name == "%c_exe0"
+        assert ops[1].body[0].result.name == "%c_exe4"
+        assert [r.name for r in ops[0].results] == ["%a"]
+        assert ops[1].body[-1].operands[0].name == "%c_exe4"
+
+    def test_branch_values_of_different_types_never_share_a_core_name(self):
+        [op] = self._parse("""\
+%r = scf.if %c -> (!felt.type<"bn128">) {
+  %2 = felt.add %x, %x : !felt.type<"bn128">, !felt.type<"bn128">
+  scf.yield %2 : !felt.type<"bn128">
+} else {
+  %2 = array.new %x, %x : <2 x !felt.type<"bn128">>
+  %i = arith.constant 0 : index
+  %3 = array.read %2[%i] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">
+  scf.yield %3 : !felt.type<"bn128">
+}
+""")
+        text = "\n".join(op.to_core(TranslationContext()))
+        assert "%2_then0 = felt.add %x %x" in text
+        assert "%2_else0" in text and "array.read %2_else0[%i_else0] %3_else0" in text
+        assert "%2 " not in text and "%2\n" not in text
+        assert self._defs(op.then_body).isdisjoint(self._defs(op.else_body))
+
+    def test_while_condition_must_forward_its_before_args(self):
+        lines = [
+            'scf.while (%arg0 = %v0) : (!felt.type<"bn128">) -> (!felt.type<"bn128">) {',
+            '%n = felt.add %arg0, %arg0 : !felt.type<"bn128">, !felt.type<"bn128">',
+            'scf.condition(%cond) %n : !felt.type<"bn128">',
+            '} do {',
+            '^bb0(%arg1: !felt.type<"bn128">):',
+            'scf.yield %arg1 : !felt.type<"bn128">',
+            '}',
+        ]
+        with pytest.raises(ValueError, match="must forward exactly its before-region args"):
+            self._parse("\n".join(lines) + "\n")
+
+    def test_while_after_args_must_match_forwarded_names(self):
+        lines = [
+            'scf.while (%arg0 = %v0) : (!felt.type<"bn128">) -> (!felt.type<"bn128">) {',
+            'scf.condition(%cond) %arg0 : !felt.type<"bn128">',
+            '} do {',
+            '^bb0(%arg1: !felt.type<"bn128">):',
+            'scf.yield %arg1 : !felt.type<"bn128">',
+            '}',
+        ]
+        with pytest.raises(ValueError, match="must forward exactly its before-region args"):
+            self._parse("\n".join(lines) + "\n")

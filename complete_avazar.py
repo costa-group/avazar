@@ -202,7 +202,10 @@ def main():
         # same field circom-llzk generated the .llzk over, or a value that
         # wraps in the real field (e.g. circom's "-1") won't be simulated
         # correctly.
-        llzk2core_args = argparse.Namespace(source=spec_llzk, target=out_abs_path + "/" + root_name_withoutext_spec + ".core", prime=args.prime)
+        # --named-inputs: each template's input signals are declared by their
+        # own names (not %argN), so the specification's vars_info names them
+        # just like its output signals.
+        llzk2core_args = argparse.Namespace(source=spec_llzk, target=out_abs_path + "/" + root_name_withoutext_spec + ".core", prime=args.prime, named_inputs=False)
         llzk2core_main(llzk2core_args)
 
         spec_json = out_abs_path + "/" + root_name_withoutext_spec + ".json"
