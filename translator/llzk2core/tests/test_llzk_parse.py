@@ -679,7 +679,7 @@ module attributes {{llzk.lang = "circom", llzk.main = !struct.type<@Main_0::@Mai
         assert "@global_@m: [1, 2, 3, 4]" in text
         assert "@global_@m[" in text
 
-    def test_whole_array_alias_passed_to_call(self):
+    def test_read_passed_to_call_is_copied(self):
         from llzk_dialects.global_ import GlobalRead
         from llzk_dialects.llzk import _alias_global_reads
         from llzk_dialects.global_ import _register_global_def, GlobalDef
@@ -692,8 +692,26 @@ module attributes {{llzk.lang = "circom", llzk.main = !struct.type<@Main_0::@Mai
         call = FunctionCall([SSAVar("%1")], GlobalVariable("@F::@F"), [SSAVar("%0")], None)
         _alias_global_reads([read, call], ctx)
 
-        assert read.aliased
-        assert call.args[0].name == "@global_@arr"
+        # llzk_cli can't resolve a global's Core name as a call argument
+        assert not read.aliased
+        assert call.args[0].name == "%0"
+
+    def test_read_passed_to_nested_call_is_copied(self):
+        from llzk_dialects.global_ import GlobalRead, GlobalDef, _register_global_def
+        from llzk_dialects.llzk import _alias_global_reads
+        from llzk_dialects.scf import SCFFor
+
+        ctx = TranslationContext()
+        _register_global_def(GlobalDef.parse(
+            'global.def const @arr : !array.type<2 x !felt.type<"bn128">> = [ 7 : <"bn128">,  8 : <"bn128">]'
+        ), ctx, "@global")
+        read = GlobalRead.parse('%0 = global.read const @global::@arr : !array.type<2 x !felt.type<"bn128">>')
+        call = FunctionCall([SSAVar("%1")], GlobalVariable("@F::@F"), [SSAVar("%0")], None)
+        loop = SCFFor([], SSAVar("%i"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%st"), [], [call])
+        _alias_global_reads([read, loop], ctx)
+
+        assert not read.aliased
+        assert call.args[0].name == "%0"
 
     def test_loop_carried_init_counts_as_written(self):
         from llzk_dialects.global_ import GlobalRead, GlobalDef, _register_global_def

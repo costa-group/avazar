@@ -236,6 +236,22 @@ def _is_mutated(name: str, ops: List[Operation]) -> bool:
     return False
 
 
+def _is_call_arg(name: str, ops: List[Operation]) -> bool:
+    """
+    Whether the SSA value `name` is passed as an argument of a function.call
+    within ops (nested regions included). llzk_cli resolves call arguments
+    as local variables only, so a global's Core name can't be passed there.
+    """
+    from llzk_dialects.function import FunctionCall
+
+    for op in ops:
+        if isinstance(op, FunctionCall) and any(arg.name == name for arg in op.args):
+            return True
+        if any(_is_call_arg(name, region) for region in _nested_regions(op)):
+            return True
+    return False
+
+
 def _rename_ssa(obj, old: str, new: str, seen: Set[int]) -> None:
     """
     Rename, in place, every SSAVar named `old` reachable from obj (an op,
@@ -277,7 +293,9 @@ def _alias_global_reads(ops: List[Operation], ctx: TranslationContext) -> None:
     written to later (the frontend uses a zero const global as a local
     array's initial value, e.g. poseidon3_test_concrete.mlir's
     `%1 = global.read const @global::@array_const_67`, then filled in a
-    loop) is left alone and translated as an explicit copy instead.
+    loop) is left alone and translated as an explicit copy instead. So is
+    a read passed as a function.call argument: llzk_cli only looks call
+    arguments up among local variables, never in `globals { ... }`.
     """
     from llzk_dialects.global_ import GlobalRead, _global_ref_core
 
@@ -285,7 +303,7 @@ def _alias_global_reads(ops: List[Operation], ctx: TranslationContext) -> None:
         if isinstance(op, GlobalRead) and op.name_ref.name in ctx.global2core:
             name = op.result.name
             scope = ops[i + 1:]
-            if not _is_mutated(name, scope):
+            if not _is_mutated(name, scope) and not _is_call_arg(name, scope):
                 _rename_ssa(scope, name, _global_ref_core(ctx.global2core[op.name_ref.name]), set())
                 op.aliased = True
         for region in _nested_regions(op):
