@@ -952,6 +952,32 @@ def _build_component_naming_maps(body, ctx, idx_pod_member_types=None):
     return array_component_index_sequences
 
 
+def _name_input_signals(compute_op: FunctionDef, in_args: List[Tuple[str, Type]], core_name: str,
+                        ctx: TranslationContext) -> List[Tuple[str, Type]]:
+    """
+    Renames, in place, every use of an input parameter with a
+    function.arg_name (e.g. "%arg0" -> "x1") within compute_op's body, and
+    returns the in args the Core signature declares. With ctx.named_inputs
+    that is the signal name itself; otherwise the "%argN" is kept and the
+    "name = %argN" copy FunctionDef.to_core opens the body with is recorded
+    in ctx.core_func2input_copies. A parameter without function.arg_name
+    keeps its "%argN" everywhere.
+    """
+    from llzk_dialects.llzk import _rename_ssa
+
+    arg_names = compute_op.in_arg_names
+    for ssa_name, signal_name in arg_names.items():
+        _rename_ssa(compute_op.body, ssa_name, signal_name, set())
+
+    if ctx.named_inputs:
+        return [(arg_names.get(arg, arg), type_) for arg, type_ in in_args]
+
+    copies = [(arg_names[arg], arg, type_) for arg, type_ in in_args if arg in arg_names]
+    if copies:
+        ctx.core_func2input_copies[core_name] = copies
+    return in_args
+
+
 class StructMember(Operation):
     """
     Declare a named member field within a struct.def body.
@@ -1289,6 +1315,11 @@ class StructDef(BlockOperation):
 
         # The name we give is just the sym_name
         core_name = self.sym_name.name
+
+        # Input signals are referred to by their own names (function.arg_name)
+        # in the body. Done before the naming pre-pass below, so it already
+        # sees the final names.
+        in_args_with_type = _name_input_signals(compute_op, in_args_with_type, core_name, ctx)
 
         # Assign the information of the name of the function, in/out args to the context information
         ctx.llzk_func2core[llzk_name] = core_name

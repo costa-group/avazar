@@ -1720,3 +1720,109 @@ class TestStructDefToCoreComponentsInfoIdxPod:
         # The idx-pod's own field types must never leak in as extra,
         # separately-suffixed entries (e.g. a stray "ark" bare key).
         assert "ark" not in info
+
+
+class TestStructInputSignalNames:
+    """
+    A struct's @compute refers to each input signal by its own
+    function.arg_name in its body. By default the Core signature (and
+    main's) keeps "%argN" and the body opens with a "name = %argN" copy;
+    with named_inputs the signature declares the name itself. A parameter
+    without function.arg_name, and a pure function's parameters, keep
+    "%argN".
+    """
+
+    MODULE = """\
+    module attributes {llzk.lang = "circom", llzk.main = !struct.type<@Main_1::@Main_1<[]>>} {
+      poly.template @Double_0 {
+        struct.def @Double_0 {
+          struct.member @out : !felt.type<"bn128"> {llzk.pub, signal}
+          function.def @compute(%arg0: !felt.type<"bn128"> {function.arg_name = "x"}) -> !struct.type<@Double_0::@Double_0<[]>> attributes {function.allow_witness} {
+            %self = struct.new : <@Double_0::@Double_0<[]>>
+            %0 = felt.add %arg0, %arg0 : !felt.type<"bn128">, !felt.type<"bn128">
+            struct.writem %self[@out] = %0 : <@Double_0::@Double_0<[]>>, !felt.type<"bn128">
+            function.return %self : !struct.type<@Double_0::@Double_0<[]>>
+          }
+          function.def @constrain(%arg0: !struct.type<@Double_0::@Double_0<[]>>, %arg1: !felt.type<"bn128"> {function.arg_name = "x"}) attributes {function.allow_constraint} {
+            function.return
+          }
+        }
+      }
+      poly.template @Main_1 {
+        struct.def @Main_1 {
+          struct.member @out : !felt.type<"bn128"> {llzk.pub, signal}
+          struct.member @dbl : !struct.type<@Double_0::@Double_0<[]>>
+          struct.member @dbl$inputs : !pod.type<[@x: !felt.type<"bn128">]> {signal}
+          function.def @compute(%arg0: !felt.type<"bn128"> {function.arg_name = "a"}, %arg1: !array.type<2 x !felt.type<"bn128">> {function.arg_name = "b"}, %arg2: !felt.type<"bn128">) -> !struct.type<@Main_1::@Main_1<[]>> attributes {function.allow_witness} {
+            %self = struct.new : <@Main_1::@Main_1<[]>>
+            %pod_0 = pod.new : <[@x: !felt.type<"bn128">]>
+            pod.write %pod_0[@x] = %arg0 : <[@x: !felt.type<"bn128">]>, !felt.type<"bn128">
+            %1 = pod.read %pod_0[@x] : <[@x: !felt.type<"bn128">]>, !felt.type<"bn128">
+            %2 = function.call @Double_0::@Double_0::@compute(%1) : (!felt.type<"bn128">) -> !struct.type<@Double_0::@Double_0<[]>>
+            struct.writem %self[@dbl] = %2 : <@Main_1::@Main_1<[]>>, !struct.type<@Double_0::@Double_0<[]>>
+            %3 = struct.readm %2[@out] : <@Double_0::@Double_0<[]>>, !felt.type<"bn128">
+            %c0 = arith.constant 0 : index
+            %4 = array.read %arg1[%c0] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">
+            %5 = felt.add %3, %4 : !felt.type<"bn128">, !felt.type<"bn128">
+            %6 = felt.add %5, %arg2 : !felt.type<"bn128">, !felt.type<"bn128">
+            struct.writem %self[@out] = %6 : <@Main_1::@Main_1<[]>>, !felt.type<"bn128">
+            function.return %self : !struct.type<@Main_1::@Main_1<[]>>
+          }
+          function.def @constrain(%arg0: !struct.type<@Main_1::@Main_1<[]>>, %arg1: !felt.type<"bn128"> {function.arg_name = "a"}, %arg2: !array.type<2 x !felt.type<"bn128">> {function.arg_name = "b"}, %arg3: !felt.type<"bn128">) attributes {function.allow_constraint} {
+            function.return
+          }
+        }
+      }
+      poly.template @Inc_2 {
+        function.def @Inc_2(%arg0: !felt.type<"bn128"> {function.arg_name = "k"}) -> !felt.type<"bn128"> {
+          %0 = felt.add %arg0, %arg0 : !felt.type<"bn128">, !felt.type<"bn128">
+          function.return %0 : !felt.type<"bn128">
+        }
+      }
+    }
+"""
+
+    @classmethod
+    def _translate(cls, named_inputs: bool) -> str:
+        from execution.main_execution import init_llzk_parser
+        module = init_llzk_parser(cls.MODULE.splitlines(keepends=True)).parse()[0]
+        ctx = TranslationContext(named_inputs=named_inputs)
+        lines = (line.strip() for line in "".join(module.to_core(ctx)).splitlines())
+        return "\n".join(line for line in lines if line)
+
+    def test_default_keeps_arg_signature_and_copies_inputs(self):
+        text = self._translate(named_inputs=False)
+        assert "def @Main_1(%arg0: ff, %arg1: arr<2>, %arg2: ff) -> out: ff {\na = %arg0\narray.copy %arg1 b\n" in text
+        assert "def @Double_0(%arg0: ff) -> out: ff {\nx = %arg0\n" in text
+
+    def test_default_body_uses_signal_names(self):
+        text = self._translate(named_inputs=False)
+        assert "%0 = felt.add x x" in text
+        assert "array.read b[%c0] %4" in text
+        # Passed to a subcomponent through its $inputs pod
+        assert "%pod_0_@x = a" in text
+
+    def test_default_main_unchanged(self):
+        text = self._translate(named_inputs=False)
+        assert "def main(%arg0: ff, %arg1: arr<2>, %arg2: ff) -> out: ff {\ncall @Main_1(%arg0, %arg1, %arg2) to out" in text
+
+    def test_named_inputs_signature_without_copies(self):
+        text = self._translate(named_inputs=True)
+        assert "def @Main_1(a: ff, b: arr<2>, %arg2: ff) -> out: ff {\n%pod_0_@x = a\n" in text
+        assert "def @Double_0(x: ff) -> out: ff {\n%0 = felt.add x x" in text
+        assert "= %arg0" not in text
+        assert "array.copy %arg1" not in text
+
+    def test_named_inputs_main(self):
+        text = self._translate(named_inputs=True)
+        assert "def main(a: ff, b: arr<2>, %arg2: ff) -> out: ff {\ncall @Main_1(a, b, %arg2) to out" in text
+
+    def test_input_without_arg_name_keeps_ssa_name(self):
+        for named_inputs in (False, True):
+            text = self._translate(named_inputs)
+            assert "%6 = felt.add %5 %arg2" in text
+
+    def test_pure_function_parameters_untouched(self):
+        for named_inputs in (False, True):
+            text = self._translate(named_inputs)
+            assert "func @Inc_2(%arg0: ff) -> %0: ff {\n%0 = felt.add %arg0 %arg0" in text

@@ -16,7 +16,7 @@ from llzk_dialects.core import (
     TranslationContext, ParseFn,
 )
 from llzk_dialects.definitions import Dialect
-from llzk_dialects.core_utils import signature_args
+from llzk_dialects.core_utils import signature_args, translate_assignment_core_with_ctx
 from llzk_dialects.utils import split_top_level_commas
 from llzk_dialects.loc_parser import strip_trailing_loc
 
@@ -397,6 +397,13 @@ class FunctionDef(BlockOperation):
 
         # We start with the declaration of the function and the args
         yield f"{self.core_keyword} {core_name}({signature_in}) -> {signature_out} {{\n"
+
+        # Without --named-inputs, each input signal is copied from its own
+        # "%argN" parameter, and the body uses the copy (see
+        # struct.py's _name_input_signals)
+        for signal_name, ssa_name, type_ in ctx.core_func2input_copies.get(core_name, []):
+            yield translate_assignment_core_with_ctx(SSAVar(signal_name), SSAVar(ssa_name), type_, ctx)
+            yield '\n'
 
         for operation in self.body:
             yield from operation.to_core(ctx)

@@ -623,10 +623,10 @@ module attributes {{llzk.lang = "circom", llzk.main = !struct.type<@Main_0::@Mai
         %r = array.read %0[%c0] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">""")
 
         assert "array.copy @global_@arr %0" in text
-        assert "array.write %arg0 %0[%c0]" in text
+        assert "array.write in %0[%c0]" in text
         assert "array.read %0[%c0] %r" in text
         # The shared global itself is never written to.
-        assert "array.write %arg0 @global_@arr" not in text
+        assert "array.write in @global_@arr" not in text
 
     def test_sibling_region_same_name_is_untouched(self):
         # %2 reads the global in the then-branch; an unrelated %2 in the
@@ -646,7 +646,7 @@ module attributes {{llzk.lang = "circom", llzk.main = !struct.type<@Main_0::@Mai
         }""")
 
         assert "array.read @global_@arr[%c0] %3" in text
-        assert "%2 = felt.add %arg0 %felt_const_1" in text
+        assert "%2 = felt.add in %felt_const_1" in text
 
     def test_two_modules_same_global_name(self):
         text = self._translate("""\
