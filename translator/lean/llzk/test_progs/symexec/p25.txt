@@ -1,0 +1,14 @@
+func pow2(x:ff) -> y:ff {
+  y = 1
+  repeat x {
+    y = felt.mul y 2
+  }
+}
+
+def foo(x:ff) -> z:ff {
+  call pow2(10) to w
+  z = felt.add x w
+}
+
+def main() {
+}

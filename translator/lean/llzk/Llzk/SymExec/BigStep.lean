@@ -321,6 +321,7 @@ def extract_concrete_args {c : ZKConfig}
 
 def seFuncCallConcrete {c : ZKConfig}
     (cfg : SymExecConfig c)
+    (globals : GlobalEnv c)
     (md : CmdMD)
     (symEnv : SymEnv c)
     (specs : List (FuncSpec c))
@@ -330,7 +331,7 @@ def seFuncCallConcrete {c : ZKConfig}
     (outs : List VarID)
     : Except String (CmdsSpec c) := do
     let concrete_args ← extract_concrete_args cfg symEnv args
-    let output ← evalFun defSemConfig (emptyGlobalEnv c) p fname concrete_args
+    let output ← evalFun defSemConfig globals p fname concrete_args
     let sym_out := output.map (fun v => match v with
                                         | Value.scalar s => SymValue.ffVar (SymFFVar.const s)
                                         | Value.array arr => SymValue.ffArray (arr.map (fun s => SymFFVar.const s)))
@@ -347,6 +348,7 @@ def seFuncCallConcrete {c : ZKConfig}
 
 def seFuncCallSym {c : ZKConfig}
     (cfg : SymExecConfig c)
+    (globals : GlobalEnv c)
     (md : CmdMD)
     (symEnv : SymEnv c)
     (specs : List (FuncSpec c))
@@ -391,6 +393,7 @@ def seFuncCallSym {c : ZKConfig}
 
 def seFuncCall {c : ZKConfig}
     (cfg : SymExecConfig c)
+    (globals : GlobalEnv c)
     (md : CmdMD)
     (symEnv : SymEnv c)
     (specs : List (FuncSpec c))
@@ -404,9 +407,9 @@ def seFuncCall {c : ZKConfig}
     | .mk fmd _ =>
       dbg_trace s!"Executing function {fname} {fmd.no_sym_exec}"
       if fmd.no_sym_exec then
-        seFuncCallConcrete cfg md symEnv specs p fname args outs
+        seFuncCallConcrete cfg globals md symEnv specs p fname args outs
       else
-        seFuncCallSym cfg md symEnv specs p fname args outs
+        seFuncCallSym cfg globals md symEnv specs p fname args outs
 
 
 def symEnvToMacroVarsInfo {c : ZKConfig} (symEnv : SymEnv c) : MacroVarsInfo c :=
@@ -592,7 +595,7 @@ def seCmd {c : ZKConfig}
           }
 
       | Com.func_call outs fname args =>
-          seFuncCall cfg md symEnv specs p fname args outs
+          seFuncCall cfg globals md symEnv specs p fname args outs
 termination_by (numOfLoopExpCom i, sizeOfCom i)
 decreasing_by
     -- recursive call with then-branch

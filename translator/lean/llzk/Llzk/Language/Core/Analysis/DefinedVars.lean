@@ -49,8 +49,10 @@ end
 /-- Every variable a function ever assigns, including its parameters. -/
 def definedVarsOfFunc {c : ZKConfig} (f : Func c) : VarIDSet :=
   match f with
-  | .mk _name params _rets body =>
-    let initVars := params.foldl (fun acc p => acc.insert p.name) emptyVarIDSet
-    definedVarsCmds initVars body
+  | .mk _name params rets body =>
+    let retvars := rets.foldl (fun acc p => acc.insert p.name) emptyVarIDSet
+    let initVars := params.foldl (fun acc p => acc.insert p.name) retvars
+    let vs := definedVarsCmds initVars body
+    vs
 
 end Llzk.Language.Core.Analysis.DefinedVars

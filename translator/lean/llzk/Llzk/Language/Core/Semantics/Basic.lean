@@ -76,6 +76,9 @@ def setVars {c : ZKConfig}
       Except.ok env'
   | _, _ => Except.error "Mismatched lengths of ids and values"
 
+def zeroInitEnv {c : ZKConfig} (vars : VarIDSet) : Env c :=
+  vars.foldl (fun env id => setVar env id (Value.scalar 0)) (emptyEnv c)
+
 
 /- A type for the global environment -/
 abbrev GlobalEnv (c : ZKConfig) := Std.TreeMap VarID (FFArray c)

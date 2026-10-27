@@ -19,6 +19,12 @@ name = "Cli"
 git = "https://github.com/mhuisi/lean4-cli"
 rev = "main"
 
+[[require]]
+name = "Regex"
+git = "https://github.com/pandaman64/lean-regex"
+rev = "v4.28.0"
+subDir = "regex"
+
 [[lean_lib]]
 name = "Llzk"
 
