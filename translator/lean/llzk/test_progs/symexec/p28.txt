@@ -1,0 +1,16 @@
+
+def foo(x:ff) -> z:ff {
+  a = bool.gt x 0
+  if ( a == 1 ) {
+    y=1
+    %w = felt.add x 1
+  } else {
+    y=2
+    %w = felt.add x 2
+  }
+  z = %w
+}
+
+def main() -> y:ff {
+  y=10
+}

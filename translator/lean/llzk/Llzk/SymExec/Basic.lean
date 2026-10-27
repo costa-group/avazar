@@ -4,6 +4,7 @@ import Llzk.Language.Core.Syntax.Printer
 import Llzk.FFConstraints.Basic
 import Llzk.Language.Core.Semantics.Basic
 import Std.Data.TreeMap.Basic
+import Regex
 
 namespace Llzk.SymExec.Basic
 
@@ -37,6 +38,12 @@ inductive BoolFFScm where
 
 
 
+/- `Regex` (from the `lean-regex` library) has no `Inhabited` instance of its own, since it
+   carries a well-formedness proof (`Regex.wf`) alongside its automaton. We provide one here,
+   instantiated to the "match everything" pattern, purely so `SymExecConfig` below can keep
+   deriving `Inhabited`. -/
+instance : Inhabited Regex := ⟨re! r".*"⟩
+
 /- This is a structure that will be passed around in the symbolic interpreter. We can
    encapsulate various things here. Separating it from the symbolic state makes things
    simpler.
@@ -49,6 +56,10 @@ structure SymExecConfig (c : ZKConfig) where
   nextId : Nat := 0
   cmpScm : CmpScm := CmpScm.range_of_diff
   ffbool : BoolFFScm := BoolFFScm.range -- whether to use boolean variables for bits
+  /- Criterion used to decide whether a given variable should be output (e.g. included in
+     the emitted SMT/JSON encoding): a variable is output iff its name matches this regex.
+     Defaults to `.*` (matches everything), i.e. no filtering is applied by default. -/
+  out_var_crit : Option Regex := none
   deriving Inhabited
 
 structure FFVarWithBinRep (c : ZKConfig) where

@@ -38,10 +38,18 @@ def buildCfg (c : ZKConfig) (p : Parsed) : Except String (SymExecConfig c):= do
       | "range" => pure BoolFFScm.range
       | "mul" => pure BoolFFScm.mul
       | scm => Except.error s!"Unsupported boolean encoding scheme: {scm}"
+  let outVarCrit ←
+    if p.hasFlag "out_var_crit" then
+      match Regex.parse (p.flag! "out_var_crit" |>.as! String) with
+      | Except.ok r => pure (some r)
+      | Except.error e => Except.error s!"Invalid regular expression for out_var_crit: {e}"
+    else
+      pure none
   let cfg : SymExecConfig c := {
     nextId := nextId,
     cmpScm := cmpScm,
-    ffbool := boolScm
+    ffbool := boolScm,
+    out_var_crit := outVarCrit
   }
   Except.ok cfg
 
@@ -169,6 +177,8 @@ def llzkCmd : Cmd := `[Cli|
     Default is range_of_diff."
     boolscm, boolean_scheme : String; "Encoding of boolean variables for bits (range, mul). \
     Default is range."
+    ovc, out_var_crit : String; "Regular expression used to decide which variables are \
+    included in the output. Default is .* (matches everything, i.e. no filtering)."
   ARGS:
     input : String;      "The input program"
   EXTENSIONS:

@@ -1,11 +1,12 @@
 import Llzk.Basic
 import Llzk.Language.Core.Syntax.AST
 import Llzk.Language.Core.Semantics.Basic
-
+import Llzk.Language.Core.Analysis.DefinedVars
 namespace Llzk.Language.Core.Semantics.BigStep
 
 open Llzk.Language.Core.Syntax.AST
 open Llzk.Language.Core.Semantics.Basic
+open Llzk.Language.Core.Analysis.DefinedVars
 
 mutual
 
@@ -136,7 +137,8 @@ def evalFun {c : ZKConfig} (cfg : SemConfig c)
       | .mk _ func =>
       match func with
        | Func.mk _ params rets body =>
-           let vars_env ← bindInParams (emptyEnv c) params args
+        --   let vars_env ← bindInParams (emptyEnv c) params args
+           let vars_env ← bindInParams (zeroInitEnv (definedVarsOfFunc func)) params args
            let st := ⟨vars_env⟩
            let st' ← evalCmds cfg globals funcs' st body
            let rets ← bindOutParams st'.vars rets
