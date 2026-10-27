@@ -1,0 +1,22 @@
+# Bug (not fixed yet): after a call to a `func` (evaluated concretely), the
+# counter of fresh SMT variables is reset to 0, so later variables reuse
+# existing names. `seFuncCallConcrete` in SymExec/BigStep.lean returns
+# `nextId := 0` instead of `nextId := cfg.nextId`.
+#
+# Here %x and %c both get `v_0`: `(define-fun @check ((v_0 FFp) (v_0 FFp)) ...`,
+# so the formula says %x = %c = 1 and only %x = 1 satisfies it.
+# Expected: %x and %c get different variables; the assert holds iff %x = 1.
+
+func @one() -> %r: ff {
+  %r = 1
+}
+
+def @check(%x: ff) -> {
+  call @one() to %p
+  %c = bool.eq %p %x
+  assert %c
+}
+
+def main(%x: ff) -> {
+  call @check(%x) to
+}

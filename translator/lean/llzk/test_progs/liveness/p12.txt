@@ -1,0 +1,18 @@
+# Bug (not fixed yet): a loop with an empty body must let every variable in
+# live_out flow through unchanged, but in Liveness.lean the loop cases call
+# `getCmdsLiveIn` without `out` as default, so the live_in of an empty body
+# is {} (same kind of bug as p8.txt for if-statements).
+#   -sl: the `if` has live_out={} (without %r)
+#   -se: fails with "Variable '%r' not found"
+#   -ru: works (it removes the empty loop)
+# Expected: the `if` has %r in live_out and -se succeeds.
+
+def main(%x: ff) -> %r: ff {
+  if (%x == 1) {
+    %r = 5
+  } else {
+    %r = 7
+  }
+  repeat 2 {
+  }
+}
