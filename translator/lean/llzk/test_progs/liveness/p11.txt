@@ -10,7 +10,7 @@
 #   -se: failed with "Variable '%r' not found"
 #   -ru: removed the whole `if`
 # Expected: the `if` has %r in live_out, -se succeeds, and -ru only removes
-# `%s = 1`.
+# `%s = 1` and the `repeat 0` loop.
 
 def main(%x: ff) -> %r: ff, %s: ff {
   %s = 1

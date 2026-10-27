@@ -46,6 +46,9 @@ def buildCfg (c : ZKConfig) (p : Parsed) : Except String (SymExecConfig c):= do
   Except.ok cfg
 
 def symExec (c : ZKConfig) (p : Parsed) (inFile : String) (outStream : IO.FS.Stream) : IO Unit := do
+     if p.hasFlag "removeuseless2iter" then
+       IO.println s!"Error: -ru2i is only supported with -pp, use -ru for symbolic execution"
+       return
      IO.println s!"Parsing {inFile}..."
      let initialState ← ParserM.fromFile inFile
      let (prog,_) ← StateT.run (@parseProgram c) initialState

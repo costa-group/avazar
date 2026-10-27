@@ -117,7 +117,7 @@ def addFailingFuncs {c : ZKConfig} (failing : List FName) (funcs : List (FuncWit
 def failingFuncs {c : ZKConfig} (funcs : List (FuncWithMD c)) : List FName :=
     let rec go (fuel : Nat) (failing : List FName) : List FName :=
         match fuel with
-        | 0 => failing
+        | 0 => panic "failingFuncs (within remove useless commands): ran out of fuel"
         | fuel + 1 =>
             let failing' := addFailingFuncs failing funcs
             if failing'.length == failing.length then failing else go fuel failing'
@@ -238,15 +238,15 @@ def removeUselessCmd {c : ZKConfig} (failing : List FName) (i : ComWithMD c)
           let outFix :=  loopFixedPointOut fuel body out
           let body' := removeUselessCmds failing body outFix
           -- the loop is useless if the body is empty after removing
-          -- useless commands
-          match body' with
-          | [] => none
-          | _ =>
-              -- if `rep` may be 0 (a variable or the constant 0), every variable
+          -- useless commands, or if it executes 0 times
+          match body', rep == .val 0 with
+          | [], _ | _, true => none
+          | _, false =>
+              -- if `rep` is a variable it may be 0, and then every variable
               -- in `out` flows through the loop unchanged
               let liveInBody := getCmdsLiveIn body' outFix
               let liveInBody := match rep with
-                | .val v => if v == 0 then liveInBody.union out else liveInBody
+                | .val _ => liveInBody
                 | .var _ => liveInBody.union out
               let liveIn := addUsedVarsSimpleExpr liveInBody rep
               let cmd' := Com.loop_exp rep body'
@@ -258,12 +258,12 @@ def removeUselessCmd {c : ZKConfig} (failing : List FName) (i : ComWithMD c)
           let fuel := sizeOfComs body + 1
           let outFix := loopFixedPointOut fuel body out
           let body' := removeUselessCmds failing body outFix
-          match body' with
-          | [] => none
-          | _ =>
-              -- if `rep` is 0, every variable in `out` flows through the loop unchanged
-              let liveInBody := getCmdsLiveIn body' outFix
-              let liveIn := if rep == 0 then liveInBody.union out else liveInBody
+          -- the loop is useless if the body is empty after removing
+          -- useless commands, or if it executes 0 times
+          match body', rep == 0 with
+          | [], _ | _, true => none
+          | _, false =>
+              let liveIn := getCmdsLiveIn body' outFix
               let cmd' := Com.loop rep body'
               some (ComWithMD.mk
                 { md with liveness := { live_in := liveIn, live_out := out } } cmd')
