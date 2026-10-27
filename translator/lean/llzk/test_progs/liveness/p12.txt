@@ -1,0 +1,15 @@
+# Loop with an empty body: every variable in its live_out flows through it.
+# Expected:
+#   -sl: the `if` has %r in live_out
+#   -se: generates the formula
+#   -ru: removes the empty loop
+
+def main(%x: ff) -> %r: ff {
+  if (%x == 1) {
+    %r = 5
+  } else {
+    %r = 7
+  }
+  repeat 2 {
+  }
+}

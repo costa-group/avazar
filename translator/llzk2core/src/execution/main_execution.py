@@ -65,7 +65,9 @@ def main(args: argparse.Namespace):
     # that builds its own argparse.Namespace directly, bypassing
     # args_parser.py's parser) may not set `prime` at all.
     prime_name = getattr(args, "prime", None) or "goldilocks"
-    translation_context = TranslationContext(prime=FIELD_PRIMES[prime_name])
+    translation_context = TranslationContext(
+        prime=FIELD_PRIMES[prime_name],
+        named_inputs=getattr(args, "named_inputs", False))
     core_generator = module_structure.to_core(translation_context)
     with open(args.target, 'w') as f:
         # Indent stream generates the statements in a nice format
@@ -83,7 +85,7 @@ def main(args: argparse.Namespace):
 
     # We apply the JSON file
     _here = os.path.dirname(os.path.abspath(__file__))
-    llzk_cli = os.path.join(_here, '..', '..', '..', 'lean', 'llzk_cli_assert')
+    llzk_cli = os.path.join(_here, '..', '..', '..', 'lean', 'llzk_cli_func')
     smt2_json_path = os.path.splitext(args.target)[0] + ".json"
     subprocess.run(
         [llzk_cli, '-zk', prime_name, '-se', '-ru', '-smt2', 'json', '-o', smt2_json_path, args.target],

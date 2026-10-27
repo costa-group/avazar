@@ -16,6 +16,7 @@ from execution.main_execution import main as llzk2core_main
 from linearize_component_names import main as linearize_components
 from linearize_signal_names import main as linearize_signals
 from llzk_r1cs import layout_to_signals
+from llzk_structure import llzk_to_structure
 
 
 VERSION = "1.0.0"
@@ -180,11 +181,11 @@ def main():
             # 1.b the layout as a circom-style _signals.json
             layout_to_signals(layout, source_signals)
 
-            # 1.c --input_structure needs a _structure.json, which only circom
-            # generates (--print_tree_info) and only for its own r1cs.
+            # 1.c the _structure.json for --input_structure, which circom would
+            # generate with --print_tree_info: rebuilt from the .llzk, checked
+            # against the r1cs and the layout
             if same_file:
-                logging.warning("TO MODIFY: --r1cs-from llzk still calls circom, only to obtain the _structure.json for --input_structure")
-                raise NotImplementedError("--r1cs-from llzk has no _structure.json for --input_structure (--source is its own --spec)")
+                llzk_to_structure(source_llzk, source_r1cs, layout, source_structure, args.prime)
 
         # 1.d run the linearization
         #linearize_components(source_structure, source_structure)
@@ -201,7 +202,10 @@ def main():
         # same field circom-llzk generated the .llzk over, or a value that
         # wraps in the real field (e.g. circom's "-1") won't be simulated
         # correctly.
-        llzk2core_args = argparse.Namespace(source=spec_llzk, target=out_abs_path + "/" + root_name_withoutext_spec + ".core", prime=args.prime)
+        # --named-inputs: each template's input signals are declared by their
+        # own names (not %argN), so the specification's vars_info names them
+        # just like its output signals.
+        llzk2core_args = argparse.Namespace(source=spec_llzk, target=out_abs_path + "/" + root_name_withoutext_spec + ".core", prime=args.prime, named_inputs=False)
         llzk2core_main(llzk2core_args)
 
         spec_json = out_abs_path + "/" + root_name_withoutext_spec + ".json"

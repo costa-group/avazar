@@ -623,15 +623,16 @@ module attributes {{llzk.lang = "circom", llzk.main = !struct.type<@Main_0::@Mai
         %r = array.read %0[%c0] : <2 x !felt.type<"bn128">>, !felt.type<"bn128">""")
 
         assert "array.copy @global_@arr %0" in text
-        assert "array.write %arg0 %0[%c0]" in text
+        assert "array.write in %0[%c0]" in text
         assert "array.read %0[%c0] %r" in text
         # The shared global itself is never written to.
-        assert "array.write %arg0 @global_@arr" not in text
+        assert "array.write in @global_@arr" not in text
 
     def test_sibling_region_same_name_is_untouched(self):
         # %2 reads the global in the then-branch; an unrelated %2 in the
         # else-branch (SSA names reused across sibling regions) must keep
-        # its own name.
+        # its own name -- each branch's values carry their own _then/_else
+        # suffix (the if's header is line 11 of the generated module).
         text = self._translate(self.GLOBAL_ARR, """\
         %felt_const_1 = felt.const  1 : <"bn128">
         %0 = bool.cmp eq(%arg0, %felt_const_1) : !felt.type<"bn128">, !felt.type<"bn128">
@@ -645,8 +646,8 @@ module attributes {{llzk.lang = "circom", llzk.main = !struct.type<@Main_0::@Mai
           scf.yield %2 : !felt.type<"bn128">
         }""")
 
-        assert "array.read @global_@arr[%c0] %3" in text
-        assert "%2 = felt.add %arg0 %felt_const_1" in text
+        assert "array.read @global_@arr[%c0_then11] %3_then11" in text
+        assert "%2_else11 = felt.add in %felt_const_1" in text
 
     def test_two_modules_same_global_name(self):
         text = self._translate("""\
@@ -679,7 +680,7 @@ module attributes {{llzk.lang = "circom", llzk.main = !struct.type<@Main_0::@Mai
         assert "@global_@m: [1, 2, 3, 4]" in text
         assert "@global_@m[" in text
 
-    def test_whole_array_alias_passed_to_call(self):
+    def test_read_passed_to_call_is_copied(self):
         from llzk_dialects.global_ import GlobalRead
         from llzk_dialects.llzk import _alias_global_reads
         from llzk_dialects.global_ import _register_global_def, GlobalDef
@@ -692,8 +693,26 @@ module attributes {{llzk.lang = "circom", llzk.main = !struct.type<@Main_0::@Mai
         call = FunctionCall([SSAVar("%1")], GlobalVariable("@F::@F"), [SSAVar("%0")], None)
         _alias_global_reads([read, call], ctx)
 
-        assert read.aliased
-        assert call.args[0].name == "@global_@arr"
+        # llzk_cli can't resolve a global's Core name as a call argument
+        assert not read.aliased
+        assert call.args[0].name == "%0"
+
+    def test_read_passed_to_nested_call_is_copied(self):
+        from llzk_dialects.global_ import GlobalRead, GlobalDef, _register_global_def
+        from llzk_dialects.llzk import _alias_global_reads
+        from llzk_dialects.scf import SCFFor
+
+        ctx = TranslationContext()
+        _register_global_def(GlobalDef.parse(
+            'global.def const @arr : !array.type<2 x !felt.type<"bn128">> = [ 7 : <"bn128">,  8 : <"bn128">]'
+        ), ctx, "@global")
+        read = GlobalRead.parse('%0 = global.read const @global::@arr : !array.type<2 x !felt.type<"bn128">>')
+        call = FunctionCall([SSAVar("%1")], GlobalVariable("@F::@F"), [SSAVar("%0")], None)
+        loop = SCFFor([], SSAVar("%i"), SSAVar("%lb"), SSAVar("%ub"), SSAVar("%st"), [], [call])
+        _alias_global_reads([read, loop], ctx)
+
+        assert not read.aliased
+        assert call.args[0].name == "%0"
 
     def test_loop_carried_init_counts_as_written(self):
         from llzk_dialects.global_ import GlobalRead, GlobalDef, _register_global_def

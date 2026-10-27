@@ -1,27 +1,17 @@
-globals {
-  signals1 : [4,6,33,4]
-  signals2 : [33,44,764,4]
+# Fresh SMT variables after a call to a `func` (evaluated concretely).
+# Expected: %x and %c get different SMT variables, and the formula holds
+# iff %x = 1.
+
+func @one() -> %r: ff {
+  %r = 1
 }
 
-func pow2(x:ff) -> y:ff {
-  y = 1
-  repeat x {
-    y = felt.mul y 2
-  }
+def @check(%x: ff) -> {
+  call @one() to %p
+  %c = bool.eq %p %x
+  assert %c
 }
 
-func foo(x:ff) -> z:ff {
-  call pow2(10) to w
-  acc = felt.add x w
-  i = 0
-  repeat 4 {
-    array.read signals1[i] y
-    acc = felt.add acc y
-    i = felt.add i 1
-  }
-  z = acc
-}
-
-def main() -> y:ff {
-  call foo(5) to y
+def main(%x: ff) -> {
+  call @check(%x) to
 }

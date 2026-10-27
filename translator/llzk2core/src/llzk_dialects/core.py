@@ -185,6 +185,17 @@ class TranslationContext:
     # Not yet consumed by any translation logic.
     param_arg_names: Dict[str, str] = field(default_factory=dict)
 
+    # A struct's @compute refers to each input signal by its own name
+    # (function.arg_name) in its body. When set (--named-inputs), the Core
+    # signature (and main's) declares that name directly. Otherwise the
+    # signature keeps "%argN" and the body opens with a "name = %argN" copy,
+    # recorded below.
+    named_inputs: bool = False
+    # Only populated when named_inputs is not set:
+    #   core_function_name -> [(signal_name, ssa_name, type)], in signature order
+    # e.g. {"BabyAdd_0": [("x1", "%arg0", ff), ...]}
+    core_func2input_copies: Dict[str, List[Tuple[str, str, Type]]] = field(default_factory=dict)
+
     # Registered global.def values: sym_name -> a single int (scalar felt) or
     # a flat, row-major list of ints (felt array, uni- or multi-dimensional).
     # Populated by a module-level pre-pass over GlobalDef before any function

@@ -122,29 +122,30 @@ def addLivenessCmd {c : ZKConfig} (i : ComWithMD c) (out : VarIDSet) :=
           -- (nested) loops, since a nested loop's own live_in is likewise an exact function
           -- of whatever boundary it is queried with.
           --
-          -- Caveat: this only accounts for `body` executing at least once. Nothing in the AST
-          -- guarantees `rep` is nonzero, and a 0-iteration loop must let every variable in
-          -- `out` flow through unchanged -- but `liveIn'` below is never re-unioned with
-          -- `out`, so a variable in `out` that `body`'s first statement unconditionally
-          -- overwrites is dropped from `live_in`. That is a separate, known soundness gap,
-          -- unrelated to the round-count argument above.
+          -- This only accounts for `body` executing at least once. If `rep` may be 0 (a
+          -- variable or the constant 0), every variable in `out` flows through the loop
+          -- unchanged, so `out` is added to `live_in`.
           let body' := addLivenessCmds body out
-          let liveIn := getCmdsLiveIn body'
+          let liveIn := getCmdsLiveIn body' out
           let body'' := addLivenessCmds body (liveIn.union out)
-          let liveIn' := getCmdsLiveIn body''
+          let liveIn' := getCmdsLiveIn body'' (liveIn.union out)
+          let liveIn' := match rep with
+            | .val v => if v == 0 then liveIn'.union out else liveIn'
+            | .var _ => liveIn'.union out
           let liveIn'' := addUsedVarsSimpleExpr liveIn' rep
           let cmd' := Com.loop_exp rep body''
           ComWithMD.mk { md with liveness := { live_in := liveIn'', live_out := out } } cmd'
-        | .loop _rep body =>
+        | .loop rep body =>
           -- live_in = live_in of (body;body)
           -- The loop variable 'idx' is not considered since it is a constant variable.
           -- We need to iterate the loop twice to get the fixed point of the live variables
-          -- (same reasoning, and the same 0-iteration caveat, as the `.loop_exp` case above).
+          -- (same reasoning, and the same 0-iteration handling, as the `.loop_exp` case above).
           let body' := addLivenessCmds body out
-          let liveIn := getCmdsLiveIn body'
+          let liveIn := getCmdsLiveIn body' out
           let body'' := addLivenessCmds body (liveIn.union out)
-          let liveIn' := getCmdsLiveIn body''
-          let cmd' := Com.loop _rep body''
+          let liveIn' := getCmdsLiveIn body'' (liveIn.union out)
+          let liveIn' := if rep == 0 then liveIn'.union out else liveIn'
+          let cmd' := Com.loop rep body''
           ComWithMD.mk { md with liveness := { live_in := liveIn', live_out := out } } cmd'
         | .new_array id _size =>
           -- live_in = live_out \ {id}

@@ -1,0 +1,31 @@
+# Regression test for loops that may execute 0 times (bound given by a variable).
+# `@check` calls `@pow2(0)`, so `repeat %n` executes 0 times and `%r` must keep
+# the value of `%r = 1`.
+#
+# Bug: the live_in of a loop only considered executions of the body, which
+# overwrites `%r`, so `%r` was not live before the loop:
+#   -sl: the loop had live_in={%acc, %n} (without %r)
+#   -ru: `%r = 1` was removed
+# Expected: the loop has %r in live_in, and -ru removes nothing.
+
+func @pow2(%n: ff) -> %r: ff {
+  %acc = 1
+  %r = 1
+  repeat %n {
+    %two = 2
+    %acc = felt.mul %acc %two
+    %r = %acc
+  }
+}
+
+def @check(%x: ff) -> {
+  %zero = 0
+  call @pow2(%zero) to %p
+  %q = felt.uidiv %x %p
+  %c = bool.eq %q %x
+  assert %c
+}
+
+def main(%x: ff) -> {
+  call @check(%x) to
+}

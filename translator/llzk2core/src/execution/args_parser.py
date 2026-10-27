@@ -36,6 +36,11 @@ def generate_parser() -> argparse.ArgumentParser:
                         help="Only generate the .core file, without calling llzk_cli_assert "
                              "to produce the SMT JSON.")
 
+    parser.add_argument("--named-inputs", action="store_true", dest="named_inputs",
+                        help="Declare each template's input signals by their own names (function.arg_name) "
+                             "in its Core signature and in main, instead of %%argN followed by a "
+                             "'name = %%argN' copy.")
+
     #TODO: add option to execute llzk directly instead of reading the file
 
     return parser

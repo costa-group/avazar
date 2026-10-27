@@ -1,0 +1,15 @@
+# Regression test for a parser bug: `call ... to` with no outputs followed by
+# another command. After `to`, `parseIdentSeq` read every identifier it found,
+# and keywords are also identifiers for the lexer, so the `call` on the next
+# line was taken as an output of the first call. Parsing then failed with:
+#   Unexpected token %@f (identifier/keyword) ... when parsing command
+# Now `parseFunCall` does not read outputs if the tokens after `to` begin a
+# command (a command keyword, or the variable of an assignment).
+
+def @f(%x: ff) -> {
+}
+
+def main(%x: ff) -> {
+  call @f(%x) to
+  call @f(%x) to
+}

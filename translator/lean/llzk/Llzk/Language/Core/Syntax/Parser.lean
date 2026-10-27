@@ -333,7 +333,19 @@ mutual
       let outs ← match toTk.token with
         | Token.ident "to" =>
           let _ ← advance -- consume 'to'
-          parseIdentSeq
+          -- 'to' may have no outputs, so we must not take the beginning of the
+          -- next command (a keyword, or the variable of an assignment) as an output.
+          -- Limitation: an output variable named like a command keyword (e.g. `to if`)
+          -- is not accepted.
+          let t0 ← peekToken 0
+          let t1 ← peekToken 1
+          let cmdKeywords := ["assert", "if", "repeat", "call", "array.new",
+                              "array.read", "array.write", "array.copy"]
+          match t0.token with
+          | Token.ident v =>
+            if cmdKeywords.contains v || t1.token == Token.symbol '=' then pure []
+            else parseIdentSeq
+          | _ => pure []
         | _ => pure []
       return (Com.func_call outs fname args)
     | _ => throw (IO.userError s!"Expected a function name after 'call', got {nameTk.token}")
