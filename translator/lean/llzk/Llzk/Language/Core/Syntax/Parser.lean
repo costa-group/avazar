@@ -334,7 +334,9 @@ mutual
         | Token.ident "to" =>
           let _ ← advance -- consume 'to'
           -- 'to' may have no outputs, so we must not take the beginning of the
-          -- next command (a keyword, or the variable of an assignment) as an output
+          -- next command (a keyword, or the variable of an assignment) as an output.
+          -- Limitation: an output variable named like a command keyword (e.g. `to if`)
+          -- is not accepted.
           let t0 ← peekToken 0
           let t1 ← peekToken 1
           let cmdKeywords := ["assert", "if", "repeat", "call", "array.new",

@@ -1,0 +1,28 @@
+# Regression test for loops that may execute 0 times (constant bound 0),
+# compared with a loop with a constant bound greater than 0.
+#
+# `repeat 0` executes 0 times, so `%r` keeps the value assigned in the `if`.
+# `repeat 2` executes at least once and always overwrites `%s`, so `%s = 1` is
+# useless.
+#
+# Bug: the live_in of `repeat 0` did not include `%r`, so:
+#   -sl: the `if` had live_out without %r
+#   -se: failed with "Variable '%r' not found"
+#   -ru: removed the whole `if`
+# Expected: the `if` has %r in live_out, -se succeeds, and -ru only removes
+# `%s = 1`.
+
+def main(%x: ff) -> %r: ff, %s: ff {
+  %s = 1
+  if (%x == 1) {
+    %r = 5
+  } else {
+    %r = 7
+  }
+  repeat 0 {
+    %r = 3
+  }
+  repeat 2 {
+    %s = 4
+  }
+}

@@ -187,7 +187,13 @@ def removeUselessCmd {c : ZKConfig} (failing : List FName) (i : ComWithMD c)
           match body' with
           | [] => none
           | _ =>
-              let liveIn := addUsedVarsSimpleExpr (getCmdsLiveIn body' outFix) rep
+              -- if `rep` may be 0 (a variable or the constant 0), every variable
+              -- in `out` flows through the loop unchanged
+              let liveInBody := getCmdsLiveIn body' outFix
+              let liveInBody := match rep with
+                | .val v => if v == 0 then liveInBody.union out else liveInBody
+                | .var _ => liveInBody.union out
+              let liveIn := addUsedVarsSimpleExpr liveInBody rep
               let cmd' := Com.loop_exp rep body'
               some (ComWithMD.mk
                 { md with liveness := { live_in := liveIn, live_out := out } } cmd')
@@ -199,7 +205,9 @@ def removeUselessCmd {c : ZKConfig} (failing : List FName) (i : ComWithMD c)
           match body' with
           | [] => none
           | _ =>
-              let liveIn := getCmdsLiveIn body' outFix
+              -- if `rep` is 0, every variable in `out` flows through the loop unchanged
+              let liveInBody := getCmdsLiveIn body' outFix
+              let liveIn := if rep == 0 then liveInBody.union out else liveInBody
               let cmd' := Com.loop rep body'
               some (ComWithMD.mk
                 { md with liveness := { live_in := liveIn, live_out := out } } cmd')
