@@ -1,0 +1,17 @@
+# Empty loop nested inside a loop: it must not cut the liveness propagation
+# of the outer loop. The program returns %x = %w.
+# Expected:
+#   -ru: only removes `%x = 0`
+
+def main(%w: ff) -> %x: ff {
+  %x = 0
+  %y = 0
+  %z = 0
+  repeat 3 {
+    %x = %y
+    repeat 2 {
+    }
+    %y = %z
+    %z = %w
+  }
+}
