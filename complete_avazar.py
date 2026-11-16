@@ -21,7 +21,7 @@ from llzk_structure import llzk_to_structure
 
 VERSION = "1.0.0"
 CIRCOM = "circom/target/release/circom"
-CIRCOM_LLZK = "circom-llzk/result/bin/circom"
+CIRCOM_LLZK = "circom-llzk/target/release/circom"
 LLZK_TRANSLATE = "llzk-lib/build/bin/llzk-translate"
 AVAZAR_TOOL = "avazar_tool/target/release/avazar"
 
@@ -205,7 +205,7 @@ def main():
         # --named-inputs: each template's input signals are declared by their
         # own names (not %argN), so the specification's vars_info names them
         # just like its output signals.
-        llzk2core_args = argparse.Namespace(source=spec_llzk, target=out_abs_path + "/" + root_name_withoutext_spec + ".core", prime=args.prime, named_inputs=False)
+        llzk2core_args = argparse.Namespace(source=spec_llzk, target=out_abs_path + "/" + root_name_withoutext_spec + ".core", prime=args.prime, named_inputs=False, ovc=r"^(?:[^%].*|%arg\d+)$")
         llzk2core_main(llzk2core_args)
 
         spec_json = out_abs_path + "/" + root_name_withoutext_spec + ".json"
