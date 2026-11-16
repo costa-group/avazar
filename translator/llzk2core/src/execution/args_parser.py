@@ -41,6 +41,10 @@ def generate_parser() -> argparse.ArgumentParser:
                              "in its Core signature and in main, instead of %%argN followed by a "
                              "'name = %%argN' copy.")
 
+    parser.add_argument("-ovc", "--ovc", type=str, required=False,
+                        help="Regular expression passed to llzk_cli to output variables in vars_info field of the JSON file"
+    )
+
     #TODO: add option to execute llzk directly instead of reading the file
 
     return parser

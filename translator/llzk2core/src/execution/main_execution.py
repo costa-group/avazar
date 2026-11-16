@@ -87,9 +87,13 @@ def main(args: argparse.Namespace):
     _here = os.path.dirname(os.path.abspath(__file__))
     llzk_cli = os.path.join(_here, '..', '..', '..', 'lean', 'llzk_cli_ovc')
     smt2_json_path = os.path.splitext(args.target)[0] + ".json"
+
+    command = [llzk_cli, '-zk', prime_name, '-se', '-ru', '-smt2', 'json', '-o', smt2_json_path, args.target]
+    if args.ovc is not None:
+        command.extend(["-ovc", args.ovc])
+    
     subprocess.run(
-        [llzk_cli, '-zk', prime_name, '-se', '-ru', '-smt2', 'json', '-o', smt2_json_path, args.target],
-        check=True,
+        command, check=True,
     )
 
     # Finally, we combine the smt JSON file with the member_to_struct
