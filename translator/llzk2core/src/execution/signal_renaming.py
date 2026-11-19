@@ -128,6 +128,23 @@ def process_components(smt_json: Dict) -> Dict:
         components = current_macro.get("components_info", {})
         index_sequences = current_macro.get("components_index_sequences", {})
 
+        # An index whose instance was resolved statically (e.g. sigmaP[0]
+        # populated outside the loop, or in a branch only taken for r == 0)
+        # is called by its own "member#i" name, not by the bare member name:
+        # it takes no slot of the bare calls, so it must be left out of the
+        # sequence. Otherwise every bare call is attributed to the index
+        # before its own (sigmaP[r] named sigmaP#(r-1)) and the last index
+        # is never named.
+        statically_named = {
+            extract_component(extract_vars_info_from_concrete_call(call)[2])
+            for call in calls
+        }
+        index_sequences = {
+            member: [idx for idx in sequence
+                     if member + "".join(f"#{i}" for i in idx) not in statically_named]
+            for member, sequence in index_sequences.items()
+        }
+
         # Dict that counts the current occurrence for each of the traversed components so far
         component2iteration = Counter()
 
