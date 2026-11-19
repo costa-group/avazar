@@ -3,33 +3,17 @@ import os
 import re
 import sys
 
+from linearize_signal_names import linearize_component_path
+
 
 def transform_component_names(data: dict) -> dict:
-    counters = {}
-
-    pattern = re.compile(r"^(?P<base>.*?)(?P<indices>(\[\d+\])+)$")
-
-    nodes = data.get("nodes", [])
-
-    for node in nodes:
+    """Every index of a component name becomes '#i', keeping all of them:
+    "sigmaF[0][1]" -> "sigmaF#0#1", which is how llzk2core names the keys of
+    components_info."""
+    for node in data.get("nodes", []):
         component_name = node.get("component_name", "")
-
-        if not component_name:
-            continue
-
-        match = pattern.match(component_name)
-
-        if match:
-            base_key = match.group("base")
-
-            if base_key not in counters:
-                counters[base_key] = 0
-
-            node["component_name"] = f"{base_key}#{counters[base_key]}"
-            counters[base_key] += 1
-        else:
-            node["component_name"] = re.sub(r"\[(\d+)\]", r"#\1", component_name)
-
+        if component_name:
+            node["component_name"] = linearize_component_path(component_name)
     return data
 
 
@@ -55,3 +39,7 @@ def main(input_file, output_file):
     except Exception as e:
         print(f"Error: failed translation {e}")
 
+
+
+if __name__ == "__main__":
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else sys.argv[1])
