@@ -301,9 +301,18 @@ class SymbolicSteps:
     """
     setup_ops: List[Operation]
     bound_var: SSAVar
-    initial_value: int
+    # A concrete int, or -- when the loop variable's initial value isn't a
+    # translation-time constant (e.g. it's derived from an enclosing loop's
+    # own loop-carried variable, "for (j = i; ...)") -- the loop variable's
+    # own SSAVar: SCFWhile.to_core assigns it its initial value before the
+    # repeat, so its Core name holds exactly that value where the step
+    # count is computed.
+    initial_value: Union[int, SSAVar]
     op: str  # "lt" or "le"
     variable_is_lhs: bool
+    # Absolute per-iteration increment of the loop variable (1 = the plain
+    # +-1 case; > 1 needs a ceiling division in the emitted formula).
+    step: int = 1
 
 
 def _collect_setup_ops(var: SSAVar,
@@ -377,7 +386,8 @@ def infer_n_repetitions_from_expressions(var2expression: Dict[str, Union[str, Op
                                          condition_var_core: str,
                                          initial_values: Dict[str, int],
                                          var2const: Optional[Dict[str, int]] = None,
-                                         prime: int = FIELD_PRIMES["goldilocks"]
+                                         prime: int = FIELD_PRIMES["goldilocks"],
+                                         loop_vars: Optional[Set[str]] = None
                                          ) -> Union[int, SymbolicSteps]:
     """
     Using the information retrieved from all involved expressions in the condition
@@ -398,6 +408,11 @@ def infer_n_repetitions_from_expressions(var2expression: Dict[str, Union[str, Op
     decrementing counter that goes below 0 becomes prime-1, not a raw
     negative Python int) -- defaults to goldilocks, matching every existing
     example.
+
+    `loop_vars` is the set of the while's own loop-carried argument names.
+    Those with a constant initial value are also in initial_values; the
+    rest (initial value not known at translation time) can still be
+    identified as the loop variable, and yield a SymbolicSteps.
     """
     print(var2expression, var2const)
     var2const = var2const or {}
@@ -405,7 +420,7 @@ def infer_n_repetitions_from_expressions(var2expression: Dict[str, Union[str, Op
     condition = var2expression[condition_var_core]
 
     if isinstance(condition, BoolCmp):
-        return _infer_from_comparison(condition, var2expression, initial_values, var2const, prime)
+        return _infer_from_comparison(condition, var2expression, initial_values, var2const, prime, loop_vars)
 
     if isinstance(condition, BoolBinary) and condition.op == "bool.and":
         lhs_condition = var2expression[condition.lhs.name]
@@ -413,8 +428,8 @@ def infer_n_repetitions_from_expressions(var2expression: Dict[str, Union[str, Op
         assert isinstance(lhs_condition, BoolCmp) and isinstance(rhs_condition, BoolCmp), \
             f"For now, a bool.and while condition must combine two BoolCmp: {condition}"
 
-        lhs_steps = _infer_from_comparison(lhs_condition, var2expression, initial_values, var2const, prime)
-        rhs_steps = _infer_from_comparison(rhs_condition, var2expression, initial_values, var2const, prime)
+        lhs_steps = _infer_from_comparison(lhs_condition, var2expression, initial_values, var2const, prime, loop_vars)
+        rhs_steps = _infer_from_comparison(rhs_condition, var2expression, initial_values, var2const, prime, loop_vars)
         return _combine_min_steps(lhs_steps, rhs_steps)
 
     raise NotImplementedError(
@@ -530,7 +545,8 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
                                    var2expression: Dict[str, Union[str, Operation]],
                                    initial_values: Dict[str, int],
                                    var2const: Dict[str, int],
-                                   prime: int = FIELD_PRIMES["goldilocks"]
+                                   prime: int = FIELD_PRIMES["goldilocks"],
+                                   loop_vars: Optional[Set[str]] = None
                                    ) -> Union[_ResolvedRecurrence, SymbolicSteps]:
     """
     Resolves a single BoolCmp while condition (one half of a bool.and, or the
@@ -580,8 +596,13 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
     assert op in ("lt", "le", "eq", "ne"), \
         f"Only inequalities and equality checks are implemented. Operation: {op}"
 
-    lhs_is_variable = lhs.name in initial_values
-    rhs_is_variable = rhs.name in initial_values
+    # A loop-carried variable is either one with a constant initial value
+    # (initial_values) or, when the caller passes them, any of the while's
+    # own loop-carried args -- whose initial value may not be known here
+    # (e.g. it's derived from an enclosing loop's own loop variable).
+    all_loop_vars = set(initial_values) | set(loop_vars or ())
+    lhs_is_variable = lhs.name in all_loop_vars
+    rhs_is_variable = rhs.name in all_loop_vars
 
     if lhs_is_variable and rhs_is_variable:
         raise NotImplementedError(
@@ -600,7 +621,8 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
             f"neither '{lhs.name}' nor '{rhs.name}' has a known initial value"
         )
 
-    initial_value = initial_values[variable.name]
+    initial_is_known = variable.name in initial_values
+    initial_value = initial_values[variable.name] if initial_is_known else SSAVar(variable.name)
     update_func = construct_function_from_expressions(variable, var2expression, var2const, set(), prime)
 
     # Resolve any free variable the bound references but that isn't defined
@@ -614,7 +636,7 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
         else:
             unresolved_free_vars.add(name)
 
-    if not unresolved_free_vars:
+    if not unresolved_free_vars and initial_is_known:
         # Every value the bound depends on is now known (either an original
         # literal or a free variable just resolved via var2const above), so
         # it can be evaluated to a concrete int, same as a bare constant.
@@ -641,48 +663,56 @@ def _resolve_comparison_recurrence(initial_comparison: BoolCmp,
 
         return _ResolvedRecurrence(initial_value, compare_func, update_func)
 
+    unknown = set(unresolved_free_vars)
+    if not initial_is_known:
+        unknown.add(f"initial value of {variable.name}")
+
     if op in ("eq", "ne"):
         raise NotImplementedError(
-            f"While condition depends on unresolved variable(s) {unresolved_free_vars} "
+            f"While condition depends on unresolved value(s) {unknown} "
             f"with an '{op}' predicate -- only a concrete (fully-resolved) bound is "
             "supported for eq/ne; no known example needs a symbolic eq/ne formula"
         )
 
-    # The bound depends on a value that isn't known here (e.g. an enclosing
-    # function's own parameter). Fall back to a symbolic Core expression for
-    # the step count -- only supported when the loop variable's own update is
-    # a simple +-1 per-iteration increment, in the direction required for the
+    # The bound or the initial value depends on a value that isn't known here
+    # (e.g. an enclosing function's own parameter, or an enclosing loop's own
+    # loop-carried variable). Fall back to a symbolic Core expression for the
+    # step count -- only supported when the loop variable's own update is a
+    # constant per-iteration increment, in the direction required for the
     # loop to actually terminate.
     step = _detect_affine_step(update_func)
     if step is None:
         raise NotImplementedError(
-            f"While condition depends on unresolved variable(s) {unresolved_free_vars}, "
+            f"While condition depends on unresolved value(s) {unknown}, "
             "and the loop variable's update is not a simple constant increment -- "
             "cannot infer a symbolic step count"
         )
 
-    if (variable_is_lhs and step != 1) or (not variable_is_lhs and step != -1):
+    if (variable_is_lhs and step <= 0) or (not variable_is_lhs and step >= 0):
         raise NotImplementedError(
-            f"While condition depends on unresolved variable(s) {unresolved_free_vars} "
+            f"While condition depends on unresolved value(s) {unknown} "
             f"with a step of {step} in the {'lhs' if variable_is_lhs else 'rhs'} position -- "
-            "only a +-1 step is supported for symbolic step-count inference"
+            "the loop variable must move towards the bound (increase when it is "
+            "the lhs of lt/le, decrease when it is the rhs) for a symbolic step count"
         )
 
     setup_ops = _collect_setup_ops(bound, var2expression, set())
-    return SymbolicSteps(setup_ops, bound, initial_value, op, variable_is_lhs)
+    return SymbolicSteps(setup_ops, bound, initial_value, op, variable_is_lhs, abs(step))
 
 
 def _infer_from_comparison(initial_comparison: BoolCmp,
                            var2expression: Dict[str, Union[str, Operation]],
                            initial_values: Dict[str, int],
                            var2const: Dict[str, int],
-                           prime: int = FIELD_PRIMES["goldilocks"]) -> Union[int, SymbolicSteps]:
+                           prime: int = FIELD_PRIMES["goldilocks"],
+                           loop_vars: Optional[Set[str]] = None) -> Union[int, SymbolicSteps]:
     """
     Infers the number of iterations a while's exit condition allows, given a
     single BoolCmp (one half of a bool.and, or the whole condition). See
     _resolve_comparison_recurrence for the shared resolution logic.
     """
-    resolved = _resolve_comparison_recurrence(initial_comparison, var2expression, initial_values, var2const, prime)
+    resolved = _resolve_comparison_recurrence(initial_comparison, var2expression, initial_values,
+                                              var2const, prime, loop_vars)
     if isinstance(resolved, SymbolicSteps):
         return resolved
     return count_iterations(resolved.initial_value, resolved.compare_func, resolved.update_func)
@@ -738,6 +768,16 @@ def construct_function_from_expressions(current_expr: SSAVar,
     # Expression is None, so it should be already a constant
     # defined outside current scope
     if expression is None:
+        if current_expr.name not in var2const:
+            # E.g. the result of a nested while (circomlib's sqrt: the outer
+            # loop's update uses `sq`, computed by an inner signal-dependent
+            # `while (sq != 1)`), or any other value not known at translation
+            # time: the trip count can't be simulated.
+            raise NotImplementedError(
+                f"While-loop update depends on '{current_expr.name}', which is "
+                f"neither defined inside the loop nor a known constant "
+                f"(e.g. the result of a nested loop or a signal-dependent value)"
+            )
         const_value = var2const[current_expr.name]
         return lambda _: const_value
 

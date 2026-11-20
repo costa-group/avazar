@@ -187,15 +187,59 @@ class TestInferNRepetitions:
         with pytest.raises(NotImplementedError):
             infer_n_repetitions_from_expressions(var2expression, "%cond", {"%arg1": 1})
 
-    def test_invalid_non_unit_step_with_unresolved_bound_raises(self):
+    def test_non_unit_step_with_unresolved_bound_returns_symbolic_steps(self):
         var2expression = {
             "%cond": BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg1"), SSAVar("%bound")),
             "%arg1": "%next",
             "%next": _felt_binary("%next", "felt.add", "%arg1", "%c2"),
             "%c2": _felt_const("%c2", 2),
         }
+        result = infer_n_repetitions_from_expressions(var2expression, "%cond", {"%arg1": 0})
+        assert result == SymbolicSteps(
+            setup_ops=[], bound_var=SSAVar("%bound"), initial_value=0,
+            op="lt", variable_is_lhs=True, step=2,
+        )
+
+    def test_step_away_from_unresolved_bound_raises(self):
+        # "arg1 < bound" with arg1 decreasing never terminates (or wraps):
+        # no meaningful symbolic count.
+        var2expression = {
+            "%cond": BoolCmp(SSAVar("%cond"), "lt", SSAVar("%arg1"), SSAVar("%bound")),
+            "%arg1": "%next",
+            "%next": _felt_binary("%next", "felt.sub", "%arg1", "%c2"),
+            "%c2": _felt_const("%c2", 2),
+        }
         with pytest.raises(NotImplementedError):
-            infer_n_repetitions_from_expressions(var2expression, "%cond", {"%arg1": 0})
+            infer_n_repetitions_from_expressions(var2expression, "%cond", {"%arg1": 10})
+
+    def test_non_constant_initial_value_returns_symbolic_steps(self):
+        # "for (j = i; j < 4; j++)" inside an outer loop over i: the bound is
+        # a known constant but the initial value isn't, so the loop variable
+        # can only be identified via loop_vars, and its own SSA name (which
+        # holds the initial value right before the repeat) is the formula's
+        # starting point.
+        var2expression = self._basic_var2expression(bound_name="%bound")
+        result = infer_n_repetitions_from_expressions(
+            var2expression, "%cond", {}, var2const={"%bound": 4}, loop_vars={"%arg1"}
+        )
+        assert isinstance(result, SymbolicSteps)
+        assert result.bound_var == SSAVar("%bound")
+        assert result.initial_value == SSAVar("%arg1")
+        assert (result.op, result.variable_is_lhs, result.step) == ("lt", True, 1)
+
+    def test_non_constant_initial_value_without_loop_vars_still_raises(self):
+        var2expression = self._basic_var2expression(bound_name="%bound")
+        with pytest.raises(NotImplementedError, match="Could not identify"):
+            infer_n_repetitions_from_expressions(
+                var2expression, "%cond", {}, var2const={"%bound": 4}
+            )
+
+    def test_non_constant_initial_value_with_eq_raises(self):
+        var2expression = self._basic_var2expression(bound_name="%bound", predicate="ne")
+        with pytest.raises(NotImplementedError, match="'ne' predicate"):
+            infer_n_repetitions_from_expressions(
+                var2expression, "%cond", {}, var2const={"%bound": 4}, loop_vars={"%arg1"}
+            )
 
     def test_setup_ops_collected_for_expression_bound(self):
         # Mirrors escalarmulw4table_concrete.mlir's "%arg1 * 4" bound: %extern

@@ -8,7 +8,7 @@ from llzk_dialects.bool import BoolCmp, BoolBinary
 from llzk_dialects.constrain import ConstrainEq
 from llzk_dialects.function import FunctionCall
 from llzk_dialects.pod import PodRead, PodNew
-from llzk_dialects.core_utils import translate_assignment_core_with_ctx
+from llzk_dialects.core_utils import translate_assignment_core_with_ctx, SymbolicSteps
 
 
 class TestSCF:
@@ -794,7 +794,14 @@ class TestSCF:
         out = list(op.to_core(ctx))
         assert out == [
             "%arg1 = %c0",
-            "%steps_7 = felt.sub %extern 0",
+            "%steps_7_go = bool.lt 0 %extern",
+            "if (%steps_7_go == 1) {",
+            "%steps_7_diff = felt.sub %extern 0",
+            "%steps_7 = %steps_7_diff",
+            "}\n",
+            "else {",
+            "%steps_7 = 0",
+            "}",
             "repeat %steps_7 {",
             "%c1 = 1",
             "%next = felt.add %arg1 %c1",
@@ -811,8 +818,14 @@ class TestSCF:
         out = list(op.to_core(ctx))
         assert out == [
             "%arg1 = %c0",
-            "%steps_8_pre = felt.sub %extern 0",
-            "%steps_8 = felt.add %steps_8_pre 1",
+            "%steps_8_go = bool.le 0 %extern",
+            "if (%steps_8_go == 1) {",
+            "%steps_8_diff = felt.sub %extern 0",
+            "%steps_8 = felt.add %steps_8_diff 1",
+            "}\n",
+            "else {",
+            "%steps_8 = 0",
+            "}",
             "repeat %steps_8 {",
             "%c1 = 1",
             "%next = felt.add %arg1 %c1",
@@ -839,7 +852,14 @@ class TestSCF:
             "%arg1 = %c0",
             "%four = 4",
             "%bound = felt.mul %extern %four",
-            "%steps_9 = felt.sub %bound 0",
+            "%steps_9_go = bool.lt 0 %bound",
+            "if (%steps_9_go == 1) {",
+            "%steps_9_diff = felt.sub %bound 0",
+            "%steps_9 = %steps_9_diff",
+            "}\n",
+            "else {",
+            "%steps_9 = 0",
+            "}",
             "repeat %steps_9 {",
             "%c1 = 1",
             "%next = felt.add %arg1 %c1",
@@ -847,6 +867,115 @@ class TestSCF:
             "%four = 4",
             "%bound = felt.mul %extern %four",
             "%cond = bool.lt %arg1 %bound",
+            "}",
+        ]
+
+    @staticmethod
+    def _escalarmulfix_nested_while() -> SCFWhile:
+        """
+        Mirrors EscalarMulFix's segment loop:
+            for (s = 0; s < 2; s++) {
+                nseg = (s < 1) ? 249 : 4;
+                for (i = 0; i < nseg; i++) { ... }
+            }
+        The inner bound depends on the outer loop-carried %s, so it differs
+        between outer iterations and must not be folded to 249.
+        """
+        idx = Type("index")
+        inner = SCFWhile(
+            [], [(SSAVar("%i"), SSAVar("%c0i"))], [[idx], [idx]],
+            [
+                BoolCmp(SSAVar("%icond"), "lt", SSAVar("%i"), SSAVar("%nseg")),
+                SCFCondition(SSAVar("%icond"), [SSAVar("%i")], [idx]),
+            ],
+            [(SSAVar("%i"), idx)],
+            [
+                FeltConst(SSAVar("%c1i"), 1),
+                FeltBinary(SSAVar("%inext"), "felt.add", SSAVar("%i"), SSAVar("%c1i"), []),
+                SCFYield([SSAVar("%inext")], [idx]),
+            ],
+            2,
+        )
+        outer_after = [
+            FeltConst(SSAVar("%c1s"), 1),
+            BoolCmp(SSAVar("%first"), "lt", SSAVar("%s"), SSAVar("%c1s")),
+            SCFIf([SSAVar("%nseg")], SSAVar("%first"), [idx],
+                  [FeltConst(SSAVar("%c249"), 249), SCFYield([SSAVar("%c249")], [idx])],
+                  [FeltConst(SSAVar("%c4"), 4), SCFYield([SSAVar("%c4")], [idx])]),
+            FeltConst(SSAVar("%c0i"), 0),
+            inner,
+            FeltBinary(SSAVar("%snext"), "felt.add", SSAVar("%s"), SSAVar("%c1s"), []),
+            SCFYield([SSAVar("%snext")], [idx]),
+        ]
+        outer_before = [
+            FeltConst(SSAVar("%c2s"), 2),
+            BoolCmp(SSAVar("%scond"), "lt", SSAVar("%s"), SSAVar("%c2s")),
+            SCFCondition(SSAVar("%scond"), [SSAVar("%s")], [idx]),
+        ]
+        return SCFWhile(
+            [], [(SSAVar("%s"), SSAVar("%c0s"))], [[idx], [idx]],
+            outer_before, [(SSAVar("%s"), idx)], outer_after, 1,
+        )
+
+    def test_nested_while_bound_depending_on_outer_loop_var_is_symbolic(self):
+        op = self._escalarmulfix_nested_while()
+        ctx = TranslationContext()
+        ctx.var2const["%c0s"] = 0
+        ctx.var2const["%c2s"] = 2
+
+        out = list(op.to_core(ctx))
+        # The outer count is still a concrete int ...
+        assert "repeat 2 {" in out
+        # ... but the inner one is computed per outer iteration at runtime,
+        # never frozen to the first iteration's 249.
+        assert "repeat 249 {" not in out
+        assert "repeat %steps_2 {" in out
+        assert "%steps_2_go = bool.lt 0 %nseg" in out
+        # Neither the outer loop variable nor anything derived from it
+        # survives as a constant after the loop.
+        assert "%s" not in ctx.var2const
+        assert "%nseg" not in ctx.var2const
+
+    def test_single_iteration_while_keeps_loop_constants(self):
+        # With a single outer iteration, the initial value is the only value
+        # the loop variable ever takes: folding it is still correct, and the
+        # inner loop stays a concrete repeat.
+        op = self._escalarmulfix_nested_while()
+        op.before_body[0] = FeltConst(SSAVar("%c2s"), 1)
+        ctx = TranslationContext()
+        ctx.var2const["%c0s"] = 0
+
+        out = list(op.to_core(ctx))
+        assert "repeat 1 {" in out
+        assert "repeat 249 {" in out
+        assert not any("%steps_" in line for line in out)
+
+    def test_emit_symbolic_steps_non_unit_step_and_symbolic_init(self):
+        steps = SymbolicSteps([], SSAVar("%n"), SSAVar("%j"), "lt", True, 3)
+        assert list(SCFWhile._emit_symbolic_steps(steps, "%steps_5")) == [
+            "%steps_5_go = bool.lt %j %n",
+            "if (%steps_5_go == 1) {",
+            "%steps_5_diff = felt.sub %n %j",
+            "%steps_5_num = felt.add %steps_5_diff 2",
+            "%steps_5 = felt.uidiv %steps_5_num 3",
+            "}\n",
+            "else {",
+            "%steps_5 = 0",
+            "}",
+        ]
+
+    def test_emit_symbolic_steps_decreasing_le_non_unit_step(self):
+        # "bound <= j", j decreasing by 2: visits init, init-2, ... >= bound.
+        steps = SymbolicSteps([], SSAVar("%n"), 10, "le", False, 2)
+        assert list(SCFWhile._emit_symbolic_steps(steps, "%steps_6")) == [
+            "%steps_6_go = bool.le %n 10",
+            "if (%steps_6_go == 1) {",
+            "%steps_6_diff = felt.sub 10 %n",
+            "%steps_6_quot = felt.uidiv %steps_6_diff 2",
+            "%steps_6 = felt.add %steps_6_quot 1",
+            "}\n",
+            "else {",
+            "%steps_6 = 0",
             "}",
         ]
 

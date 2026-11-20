@@ -629,7 +629,13 @@ class SCFFor(BlockOperation):
         # subcomponent naming is no longer this translator's concern (it's
         # resolved afterwards by llzk_cli), so there is no unrolling path.
         steps = len(range(lb_val, ub_val, step_val))
-        ctx.var2const[self.iv.name] = lb_val
+        # Same reasoning as SCFWhile.to_core: the body is translated once but
+        # runs `steps` times, so the induction variable is only lb_val in the
+        # first iteration -- don't constant-fold it unless there's just one.
+        if steps <= 1:
+            ctx.var2const[self.iv.name] = lb_val
+        else:
+            ctx.var2const.pop(self.iv.name, None)
         yield f"{self.iv.to_core()} = {lb_val}"
 
         yield f"repeat {steps} {{"
@@ -934,6 +940,23 @@ class SCFWhile(BlockOperation):
         # assign it to repeat
         steps = self._extract_step(initial_values, ctx)
 
+        # The body below is translated once, but runs `steps` times: a
+        # loop-carried value is only its initial constant in the *first*
+        # iteration. Leaving it in var2const would constant-fold everything
+        # derived from it (scf.if results, nested whiles' bounds, ...) with
+        # first-iteration values -- e.g. circom's
+        #   nseg = (s < nsegs-1) ? 249 : 4; for (i=0; i<nseg; i++) ...
+        # would become a fixed "repeat 249" for every s. Forget those
+        # constants for the body, so anything depending on them stays a
+        # runtime Core value (a nested while then gets a SymbolicSteps
+        # count, evaluated concretely by llzk_cli per outer iteration). A
+        # loop with at most one iteration really does only see the initial
+        # values, so it keeps them.
+        forget_loop_constants = not (isinstance(steps, int) and steps <= 1)
+        if forget_loop_constants:
+            for lhs, _rhs in first_region_args:
+                ctx.var2const.pop(lhs.name, None)
+
         def emit_iteration() -> Generator[str, None, None]:
             # The order of the regions to synthesize is reversed, as the before body
             # checks the condition at the end of the loop. Ignore the final yield
@@ -978,19 +1001,7 @@ class SCFWhile(BlockOperation):
                 yield from op.to_core(ctx)
 
             fresh_var = f"%steps_{self.cursor}"
-            bound_core = steps.bound_var.to_core()
-
-            if steps.variable_is_lhs:
-                first_op, first_args = ("felt.sub", (bound_core, steps.initial_value))
-            else:
-                first_op, first_args = ("felt.sub", (steps.initial_value, bound_core))
-
-            if steps.op == "le":
-                pre_var = f"{fresh_var}_pre"
-                yield f"{pre_var} = {first_op} {first_args[0]} {first_args[1]}"
-                yield f"{fresh_var} = felt.add {pre_var} 1"
-            else:
-                yield f"{fresh_var} = {first_op} {first_args[0]} {first_args[1]}"
+            yield from self._emit_symbolic_steps(steps, fresh_var)
 
             yield f"repeat {fresh_var} {{"
             yield from emit_iteration()
@@ -999,6 +1010,59 @@ class SCFWhile(BlockOperation):
             yield f"repeat {steps} {{"
             yield from emit_iteration()
             yield f"}}"
+
+        # The while's own results were bound above to the *initial* values
+        # (for the 0-iteration case), and possibly re-bound by the single
+        # body translation: neither is what they hold after >= 2 iterations.
+        if forget_loop_constants:
+            for result in self.results:
+                for component in range(result.n_components):
+                    ctx.var2const.pop(result.to_core_component(component), None)
+
+    @staticmethod
+    def _emit_symbolic_steps(steps: SymbolicSteps, fresh_var: str) -> Generator[str, None, None]:
+        """
+        Emits Core computing `fresh_var` = number of iterations of a while
+        whose loop variable starts at steps.initial_value, moves by
+        steps.step towards steps.bound_var, and continues while
+        "lo < hi" (lt) / "lo <= hi" (le), where (lo, hi) is
+        (variable, bound) or (bound, variable) depending on its side.
+
+        The count is clamped to 0 when the condition is already false at
+        the start: "hi - lo" would otherwise wrap around to a huge field
+        element. The guard is a plain Core if, which llzk_cli resolves
+        concretely (loop bounds never depend on signals), so only the taken
+        branch is executed.
+        """
+        init = steps.initial_value
+        init_core = init.to_core() if isinstance(init, SSAVar) else str(init)
+        bound_core = steps.bound_var.to_core()
+        lo, hi = (init_core, bound_core) if steps.variable_is_lhs else (bound_core, init_core)
+        k = steps.step
+
+        go_var = f"{fresh_var}_go"
+        diff_var = f"{fresh_var}_diff"
+        yield f"{go_var} = bool.{steps.op} {lo} {hi}"
+        yield f"if ({go_var} == 1) {{"
+        yield f"{diff_var} = felt.sub {hi} {lo}"
+        if steps.op == "lt":
+            # ceil(diff / k): the variable visits lo, lo+k, ... while < hi
+            if k == 1:
+                yield f"{fresh_var} = {diff_var}"
+            else:
+                yield f"{fresh_var}_num = felt.add {diff_var} {k - 1}"
+                yield f"{fresh_var} = felt.uidiv {fresh_var}_num {k}"
+        else:
+            # floor(diff / k) + 1: the variable visits lo, lo+k, ... while <= hi
+            if k == 1:
+                yield f"{fresh_var} = felt.add {diff_var} 1"
+            else:
+                yield f"{fresh_var}_quot = felt.uidiv {diff_var} {k}"
+                yield f"{fresh_var} = felt.add {fresh_var}_quot 1"
+        yield "}\n"
+        yield "else {"
+        yield f"{fresh_var} = 0"
+        yield "}"
 
     def _build_while_var_expressions(self) -> Tuple[Dict[str, "Union[str, Operation]"], SSAVar]:
         """
@@ -1071,8 +1135,10 @@ class SCFWhile(BlockOperation):
         Extracts how many iterations are performed in the loop
         """
         var2expression, condition_var = self._build_while_var_expressions()
+        loop_vars = {block_arg.name for block_arg, _init in self.init_args}
         return infer_n_repetitions_from_expressions(var2expression, condition_var.name,
-                                                    initial_values, ctx.var2const, ctx.prime)
+                                                    initial_values, ctx.var2const, ctx.prime,
+                                                    loop_vars)
 
     def _extract_index_sequence(self, initial_values: Dict[str, int],
                                 var2const: Dict[str, int],
