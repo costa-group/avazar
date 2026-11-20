@@ -103,10 +103,10 @@ def generate_llzk(circom_file: str, out_abs_path: str, prime: str) -> str:
     circom_llzk_command = [CIRCOM_LLZK, circom_file, "--llzk", "concrete", "--prime", prime, "--output", out_abs_path, "--llzk_plaintext", "--llzk_strip_debug_info"]
     run_command(circom_llzk_command)
 
-    dest_llzk = out_abs_path + "/" + name + ".llzk"
+    dest_llzk = out_abs_path + "/" + name + ".mlir"
     if os.path.exists(dest_llzk):
         os.remove(dest_llzk)
-    shutil.move(out_abs_path + "/" + name + "_llzk/" + name + ".llzk", out_abs_path)
+    shutil.move(out_abs_path + "/" + name + "_llzk/" + name + ".llzk", out_abs_path + "/" + name + ".mlir")
     shutil.rmtree(out_abs_path + "/" + name + "_llzk/")
     return dest_llzk
 
@@ -188,7 +188,7 @@ def main():
                 llzk_to_structure(source_llzk, source_r1cs, layout, source_structure, args.prime)
 
         # 1.d run the linearization
-        #linearize_components(source_structure, source_structure)
+        linearize_components(source_structure, source_structure)
         linearize_signals(source_signals, source_signals)
 
         # 2. run circom-llzk to generate llzk-ir of the specification
