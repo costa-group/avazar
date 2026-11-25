@@ -1,0 +1,58 @@
+# Regression test for removeUseless (-ru): function calls are always kept,
+# even if none of their return values are used and the callee does not
+# contain any `assert`.
+#
+# All four calls in main have dead return values:
+#   @fails: reaches an `assert` through a call to @noret.
+#   @pure:  cannot fail at all.
+#   @oob:   reads %a[%i] with a non-constant index; symbolic execution
+#           encodes the read as a constraint that forces %i < 2.
+#   @divz:  divides by %y; symbolic execution forces %y != 0.
+#
+# Bug: the `.func_call` case of `removeUselessCmd` removed a call with dead
+# return values unless the callee could reach an `assert`, so @pure, @oob and
+# @divz were dropped from main, together with the constraints of @oob and @divz.
+#
+# Expected with -ru: main keeps the four calls and only removes
+# `array.new 2 %b` and `array.read %b[%i] %u5`.
+#
+# Known limitation (not yet fixed): dead array reads/writes with a
+# non-constant index and dead divisions are still removed. So -ru also removes
+# `array.new 2 %a` / `array.read %a[%i] %t` from @oob and `%t = felt.div %x %y`
+# from @divz, and their constraints (%i < 2, %y != 0) are lost. The same
+# happens with `array.read %b[%i] %u5` in main.
+
+def @noret(%x: ff) -> {
+  %c = bool.eq %x 1
+  assert %c
+}
+
+def @fails(%x: ff) -> %r: ff {
+  call @noret(%x) to
+  %r = felt.add %x 1
+}
+
+def @pure(%x: ff) -> %r: ff {
+  %r = felt.add %x 1
+}
+
+def @oob(%i: ff) -> %r: ff {
+  array.new 2 %a
+  array.read %a[%i] %t
+  %r = 0
+}
+
+def @divz(%x: ff, %y: ff) -> %r: ff {
+  %t = felt.div %x %y
+  %r = 0
+}
+
+def main(%x: ff, %i: ff) -> %o: ff {
+  call @fails(%x) to %u1
+  call @pure(%x) to %u2
+  call @oob(%i) to %u3
+  call @divz(%x, %i) to %u4
+  array.new 2 %b
+  array.read %b[%i] %u5
+  %o = 0
+}

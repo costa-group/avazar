@@ -1,12 +1,16 @@
 # Regression test for removeUseless (-ru): a call whose return values are not
-# used is not useless if the called function may fail. Here the only `assert`
-# is in @leaf, and it is reached through a chain of calls nested inside an
-# `if` and a `repeat`. None of the commands may be removed: @middle and
-# @top have no return values, and main ignores the return value of @top, but
-# removing any of these calls would remove the `assert`.
+# used must not be removed. Here the only `assert` is in @leaf, and it is
+# reached through a chain of calls nested inside an `if` and a `repeat`.
+# None of the commands may be removed: @middle and @top have no return values,
+# and main ignores the return value of @top, but removing any of these calls
+# would remove the `assert`.
 #
 # Bug: the `.func_call` case of `removeUselessCmd` removed every call whose
 # return values were not live, so `call @top(...)` was dropped from main.
+#
+# Fix: function calls are now always kept, regardless of the liveness of
+# their return values (see also p14.txt, where the callees fail without
+# an `assert`).
 
 def @leaf(%x: ff) -> {
   %b = bool.lt %x 5
