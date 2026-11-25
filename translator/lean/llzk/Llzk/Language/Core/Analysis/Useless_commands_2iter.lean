@@ -69,64 +69,6 @@ def eraseParams (vars : VarIDSet) (params : List Param) : VarIDSet :=
     | [] => vars
     | p :: rest => eraseParams (vars.erase p.name) rest
 
-def listToSet (l : List VarID) : VarIDSet :=
-    match l with
-    | [] => emptyVarIDSet
-    | v :: rest => (listToSet rest).insert v
-
-/- A function call whose return values are never used is still not useless
-   if executing the callee may fail: removing it would turn a failing program
-   into a succeeding one (e.g. `call @check(%x)` where `@check` contains
-   `assert 0`). A command may fail if it is an `assert` or calls a function
-   that may fail (directly or through nested if-statements and loops). -/
-
-mutual
-
-/-- `true` if executing `i` may fail, where `failing` contains the names of
-    the functions that may fail. -/
-def cmdMayFail {c : ZKConfig} (failing : List FName) (i : ComWithMD c) : Bool :=
-    match i with
-    | .mk _ cmd =>
-        match cmd with
-        | .assert _ => true
-        | .func_call _ fname _ => failing.contains fname
-        | .if_stmt _ tb eb => cmdsMayFail failing tb || cmdsMayFail failing eb
-        | .loop_exp _ body => cmdsMayFail failing body
-        | .loop _ body => cmdsMayFail failing body
-        | _ => false
-
-/-- `true` if executing some command in `cmds` may fail -/
-def cmdsMayFail {c : ZKConfig} (failing : List FName) (cmds : List (ComWithMD c)) : Bool :=
-    match cmds with
-    | [] => false
-    | i :: rest => cmdMayFail failing i || cmdsMayFail failing rest
-
-end
-
-/-- Adds to `failing` the functions in `funcs` whose body may fail
-    (one round of propagation) -/
-def addFailingFuncs {c : ZKConfig} (failing : List FName) (funcs : List (FuncWithMD c))
-  : List FName :=
-    match funcs with
-    | [] => failing
-    | .mk _ (.mk name _ _ body) :: rest =>
-        let failing' :=
-          if !failing.contains name && cmdsMayFail failing body then name :: failing
-          else failing
-        addFailingFuncs failing' rest
-
-/-- Computes the names of the functions in `funcs` that may fail. Since the
-    call graph is acyclic, each round adds at least one function until the
-    set stabilizes, so `funcs.length + 1` rounds are enough. -/
-def failingFuncs {c : ZKConfig} (funcs : List (FuncWithMD c)) : List FName :=
-    let rec go (fuel : Nat) (failing : List FName) : List FName :=
-        match fuel with
-        | 0 => panic "failingFuncs (within remove useless commands): ran out of fuel"
-        | fuel + 1 =>
-            let failing' := addFailingFuncs failing funcs
-            if failing'.length == failing.length then failing else go fuel failing'
-    go (funcs.length + 1) []
-
 /-- The live-in set of `body` when its live-out set is `out`, without deleting
     any commands (pure liveness propagation). Same helper as in
     `Useless_commands.lean`. -/
@@ -145,7 +87,7 @@ mutual
 /- Computes the liveness information for a single command,
    adds it to the meta data, and discard the command if it is useless
    (i.e., if it assigns to a variable that is not in the out set) -/
-def removeUselessCmd {c : ZKConfig} (failing : List FName) (i : ComWithMD c)
+def removeUselessCmd {c : ZKConfig} (i : ComWithMD c)
   (out : VarIDSet)
   : Option (ComWithMD c) :=
     match i with
@@ -169,7 +111,7 @@ def removeUselessCmd {c : ZKConfig} (failing : List FName) (i : ComWithMD c)
         | .if_stmt cond tb eb =>
           -- live_in = (live_in_then ∪ live_in_else) ∪ usedVars(cond)
           -- the if-the-else is useless if both branches are useless
-          match removeUselessCmds failing tb out, removeUselessCmds failing eb out with
+          match removeUselessCmds tb out, removeUselessCmds eb out with
           | [], [] => none
           | tb', eb' => let liveInThen := getCmdsLiveIn tb' out
                         let liveInElse := getCmdsLiveIn eb' out
@@ -181,7 +123,7 @@ def removeUselessCmd {c : ZKConfig} (failing : List FName) (i : ComWithMD c)
           -- live_in = live_in of (body;body), computed with the hard-coded
           -- "2 iterations" `twoIterationsOut` instead of a checked fixpoint.
           let outFix := twoIterationsOut body out
-          let body' := removeUselessCmds failing body outFix
+          let body' := removeUselessCmds body outFix
           -- the loop is useless if the body is empty after removing
           -- useless commands, or if it executes 0 times
           match body', rep == .val 0 with
@@ -201,7 +143,7 @@ def removeUselessCmd {c : ZKConfig} (failing : List FName) (i : ComWithMD c)
           -- live_in = live_in of (body;body), computed with the hard-coded
           -- "2 iterations" `twoIterationsOut` instead of a checked fixpoint.
           let outFix := twoIterationsOut body out
-          let body' := removeUselessCmds failing body outFix
+          let body' := removeUselessCmds body outFix
           -- the loop is useless if the body is empty after removing
           -- useless commands, or if it executes 0 times
           match body', rep == 0 with
@@ -252,30 +194,29 @@ def removeUselessCmd {c : ZKConfig} (failing : List FName) (i : ComWithMD c)
               some (ComWithMD.mk
                 { md with liveness := { live_in := liveIn', live_out := out } } cmd)
           | false => none
-        | .func_call rets id args =>
+        | .func_call rets _ args =>
           -- live_in = (live_out \ rets) ∪ usedVars(args)
-          -- the func_call is useless if none of the return values are used later
-          -- and the called function cannot fail
+          -- Function calls are always kept, even if none of the return values
+          -- are used later: the callee may fail (assert, out-of-bounds array
+          -- access, division by zero...) and removing the call would turn a
+          -- failing program into a succeeding one (dropping constraints in
+          -- the SMT encoding).
           let out' := eraseVars out rets
           let liveIn := addUsedVarsSimpleExprs out' args
-          let intersection := out.inter (listToSet rets)
-          match intersection.isEmpty && !failing.contains id with
-          | true => none
-          | false =>
-              some (ComWithMD.mk
-                { md with liveness := { live_in := liveIn, live_out := out } } cmd)
+          some (ComWithMD.mk
+            { md with liveness := { live_in := liveIn, live_out := out } } cmd)
 
 /-- Computes the liveness information for a list of commands and
     removes useless commands -/
-def removeUselessCmds {c : ZKConfig} (failing : List FName) (cmds : List (ComWithMD c))
+def removeUselessCmds {c : ZKConfig} (cmds : List (ComWithMD c))
   (out : VarIDSet)
   : List (ComWithMD c) :=
     match cmds with
     | [] => []
     | i :: rest =>
-        let rest' := removeUselessCmds failing rest out
+        let rest' := removeUselessCmds rest out
         let out' := getCmdsLiveIn rest' out -- for empty list we get 'out' as default
-        match removeUselessCmd failing i out' with
+        match removeUselessCmd i out' with
         | none => rest'
         | some i' => i' :: rest'
 
@@ -283,31 +224,31 @@ end
 
 /-- Computes the liveness information for a function, adds it to the
     meta data, and and remove useless commands -/
-def removeUselessFunc {c : ZKConfig} (failing : List FName) (f : FuncWithMD c) : FuncWithMD c :=
+def removeUselessFunc {c : ZKConfig} (f : FuncWithMD c) : FuncWithMD c :=
     match f with
     | .mk md func =>
     match func with
      | Func.mk name params rets body =>
      let out := addParams emptyVarIDSet rets
-     let body' := removeUselessCmds failing body out
+     let body' := removeUselessCmds body out
      let liveIn := getCmdsLiveIn body' out
      let func' := Func.mk name params rets body'
      FuncWithMD.mk { md with liveness := { live_in := liveIn, live_out := out } } func'
 
 /-- Computes the liveness information for a list of functions and
     remove useless commands -/
-def removeUselessFuncs {c : ZKConfig} (failing : List FName) (funcs : List (FuncWithMD c))
+def removeUselessFuncs {c : ZKConfig} (funcs : List (FuncWithMD c))
   : List (FuncWithMD c) :=
     match funcs with
     | [] => []
-    | f :: rest => removeUselessFunc failing f :: removeUselessFuncs failing rest
+    | f :: rest => removeUselessFunc f :: removeUselessFuncs rest
 
 /-- Computes the liveness information for a program and remove useless
     commands -/
 def removeUselessProg {c : ZKConfig} (p : ProgWithMD c) : ProgWithMD c :=
     match p with
     | .mk md funcs =>
-        let funcs' := removeUselessFuncs (failingFuncs funcs.functions) funcs.functions
+        let funcs' := removeUselessFuncs funcs.functions
         ProgWithMD.mk md { functions := funcs', globals := funcs.globals }
 
 end Llzk.Language.Core.Analysis.Useless_commands_2iter
